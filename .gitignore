@@ -5,6 +5,7 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+output/playwright/
 .pglite/
 .gate1a-data/
 
@@ -20,6 +21,7 @@ postgres-data/
 .postgres-data/
 docker-data/
 docker-volumes/
+docker-volume-export/
 docker-volume-exports/
 *.dump
 *.backup
