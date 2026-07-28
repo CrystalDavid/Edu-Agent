@@ -30,7 +30,8 @@ export default defineConfig({
   webServer: {
     command: "pnpm demo:test-server",
     url: "http://localhost:5173/api/health",
-    reuseExistingServer: false,
+    reuseExistingServer:
+      process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",
     timeout: 120_000
   },
   projects: [

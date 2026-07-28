@@ -6,6 +6,7 @@
   "packageManager": "pnpm@11.9.0",
   "scripts": {
     "build": "pnpm -r build",
+    "analyze:bundle": "node scripts/demo/analyze-web-bundle.mjs",
     "typecheck": "pnpm --filter @edu-agent/contracts build && pnpm --filter @edu-agent/test-fixtures build && tsc -p tsconfig.json --noEmit && pnpm -r typecheck",
     "test": "vitest run",
     "test:architecture": "vitest run tests/architecture",
@@ -20,13 +21,14 @@
     "db:migrate": "node scripts/postgres/run-with-local-env.mjs pnpm exec tsx apps/api/src/platform/postgres/bootstrap-cli.ts",
     "demo:seed": "node scripts/postgres/run-with-local-env.mjs pnpm exec tsx apps/api/src/composition/gate2-demo-seed-cli.ts",
     "demo:up": "node scripts/demo/prepare-demo.mjs",
+    "demo:doctor": "node scripts/demo/doctor-demo.mjs",
     "demo:dev": "node scripts/demo/run-demo.mjs",
     "demo:test-server": "node scripts/demo/run-demo-fresh.mjs",
     "demo:reset": "node scripts/demo/reset-demo.mjs",
     "demo:down": "pnpm db:down",
     "test:playwright": "playwright test",
     "test:postgres": "node scripts/postgres/run-integration-tests.mjs",
-    "dev": "pnpm --parallel --filter @edu-agent/api --filter @edu-agent/web dev"
+    "dev": "pnpm demo:dev"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",

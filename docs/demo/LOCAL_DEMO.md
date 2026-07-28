@@ -6,15 +6,17 @@
 
 ## 前置条件
 
-- Node.js 与 pnpm；
+- Node.js 与 Corepack；
 - Docker Desktop 已启动，Docker Engine 可用；
 - 主机端口 `55432`、`3001` 和 `5173` 未被其他程序占用；
 - 在正式项目目录 `D:\03_Edu-Agent` 中执行命令。
 
 ## 一条命令启动
 
-```text
-pnpm demo:dev
+```powershell
+cd D:\03_Edu-Agent
+corepack pnpm demo:doctor
+corepack pnpm demo:dev
 ```
 
 该命令会依次：
@@ -23,13 +25,25 @@ pnpm demo:dev
 2. 启动官方 `postgres:18` Docker 容器；
 3. 初始化七个 Schema、数据库角色和 migrations；
 4. 幂等 Seed 全部合成数据；
-5. 启动 Express API 和 Vite Web。
+5. 等待 API Health 和首页启动数据通过契约校验；
+6. 启动 Express API 和 Vite Web。
 
 终端显示 API 与 Vite 已启动后，打开：
 
 ```text
-http://localhost:5173
+http://localhost:5173/
 ```
+
+也保留 `corepack pnpm dev`，它与 `demo:dev` 走同一条可重复启动链，
+不会以缺少 Gate 2 路由的 Gate 1A 模式启动。
+
+健康检查：
+
+```text
+http://localhost:3001/api/health
+```
+
+应返回 `status: ok`、`service: edu-agent-api` 和 `mode: mock`。
 
 ## 本地访问方式
 
@@ -56,7 +70,7 @@ http://localhost:5173
 先用 `Ctrl+C` 停止 Web/API，再执行：
 
 ```text
-pnpm demo:reset
+corepack pnpm demo:reset
 ```
 
 该命令只删除 Compose 项目 `edu-agent-gate1b` 的本地测试容器和 volume，然后重新初始化并 Seed。它不会删除仓库文件、其他 Docker volume 或本机原生 PostgreSQL 数据。
@@ -64,7 +78,7 @@ pnpm demo:reset
 重新启动页面：
 
 ```text
-pnpm demo:dev
+corepack pnpm demo:dev
 ```
 
 ## 停止服务
@@ -73,7 +87,7 @@ pnpm demo:dev
 2. 停止 PostgreSQL 容器：
 
 ```text
-pnpm demo:down
+corepack pnpm demo:down
 ```
 
 `demo:down` 保留本地合成数据 volume，便于下次继续演示。
@@ -98,7 +112,28 @@ pnpm demo:down
 
 ### 页面请求失败
 
-确认终端同时显示 API 与 Vite 服务。浏览器只应访问 `http://localhost:5173`，由 Vite 将 `/api` 代理到本地 `3001`。
+先运行：
+
+```powershell
+corepack pnpm demo:doctor
+```
+
+再分别检查：
+
+- Web：`http://localhost:5173/`
+- API：`http://localhost:3001/`
+- Health：`http://localhost:3001/api/health`
+
+浏览器只应访问 `http://localhost:5173/`，由 Vite 将共享契约中的
+`/api` 路由代理到本地 `3001`。未知 `/api/*` 会返回结构化
+`API_ROUTE_NOT_FOUND`，不会再返回 Express HTML 404。
+
+若页面显示启动错误，请记录错误页上的“请求服务”和“安全错误代码”；
+不要粘贴 `.env.local`、数据库连接串或终端中的本地凭据。
+
+`VITE_API_BASE_URL` 未设置时会使用同源 `/api` 代理。只有 Preview
+或生产分离部署时才设置完整的 `http://` 或 `https://` API 源地址；
+不接受 `localhost:3001` 这类缺少协议的值，也不会生成 `/localhost`。
 
 ## 明确未使用的能力
 

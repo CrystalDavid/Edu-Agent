@@ -8,6 +8,7 @@ test-results/
 output/playwright/
 .pglite/
 .gate1a-data/
+.demo/
 
 # Local environment and credentials
 .env

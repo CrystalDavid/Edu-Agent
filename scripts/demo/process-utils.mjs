@@ -65,3 +65,22 @@ export function spawnPnpm(args, environment) {
     windowsHide: true
   });
 }
+
+export function stopProcessTree(child) {
+  if (!child || child.exitCode !== null || child.signalCode) {
+    return;
+  }
+  if (process.platform === "win32") {
+    spawnSync(
+      "taskkill",
+      ["/pid", String(child.pid), "/T", "/F"],
+      {
+        env: childEnvironment(),
+        stdio: "ignore",
+        windowsHide: true
+      }
+    );
+    return;
+  }
+  child.kill("SIGTERM");
+}
