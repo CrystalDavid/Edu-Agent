@@ -19,6 +19,7 @@ import {
   TeachingPlanDiffView,
   TeachingPlanView
 } from "../components/TeachingPlanView";
+import { applyDiffToPlan } from "../teaching-plan";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -43,6 +44,12 @@ export function TeachingPlanPage(props: {
     props.task && selectedStrategyId
       ? props.task.diffsByStrategy[selectedStrategyId]
       : undefined;
+  const diffBaseline =
+    props.task?.draftRevision.content ??
+    props.workspace.latestTeachingPlan.content;
+  const diffProposed = selectedDiff
+    ? applyDiffToPlan(diffBaseline, selectedDiff)
+    : null;
 
   async function showPrevious() {
     if (!revision.parentRevisionRef) return;
@@ -66,7 +73,7 @@ export function TeachingPlanPage(props: {
       <header className="page-header">
         <div>
           <Text className="section-kicker">VERSIONED ARTIFACT</Text>
-          <Title>TeachingPlan</Title>
+          <Title>教学计划</Title>
           <Paragraph>
             正文只存在于 Artifact 模块。每次教师保存都会创建新的不可变
             Revision；本轮只允许 draft → in_review，不自动发布。
@@ -116,9 +123,20 @@ export function TeachingPlanPage(props: {
         </Card>
       ) : null}
 
-      {selectedDiff ? (
+      {selectedDiff && diffProposed ? (
         <TeachingPlanDiffView
           diff={selectedDiff}
+          baseline={diffBaseline}
+          proposed={diffProposed}
+          parentRevisionNumber={
+            Math.max(
+              1,
+              props.task!.draftRevision.revisionNumber - 1
+            )
+          }
+          draftRevisionNumber={
+            props.task!.draftRevision.revisionNumber
+          }
           teacherSelection={
             props.workspace.latestTeachingPlan.teacherSelection
           }

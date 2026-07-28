@@ -6,7 +6,8 @@ export const appRoutes = [
   "/evidence",
   "/copilot",
   "/teaching-plan",
-  "/runs"
+  "/runs",
+  "/style-guide"
 ] as const;
 
 export type AppRoute = (typeof appRoutes)[number];

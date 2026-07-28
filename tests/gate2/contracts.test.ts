@@ -17,14 +17,15 @@ import {
 import { appRoutes } from "../../apps/web/src/route.js";
 
 describe("Gate 2 UI and domain contracts", () => {
-  it("freezes the six teacher-workspace routes", () => {
+  it("freezes the six teacher-workspace routes and the auxiliary style guide", () => {
     expect(appRoutes).toEqual([
       "/",
       "/goals",
       "/evidence",
       "/copilot",
       "/teaching-plan",
-      "/runs"
+      "/runs",
+      "/style-guide"
     ]);
   });
 

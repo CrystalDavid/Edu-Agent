@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   CreateTeacherCopilotTaskResult,
+  PedagogicalStrategy,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
   TeacherWorkspace,
@@ -12,13 +13,12 @@ import {
   Button,
   Card,
   Divider,
+  Drawer,
   Input,
   Modal,
   Result,
-  Segmented,
   Space,
   Spin,
-  Steps,
   Tag,
   Typography
 } from "antd";
@@ -30,6 +30,7 @@ import {
 } from "../api";
 import { SemanticTag } from "../components/SemanticTag";
 import {
+  planFieldLabels,
   TeachingPlanDiffView
 } from "../components/TeachingPlanView";
 import type { AppRoute } from "../route";
@@ -52,11 +53,15 @@ export function CopilotPage(props: {
     string | null
   >(props.task?.strategies[0]?.strategyId ?? null);
   const [editOpen, setEditOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [teacherEdits, setTeacherEdits] = useState<
     Partial<TeachingPlan>
   >({});
   const [disposition, setDisposition] =
     useState<SuggestionDispositionResult | null>(null);
+  const [taskPrompt, setTaskPrompt] = useState(
+    "根据当前学习证据，比较两种明日课堂调整策略"
+  );
 
   useEffect(() => {
     if (
@@ -142,32 +147,44 @@ export function CopilotPage(props: {
     }
   }
 
+  const contextPanel = (
+    <CopilotContextPanel
+      workspace={props.workspace}
+      task={props.task}
+    />
+  );
+
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="page-stack copilot-page">
+      <header className="page-header page-header--compact">
         <div>
-          <Space wrap>
+          <Space wrap size={8}>
             <Text className="section-kicker">TEACHER COPILOT</Text>
             <SemanticTag kind="mock" />
-            <SemanticTag kind="suggestion">Proposal only</SemanticTag>
+            <SemanticTag kind="suggestion">
+              建议草稿
+            </SemanticTag>
           </Space>
           <Title>调整明天课堂</Title>
           <Paragraph>
-            短生命周期 Task Coordinator
-            会整理证据、生成两套可区分策略与结构化 Diff；最终判断始终由教师作出。
+            围绕当前 Goal 和学习证据比较策略。短生命周期协调器只生成
+            Proposal 与 Diff，教师保留最终判断。
           </Paragraph>
         </div>
+        <Button
+          className="context-drawer-trigger"
+          onClick={() => setContextOpen(true)}
+        >
+          查看依据与边界
+        </Button>
       </header>
 
-      <Steps
-        className="copilot-steps"
-        current={props.task ? (disposition ? 3 : 2) : 0}
-        items={[
-          { title: "确认依据" },
-          { title: "比较策略" },
-          { title: "审阅 Diff" },
-          { title: "教师处置" }
-        ]}
+      <Alert
+        className="proposal-boundary"
+        type="info"
+        showIcon
+        title="这是教学建议草稿，不是正式教学决定，也不表示已实施。"
+        description="接受建议最多创建一个 in_review TeachingPlan Revision；不会写入 InstructionalDecision、ObservedPedagogicalMove，也不会自动发布。"
       />
 
       {error ? (
@@ -181,204 +198,217 @@ export function CopilotPage(props: {
         />
       ) : null}
 
-      {!props.task ? (
-        <Card className="workspace-card copilot-launch" variant="borderless">
-          <div className="copilot-launch__signal">
-            <span>02</span>
-            <p>条 EvidenceObservation</p>
-          </div>
-          <div>
-            <SemanticTag kind="claim">2 条候选 Claim</SemanticTag>
-            <Title level={2}>先看证据，再启动任务</Title>
-            <Paragraph>
-              任务只读取当前 CourseRun、Goal、LearningObjective、
-              Evidence 与 TeachingPlan。它不会修改 Goal、EvidenceClaim
-              或发布内容。
-            </Paragraph>
-            <Button
-              type="primary"
-              size="large"
-              loading={generating}
-              onClick={generate}
-              data-testid="generate-copilot"
-            >
-              生成两种课堂调整策略
-            </Button>
-          </div>
-        </Card>
-      ) : null}
+      <Card className="task-composer" variant="borderless">
+        <div>
+          <Text strong>本次任务</Text>
+          <Text type="secondary">
+            不是聊天记录；这段文字只用于明确当前比较目的
+          </Text>
+        </div>
+        <Input
+          value={taskPrompt}
+          onChange={(event) => setTaskPrompt(event.target.value)}
+          aria-label="教师助手任务说明"
+        />
+        <Button
+          type="primary"
+          loading={generating}
+          disabled={!taskPrompt.trim()}
+          onClick={generate}
+          data-testid="generate-copilot"
+        >
+          {props.task ? "重新生成策略" : "生成两种策略"}
+        </Button>
+      </Card>
 
       {generating ? (
         <Card className="workspace-card loading-card" variant="borderless">
           <Spin size="large" />
           <Title level={4}>正在执行确定性 Mock 流程</Title>
           <Paragraph>
-            创建 Task / TaskRun / AgentRun、固定 Contract，并记录
-            ContextManifest、Outbox 与 Audit。
+            固定 Contract，读取当前 Evidence，并创建可审查的
+            Proposal Revision。
           </Paragraph>
         </Card>
       ) : null}
 
       {props.task && selectedStrategy ? (
-        <>
-          <Card className="workspace-card" variant="borderless">
+        <div className="copilot-workspace">
+          <aside className="copilot-evidence-column">
+            <EvidenceContext workspace={props.workspace} />
+          </aside>
+
+          <section className="copilot-main-column">
             <div className="section-heading">
               <div>
                 <Text className="section-kicker">
-                  TWO DISTINCT STRATEGIES
+                  STRATEGY COMPARISON
                 </Text>
-                <Title level={3}>比较教学策略</Title>
+                <Title level={2}>比较教学策略</Title>
               </div>
-              <Tag color="purple">MockModelProvider</Tag>
+              <Tag>统一结构 · 可切换</Tag>
             </div>
-            <Segmented
-              block
-              value={selectedStrategyId ?? undefined}
-              onChange={(value) => {
-                setSelectedStrategyId(String(value));
-                setTeacherEdits({});
-                setDisposition(null);
-              }}
-              options={props.task.strategies.map((strategy, index) => ({
-                label: `策略 ${index === 0 ? "A" : "B"} · ${
-                  strategy.title
-                }`,
-                value: strategy.strategyId
-              }))}
-            />
-            <article
-              className="strategy-detail"
-              data-testid="strategy-detail"
-            >
-              <Space wrap>
-                <SemanticTag kind="suggestion" />
-                <Tag>{selectedStrategy.strategyId}</Tag>
-              </Space>
-              <Title level={3}>{selectedStrategy.title}</Title>
-              <Paragraph>{selectedStrategy.rationale}</Paragraph>
-              <div className="strategy-columns">
-                <div>
-                  <Text strong>建议动作</Text>
-                  <ol>
-                    {selectedStrategy.suggestedMoves.map((move) => (
-                      <li key={move}>{move}</li>
-                    ))}
-                  </ol>
-                </div>
-                <div>
-                  <Text strong>适用条件</Text>
-                  <Paragraph>
-                    {selectedStrategy.applicability}
-                  </Paragraph>
-                  <Text strong>不适用条件</Text>
-                  <ul>
-                    {selectedStrategy.unsuitableConditions.map(
-                      (condition) => (
-                        <li key={condition}>{condition}</li>
-                      )
-                    )}
-                  </ul>
-                </div>
-              </div>
-              <Alert
-                type="info"
-                showIcon
-                title="把握说明（不是概率）"
-                description={selectedStrategy.confidenceExplanation}
+
+            <div className="strategy-comparison-grid">
+              {props.task.strategies.map((strategy, index) => (
+                <StrategyCard
+                  key={strategy.strategyId}
+                  label={index === 0 ? "策略 A" : "策略 B"}
+                  strategy={strategy}
+                  selected={
+                    strategy.strategyId === selectedStrategyId
+                  }
+                  onSelect={() => {
+                    setSelectedStrategyId(strategy.strategyId);
+                    setTeacherEdits({});
+                    setDisposition(null);
+                  }}
+                />
+              ))}
+            </div>
+
+            {selectedDiff && selectedPlan ? (
+              <TeachingPlanDiffView
+                diff={selectedDiff}
+                baseline={
+                  props.workspace.latestTeachingPlan.content
+                }
+                proposed={selectedPlan}
+                parentRevisionNumber={
+                  Math.max(
+                    1,
+                    props.task.draftRevision.revisionNumber - 1
+                  )
+                }
+                draftRevisionNumber={
+                  props.task.draftRevision.revisionNumber
+                }
               />
-              <div className="strategy-evidence">
-                {selectedStrategy.evidenceRefs.map((ref) => (
-                  <Tag key={ref}>{ref}</Tag>
-                ))}
+            ) : null}
+
+            <Card
+              className="workspace-card disposition-card"
+              variant="borderless"
+            >
+              <div>
+                <Text className="section-kicker">
+                  TEACHER CONTROL
+                </Text>
+                <Title level={3}>教师处置</Title>
+                <Paragraph>
+                  接受表示你完成了建议处置，不表示课堂已实施。保存只形成新的
+                  in_review Revision。
+                </Paragraph>
               </div>
-            </article>
-          </Card>
-
-          {selectedDiff ? (
-            <TeachingPlanDiffView diff={selectedDiff} />
-          ) : null}
-
-          <Card
-            className="workspace-card disposition-card"
-            variant="borderless"
-          >
-            <div>
-              <Text className="section-kicker">TEACHER CONTROL</Text>
-              <Title level={3}>教师处置</Title>
-              <Paragraph>
-                接受仅表示你处理了建议，不表示课堂已经实施；任何保存都形成新的不可变
-                Revision，状态最高只到 in_review。
-              </Paragraph>
-            </div>
-            <Space wrap>
-              <Button
-                type="primary"
-                loading={disposing}
-                onClick={() => submitDisposition("accepted")}
-                data-testid="accept-suggestion"
-              >
-                接受整项并提交审阅
-              </Button>
-              <Button
-                onClick={() => setEditOpen(true)}
-                data-testid="edit-suggestion"
-              >
-                修改字段
-              </Button>
-              <Button
-                danger
-                loading={disposing}
-                onClick={() => submitDisposition("rejected")}
-                data-testid="reject-suggestion"
-              >
-                拒绝整项
-              </Button>
-              <Button
-                loading={disposing}
-                onClick={() => submitDisposition("deferred")}
-                data-testid="defer-suggestion"
-              >
-                延后
-              </Button>
-            </Space>
-          </Card>
-
-          {disposition ? (
-            <Result
-              status="success"
-              title={`已记录：${dispositionLabel(
-                disposition.disposition
-              )}`}
-              subTitle={
-                disposition.resultingRevision
-                  ? `已形成 ${disposition.resultingRevision.revisionRef}，状态 in_review；没有发布。`
-                  : "没有创建新的 TeachingPlan Revision，也没有写入已实施教学事实。"
-              }
-              extra={[
+              <Space wrap>
                 <Button
-                  key="plan"
                   type="primary"
-                  onClick={() => props.navigate("/teaching-plan")}
+                  loading={disposing}
+                  onClick={() => submitDisposition("accepted")}
+                  data-testid="accept-suggestion"
                 >
-                  查看 TeachingPlan
-                </Button>,
-                <Button
-                  key="run"
-                  onClick={() => props.navigate("/runs")}
-                >
-                  查看运行依据
+                  接受并提交审阅
                 </Button>
-              ]}
-            />
-          ) : null}
-        </>
-      ) : null}
+                <Button
+                  onClick={() => setEditOpen(true)}
+                  data-testid="edit-suggestion"
+                >
+                  修改字段
+                </Button>
+                <Button
+                  danger
+                  loading={disposing}
+                  onClick={() => submitDisposition("rejected")}
+                  data-testid="reject-suggestion"
+                >
+                  拒绝
+                </Button>
+                <Button
+                  loading={disposing}
+                  onClick={() => submitDisposition("deferred")}
+                  data-testid="defer-suggestion"
+                >
+                  延后
+                </Button>
+              </Space>
+            </Card>
+
+            {disposition ? (
+              <Result
+                status="success"
+                title={`已记录：${dispositionLabel(
+                  disposition.disposition
+                )}`}
+                subTitle={
+                  disposition.resultingRevision
+                    ? `已形成 Revision ${disposition.resultingRevision.revisionNumber}，状态 in_review；没有发布。`
+                    : "没有创建新的 TeachingPlan Revision，也没有写入已实施教学事实。"
+                }
+                extra={[
+                  <Button
+                    key="plan"
+                    type="primary"
+                    onClick={() =>
+                      props.navigate("/teaching-plan")
+                    }
+                  >
+                    查看教学计划
+                  </Button>,
+                  <Button
+                    key="run"
+                    onClick={() => props.navigate("/runs")}
+                  >
+                    查看运行依据
+                  </Button>
+                ]}
+              />
+            ) : null}
+          </section>
+
+          <aside className="copilot-explanation-column">
+            {contextPanel}
+          </aside>
+        </div>
+      ) : (
+        <div className="copilot-empty-grid">
+          <EvidenceContext workspace={props.workspace} />
+          <Card className="workspace-card copilot-launch" variant="borderless">
+            <SemanticTag kind="claim">
+              {`${props.workspace.evidence.claims.length} 条待复核解释`}
+            </SemanticTag>
+            <Title level={2}>先看证据，再启动任务</Title>
+            <Paragraph>
+              当前只读取 CourseRun、Goal、LearningObjective、
+              Evidence 与 TeachingPlan；不会修改正式教育事实。
+            </Paragraph>
+            <Button
+              type="primary"
+              loading={generating}
+              onClick={generate}
+            >
+              生成两种课堂调整策略
+            </Button>
+          </Card>
+          <div className="copilot-explanation-column">
+            {contextPanel}
+          </div>
+        </div>
+      )}
+
+      <Drawer
+        title="系统为什么这样建议"
+        open={contextOpen}
+        onClose={() => setContextOpen(false)}
+        size={420}
+      >
+        {contextPanel}
+      </Drawer>
 
       <Modal
-        title="修改 TeachingPlan 字段"
+        title="编辑建议中的 TeachingPlan 变更"
         open={editOpen}
         onCancel={() => setEditOpen(false)}
-        width={720}
+        width={820}
         okText="保存教师修改"
         cancelText="取消"
         okButtonProps={{
@@ -390,61 +420,293 @@ export function CopilotPage(props: {
           void submitDisposition("accepted_with_changes");
         }}
       >
-        {selectedPlan ? (
-          <Space
-            orientation="vertical"
-            size={18}
-            className="full-width"
-          >
+        {selectedPlan && selectedDiff ? (
+          <div className="edit-fields">
             <Alert
               type="info"
               showIcon
-              title="这里只记录教师主动修改"
-              description="未修改字段沿用所选策略；保存后生成新的 in_review Revision，不覆盖草稿。"
+              title="所有建议变更字段均可编辑"
+              description="每项可单独撤销。未修改项沿用所选策略；保存前请检查下方修改摘要。"
             />
-            <label className="field-label">
-              <Text strong>支持策略</Text>
-              <TextArea
-                rows={4}
-                value={
-                  teacherEdits.supportStrategy ??
-                  selectedPlan.supportStrategy
-                }
-                onChange={(event) =>
-                  setTeacherEdits((current) => ({
-                    ...current,
-                    supportStrategy: event.target.value
-                  }))
-                }
-                data-testid="edit-support-strategy"
-              />
-            </label>
-            <label className="field-label">
-              <Text strong>后续行动</Text>
-              <TextArea
-                rows={4}
-                value={
-                  teacherEdits.followUp ?? selectedPlan.followUp
-                }
-                onChange={(event) =>
-                  setTeacherEdits((current) => ({
-                    ...current,
-                    followUp: event.target.value
-                  }))
-                }
-                data-testid="edit-follow-up"
-              />
-            </label>
+            {selectedDiff.changes.map((change) => {
+              const field = change.field;
+              const currentValue =
+                teacherEdits[field] ?? selectedPlan[field];
+              const arrayValue = Array.isArray(
+                selectedPlan[field]
+              );
+              return (
+                <label className="edit-field" key={field}>
+                  <span className="edit-field__heading">
+                    <Text strong>{planFieldLabels[field]}</Text>
+                    {field in teacherEdits ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() =>
+                          setTeacherEdits((current) => {
+                            const next = { ...current };
+                            delete next[field];
+                            return next;
+                          })
+                        }
+                        data-testid={`undo-${fieldTestId(field)}`}
+                      >
+                        撤销此项
+                      </Button>
+                    ) : null}
+                  </span>
+                  <TextArea
+                    rows={arrayValue ? 4 : 3}
+                    value={
+                      Array.isArray(currentValue)
+                        ? currentValue.join("\n")
+                        : currentValue
+                    }
+                    onChange={(event) => {
+                      const nextValue = arrayValue
+                        ? event.target.value
+                            .split(/\r?\n/)
+                            .map((item) => item.trim())
+                            .filter(Boolean)
+                        : event.target.value;
+                      setTeacherEdits(
+                        (current) =>
+                          ({
+                            ...current,
+                            [field]: nextValue
+                          }) as Partial<TeachingPlan>
+                      );
+                    }}
+                    data-testid={`edit-${fieldTestId(field)}`}
+                  />
+                  <small>{change.reason}</small>
+                </label>
+              );
+            })}
             <Divider />
-            <Text type="secondary">
-              当前已修改字段：
-              {Object.keys(teacherEdits).join("、") || "暂无"}
-            </Text>
-          </Space>
+            <div className="edit-summary" data-testid="edit-summary">
+              <Text strong>保存前修改摘要</Text>
+              {Object.keys(teacherEdits).length ? (
+                <ul>
+                  {(
+                    Object.keys(
+                      teacherEdits
+                    ) as Array<keyof TeachingPlan>
+                  ).map((field) => (
+                    <li key={field}>{planFieldLabels[field]}</li>
+                  ))}
+                </ul>
+              ) : (
+                <Text type="secondary">尚未修改任何字段</Text>
+              )}
+            </div>
+          </div>
         ) : null}
       </Modal>
     </div>
   );
+}
+
+function EvidenceContext({
+  workspace
+}: {
+  workspace: TeacherWorkspace;
+}) {
+  return (
+    <Card className="workspace-card evidence-context" variant="borderless">
+      <Text className="section-kicker">CURRENT CONTEXT</Text>
+      <Title level={3}>目标与证据</Title>
+      <section>
+        <Text type="secondary">当前 Goal</Text>
+        <p>{workspace.goal.title}</p>
+      </section>
+      <section>
+        <Text type="secondary">直接观察</Text>
+        {workspace.evidence.observations.map((observation) => (
+          <article key={observation.observationRef}>
+            <strong>{observation.learnerLabel}</strong>
+            <p>{observation.summary}</p>
+            <small>
+              {new Date(observation.observedAt).toLocaleString(
+                "zh-CN"
+              )}
+            </small>
+          </article>
+        ))}
+      </section>
+      <section>
+        <Text type="secondary">未知项</Text>
+        <ul>
+          {Array.from(
+            new Set(
+              workspace.evidence.observations.flatMap(
+                (item) => item.unknowns
+              )
+            )
+          ).map((unknown) => (
+            <li key={unknown}>{unknown}</li>
+          ))}
+        </ul>
+      </section>
+      <section>
+        <Text type="secondary">Assistance</Text>
+        <p>
+          {workspace.evidence.observations[0]?.assistance
+            .description ?? "未记录"}
+        </p>
+      </section>
+    </Card>
+  );
+}
+
+function StrategyCard(props: {
+  label: string;
+  strategy: PedagogicalStrategy;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <article
+      className={`strategy-card ${
+        props.selected ? "strategy-card--selected" : ""
+      }`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={props.selected}
+      onClick={props.onSelect}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          props.onSelect();
+        }
+      }}
+      data-testid={props.selected ? "strategy-detail" : undefined}
+    >
+      <div className="strategy-card__header">
+        <span>{props.label}</span>
+        <Tag>{props.selected ? "当前选择" : "选择此策略"}</Tag>
+      </div>
+      <Title level={3}>{props.strategy.title}</Title>
+      <Paragraph>{props.strategy.rationale}</Paragraph>
+      <StrategySection title="使用证据">
+        <div className="strategy-evidence">
+          {Array.from(new Set(props.strategy.evidenceRefs)).map(
+            (reference) => (
+              <Tag key={reference}>{shortEvidenceLabel(reference)}</Tag>
+            )
+          )}
+        </div>
+      </StrategySection>
+      <StrategySection title="证据缺口">
+        <ul>
+          {props.strategy.knownGaps.map((gap) => (
+            <li key={gap}>{gap}</li>
+          ))}
+        </ul>
+      </StrategySection>
+      <StrategySection title="适用条件">
+        <p>{props.strategy.applicability}</p>
+      </StrategySection>
+      <StrategySection title="不适用条件">
+        <ul>
+          {props.strategy.unsuitableConditions.map((condition) => (
+            <li key={condition}>{condition}</li>
+          ))}
+        </ul>
+      </StrategySection>
+      <StrategySection title="建议课堂动作">
+        <ol>
+          {props.strategy.suggestedMoves.map((move) => (
+            <li key={move}>{move}</li>
+          ))}
+        </ol>
+      </StrategySection>
+      <StrategySection title="后续需要采集的证据">
+        <ul>
+          {props.strategy.followUpEvidence.map((evidence) => (
+            <li key={evidence}>{evidence}</li>
+          ))}
+        </ul>
+      </StrategySection>
+      <Alert
+        type="warning"
+        title="把握说明（不是概率）"
+        description={props.strategy.confidenceExplanation}
+      />
+    </article>
+  );
+}
+
+function StrategySection(props: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="strategy-section">
+      <Text strong>{props.title}</Text>
+      {props.children}
+    </section>
+  );
+}
+
+function CopilotContextPanel(props: {
+  workspace: TeacherWorkspace;
+  task: CreateTeacherCopilotTaskResult | null;
+}) {
+  return (
+    <Card className="workspace-card context-panel" variant="borderless">
+      <Text className="section-kicker">WHY THIS SUGGESTION</Text>
+      <Title level={3}>建议依据与控制边界</Title>
+      <dl>
+        <div>
+          <dt>使用的数据</dt>
+          <dd>
+            当前课程、学习目标、{props.workspace.evidence.observations.length}
+            条观察与 {props.workspace.evidence.claims.length}
+            条待复核解释
+          </dd>
+        </div>
+        <div>
+          <dt>Contract</dt>
+          <dd>{props.task ? "已固定精确版本" : "任务启动后固定"}</dd>
+        </div>
+        <div>
+          <dt>模型</dt>
+          <dd>
+            <SemanticTag kind="mock">MockModelProvider</SemanticTag>
+          </dd>
+        </div>
+        <div>
+          <dt>教师控制</dt>
+          <dd>接受、编辑、拒绝、延后；系统不能自动发布</dd>
+        </div>
+      </dl>
+      <Alert
+        type="info"
+        title="边界"
+        description="建议不会改写 EvidenceClaim、Goal 或已发布内容；AuthorizationDecision 引用仅用于审计。"
+      />
+    </Card>
+  );
+}
+
+function fieldTestId(field: keyof TeachingPlan): string {
+  return field.replace(
+    /[A-Z]/g,
+    (character) => `-${character.toLowerCase()}`
+  );
+}
+
+function shortEvidenceLabel(reference: string): string {
+  const suffix = reference.split(":").at(-1);
+  if (reference.includes("observation")) {
+    return `直接观察 · ${suffix}`;
+  }
+  if (reference.includes("claim")) {
+    return `待复核解释 · ${suffix}`;
+  }
+  return "证据引用";
 }
 
 function errorMessage(error: unknown): string {

@@ -73,14 +73,50 @@ describe("Gate 2 architecture invariants", () => {
     const app = source("apps/web/src/App.tsx");
     for (const route of [
       "今日工作台",
-      "教学改进 Goal",
+      "教学目标",
       "学习证据",
-      "Teacher Copilot",
-      "TeachingPlan",
+      "教师助手",
+      "教学计划",
       "运行记录"
     ]) {
       expect(app).toContain(route);
     }
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
+  });
+
+  it("uses one shared route contract instead of handwritten web paths", () => {
+    const webApi = source("apps/web/src/api.ts");
+    const apiApp = source("apps/api/src/app.ts");
+    const routeContract = source(
+      "packages/contracts/src/api-routes.ts"
+    );
+
+    expect(webApi).toContain("apiRoutes.");
+    expect(apiApp).toContain("apiRoutes.");
+    expect(webApi).not.toMatch(/["'`]\/api\//);
+    expect(apiApp).not.toMatch(/["'`]\/api\//);
+    expect(routeContract).toContain(
+      'bootstrap: "/api/v1/demo/workspace"'
+    );
+  });
+
+  it("keeps fonts self-hosted, pinned and honest about Simplified Chinese", () => {
+    const fonts = source("apps/web/src/fonts.css");
+    const attribution = source(
+      "apps/web/public/fonts/ATTRIBUTION.md"
+    );
+    const styleGuide = source(
+      "apps/web/src/pages/StyleGuidePage.tsx"
+    );
+
+    expect(fonts).not.toMatch(/https?:\/\//);
+    expect(attribution).toContain("v1.011");
+    expect(attribution).toContain(
+      "8c6a9bb9732545b9ed53f29ec5e1ab0ff53c4e6f"
+    );
+    expect(styleGuide).toContain(
+      "昭源環方不宣称完整支持简化字"
+    );
+    expect(styleGuide).toContain("font-system-sc");
   });
 });

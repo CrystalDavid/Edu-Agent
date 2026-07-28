@@ -8,6 +8,7 @@ import type {
 import {
   Alert,
   Card,
+  Collapse,
   Descriptions,
   Empty,
   Space,
@@ -66,14 +67,16 @@ export function RunsPage(props: {
   }, [latestTaskRef]);
 
   return (
-    <div className="page-stack">
-      <header className="page-header">
+    <div className="page-stack runs-page">
+      <header className="page-header page-header--compact">
         <div>
-          <Text className="section-kicker">EXPLAINABLE RUNTIME</Text>
+          <Text className="section-kicker">
+            EXPLAINABLE RUNTIME
+          </Text>
           <Title>运行记录</Title>
           <Paragraph>
-            这里展示可审计的输入依据、授权、版本和状态，不展示隐藏思维链、原始敏感
-            Prompt、Secret 或数据库连接信息。
+            默认时间线使用教师可理解的语言；标识符、Contract、
+            ContextManifest、Outbox 和 Audit 放在可展开的技术详情中。
           </Paragraph>
         </div>
         <Space wrap>
@@ -89,302 +92,240 @@ export function RunsPage(props: {
       <Spin spinning={loading}>
         {!explanation ? (
           <Card className="workspace-card" variant="borderless">
-            <Empty description="先运行一次 Teacher Copilot，才能查看解释记录" />
+            <Empty description="先运行一次教师助手，才能查看运行记录" />
           </Card>
         ) : (
-          <div className="page-stack">
-            <Card className="workspace-card" variant="borderless">
+          <div className="run-layout">
+            <Card
+              className="workspace-card run-timeline-card"
+              variant="borderless"
+            >
               <div className="section-heading">
                 <div>
-                  <Text className="section-kicker">RUN BINDING</Text>
-                  <Title level={3}>TaskRun 与 AgentRun</Title>
+                  <Text className="section-kicker">
+                    TEACHER-FACING TIMELINE
+                  </Text>
+                  <Title level={2}>本次建议如何形成</Title>
                 </div>
-                <Tag color="green">completed</Tag>
+                <Tag color="success">已完成</Tag>
               </div>
-              <Descriptions
-                bordered
-                column={2}
-                items={[
-                  {
-                    key: "task",
-                    label: "Task",
-                    children: explanation.task.taskRef
-                  },
-                  {
-                    key: "task-run",
-                    label: "TaskRun",
-                    children: explanation.taskRun.taskRunRef
-                  },
-                  {
-                    key: "agent-run",
-                    label: "AgentRun",
-                    children: explanation.agentRun.agentRunRef
-                  },
-                  {
-                    key: "model",
-                    label: "ModelProvider",
-                    children: (
-                      <Space>
-                        <Tag color="purple">Mock</Tag>
-                        <span>
-                          {explanation.agentRun.modelProfile}
-                        </span>
-                      </Space>
-                    )
-                  }
-                ]}
-              />
-            </Card>
-
-            <div className="run-grid">
-              <Card className="workspace-card" variant="borderless">
-                <Text className="section-kicker">RESOLVED CONTRACT</Text>
-                <Title level={3}>固定的互动契约</Title>
-                <Descriptions
-                  column={1}
-                  size="small"
-                  items={[
-                    {
-                      key: "contract",
-                      label: "Contract",
-                      children: explanation.contract.contractRef
-                    },
-                    {
-                      key: "profile",
-                      label: "Profile version",
-                      children: `${explanation.contract.profileRef}@${explanation.contract.profileVersion}`
-                    },
-                    {
-                      key: "policy",
-                      label: "Policy",
-                      children:
-                        explanation.contract.policyVersionRef
-                    },
-                    {
-                      key: "prompt",
-                      label: "PromptBundle",
-                      children:
-                        explanation.contract.promptVersionRef
-                    },
-                    {
-                      key: "evidence",
-                      label: "Evidence rule",
-                      children:
-                        explanation.contract
-                          .evidenceRuleVersionRef
-                    },
-                    {
-                      key: "hash",
-                      label: "Content hash",
-                      children: explanation.contract.contentHash
-                    }
-                  ]}
-                />
-              </Card>
-
-              <Card className="workspace-card" variant="borderless">
-                <Text className="section-kicker">AUTHORIZATION</Text>
-                <Title level={3}>当时授权与用途</Title>
-                <Descriptions
-                  column={1}
-                  size="small"
-                  items={[
-                    {
-                      key: "decision",
-                      label: "Decision",
-                      children:
-                        explanation.authorization.decisionRef
-                    },
-                    {
-                      key: "purpose",
-                      label: "Purpose",
-                      children: explanation.authorization.purpose
-                    },
-                    {
-                      key: "action",
-                      label: "Action",
-                      children: explanation.authorization.action
-                    },
-                    {
-                      key: "effect",
-                      label: "Effect",
-                      children: <Tag color="green">allow</Tag>
-                    },
-                    {
-                      key: "policy",
-                      label: "Policy version",
-                      children:
-                        explanation.authorization.policyVersion
-                    }
-                  ]}
-                />
-              </Card>
-            </div>
-
-            <Card className="workspace-card" variant="borderless">
-              <Text className="section-kicker">CONTEXT MANIFEST</Text>
-              <Title level={3}>加载了什么，没有什么</Title>
-              <Descriptions
-                column={1}
-                bordered
-                items={[
-                  {
-                    key: "context",
-                    label: "ContextManifest",
-                    children:
-                      explanation.contextManifest.contextManifestRef
-                  },
-                  {
-                    key: "resources",
-                    label: "Resource refs",
-                    children: explanation.contextManifest.resourceRefs.join(
-                      " · "
-                    )
-                  },
-                  {
-                    key: "evidence",
-                    label: "Evidence refs",
-                    children: explanation.contextManifest.evidenceRefs.join(
-                      " · "
-                    )
-                  },
-                  {
-                    key: "unknowns",
-                    label: "未知项",
-                    children: (
-                      <ul className="compact-list">
-                        {explanation.contextManifest.unknowns.map(
-                          (unknown) => (
-                            <li key={unknown}>{unknown}</li>
-                          )
-                        )}
-                      </ul>
-                    )
-                  },
-                  {
-                    key: "mask",
-                    label: "Field mask",
-                    children:
-                      explanation.contextManifest.fieldMask.join(" · ")
-                  }
-                ]}
-              />
-            </Card>
-
-            <div className="run-grid">
-              <Card className="workspace-card" variant="borderless">
-                <Text className="section-kicker">MOCK EXECUTION</Text>
-                <Title level={3}>模型与成本</Title>
-                <Descriptions
-                  column={1}
-                  items={[
-                    {
-                      key: "execution",
-                      label: "ModelExecution",
-                      children:
-                        explanation.modelExecution.executionRef
-                    },
-                    {
-                      key: "bundle",
-                      label: "PromptBundle",
-                      children:
-                        explanation.modelExecution.promptBundleRef
-                    },
-                    {
-                      key: "network",
-                      label: "外部网络",
-                      children: <Tag>未使用</Tag>
-                    },
-                    {
-                      key: "usage",
-                      label: "Token/用量",
-                      children:
-                        explanation.modelExecution.usageLabel
-                    },
-                    {
-                      key: "cost",
-                      label: "成本",
-                      children:
-                        explanation.modelExecution.costLabel
-                    }
-                  ]}
-                />
-              </Card>
-
-              <Card className="workspace-card" variant="borderless">
-                <Text className="section-kicker">ARTIFACTS</Text>
-                <Title level={3}>Revision 结果</Title>
-                <Table
-                  rowKey="revisionRef"
-                  size="small"
-                  pagination={false}
-                  dataSource={explanation.artifactRevisions}
-                  columns={[
-                    {
-                      title: "类型",
-                      dataIndex: "artifactType"
-                    },
-                    {
-                      title: "Revision",
-                      dataIndex: "revisionNumber"
-                    },
-                    {
-                      title: "状态",
-                      dataIndex: "state",
-                      render: (value: string) => <Tag>{value}</Tag>
-                    }
-                  ]}
-                />
-              </Card>
-            </div>
-
-            <Card className="workspace-card" variant="borderless">
-              <Text className="section-kicker">OUTBOX</Text>
-              <Title level={3}>异步交付状态</Title>
-              <Table
-                rowKey={(row) => `${row.owner}:${row.eventName}`}
-                size="small"
-                pagination={false}
-                dataSource={explanation.outbox}
-                columns={[
-                  { title: "Owner", dataIndex: "owner" },
-                  { title: "事件", dataIndex: "eventName" },
-                  {
-                    title: "状态",
-                    dataIndex: "status",
-                    render: (value: string) => <Tag>{value}</Tag>
-                  },
-                  {
-                    title: "尝试次数",
-                    dataIndex: "attemptCount"
-                  },
-                  {
-                    title: "错误",
-                    dataIndex: "lastError",
-                    render: (value: string | null) => value ?? "—"
-                  }
-                ]}
-              />
-            </Card>
-
-            <Card className="workspace-card" variant="borderless">
-              <Text className="section-kicker">AUDIT TIMELINE</Text>
-              <Title level={3}>面向用户的审计时间线</Title>
               <Timeline
-                items={explanation.auditTimeline.map((audit) => ({
-                  color: "green",
+                items={teacherTimeline(explanation).map((item) => ({
+                  color: item.color,
                   content: (
-                    <div>
-                      <Text strong>{audit.recordType}</Text>
+                    <div className="teacher-timeline-item">
+                      <Text strong>{item.title}</Text>
                       <Paragraph type="secondary">
-                        {audit.action} · {audit.purpose} ·{" "}
-                        {new Date(audit.occurredAt).toLocaleString(
-                          "zh-CN"
-                        )}
+                        {item.description}
                       </Paragraph>
                     </div>
                   )
                 }))}
+              />
+            </Card>
+
+            <Card
+              className="workspace-card run-summary-card"
+              variant="borderless"
+            >
+              <Text className="section-kicker">RUN SUMMARY</Text>
+              <Title level={3}>安全摘要</Title>
+              <dl className="summary-list">
+                <div>
+                  <dt>模型</dt>
+                  <dd>MockModelProvider</dd>
+                </div>
+                <div>
+                  <dt>外部网络</dt>
+                  <dd>未使用</dd>
+                </div>
+                <div>
+                  <dt>成本</dt>
+                  <dd>{explanation.modelExecution.costLabel}</dd>
+                </div>
+                <div>
+                  <dt>结果状态</dt>
+                  <dd>Proposal / in_review 上限</dd>
+                </div>
+              </dl>
+            </Card>
+
+            <Card
+              className="workspace-card run-details-card"
+              variant="borderless"
+            >
+              <Text className="section-kicker">
+                TECHNICAL DETAILS
+              </Text>
+              <Title level={3}>可审计技术详情</Title>
+              <Paragraph type="secondary">
+                不展示隐藏思维链、Secret、数据库连接信息、原始内部堆栈或敏感
+                Prompt 正文。
+              </Paragraph>
+              <Collapse
+                items={[
+                  {
+                    key: "runs",
+                    label:
+                      "执行绑定：QueryRun / TaskRun / AgentRun",
+                    children: (
+                      <Descriptions
+                        column={1}
+                        size="small"
+                        items={[
+                          {
+                            key: "task",
+                            label: "Task",
+                            children: explanation.task.taskRef
+                          },
+                          {
+                            key: "task-run",
+                            label: "TaskRun",
+                            children:
+                              explanation.taskRun.taskRunRef
+                          },
+                          {
+                            key: "agent-run",
+                            label: "AgentRun",
+                            children:
+                              explanation.agentRun.agentRunRef
+                          },
+                          {
+                            key: "provider",
+                            label: "Provider",
+                            children:
+                              explanation.agentRun.modelProfile
+                          }
+                        ]}
+                      />
+                    )
+                  },
+                  {
+                    key: "contract",
+                    label:
+                      "固定契约：Contract / PromptBundle / ContextManifest",
+                    children: (
+                      <Descriptions
+                        column={1}
+                        size="small"
+                        items={[
+                          {
+                            key: "contract",
+                            label: "Contract",
+                            children:
+                              explanation.contract.contractRef
+                          },
+                          {
+                            key: "profile",
+                            label: "Profile version",
+                            children: `${explanation.contract.profileRef}@${explanation.contract.profileVersion}`
+                          },
+                          {
+                            key: "prompt",
+                            label: "PromptBundle",
+                            children:
+                              explanation.contract.promptVersionRef
+                          },
+                          {
+                            key: "context",
+                            label: "ContextManifest",
+                            children:
+                              explanation.contextManifest
+                                .contextManifestRef
+                          },
+                          {
+                            key: "unknowns",
+                            label: "未知项",
+                            children:
+                              explanation.contextManifest.unknowns.join(
+                                "；"
+                              )
+                          }
+                        ]}
+                      />
+                    )
+                  },
+                  {
+                    key: "authorization",
+                    label:
+                      "治理：AuthorizationDecision / Outbox / Audit",
+                    children: (
+                      <div className="technical-stack">
+                        <Descriptions
+                          column={1}
+                          size="small"
+                          items={[
+                            {
+                              key: "decision",
+                              label: "AuthorizationDecision",
+                              children:
+                                explanation.authorization.decisionRef
+                            },
+                            {
+                              key: "purpose",
+                              label: "Purpose",
+                              children:
+                                explanation.authorization.purpose
+                            },
+                            {
+                              key: "effect",
+                              label: "Effect",
+                              children: (
+                                <Tag color="success">allow</Tag>
+                              )
+                            }
+                          ]}
+                        />
+                        <Table
+                          rowKey={(row) =>
+                            `${row.owner}:${row.eventName}`
+                          }
+                          size="small"
+                          pagination={false}
+                          dataSource={explanation.outbox}
+                          columns={[
+                            {
+                              title: "Owner",
+                              dataIndex: "owner"
+                            },
+                            {
+                              title: "Outbox event",
+                              dataIndex: "eventName"
+                            },
+                            {
+                              title: "状态",
+                              dataIndex: "status"
+                            },
+                            {
+                              title: "尝试",
+                              dataIndex: "attemptCount"
+                            }
+                          ]}
+                        />
+                        <Timeline
+                          items={explanation.auditTimeline.map(
+                            (audit) => ({
+                              color: "blue",
+                              content: (
+                                <div>
+                                  <Text strong>
+                                    {audit.action}
+                                  </Text>
+                                  <Paragraph type="secondary">
+                                    {audit.recordType} ·{" "}
+                                    {new Date(
+                                      audit.occurredAt
+                                    ).toLocaleString("zh-CN")}
+                                  </Paragraph>
+                                </div>
+                              )
+                            })
+                          )}
+                        />
+                      </div>
+                    )
+                  }
+                ]}
               />
             </Card>
           </div>
@@ -392,4 +333,52 @@ export function RunsPage(props: {
       </Spin>
     </div>
   );
+}
+
+function teacherTimeline(explanation: RunExplanation) {
+  return [
+    {
+      title: "读取当前学习证据",
+      description: `读取 ${explanation.contextManifest.evidenceRefs.length} 条允许范围内的证据引用，并保留未知项。`,
+      color: "blue"
+    },
+    {
+      title: "检查身份、用途与权限",
+      description: "按“调整明天课堂”的用途完成当时授权检查。",
+      color: "blue"
+    },
+    {
+      title: "创建短生命周期任务",
+      description:
+        "TaskRun 与 AgentRun 绑定；没有创建长期自主 Agent。",
+      color: "blue"
+    },
+    {
+      title: "Mock 生成两种教学建议",
+      description:
+        "使用确定性 MockModelProvider；没有网络调用和模型费用。",
+      color: "blue"
+    },
+    {
+      title: "创建建议 Proposal",
+      description:
+        "建议与 TeachingPlan Diff 进入待教师处置状态。",
+      color: "blue"
+    },
+    {
+      title: explanation.disposition
+        ? "记录教师处置"
+        : "等待教师处置",
+      description: explanation.disposition
+        ? "已记录接受、修改、拒绝或延后；不等于课堂已经实施。"
+        : "当前尚未形成外部承诺或正式教学决定。",
+      color: explanation.disposition ? "green" : "gray"
+    },
+    {
+      title: "保留版本与审计记录",
+      description:
+        "Artifact Revision、Outbox 与 Audit 可追溯；不会自动 published。",
+      color: "gray"
+    }
+  ];
 }
