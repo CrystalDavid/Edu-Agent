@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 
+import { childEnvironment } from "../tool-environment.mjs";
+
 function run(command, args) {
   const usePnpmEntrypoint =
     command === "pnpm" && Boolean(process.env.npm_execpath);
@@ -13,7 +15,7 @@ function run(command, args) {
     : args;
   const result = spawnSync(executable, executableArgs, {
     cwd: process.cwd(),
-    env: process.env,
+    env: childEnvironment(),
     stdio: "inherit",
     windowsHide: true
   });
