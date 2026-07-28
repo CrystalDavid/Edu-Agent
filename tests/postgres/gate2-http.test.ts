@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   gate2DemoRefs
 } from "@edu-agent/test-fixtures";
+import { apiRoutes } from "@edu-agent/contracts";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -39,7 +40,7 @@ afterAll(async () => {
 describe("Gate 2 HTTP contract", () => {
   it("serves the teacher workspace and never returns another tenant", async () => {
     const response = await request(app)
-      .get("/api/v1/demo/workspace")
+      .get(apiRoutes.demo.bootstrap)
       .set(demoHeaders)
       .expect(200);
 
@@ -50,7 +51,7 @@ describe("Gate 2 HTTP contract", () => {
       "tenant:other-school"
     );
     await request(app)
-      .get("/api/v1/demo/workspace")
+      .get(apiRoutes.demo.bootstrap)
       .set({
         ...demoHeaders,
         "x-demo-tenant": "tenant:other-school"
@@ -70,14 +71,14 @@ describe("Gate 2 HTTP contract", () => {
       idempotencyKey
     };
     const created = await request(app)
-      .post("/api/v1/demo/teacher-copilot/tasks")
+      .post(apiRoutes.demo.createTeacherCopilotTask)
       .set(demoHeaders)
       .send(command)
       .expect(201);
     expect(created.body.strategies).toHaveLength(2);
 
     const replay = await request(app)
-      .post("/api/v1/demo/teacher-copilot/tasks")
+      .post(apiRoutes.demo.createTeacherCopilotTask)
       .set(demoHeaders)
       .send(command)
       .expect(200);
@@ -86,9 +87,9 @@ describe("Gate 2 HTTP contract", () => {
 
     const disposed = await request(app)
       .post(
-        `/api/v1/demo/suggestions/${encodeURIComponent(
+        apiRoutes.demo.suggestionDisposition(
           created.body.proposalRevisionRef
-        )}/dispositions`
+        )
       )
       .set(demoHeaders)
       .send({
@@ -111,11 +112,7 @@ describe("Gate 2 HTTP contract", () => {
     });
 
     const explanation = await request(app)
-      .get(
-        `/api/v1/demo/runs/${encodeURIComponent(
-          created.body.taskRef
-        )}`
-      )
+      .get(apiRoutes.demo.runExplanation(created.body.taskRef))
       .set(demoHeaders)
       .expect(200);
     expect(explanation.body.modelExecution).toMatchObject({
@@ -133,7 +130,7 @@ describe("Gate 2 HTTP contract", () => {
 
   it("returns explicit validation and authorization errors", async () => {
     await request(app)
-      .post("/api/v1/demo/teacher-copilot/tasks")
+      .post(apiRoutes.demo.createTeacherCopilotTask)
       .set(demoHeaders)
       .send({})
       .expect(400)
@@ -142,7 +139,7 @@ describe("Gate 2 HTTP contract", () => {
       });
 
     await request(app)
-      .post("/api/v1/demo/teacher-copilot/tasks")
+      .post(apiRoutes.demo.createTeacherCopilotTask)
       .set(demoHeaders)
       .send({
         courseRunRef: gate2DemoRefs.courseRunRef,

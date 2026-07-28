@@ -5,6 +5,7 @@ import express, {
   type Response
 } from "express";
 import {
+  apiRoutes,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
   SuggestionDispositionRequestSchema,
@@ -20,6 +21,32 @@ import {
   IdempotencyConflictError,
   NotFoundError
 } from "./platform/errors.js";
+
+type RouteResponseLocals = {
+  routeId?: string;
+  safeErrorCode?: string;
+};
+
+function markRoute(routeId: string) {
+  return (
+    _request: Request,
+    response: Response<unknown, RouteResponseLocals>,
+    next: NextFunction
+  ): void => {
+    response.locals.routeId = routeId;
+    next();
+  };
+}
+
+function requestPath(request: Request): string {
+  return request.originalUrl.split("?")[0] ?? request.path;
+}
+
+function routeParameter(
+  value: string | string[] | undefined
+): string {
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
 
 function contextsFromRequest(request: Request): {
   tenant: TenantContext;
@@ -53,18 +80,44 @@ export function createApp(
   app.disable("x-powered-by");
   app.use(express.json({ limit: "64kb" }));
 
-  app.get("/api/health", (_request, response) => {
-    response.json({
-      status: "ok",
-      gate: gate2 ? "2" : "1A",
-      modelProvider: "mock",
-      externalNetworkUsed: false
-    });
+  app.use((request, response, next) => {
+    const diagnosticsEnabled =
+      process.env.LOCAL_DEMO_DIAGNOSTICS === "true";
+    if (diagnosticsEnabled) {
+      response.on("finish", () => {
+        const locals =
+          response.locals as RouteResponseLocals;
+        const safeCode =
+          locals.safeErrorCode ??
+          (response.statusCode < 400 ? "OK" : "UNCLASSIFIED_ERROR");
+        process.stdout.write(
+          [
+            `API received: ${request.method} ${requestPath(request)}`,
+            `Matched route: ${locals.routeId ?? "NONE"}`,
+            `Response: ${response.statusCode} ${safeCode}`
+          ].join("\n") + "\n"
+        );
+      });
+    }
+    next();
   });
+
+  app.get(
+    apiRoutes.health,
+    markRoute("health"),
+    (_request, response) => {
+      response.json({
+        status: "ok",
+        service: "edu-agent-api",
+        mode: "mock"
+      });
+    }
+  );
 
   if (gate2) {
     app.get(
-      "/api/v1/demo/workspace",
+      apiRoutes.demo.bootstrap,
+      markRoute("demo.bootstrap"),
       async (request, response, next) => {
         try {
           const contexts = contextsFromRequest(request);
@@ -80,7 +133,8 @@ export function createApp(
     );
 
     app.post(
-      "/api/v1/demo/teacher-copilot/tasks",
+      apiRoutes.demo.createTeacherCopilotTask,
+      markRoute("demo.teacher-copilot.create-task"),
       async (request, response, next) => {
         try {
           const contexts = contextsFromRequest(request);
@@ -101,7 +155,8 @@ export function createApp(
     );
 
     app.post(
-      "/api/v1/demo/suggestions/:proposalRevisionRef/dispositions",
+      apiRoutes.demo.suggestionDispositionPattern,
+      markRoute("demo.suggestion.disposition"),
       async (request, response, next) => {
         try {
           const contexts = contextsFromRequest(request);
@@ -110,7 +165,9 @@ export function createApp(
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
               proposalRevisionRef:
-                request.params["proposalRevisionRef"] ?? "",
+                routeParameter(
+                  request.params["proposalRevisionRef"]
+                ),
               request: SuggestionDispositionRequestSchema.parse(
                 request.body
               )
@@ -123,7 +180,8 @@ export function createApp(
     );
 
     app.get(
-      "/api/v1/demo/runs/:taskRef",
+      apiRoutes.demo.runExplanationPattern,
+      markRoute("demo.run.explanation"),
       async (request, response, next) => {
         try {
           const contexts = contextsFromRequest(request);
@@ -131,7 +189,7 @@ export function createApp(
             await gate2.services.read.getRunExplanation({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
-              taskRef: request.params["taskRef"] ?? ""
+              taskRef: routeParameter(request.params["taskRef"])
             });
           response.json(result);
         } catch (error) {
@@ -141,7 +199,8 @@ export function createApp(
     );
 
     app.get(
-      "/api/v1/demo/teaching-plan/revisions/:revisionRef",
+      apiRoutes.demo.teachingPlanRevisionPattern,
+      markRoute("demo.teaching-plan.revision"),
       async (request, response, next) => {
         try {
           const contexts = contextsFromRequest(request);
@@ -149,7 +208,9 @@ export function createApp(
             await gate2.services.read.getTeachingPlanRevision({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
-              revisionRef: request.params["revisionRef"] ?? ""
+              revisionRef: routeParameter(
+                request.params["revisionRef"]
+              )
             });
           response.json(result);
         } catch (error) {
@@ -160,7 +221,8 @@ export function createApp(
   }
 
   app.post(
-    "/api/v1/commands/walking-skeleton",
+    apiRoutes.walkingSkeleton.command,
+    markRoute("walking-skeleton.command"),
     async (request, response, next) => {
       try {
         const contexts = contextsFromRequest(request);
@@ -177,7 +239,8 @@ export function createApp(
   );
 
   app.post(
-    "/api/v1/queries/artifact",
+    apiRoutes.walkingSkeleton.artifactQuery,
+    markRoute("walking-skeleton.artifact-query"),
     (request, response, next) => {
       try {
         const contexts = contextsFromRequest(request);
@@ -193,42 +256,57 @@ export function createApp(
     }
   );
 
-  app.post("/api/v1/ingress", (request, response, next) => {
-    try {
-      const envelope = IngressEnvelopeSchema.parse(request.body);
-      switch (envelope.kind) {
-        case "DomainEvent":
-          response.status(403).json({
-            code: "DOMAIN_EVENT_EXTERNAL_WRITE_FORBIDDEN",
-            message:
-              "DomainEvent can only be replayed from a committed module outbox."
-          });
-          return;
-        case "ObservationEvent":
-          response.status(202).json({
-            status: "candidate-only",
-            agentStarted: false,
-            formalStateChanged: false,
-            envelopeId: envelope.envelopeId
-          });
-          return;
-        case "WorkflowSignal":
-          response.status(404).json({
-            code: "WORKFLOW_INSTANCE_NOT_FOUND",
-            workflowInstanceRef: envelope.workflowInstanceRef
-          });
-          return;
-        case "Query":
-        case "Command":
-          response.status(422).json({
-            code: "USE_TYPED_ENDPOINT",
-            kind: envelope.kind
-          });
-          return;
+  app.post(
+    apiRoutes.walkingSkeleton.ingress,
+    markRoute("walking-skeleton.ingress"),
+    (request, response, next) => {
+      try {
+        const envelope = IngressEnvelopeSchema.parse(request.body);
+        switch (envelope.kind) {
+          case "DomainEvent":
+            response.status(403).json({
+              code: "DOMAIN_EVENT_EXTERNAL_WRITE_FORBIDDEN",
+              message:
+                "DomainEvent can only be replayed from a committed module outbox."
+            });
+            return;
+          case "ObservationEvent":
+            response.status(202).json({
+              status: "candidate-only",
+              agentStarted: false,
+              formalStateChanged: false,
+              envelopeId: envelope.envelopeId
+            });
+            return;
+          case "WorkflowSignal":
+            response.status(404).json({
+              code: "WORKFLOW_INSTANCE_NOT_FOUND",
+              workflowInstanceRef: envelope.workflowInstanceRef
+            });
+            return;
+          case "Query":
+          case "Command":
+            response.status(422).json({
+              code: "USE_TYPED_ENDPOINT",
+              kind: envelope.kind
+            });
+            return;
+        }
+      } catch (error) {
+        next(error);
       }
-    } catch (error) {
-      next(error);
     }
+  );
+
+  app.use("/api", (request, response) => {
+    const code = "API_ROUTE_NOT_FOUND";
+    (response.locals as RouteResponseLocals).safeErrorCode = code;
+    response.status(404).json({
+      code,
+      message: "请求的 API 路由不存在。",
+      method: request.method,
+      path: requestPath(request)
+    });
   });
 
   app.use(
@@ -239,6 +317,8 @@ export function createApp(
       _next: NextFunction
     ) => {
       if (error instanceof ZodError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          "INVALID_ENVELOPE";
         response.status(400).json({
           code: "INVALID_ENVELOPE",
           issues: error.issues
@@ -246,6 +326,8 @@ export function createApp(
         return;
       }
       if (error instanceof AuthorizationDeniedError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
         response.status(403).json({
           code: error.code,
           message: error.message
@@ -253,6 +335,8 @@ export function createApp(
         return;
       }
       if (error instanceof IdempotencyConflictError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
         response.status(409).json({
           code: error.code,
           message: error.message
@@ -260,12 +344,16 @@ export function createApp(
         return;
       }
       if (error instanceof NotFoundError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
         response.status(404).json({
           code: error.code,
           message: error.message
         });
         return;
       }
+      (response.locals as RouteResponseLocals).safeErrorCode =
+        "INTERNAL_ERROR";
       response.status(500).json({
         code: "INTERNAL_ERROR",
         message: gate2

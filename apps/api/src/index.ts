@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { loadEnvFile } from "node:process";
+import { fileURLToPath } from "node:url";
+
 import { createApp } from "./app.js";
 import { createGate1AContainer } from "./composition/gate1a-container.js";
 import {
@@ -11,7 +15,28 @@ import {
 const port = Number(process.env.PORT ?? 3001);
 const container = createGate1AContainer();
 let gate2: Gate2Container | undefined;
-if (process.env.GATE2_DEMO_ENABLED === "true") {
+
+const explicitGate2Mode = process.env.GATE2_DEMO_ENABLED;
+const localDevelopment =
+  process.env.NODE_ENV !== "production" &&
+  explicitGate2Mode !== "false";
+if (
+  localDevelopment &&
+  !process.env.POSTGRES_HOST &&
+  !process.env.POSTGRES_APP_PASSWORD
+) {
+  const localEnvironmentPath = fileURLToPath(
+    new URL(
+      "../../../infra/docker/.env.local",
+      import.meta.url
+    )
+  );
+  if (existsSync(localEnvironmentPath)) {
+    loadEnvFile(localEnvironmentPath);
+  }
+}
+
+if (explicitGate2Mode === "true" || localDevelopment) {
   gate2 = createGate2Container(readPostgresEnvironment());
 }
 const app = createApp(container, gate2);

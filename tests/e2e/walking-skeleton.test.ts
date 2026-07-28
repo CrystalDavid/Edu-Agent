@@ -1,6 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import { apiRoutes } from "@edu-agent/contracts";
 import {
   makeWalkingSkeletonCommand,
   makeWalkingSkeletonQuery,
@@ -32,6 +33,32 @@ const demoHeaders = {
 };
 
 describe("Gate 1A no-LLM Walking Skeleton", () => {
+  it("serves the shared health contract and structured API 404", async () => {
+    const { app } = setup();
+
+    await request(app)
+      .get(apiRoutes.health)
+      .expect(200)
+      .expect({
+        status: "ok",
+        service: "edu-agent-api",
+        mode: "mock"
+      });
+
+    const missing = await request(app)
+      .get("/api/route-that-does-not-exist")
+      .expect(404);
+    expect(missing.body).toEqual({
+      code: "API_ROUTE_NOT_FOUND",
+      message: "请求的 API 路由不存在。",
+      method: "GET",
+      path: "/api/route-that-does-not-exist"
+    });
+    expect(missing.headers["content-type"]).toMatch(
+      /^application\/json/
+    );
+  });
+
   it("runs Command → TaskRun → AgentRun → Artifact → Outbox/Audit and reads by QueryRun", async () => {
     const { app, container } = setup();
     const command = makeWalkingSkeletonCommand();
