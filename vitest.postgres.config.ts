@@ -16,13 +16,13 @@ export default defineConfig({
     }
   },
   test: {
+    include: ["tests/postgres/**/*.test.ts"],
     environment: "node",
-    include: ["tests/**/*.test.ts"],
-    exclude: ["tests/postgres/**/*.test.ts"],
+    fileParallelism: false,
     testTimeout: 20_000,
     hookTimeout: 20_000,
-    coverage: {
-      reporter: ["text", "json-summary"]
+    sequence: {
+      concurrent: false
     }
   }
 });

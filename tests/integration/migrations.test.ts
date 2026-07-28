@@ -61,7 +61,8 @@ describe("PostgreSQL module migrations", () => {
           'work',
           'runtime',
           'capability',
-          'artifact'
+          'artifact',
+          'education'
         )
         ORDER BY table_schema, table_name`,
       []
@@ -74,18 +75,53 @@ describe("PostgreSQL module migrations", () => {
       expect.arrayContaining([
         "governance.authorization_decision",
         "governance.audit_record",
+        "governance.idempotency_record",
         "work.task",
         "work.task_run",
         "work.query_run",
         "work.idempotency_record",
         "work.outbox_record",
+        "work.outbox_consumer_effect",
+        "work.resolved_learning_interaction_contract",
         "runtime.agent_run",
+        "runtime.run_manifest",
         "runtime.outbox_record",
         "capability.tool_execution",
         "capability.outbox_record",
+        "artifact.artifact",
         "artifact.artifact_revision",
-        "artifact.outbox_record"
+        "artifact.outbox_record",
+        "education.course_run",
+        "education.learning_objective",
+        "education.learning_interaction_profile",
+        "education.attempt",
+        "education.evidence_observation",
+        "education.evidence_claim",
+        "education.evidence_claim_observation",
+        "education.teaching_plan_alignment",
+        "education.outbox_record"
       ])
     );
+
+    const evidenceProjection = await database.query<{
+      table_name: string;
+      table_type: string;
+    }>(
+      `SELECT table_name, table_type
+         FROM information_schema.tables
+        WHERE table_schema = 'education'
+          AND table_name IN (
+            'learning_evidence',
+            'learning_evidence_view'
+          )
+        ORDER BY table_name`,
+      []
+    );
+    expect(evidenceProjection.rows).toEqual([
+      {
+        table_name: "learning_evidence_view",
+        table_type: "VIEW"
+      }
+    ]);
   });
 });

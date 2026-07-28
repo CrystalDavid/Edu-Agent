@@ -1,7 +1,8 @@
 import {
   jsonb,
   pgSchema,
-  text
+  text,
+  timestamp
 } from "drizzle-orm/pg-core";
 
 import { formalWriteColumns } from "../../../platform/database/formal-columns.js";
@@ -17,6 +18,11 @@ export const authorizationDecisionTable =
     effect: text("effect").notNull(),
     reasonCodes: jsonb("reason_codes").notNull(),
     policyVersion: text("policy_version").notNull(),
+    requestedFieldMask: jsonb("requested_field_mask").notNull(),
+    decidedAt: timestamp("decided_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
     ...formalWriteColumns()
   });
 
@@ -30,3 +36,17 @@ export const auditRecordTable = governanceSchema.table(
     ...formalWriteColumns()
   }
 );
+
+export const governanceIdempotencyRecordTable =
+  governanceSchema.table("idempotency_record", {
+    idempotencyRef: text("idempotency_ref").primaryKey(),
+    rootKey: text("root_key").notNull().unique(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    status: text("status").notNull(),
+    result: jsonb("result"),
+    completedAt: timestamp("completed_at", {
+      withTimezone: true,
+      mode: "string"
+    }),
+    ...formalWriteColumns()
+  });

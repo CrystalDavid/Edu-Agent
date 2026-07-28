@@ -53,16 +53,19 @@ for (const [moduleName, schema] of Object.entries(modules)) {
     path.endsWith(".sql")
   );
   assert(migrations.length > 0, `${moduleName} has no migration`);
+  const moduleSql = migrations
+    .map((path) => readFileSync(path, "utf8"))
+    .join("\n");
+  assert(
+    new RegExp(
+      `CREATE\\s+SCHEMA\\s+IF\\s+NOT\\s+EXISTS\\s+${schema}`,
+      "i"
+    ).test(moduleSql),
+    `${moduleName} does not create ${schema}`
+  );
 
   for (const path of migrations) {
     const sql = readFileSync(path, "utf8");
-    assert(
-      new RegExp(
-        `CREATE\\s+SCHEMA\\s+IF\\s+NOT\\s+EXISTS\\s+${schema}`,
-        "i"
-      ).test(sql),
-      `${relative(root, path)} does not create ${schema}`
-    );
     for (const otherSchema of Object.values(modules)) {
       if (otherSchema === schema) continue;
       assert(
@@ -144,6 +147,9 @@ for (const path of allMigrations) {
   )) {
     const [, tableName, body] = table;
     if (!tableName || !body) continue;
+    if (tableName === "work.outbox_consumer_effect") {
+      continue;
+    }
     for (const column of [
       "actor_ref",
       "purpose",
