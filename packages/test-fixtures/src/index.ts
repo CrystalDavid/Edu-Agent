@@ -5,6 +5,8 @@ import type {
   WalkingSkeletonQuery
 } from "@edu-agent/contracts";
 
+export * from "./gate1b.js";
+
 export const syntheticTenant: TenantContext = {
   tenantRef: "tenant:demo-school",
   dataMode: "synthetic"
