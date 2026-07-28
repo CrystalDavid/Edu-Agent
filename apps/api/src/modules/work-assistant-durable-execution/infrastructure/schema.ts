@@ -2,7 +2,8 @@ import {
   integer,
   jsonb,
   pgSchema,
-  text
+  text,
+  timestamp
 } from "drizzle-orm/pg-core";
 
 import { formalWriteColumns } from "../../../platform/database/formal-columns.js";
@@ -49,5 +50,57 @@ export const workOutboxTable = workSchema.table("outbox_record", {
   eventName: text("event_name").notNull(),
   aggregateRef: text("aggregate_ref").notNull(),
   payload: jsonb("payload").notNull(),
+  status: text("status").notNull(),
+  leaseOwner: text("lease_owner"),
+  leaseExpiresAt: timestamp("lease_expires_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
+  attemptCount: integer("attempt_count").notNull(),
+  lastError: text("last_error"),
+  processedAt: timestamp("processed_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
+  publishedAt: timestamp("published_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
   ...formalWriteColumns()
 });
+
+export const resolvedLearningInteractionContractTable =
+  workSchema.table("resolved_learning_interaction_contract", {
+    contractRef: text("contract_ref").primaryKey(),
+    boundRunKind: text("bound_run_kind").notNull(),
+    boundRunRef: text("bound_run_ref").notNull(),
+    profileRef: text("profile_ref").notNull(),
+    profileVersion: integer("profile_version").notNull(),
+    policyVersionRef: text("policy_version_ref").notNull(),
+    promptVersionRef: text("prompt_version_ref").notNull(),
+    evidenceRuleVersionRef: text(
+      "evidence_rule_version_ref"
+    ).notNull(),
+    participationMode: text("participation_mode").notNull(),
+    supportLimit: integer("support_limit").notNull(),
+    answerReleaseBoundary: text(
+      "answer_release_boundary"
+    ).notNull(),
+    contractPayload: jsonb("contract_payload").notNull(),
+    contentHash: text("content_hash").notNull(),
+    ...formalWriteColumns()
+  });
+
+export const outboxConsumerEffectTable = workSchema.table(
+  "outbox_consumer_effect",
+  {
+    consumerName: text("consumer_name").notNull(),
+    outboxRef: text("outbox_ref").notNull(),
+    effectKey: text("effect_key").notNull(),
+    effectPayload: jsonb("effect_payload").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull()
+  }
+);
