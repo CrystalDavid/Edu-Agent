@@ -25,7 +25,8 @@ export interface PostgresArtifactBundle {
       | "OperationalProposal"
       | "ConfigurationAsset"
       | "EvidenceAsset";
-    latestPublishedRevisionRef: string;
+    latestPublishedRevisionRef?: string;
+    latestRevisionRef?: string;
     metadata: FormalWriteMetadata & { owner: "artifact" };
   };
   revision: {
@@ -37,8 +38,16 @@ export interface PostgresArtifactBundle {
     body: string;
     sourceAgentRunRef?: string;
     parentRevisionRef?: string;
-    revisionState: "draft" | "proposal" | "published";
+    revisionState:
+      | "draft"
+      | "proposal"
+      | "in_review"
+      | "published";
     contentHash: string;
+    structuredContent?: Record<string, unknown>;
+    changeReason?: string;
+    evidenceRefs?: readonly string[];
+    teacherSelection?: Record<string, unknown>;
     metadata: FormalWriteMetadata & { owner: "artifact" };
   };
   outbox: {
@@ -55,7 +64,11 @@ export interface ArtifactRevisionView {
   artifactRef: string;
   revisionNumber: number;
   parentRevisionRef: string | null;
-  revisionState: "draft" | "proposal" | "published";
+  revisionState:
+    | "draft"
+    | "proposal"
+    | "in_review"
+    | "published";
   title: string;
   body: string;
   contentHash: string;
@@ -77,6 +90,7 @@ export class PostgresArtifactRepository {
          artifact_ref,
          artifact_type,
          latest_published_revision_ref,
+         latest_revision_ref,
          actor_ref,
          purpose,
          owner_module,
@@ -85,13 +99,15 @@ export class PostgresArtifactRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3,
-         $4, $5, $6, $7, $8, $9, $10
+         $1, $2, $3, $4,
+         $5, $6, $7, $8, $9, $10, $11
        )`,
       [
         bundle.artifact.artifactRef,
         bundle.artifact.artifactType,
-        bundle.artifact.latestPublishedRevisionRef,
+        bundle.artifact.latestPublishedRevisionRef ?? null,
+        bundle.artifact.latestRevisionRef ??
+          bundle.revision.revisionRef,
         ...formalMetadataValues(bundle.artifact.metadata)
       ]
     );
@@ -156,6 +172,10 @@ export class PostgresArtifactRepository {
          parent_revision_ref,
          revision_state,
          content_hash,
+         structured_content,
+         change_reason,
+         evidence_refs,
+         teacher_selection,
          actor_ref,
          purpose,
          owner_module,
@@ -165,7 +185,8 @@ export class PostgresArtifactRepository {
          created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-         $11, $12, $13, $14, $15, $16, $17
+         $11, $12, $13, $14,
+         $15, $16, $17, $18, $19, $20, $21
        )`,
       [
         revision.revisionRef,
@@ -178,6 +199,12 @@ export class PostgresArtifactRepository {
         revision.parentRevisionRef ?? null,
         revision.revisionState,
         revision.contentHash,
+        revision.structuredContent
+          ? toPostgresJson(revision.structuredContent)
+          : null,
+        revision.changeReason ?? null,
+        toPostgresJson(revision.evidenceRefs ?? []),
+        toPostgresJson(revision.teacherSelection ?? {}),
         ...formalMetadataValues(revision.metadata)
       ]
     );
@@ -269,7 +296,11 @@ export class PostgresArtifactRepository {
       artifact_ref: string;
       revision_number: number;
       parent_revision_ref: string | null;
-      revision_state: "draft" | "proposal" | "published";
+      revision_state:
+        | "draft"
+        | "proposal"
+        | "in_review"
+        | "published";
       title: string;
       body: string;
       content_hash: string;

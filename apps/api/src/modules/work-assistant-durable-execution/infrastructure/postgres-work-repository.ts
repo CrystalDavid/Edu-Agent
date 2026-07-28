@@ -18,6 +18,9 @@ export interface PostgresTaskBundle {
     taskRef: string;
     title: string;
     status: string;
+    taskKind?: string;
+    caseRef?: string;
+    goalRef?: string;
     metadata: FormalWriteMetadata & { owner: "work" };
   };
   taskRun: {
@@ -64,6 +67,9 @@ export class PostgresWorkRepository {
          task_ref,
          title,
          status,
+         task_kind,
+         case_ref,
+         goal_ref,
          actor_ref,
          purpose,
          owner_module,
@@ -71,11 +77,17 @@ export class PostgresWorkRepository {
          authorization_decision_ref,
          audit_ref,
          created_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12, $13
+       )`,
       [
         bundle.task.taskRef,
         bundle.task.title,
         bundle.task.status,
+        bundle.task.taskKind ?? "general",
+        bundle.task.caseRef ?? null,
+        bundle.task.goalRef ?? null,
         ...formalMetadataValues(bundle.task.metadata)
       ]
     );

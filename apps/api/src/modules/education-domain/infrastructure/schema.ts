@@ -20,6 +20,7 @@ export const courseRunTable = educationSchema.table("course_run", {
   ).notNull(),
   subject: text("subject").notNull(),
   gradeLevel: text("grade_level").notNull(),
+  className: text("class_name").notNull(),
   academicTerm: text("academic_term").notNull(),
   ...formalWriteColumns()
 });

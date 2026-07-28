@@ -5,13 +5,16 @@ import express, {
   type Response
 } from "express";
 import {
+  CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
+  SuggestionDispositionRequestSchema,
   type ActingContext,
   type TenantContext
 } from "@edu-agent/contracts";
 import { ZodError } from "zod";
 
 import type { Gate1AContainer } from "./composition/gate1a-container.js";
+import type { Gate2Container } from "./composition/gate2-container.js";
 import {
   AuthorizationDeniedError,
   IdempotencyConflictError,
@@ -42,7 +45,10 @@ function contextsFromRequest(request: Request): {
   };
 }
 
-export function createApp(container: Gate1AContainer): Application {
+export function createApp(
+  container: Gate1AContainer,
+  gate2?: Gate2Container
+): Application {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "64kb" }));
@@ -50,11 +56,108 @@ export function createApp(container: Gate1AContainer): Application {
   app.get("/api/health", (_request, response) => {
     response.json({
       status: "ok",
-      gate: "1A",
+      gate: gate2 ? "2" : "1A",
       modelProvider: "mock",
       externalNetworkUsed: false
     });
   });
+
+  if (gate2) {
+    app.get(
+      "/api/v1/demo/workspace",
+      async (request, response, next) => {
+        try {
+          const contexts = contextsFromRequest(request);
+          const result = await gate2.services.read.getWorkspace({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef
+          });
+          response.json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/demo/teacher-copilot/tasks",
+      async (request, response, next) => {
+        try {
+          const contexts = contextsFromRequest(request);
+          const result =
+            await gate2.services.teacherCopilot.createTask({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              request:
+                CreateTeacherCopilotTaskRequestSchema.parse(
+                  request.body
+                )
+            });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      "/api/v1/demo/suggestions/:proposalRevisionRef/dispositions",
+      async (request, response, next) => {
+        try {
+          const contexts = contextsFromRequest(request);
+          const result =
+            await gate2.services.teacherCopilot.disposition({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              proposalRevisionRef:
+                request.params["proposalRevisionRef"] ?? "",
+              request: SuggestionDispositionRequestSchema.parse(
+                request.body
+              )
+            });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      "/api/v1/demo/runs/:taskRef",
+      async (request, response, next) => {
+        try {
+          const contexts = contextsFromRequest(request);
+          const result =
+            await gate2.services.read.getRunExplanation({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: request.params["taskRef"] ?? ""
+            });
+          response.json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      "/api/v1/demo/teaching-plan/revisions/:revisionRef",
+      async (request, response, next) => {
+        try {
+          const contexts = contextsFromRequest(request);
+          const result =
+            await gate2.services.read.getTeachingPlanRevision({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              revisionRef: request.params["revisionRef"] ?? ""
+            });
+          response.json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+  }
 
   app.post(
     "/api/v1/commands/walking-skeleton",
@@ -165,7 +268,9 @@ export function createApp(container: Gate1AContainer): Application {
       }
       response.status(500).json({
         code: "INTERNAL_ERROR",
-        message: "The Gate 1A request failed safely."
+        message: gate2
+          ? "Gate 2 请求已安全失败。"
+          : "The Gate 1A request failed safely."
       });
     }
   );

@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   jsonb,
   pgSchema,
@@ -14,6 +15,9 @@ export const taskTable = workSchema.table("task", {
   taskRef: text("task_ref").primaryKey(),
   title: text("title").notNull(),
   status: text("status").notNull(),
+  taskKind: text("task_kind").notNull(),
+  caseRef: text("case_ref"),
+  goalRef: text("goal_ref"),
   ...formalWriteColumns()
 });
 
@@ -102,5 +106,56 @@ export const outboxConsumerEffectTable = workSchema.table(
       withTimezone: true,
       mode: "string"
     }).notNull()
+  }
+);
+
+export const caseRecordTable = workSchema.table("case_record", {
+  caseRef: text("case_ref").primaryKey(),
+  tenantRef: text("tenant_ref").notNull(),
+  caseType: text("case_type").notNull(),
+  title: text("title").notNull(),
+  status: text("status").notNull(),
+  ...formalWriteColumns()
+});
+
+export const goalRecordTable = workSchema.table("goal_record", {
+  goalRef: text("goal_ref").primaryKey(),
+  tenantRef: text("tenant_ref").notNull(),
+  caseRef: text("case_ref"),
+  title: text("title").notNull(),
+  status: text("status").notNull(),
+  successCriteria: jsonb("success_criteria").notNull(),
+  ...formalWriteColumns()
+});
+
+export const taskResultTable = workSchema.table("task_result", {
+  taskResultRef: text("task_result_ref").primaryKey(),
+  taskRef: text("task_ref").notNull(),
+  goalRef: text("goal_ref"),
+  proposalArtifactRef: text("proposal_artifact_ref").notNull(),
+  proposalRevisionRef: text("proposal_revision_ref").notNull(),
+  teachingPlanArtifactRef: text(
+    "teaching_plan_artifact_ref"
+  ).notNull(),
+  draftRevisionRef: text("draft_revision_ref").notNull(),
+  ...formalWriteColumns()
+});
+
+export const suggestionDispositionTable = workSchema.table(
+  "suggestion_disposition",
+  {
+    dispositionRef: text("disposition_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    taskRef: text("task_ref").notNull(),
+    proposalRevisionRef: text("proposal_revision_ref").notNull(),
+    dispositionKind: text("disposition_kind").notNull(),
+    selectedStrategyId: text("selected_strategy_id").notNull(),
+    teacherEdits: jsonb("teacher_edits").notNull(),
+    note: text("note"),
+    resultingRevisionRef: text("resulting_revision_ref"),
+    implementationObserved: boolean(
+      "implementation_observed"
+    ).notNull(),
+    ...formalWriteColumns()
   }
 );

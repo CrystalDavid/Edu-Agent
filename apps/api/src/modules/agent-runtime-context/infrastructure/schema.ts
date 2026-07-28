@@ -53,6 +53,7 @@ export const runManifestTable = runtimeSchema.table("run_manifest", {
   manifestRef: text("manifest_ref").primaryKey(),
   agentRunRef: text("agent_run_ref").notNull().unique(),
   contractRef: text("contract_ref"),
+  contextManifestRef: text("context_manifest_ref"),
   promptVersionRef: text("prompt_version_ref").notNull(),
   policyVersionRef: text("policy_version_ref").notNull(),
   capabilityRefs: jsonb("capability_refs").notNull(),
@@ -60,3 +61,16 @@ export const runManifestTable = runtimeSchema.table("run_manifest", {
   contentHash: text("content_hash").notNull(),
   ...formalWriteColumns()
 });
+
+export const contextManifestTable = runtimeSchema.table(
+  "context_manifest",
+  {
+    contextManifestRef: text("context_manifest_ref").primaryKey(),
+    agentRunRef: text("agent_run_ref").notNull().unique(),
+    resourceRefs: jsonb("resource_refs").notNull(),
+    evidenceRefs: jsonb("evidence_refs").notNull(),
+    unknowns: jsonb("unknowns").notNull(),
+    requestedFieldMask: jsonb("requested_field_mask").notNull(),
+    ...formalWriteColumns()
+  }
+);

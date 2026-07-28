@@ -1,0 +1,618 @@
+import { randomUUID } from "node:crypto";
+
+import {
+  PedagogicalStrategySchema,
+  TeachingPlanDiffSchema,
+  TeachingPlanSchema,
+  type FormalWriteMetadata,
+  type FormalWriteReceipt,
+  type PedagogicalStrategy,
+  type TeachingPlan,
+  type TeachingPlanDiff
+} from "@edu-agent/contracts";
+
+import type {
+  PostgresClient,
+  SqlExecutor
+} from "../../../platform/postgres/types.js";
+import {
+  createReceipt,
+  createWriteMetadata,
+  formalMetadataValues,
+  toPostgresJson,
+  type WriteContext
+} from "../../../platform/postgres/write-context.js";
+import {
+  buildArtifactContentHash,
+  PostgresArtifactRepository
+} from "./postgres-artifact-repository.js";
+
+type ArtifactMetadata = FormalWriteMetadata & { owner: "artifact" };
+
+export interface StructuredTeachingPlanRevision {
+  artifactRef: string;
+  revisionRef: string;
+  revisionNumber: number;
+  parentRevisionRef: string | null;
+  selectedStrategyId: string | null;
+  teacherSelection: "accepted" | "modified" | null;
+  state: "draft" | "proposal" | "in_review" | "published";
+  title: string;
+  content: TeachingPlan;
+  createdAt: string;
+}
+
+export class PostgresGate2ArtifactRepository {
+  constructor(
+    private readonly base = new PostgresArtifactRepository()
+  ) {}
+
+  async insertTeachingPlanSeed(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      revisionRef: string;
+      title: string;
+      content: TeachingPlan;
+      metadata: ArtifactMetadata;
+      outboxMetadata: ArtifactMetadata;
+      outboxRef: string;
+    }
+  ): Promise<readonly FormalWriteReceipt[]> {
+    return this.base.insertArtifactBundle(client, {
+      artifact: {
+        artifactRef: input.artifactRef,
+        artifactType: "ContentArtifact",
+        latestRevisionRef: input.revisionRef,
+        metadata: input.metadata
+      },
+      revision: {
+        revisionRef: input.revisionRef,
+        artifactRef: input.artifactRef,
+        revisionNumber: 1,
+        artifactType: "TeachingPlan",
+        title: input.title,
+        body: JSON.stringify(input.content),
+        revisionState: "draft",
+        contentHash: buildArtifactContentHash(
+          input.title,
+          JSON.stringify(input.content)
+        ),
+        structuredContent: input.content,
+        changeReason: "合成演示的初始 TeachingPlan 草稿",
+        evidenceRefs: input.content.evidenceRefs,
+        teacherSelection: {
+          source: "synthetic-seed"
+        },
+        metadata: input.metadata
+      },
+      outbox: {
+        outboxRef: input.outboxRef,
+        eventName: "TeachingPlanDraftSeeded",
+        aggregateRef: input.artifactRef,
+        payload: {
+          revisionRef: input.revisionRef,
+          dataMode: "synthetic"
+        },
+        metadata: input.outboxMetadata
+      }
+    });
+  }
+
+  async insertCopilotArtifacts(
+    client: PostgresClient,
+    input: {
+      proposalArtifactRef: string;
+      proposalRevisionRef: string;
+      proposalTitle: string;
+      sourceAgentRunRef: string;
+      strategies: readonly PedagogicalStrategy[];
+      diffsByStrategy: Record<string, TeachingPlanDiff>;
+      teachingPlanArtifactRef: string;
+      parentTeachingPlanRevisionRef: string;
+      draftRevisionRef: string;
+      draftPlan: TeachingPlan;
+      writeContext: WriteContext;
+    }
+  ): Promise<{
+    receipts: readonly FormalWriteReceipt[];
+    draftRevision: StructuredTeachingPlanRevision;
+  }> {
+    const now = input.writeContext.createdAt;
+    const proposalMetadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      "pedagogical-suggestion"
+    );
+    const proposalOutboxMetadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      "pedagogical-suggestion-outbox"
+    );
+    const proposalReceipts = await this.base.insertArtifactBundle(
+      client,
+      {
+        artifact: {
+          artifactRef: input.proposalArtifactRef,
+          artifactType: "OperationalProposal",
+          latestRevisionRef: input.proposalRevisionRef,
+          metadata: proposalMetadata
+        },
+        revision: {
+          revisionRef: input.proposalRevisionRef,
+          artifactRef: input.proposalArtifactRef,
+          revisionNumber: 1,
+          artifactType: "PedagogicalSuggestion",
+          title: input.proposalTitle,
+          body: JSON.stringify({
+            strategies: input.strategies,
+            diffsByStrategy: input.diffsByStrategy
+          }),
+          sourceAgentRunRef: input.sourceAgentRunRef,
+          revisionState: "proposal",
+          contentHash: buildArtifactContentHash(
+            input.proposalTitle,
+            JSON.stringify(input.strategies)
+          ),
+          structuredContent: {
+            strategies: input.strategies,
+            diffsByStrategy: input.diffsByStrategy
+          },
+          changeReason: "Mock Teacher Copilot 生成的可审查教学建议",
+          evidenceRefs: input.strategies.flatMap(
+            (strategy) => strategy.evidenceRefs
+          ),
+          teacherSelection: {
+            status: "pending"
+          },
+          metadata: proposalMetadata
+        },
+        outbox: {
+          outboxRef: `outbox:${randomUUID()}`,
+          eventName: "PedagogicalSuggestionProposed",
+          aggregateRef: input.proposalArtifactRef,
+          payload: {
+            proposalRevisionRef: input.proposalRevisionRef,
+            sourceAgentRunRef: input.sourceAgentRunRef
+          },
+          metadata: proposalOutboxMetadata
+        }
+      }
+    );
+
+    const nextRevision = await this.nextRevisionNumber(
+      client,
+      input.teachingPlanArtifactRef
+    );
+    const draftMetadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      "teaching-plan-draft"
+    );
+    await this.base.insertRevision(client, {
+      revisionRef: input.draftRevisionRef,
+      artifactRef: input.teachingPlanArtifactRef,
+      revisionNumber: nextRevision,
+      artifactType: "TeachingPlan",
+      title: "一次函数斜率与图像关系｜课堂调整草稿",
+      body: JSON.stringify(input.draftPlan),
+      sourceAgentRunRef: input.sourceAgentRunRef,
+      parentRevisionRef: input.parentTeachingPlanRevisionRef,
+      revisionState: "draft",
+      contentHash: buildArtifactContentHash(
+        "一次函数斜率与图像关系｜课堂调整草稿",
+        JSON.stringify(input.draftPlan)
+      ),
+      structuredContent: input.draftPlan,
+      changeReason: "根据可追溯学习证据形成课堂调整草稿",
+      evidenceRefs: input.draftPlan.evidenceRefs,
+      teacherSelection: {
+        status: "pending",
+        defaultStrategyId: input.strategies[0]?.strategyId
+      },
+      metadata: draftMetadata
+    });
+    const draftReceipt = createReceipt({
+      writeRef: input.draftRevisionRef,
+      recordType: "ArtifactRevision",
+      metadata: draftMetadata
+    });
+    const draftOutboxReceipt = await this.insertOutbox(client, {
+      outboxRef: `outbox:${randomUUID()}`,
+      eventName: "TeachingPlanDraftProposed",
+      aggregateRef: input.teachingPlanArtifactRef,
+      payload: {
+        revisionRef: input.draftRevisionRef,
+        parentRevisionRef: input.parentTeachingPlanRevisionRef
+      },
+      metadata: createWriteMetadata(
+        input.writeContext,
+        "artifact",
+        "teaching-plan-draft-outbox"
+      )
+    });
+
+    return {
+      receipts: [
+        ...proposalReceipts,
+        draftReceipt,
+        draftOutboxReceipt
+      ],
+      draftRevision: {
+        artifactRef: input.teachingPlanArtifactRef,
+        revisionRef: input.draftRevisionRef,
+        revisionNumber: nextRevision,
+        parentRevisionRef: input.parentTeachingPlanRevisionRef,
+        selectedStrategyId: null,
+        teacherSelection: null,
+        state: "draft",
+        title: "一次函数斜率与图像关系｜课堂调整草稿",
+        content: input.draftPlan,
+        createdAt: now
+      }
+    };
+  }
+
+  async insertInReviewRevision(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      parentRevisionRef: string;
+      content: TeachingPlan;
+      selectedStrategyId: string;
+      disposition:
+        | "accepted"
+        | "accepted_with_changes";
+      teacherEdits: Record<string, unknown>;
+      writeContext: WriteContext;
+    }
+  ): Promise<{
+    revision: StructuredTeachingPlanRevision;
+    receipts: readonly FormalWriteReceipt[];
+  }> {
+    const revisionNumber = await this.nextRevisionNumber(
+      client,
+      input.artifactRef
+    );
+    const revisionRef = `artifact-revision:${randomUUID()}`;
+    const metadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      "teacher-reviewed-teaching-plan"
+    );
+    const title = "一次函数斜率与图像关系｜教师审阅版";
+    await this.base.insertRevision(client, {
+      revisionRef,
+      artifactRef: input.artifactRef,
+      revisionNumber,
+      artifactType: "TeachingPlan",
+      title,
+      body: JSON.stringify(input.content),
+      parentRevisionRef: input.parentRevisionRef,
+      revisionState: "in_review",
+      contentHash: buildArtifactContentHash(
+        title,
+        JSON.stringify(input.content)
+      ),
+      structuredContent: input.content,
+      changeReason:
+        input.disposition === "accepted"
+          ? "教师接受建议并提交审阅"
+          : "教师修改建议后提交审阅",
+      evidenceRefs: input.content.evidenceRefs,
+      teacherSelection: {
+        disposition: input.disposition,
+        selectedStrategyId: input.selectedStrategyId,
+        teacherEdits: input.teacherEdits
+      },
+      metadata
+    });
+    const revisionReceipt = createReceipt({
+      writeRef: revisionRef,
+      recordType: "ArtifactRevision",
+      metadata
+    });
+    const outboxReceipt = await this.insertOutbox(client, {
+      outboxRef: `outbox:${randomUUID()}`,
+      eventName: "TeachingPlanSubmittedForReview",
+      aggregateRef: input.artifactRef,
+      payload: {
+        revisionRef,
+        parentRevisionRef: input.parentRevisionRef,
+        published: false
+      },
+      metadata: createWriteMetadata(
+        input.writeContext,
+        "artifact",
+        "teacher-reviewed-teaching-plan-outbox"
+      )
+    });
+    return {
+      revision: {
+        artifactRef: input.artifactRef,
+        revisionRef,
+        revisionNumber,
+        parentRevisionRef: input.parentRevisionRef,
+        selectedStrategyId: input.selectedStrategyId,
+        teacherSelection:
+          input.disposition === "accepted"
+            ? "accepted"
+            : "modified",
+        state: "in_review",
+        title,
+        content: input.content,
+        createdAt: input.writeContext.createdAt
+      },
+      receipts: [revisionReceipt, outboxReceipt]
+    };
+  }
+
+  async getLatestTeachingPlan(
+    executor: SqlExecutor,
+    artifactRef: string
+  ): Promise<StructuredTeachingPlanRevision | undefined> {
+    const result = await executor.query<StructuredRevisionRow>(
+      `SELECT revision_ref, artifact_ref, revision_number,
+              parent_revision_ref, revision_state, title,
+              structured_content, teacher_selection, created_at
+         FROM artifact.artifact_revision
+        WHERE artifact_ref = $1
+          AND artifact_type = 'TeachingPlan'
+        ORDER BY revision_number DESC
+        LIMIT 1`,
+      [artifactRef]
+    );
+    return result.rows[0]
+      ? toStructuredRevision(result.rows[0])
+      : undefined;
+  }
+
+  async getTeachingPlanRevision(
+    executor: SqlExecutor,
+    revisionRef: string
+  ): Promise<StructuredTeachingPlanRevision | undefined> {
+    const result = await executor.query<StructuredRevisionRow>(
+      `SELECT revision_ref, artifact_ref, revision_number,
+              parent_revision_ref, revision_state, title,
+              structured_content, teacher_selection, created_at
+         FROM artifact.artifact_revision
+        WHERE revision_ref = $1
+          AND artifact_type = 'TeachingPlan'`,
+      [revisionRef]
+    );
+    return result.rows[0]
+      ? toStructuredRevision(result.rows[0])
+      : undefined;
+  }
+
+  async getProposal(
+    executor: SqlExecutor,
+    proposalRevisionRef: string
+  ): Promise<
+    | {
+        strategies: PedagogicalStrategy[];
+        diffsByStrategy: Record<string, TeachingPlanDiff>;
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      structured_content: {
+        strategies: unknown;
+        diffsByStrategy: Record<string, unknown>;
+      };
+    }>(
+      `SELECT structured_content
+         FROM artifact.artifact_revision
+        WHERE revision_ref = $1
+          AND artifact_type = 'PedagogicalSuggestion'`,
+      [proposalRevisionRef]
+    );
+    const content = result.rows[0]?.structured_content;
+    if (!content) {
+      return undefined;
+    }
+    const strategies = PedagogicalStrategySchema.array()
+      .length(2)
+      .parse(content.strategies);
+    const diffsByStrategy = Object.fromEntries(
+      Object.entries(content.diffsByStrategy).map(([key, value]) => [
+        key,
+        TeachingPlanDiffSchema.parse(value)
+      ])
+    );
+    return {
+      strategies,
+      diffsByStrategy
+    };
+  }
+
+  async getProposalTitles(
+    executor: SqlExecutor,
+    revisionRefs: readonly string[]
+  ): Promise<Map<string, string[]>> {
+    if (revisionRefs.length === 0) {
+      return new Map();
+    }
+    const result = await executor.query<{
+      revision_ref: string;
+      structured_content: {
+        strategies: unknown;
+      };
+    }>(
+      `SELECT revision_ref, structured_content
+         FROM artifact.artifact_revision
+        WHERE revision_ref = ANY($1::text[])`,
+      [[...revisionRefs]]
+    );
+    return new Map(
+      result.rows.map((row) => {
+        const strategies = PedagogicalStrategySchema.array().parse(
+          row.structured_content.strategies
+        );
+        return [
+          row.revision_ref,
+          strategies.map((strategy) => strategy.title)
+        ];
+      })
+    );
+  }
+
+  async listRunArtifactRevisions(
+    executor: SqlExecutor,
+    agentRunRef: string
+  ): Promise<
+    Array<{
+      revisionRef: string;
+      artifactType: string;
+      state: string;
+      revisionNumber: number;
+    }>
+  > {
+    const result = await executor.query<{
+      revision_ref: string;
+      artifact_type: string;
+      revision_state: string;
+      revision_number: number;
+    }>(
+      `SELECT revision_ref, artifact_type, revision_state,
+              revision_number
+         FROM artifact.artifact_revision
+        WHERE source_agent_run_ref = $1
+        ORDER BY created_at, revision_number`,
+      [agentRunRef]
+    );
+    return result.rows.map((row) => ({
+      revisionRef: row.revision_ref,
+      artifactType: row.artifact_type,
+      state: row.revision_state,
+      revisionNumber: row.revision_number
+    }));
+  }
+
+  private async nextRevisionNumber(
+    client: PostgresClient,
+    artifactRef: string
+  ): Promise<number> {
+    const artifact = await client.query(
+      `SELECT artifact_ref
+         FROM artifact.artifact
+        WHERE artifact_ref = $1
+        FOR UPDATE`,
+      [artifactRef]
+    );
+    if (!artifact.rows[0]) {
+      throw new Error(`Artifact not found: ${artifactRef}`);
+    }
+    const next = await client.query<{ revision_number: number }>(
+      `SELECT COALESCE(max(revision_number), 0)::integer + 1
+              AS revision_number
+         FROM artifact.artifact_revision
+        WHERE artifact_ref = $1`,
+      [artifactRef]
+    );
+    return next.rows[0]?.revision_number ?? 1;
+  }
+
+  private async insertOutbox(
+    client: PostgresClient,
+    input: {
+      outboxRef: string;
+      eventName: string;
+      aggregateRef: string;
+      payload: Record<string, unknown>;
+      metadata: ArtifactMetadata;
+    }
+  ): Promise<FormalWriteReceipt> {
+    await client.query(
+      `INSERT INTO artifact.outbox_record (
+         outbox_ref,
+         event_name,
+         aggregate_ref,
+         payload,
+         actor_ref,
+         purpose,
+         owner_module,
+         idempotency_key,
+         authorization_decision_ref,
+         audit_ref,
+         created_at
+       ) VALUES (
+         $1, $2, $3, $4,
+         $5, $6, $7, $8, $9, $10, $11
+       )`,
+      [
+        input.outboxRef,
+        input.eventName,
+        input.aggregateRef,
+        toPostgresJson(input.payload),
+        ...formalMetadataValues(input.metadata)
+      ]
+    );
+    return createReceipt({
+      writeRef: input.outboxRef,
+      recordType: "OutboxRecord",
+      metadata: input.metadata
+    });
+  }
+}
+
+interface StructuredRevisionRow {
+  revision_ref: string;
+  artifact_ref: string;
+  revision_number: number;
+  parent_revision_ref: string | null;
+  revision_state: "draft" | "proposal" | "in_review" | "published";
+  title: string;
+  structured_content: unknown;
+  teacher_selection: unknown;
+  created_at: Date;
+}
+
+function selectionMetadata(selection: unknown): {
+  selectedStrategyId: string | null;
+  teacherSelection: "accepted" | "modified" | null;
+} {
+  if (
+    typeof selection !== "object" ||
+    selection === null ||
+    !("selectedStrategyId" in selection)
+  ) {
+    return {
+      selectedStrategyId: null,
+      teacherSelection: null
+    };
+  }
+  const value = selection.selectedStrategyId;
+  const disposition =
+    "disposition" in selection ? selection.disposition : null;
+  return {
+    selectedStrategyId:
+      typeof value === "string" && value.length > 0
+        ? value
+        : null,
+    teacherSelection:
+      disposition === "accepted"
+        ? "accepted"
+        : disposition === "accepted_with_changes"
+          ? "modified"
+          : null
+  };
+}
+
+function toStructuredRevision(
+  row: StructuredRevisionRow
+): StructuredTeachingPlanRevision {
+  const selection = selectionMetadata(row.teacher_selection);
+  return {
+    artifactRef: row.artifact_ref,
+    revisionRef: row.revision_ref,
+    revisionNumber: row.revision_number,
+    parentRevisionRef: row.parent_revision_ref,
+    selectedStrategyId: selection.selectedStrategyId,
+    teacherSelection: selection.teacherSelection,
+    state: row.revision_state,
+    title: row.title,
+    content: TeachingPlanSchema.parse(row.structured_content),
+    createdAt: row.created_at.toISOString()
+  };
+}

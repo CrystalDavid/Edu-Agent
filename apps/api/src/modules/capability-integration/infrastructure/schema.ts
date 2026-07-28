@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   jsonb,
   pgSchema,
@@ -45,6 +46,23 @@ export const capabilityOutboxTable = capabilitySchema.table(
       withTimezone: true,
       mode: "string"
     }),
+    ...formalWriteColumns()
+  }
+);
+
+export const modelExecutionTable = capabilitySchema.table(
+  "model_execution",
+  {
+    executionRef: text("execution_ref").primaryKey(),
+    provider: text("provider").notNull(),
+    modelProfile: text("model_profile").notNull(),
+    promptBundleRef: text("prompt_bundle_ref").notNull(),
+    inputSummary: jsonb("input_summary").notNull(),
+    output: jsonb("output").notNull(),
+    usageSummary: jsonb("usage_summary").notNull(),
+    externalNetworkUsed: boolean(
+      "external_network_used"
+    ).notNull(),
     ...formalWriteColumns()
   }
 );
