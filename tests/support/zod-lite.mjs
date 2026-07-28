@@ -21,6 +21,38 @@ class Schema {
       value === undefined ? structuredClone(defaultValue) : base.parser(value, path)
     );
   }
+
+  optional() {
+    const base = this;
+    return new Schema((value, path) =>
+      value === undefined ? undefined : base.parser(value, path)
+    );
+  }
+
+  nullable() {
+    const base = this;
+    return new Schema((value, path) =>
+      value === null ? null : base.parser(value, path)
+    );
+  }
+
+  superRefine(refiner) {
+    const base = this;
+    return new Schema((value, path) => {
+      const parsed = base.parser(value, path);
+      const issues = [];
+      refiner(parsed, {
+        addIssue(issue) {
+          issues.push({
+            ...issue,
+            path: [...path, ...(issue.path ?? [])]
+          });
+        }
+      });
+      if (issues.length > 0) throw new ZodError(issues);
+      return parsed;
+    });
+  }
 }
 
 function fail(path, message) {
@@ -42,6 +74,15 @@ class StringSchema extends Schema {
       ...this.checks,
       (value, path) => {
         if (value.length < length) fail(path, `Expected ${length} characters`);
+      }
+    ]);
+  }
+
+  max(length) {
+    return new StringSchema([
+      ...this.checks,
+      (value, path) => {
+        if (value.length > length) fail(path, `Expected at most ${length} characters`);
       }
     ]);
   }
@@ -85,6 +126,15 @@ class NumberSchema extends Schema {
       }
     ]);
   }
+
+  positive() {
+    return new NumberSchema([
+      ...this.checks,
+      (value, path) => {
+        if (value <= 0) fail(path, "Expected positive number");
+      }
+    ]);
+  }
 }
 
 class ArraySchema extends Schema {
@@ -108,6 +158,15 @@ class ArraySchema extends Schema {
       }
     ]);
   }
+
+  length(length) {
+    return new ArraySchema(this.item, [
+      ...this.checks,
+      (value, path) => {
+        if (value.length !== length) fail(path, `Expected ${length} items`);
+      }
+    ]);
+  }
 }
 
 class ObjectSchema extends Schema {
@@ -128,6 +187,17 @@ class ObjectSchema extends Schema {
 
   extend(extension) {
     return new ObjectSchema({ ...this.shape, ...extension });
+  }
+
+  partial() {
+    return new ObjectSchema(
+      Object.fromEntries(
+        Object.entries(this.shape).map(([key, schema]) => [
+          key,
+          schema.optional()
+        ])
+      )
+    );
   }
 }
 
@@ -184,6 +254,21 @@ class DiscriminatedUnionSchema extends Schema {
   }
 }
 
+class UnionSchema extends Schema {
+  constructor(schemas) {
+    super((value, path) => {
+      for (const schema of schemas) {
+        try {
+          return schema.parser(value, path);
+        } catch (error) {
+          if (!(error instanceof ZodError)) throw error;
+        }
+      }
+      fail(path, "Expected union value");
+    });
+  }
+}
+
 export const z = {
   string: () => new StringSchema(),
   number: () => new NumberSchema(),
@@ -192,12 +277,18 @@ export const z = {
       if (typeof value !== "boolean") fail(path, "Expected boolean");
       return value;
     }),
+  null: () =>
+    new Schema((value, path) => {
+      if (value !== null) fail(path, "Expected null");
+      return value;
+    }),
   unknown: () => new Schema((value) => value),
   literal: (value) => new LiteralSchema(value),
   enum: (values) => new EnumSchema(values),
   array: (item) => new ArraySchema(item),
   object: (shape) => new ObjectSchema(shape),
   record: (_key, value) => new RecordSchema(value),
+  union: (schemas) => new UnionSchema(schemas),
   discriminatedUnion: (discriminator, schemas) =>
     new DiscriminatedUnionSchema(discriminator, schemas)
 };

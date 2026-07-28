@@ -1,0 +1,86 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+const root = resolve(import.meta.dirname, "../..");
+
+function source(path: string): string {
+  return readFileSync(resolve(root, path), "utf8");
+}
+
+describe("Gate 2 architecture invariants", () => {
+  it("keeps suggestion disposition separate from implementation facts", () => {
+    const workMigration = source(
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0003_gate2_teacher_copilot.sql"
+    );
+    expect(workMigration).toContain(
+      "implementation_observed boolean NOT NULL DEFAULT false"
+    );
+    expect(workMigration).toContain(
+      "CHECK (implementation_observed = false)"
+    );
+
+    const allGate2Migrations = [
+      workMigration,
+      source(
+        "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0003_gate2_structured_revision.sql"
+      ),
+      source(
+        "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0003_gate2_context_manifest.sql"
+      ),
+      source(
+        "apps/api/src/modules/capability-integration/infrastructure/migrations/0003_gate2_model_execution.sql"
+      ),
+      source(
+        "apps/api/src/modules/education-domain/infrastructure/migrations/0003_gate2_course_view.sql"
+      )
+    ].join("\n");
+    expect(allGate2Migrations).not.toMatch(
+      /CREATE\s+TABLE[\s\S]{0,100}\b(?:instructional_decision|observed_pedagogical_move)\b/i
+    );
+  });
+
+  it("makes every TeachingPlan change a new immutable revision", () => {
+    const migration = source(
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0003_gate2_structured_revision.sql"
+    );
+    expect(migration).toContain("'in_review'");
+    expect(migration).toContain(
+      "CREATE TRIGGER artifact_revision_immutable"
+    );
+    expect(migration).not.toMatch(
+      /UPDATE\s+artifact\.artifact_revision/i
+    );
+  });
+
+  it("keeps the Mock provider external-network-free", () => {
+    const capabilityMigration = source(
+      "apps/api/src/modules/capability-integration/infrastructure/migrations/0003_gate2_model_execution.sql"
+    );
+    expect(capabilityMigration).toContain(
+      "CHECK (external_network_used = false)"
+    );
+    const service = source(
+      "apps/api/src/composition/postgres-gate2-teacher-copilot-service.ts"
+    );
+    expect(service).not.toMatch(
+      /\b(?:fetch|axios|DeepSeek|CloudBase|Netlify)\b/
+    );
+  });
+
+  it("keeps the teacher UI workbench-centered rather than chat-centered", () => {
+    const app = source("apps/web/src/App.tsx");
+    for (const route of [
+      "今日工作台",
+      "教学改进 Goal",
+      "学习证据",
+      "Teacher Copilot",
+      "TeachingPlan",
+      "运行记录"
+    ]) {
+      expect(app).toContain(route);
+    }
+    expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
+  });
+});
