@@ -72,6 +72,31 @@ describe("seven-module modular monolith", () => {
     }
   });
 
+  it("keeps PostgreSQL Repository writes inside the owning Schema", () => {
+    for (const [moduleName, schemaName] of Object.entries(modules)) {
+      const repositoryFiles = filesUnder(join(modulesRoot, moduleName))
+        .filter((path) => path.endsWith(".ts"))
+        .filter((path) =>
+          /postgres-[^\\/]*repository\.ts$/.test(path)
+        );
+      for (const path of repositoryFiles) {
+        const source = readFileSync(path, "utf8");
+        for (const otherSchema of Object.values(modules)) {
+          if (otherSchema === schemaName) continue;
+          expect(
+            source,
+            `${relative(root, path)} writes ${otherSchema}.*`
+          ).not.toMatch(
+            new RegExp(
+              `\\b(?:INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|TRUNCATE\\s+TABLE)\\s+${otherSchema}\\.`,
+              "i"
+            )
+          );
+        }
+      }
+    }
+  });
+
   it("gives every module one migration owner and no cross-Schema DDL", () => {
     for (const [moduleName, schemaName] of Object.entries(modules)) {
       const migrationDir = join(
@@ -83,15 +108,18 @@ describe("seven-module modular monolith", () => {
         path.endsWith(".sql")
       );
       expect(sqlFiles.length).toBeGreaterThan(0);
+      const moduleSql = sqlFiles
+        .map((path) => readFileSync(path, "utf8"))
+        .join("\n");
+      expect(moduleSql).toMatch(
+        new RegExp(
+          `CREATE\\s+SCHEMA\\s+IF\\s+NOT\\s+EXISTS\\s+${schemaName}`,
+          "i"
+        )
+      );
 
       for (const path of sqlFiles) {
         const sql = readFileSync(path, "utf8");
-        expect(sql).toMatch(
-          new RegExp(
-            `CREATE\\s+SCHEMA\\s+IF\\s+NOT\\s+EXISTS\\s+${schemaName}`,
-            "i"
-          )
-        );
         for (const otherSchema of Object.values(modules)) {
           if (otherSchema === schemaName) continue;
           expect(

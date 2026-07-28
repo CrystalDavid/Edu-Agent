@@ -22,15 +22,20 @@ const localEnvironment = Object.fromEntries(
     })
 );
 
-const result = spawnSync(command, args, {
+const usePnpmEntrypoint =
+  command === "pnpm" && Boolean(process.env.npm_execpath);
+const executable = usePnpmEntrypoint ? process.execPath : command;
+const executableArgs = usePnpmEntrypoint
+  ? [process.env.npm_execpath, ...args]
+  : args;
+const result = spawnSync(executable, executableArgs, {
   cwd: process.cwd(),
   env: {
     ...process.env,
     ...localEnvironment
   },
   stdio: "inherit",
-  windowsHide: true,
-  shell: process.platform === "win32"
+  windowsHide: true
 });
 
 if (result.error) {
