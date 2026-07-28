@@ -1,0 +1,47 @@
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+.pglite/
+.gate1a-data/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+
+# Local PostgreSQL and Docker data/exports
+.pgdata/
+pgdata/
+postgres-data/
+.postgres-data/
+docker-data/
+docker-volumes/
+docker-volume-exports/
+*.dump
+*.backup
+*.volume.tar
+*.volume.tgz
+.docker/
+
+# Logs, process state and temporary files
+*.log
+logs/
+*.pid
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+
+# Tool and editor outputs
+*.tsbuildinfo
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

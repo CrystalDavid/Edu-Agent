@@ -1,0 +1,34 @@
+CREATE SCHEMA IF NOT EXISTS runtime;
+
+CREATE TABLE IF NOT EXISTS runtime.agent_run (
+  agent_run_ref text PRIMARY KEY,
+  run_kind text NOT NULL CHECK (run_kind IN ('QueryRun', 'TaskRun')),
+  bound_run_ref text NOT NULL,
+  status text NOT NULL,
+  model_provider text NOT NULL,
+  model_profile text NOT NULL,
+  tool_name text NOT NULL,
+  output jsonb NOT NULL,
+  actor_ref text NOT NULL,
+  purpose text NOT NULL,
+  owner_module text NOT NULL CHECK (owner_module = 'runtime'),
+  idempotency_key text NOT NULL UNIQUE,
+  authorization_decision_ref text NOT NULL,
+  audit_ref text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runtime.outbox_record (
+  outbox_ref text PRIMARY KEY,
+  event_name text NOT NULL,
+  aggregate_ref text NOT NULL,
+  payload jsonb NOT NULL,
+  actor_ref text NOT NULL,
+  purpose text NOT NULL,
+  owner_module text NOT NULL CHECK (owner_module = 'runtime'),
+  idempotency_key text NOT NULL UNIQUE,
+  authorization_decision_ref text NOT NULL,
+  audit_ref text NOT NULL,
+  created_at timestamptz NOT NULL,
+  published_at timestamptz
+);
