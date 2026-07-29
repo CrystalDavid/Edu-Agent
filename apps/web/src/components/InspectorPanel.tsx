@@ -2,11 +2,17 @@ import type {
   CreateTeacherCopilotTaskResult,
   TeacherWorkspace
 } from "@edu-agent/contracts";
-import { Descriptions, Drawer, Space, Tag, Typography } from "antd";
+import {
+  Alert,
+  Collapse,
+  Descriptions,
+  Drawer,
+  Typography
+} from "antd";
 
-import { SemanticTag } from "./SemanticTag";
+import { cleanDisplayText, shortReference } from "../presentation";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Title } = Typography;
 
 export function InspectorPanel(props: {
   open: boolean;
@@ -25,58 +31,55 @@ export function InspectorPanel(props: {
 
   return (
     <Drawer
-      title="依据与边界"
+      title="帮助与使用边界"
       size={440}
       open={props.open}
       onClose={props.onClose}
       placement="right"
     >
-      <Space orientation="vertical" size={22} className="full-width">
+      <div className="inspector-content">
+        <Alert
+          type="info"
+          showIcon
+          title="当前使用示例数据"
+          description="没有连接真实学校系统或外部模型，所有建议仅用于本地产品演示。"
+        />
+
         <section>
-          <Space wrap>
-            <SemanticTag kind="mock" />
-            <SemanticTag kind="fact">合成数据</SemanticTag>
-          </Space>
-          <Title level={5}>本页为什么显示这些内容</Title>
+          <Title level={5}>为什么显示这些内容</Title>
           <Paragraph>
-            当前视图只读取八年级 3
-            班合成 CourseRun、明确对齐的学习目标、可追溯 Evidence
-            及其候选 Claim。没有读取其他学校或真实学生数据。
+            当前视图只读取八年级 3 班、明确对齐的学习目标以及允许用于课堂调整的学习证据。
           </Paragraph>
         </section>
 
         <Descriptions
-          title="数据来源"
+          title="本次使用的数据"
           column={1}
           size="small"
-          bordered
           items={[
             {
               key: "course",
-              label: "CourseRun",
-              children: props.workspace.courseRun.courseRunRef
+              label: "当前课程",
+              children: cleanDisplayText(
+                props.workspace.courseRun.className
+              )
             },
             {
               key: "objective",
-              label: "LearningObjective",
-              children:
-                props.workspace.learningObjective.objectiveRef
+              label: "教学目标",
+              children: props.workspace.learningObjective.title
             },
             {
               key: "source",
-              label: "示例 Evidence 来源",
-              children: observation?.sourceRef ?? "暂无"
+              label: "示例来源",
+              children: observation
+                ? shortReference(observation.sourceRef)
+                : "暂无"
             },
             {
               key: "assistance",
-              label: "Assistance",
-              children: observation
-                ? `${observation.assistance.level}；答案释放：${
-                    observation.assistance.answerReleased
-                      ? "是"
-                      : "否"
-                  }`
-                : "暂无"
+              label: "辅助情况",
+              children: observation?.assistance.description ?? "暂无"
             }
           ]}
         />
@@ -91,48 +94,65 @@ export function InspectorPanel(props: {
         </section>
 
         <Descriptions
-          title="授权与用途"
+          title="教师控制"
           column={1}
           size="small"
-          bordered
           items={[
             {
               key: "actor",
-              label: "当前身份",
-              children: props.workspace.identity.teacherName
+              label: "当前教师",
+              children: cleanDisplayText(
+                props.workspace.identity.teacherName
+              )
             },
             {
               key: "purpose",
               label: "允许用途",
-              children: "调整明天课堂（仅生成 Proposal）"
+              children: "调整明天课堂并生成可审查的建议草稿"
             },
             {
-              key: "decision",
-              label: "AuthorizationDecision",
-              children:
-                props.task?.authorizationDecisionRef ??
-                "尚未创建任务"
-            },
-            {
-              key: "model",
-              label: "模型来源",
-              children: (
-                <Space>
-                  <Tag color="purple">MockModelProvider</Tag>
-                  <Text>无外部网络</Text>
-                </Space>
-              )
-            },
-            {
-              key: "version",
-              label: "运行版本",
-              children:
-                props.task?.contractRef ??
-                "Gate 2 synthetic workspace@1"
+              key: "boundary",
+              label: "系统边界",
+              children: "不能自动发布，也不能把建议写成已实施事实"
             }
           ]}
         />
-      </Space>
+
+        <Collapse
+          className="technical-disclosure"
+          items={[
+            {
+              key: "technical",
+              label: "查看技术详情",
+              children: (
+                <dl className="detail-list">
+                  <div>
+                    <dt>CourseRun</dt>
+                    <dd>{props.workspace.courseRun.courseRunRef}</dd>
+                  </div>
+                  <div>
+                    <dt>LearningObjective</dt>
+                    <dd>
+                      {props.workspace.learningObjective.objectiveRef}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>AuthorizationDecision</dt>
+                    <dd>
+                      {props.task?.authorizationDecisionRef ??
+                        "尚未创建任务"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Contract</dt>
+                    <dd>{props.task?.contractRef ?? "尚未创建任务"}</dd>
+                  </div>
+                </dl>
+              )
+            }
+          ]}
+        />
+      </div>
     </Drawer>
   );
 }

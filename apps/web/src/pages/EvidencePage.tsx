@@ -1,42 +1,36 @@
 import type { TeacherWorkspace } from "@edu-agent/contracts";
-import { Alert, Card, Space, Typography } from "antd";
+import { Alert, Tag, Typography } from "antd";
 
 import { EvidencePanel } from "../components/EvidencePanel";
-import { SemanticTag } from "../components/SemanticTag";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Title } = Typography;
 
 export function EvidencePage(props: {
   workspace: TeacherWorkspace;
 }) {
   return (
-    <div className="page-stack">
+    <div className="page-stack evidence-page">
       <header className="page-header">
         <div>
-          <Text className="section-kicker">PROVENANCE FIRST</Text>
-          <Title>学习证据</Title>
-          <Paragraph>
-            Observation 是可追溯记录；Claim
-            是基于记录形成的可撤销主张；本轮没有把它们提升为能力估计。
-          </Paragraph>
+          <span className="page-icon page-icon--orange" aria-hidden="true">▤</span>
+          <div>
+            <Title>学习证据</Title>
+            <Paragraph>
+              先看学生在具体任务中的表现，再区分观察、解释与未知项。
+            </Paragraph>
+          </div>
         </div>
-        <Space wrap>
-          <SemanticTag kind="observation" />
-          <SemanticTag kind="claim" />
-          <SemanticTag kind="estimate" />
-        </Space>
+        <Tag>{props.workspace.evidence.observations.length} 条直接观察</Tag>
       </header>
 
       <Alert
         showIcon
         type="warning"
-        title="不要把候选主张当成学生标签"
-        description="页面刻意不显示伪精确掌握概率。每项主张都保留有效时间、证据来源与未知项。"
+        title="待复核解释不是学生标签"
+        description="页面不显示伪精确掌握概率；所有解释都保留来源、时效和未知项。"
       />
 
-      <Card className="workspace-card" variant="borderless">
-        <EvidencePanel evidence={props.workspace.evidence} />
-      </Card>
+      <EvidencePanel evidence={props.workspace.evidence} />
     </div>
   );
 }

@@ -72,16 +72,24 @@ export function TeachingPlanPage(props: {
     <div className="page-stack">
       <header className="page-header">
         <div>
-          <Text className="section-kicker">VERSIONED ARTIFACT</Text>
-          <Title>教学计划</Title>
-          <Paragraph>
-            正文只存在于 Artifact 模块。每次教师保存都会创建新的不可变
-            Revision；本轮只允许 draft → in_review，不自动发布。
-          </Paragraph>
+          <span className="page-icon page-icon--cyan" aria-hidden="true">▧</span>
+          <div>
+            <Title>教学计划</Title>
+            <Paragraph>
+              每次保存都会创建新版本，历史内容保持可追溯；当前不会自动发布。
+            </Paragraph>
+          </div>
         </div>
         <Space wrap>
-          <Tag>Artifact owner</Tag>
-          <Tag color="processing">{revision.state}</Tag>
+          <Tag color="processing">
+            {revision.state === "in_review"
+              ? "待审核"
+              : revision.state === "published"
+                ? "已发布"
+                : revision.state === "proposal"
+                  ? "建议草稿"
+                  : "草稿"}
+          </Tag>
         </Space>
       </header>
 
@@ -89,7 +97,7 @@ export function TeachingPlanPage(props: {
         type="info"
         showIcon
         title="发布边界"
-        description="页面没有“自动发布”路径。accepted 也只会形成 in_review Revision。"
+        description="页面没有自动发布路径；接受建议也只会形成待审核版本。"
       />
 
       {error ? (
@@ -107,7 +115,7 @@ export function TeachingPlanPage(props: {
       props.workspace.latestTeachingPlan.revisionRef ? (
         <Card className="workspace-card revision-return" variant="borderless">
           <div>
-            <Title level={4}>你正在查看历史 Revision</Title>
+            <Title level={4}>你正在查看历史版本</Title>
             <Paragraph>
               历史版本保持不变；返回最近版本不会修改任何数据。
             </Paragraph>
@@ -143,10 +151,9 @@ export function TeachingPlanPage(props: {
         />
       ) : (
         <Card className="workspace-card" variant="borderless">
-          <Title level={4}>尚无 Teacher Copilot Diff</Title>
+          <Title level={4}>尚无教师助手变更记录</Title>
           <Paragraph>
-            启动课堂调整任务后，这里会显示字段级新增、删除、修改原因和
-            Evidence 引用。
+            启动课堂调整任务后，这里会显示各字段的修改前后、原因和依据。
           </Paragraph>
         </Card>
       )}

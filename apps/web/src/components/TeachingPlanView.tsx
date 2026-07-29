@@ -15,6 +15,10 @@ import {
   Typography
 } from "antd";
 
+import {
+  cleanDisplayText,
+  teachingPlanStateLabel
+} from "../presentation";
 import { SemanticTag } from "./SemanticTag";
 
 const { Paragraph, Text, Title } = Typography;
@@ -28,20 +32,27 @@ export const planFieldLabels: Record<keyof TeachingPlan, string> = {
   supportStrategy: "支持策略",
   independentCheck: "独立检查",
   followUp: "后续行动",
-  evidenceRefs: "Evidence 引用"
+  evidenceRefs: "依据"
 };
 
-function renderPlanValue(value: string | string[]) {
+function renderPlanValue(
+  value: string | string[],
+  field: keyof TeachingPlan
+) {
   if (Array.isArray(value)) {
+    const items =
+      field === "evidenceRefs"
+        ? Array.from(new Set(value.map(evidenceLabel)))
+        : value.map(cleanDisplayText);
     return (
       <ul className="compact-list">
-        {value.map((item) => (
+        {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
       </ul>
     );
   }
-  return <span>{value}</span>;
+  return <span>{cleanDisplayText(value)}</span>;
 }
 
 export function TeachingPlanView(props: {
@@ -53,7 +64,7 @@ export function TeachingPlanView(props: {
       <div className="plan-document__header">
         <div>
           <Space wrap>
-            <SemanticTag kind="artifact">TeachingPlan</SemanticTag>
+            <SemanticTag kind="artifact">教学计划</SemanticTag>
             <Tag
               color={
                 props.revision.state === "in_review"
@@ -61,17 +72,14 @@ export function TeachingPlanView(props: {
                   : "default"
               }
             >
-              {props.revision.state}
+              {teachingPlanStateLabel(props.revision.state)}
             </Tag>
-            <Tag>Revision {props.revision.revisionNumber}</Tag>
+            <Tag>第 {props.revision.revisionNumber} 版</Tag>
           </Space>
           <Title level={3}>{props.revision.title}</Title>
-          <Text type="secondary">
-            {props.revision.revisionRef}
-          </Text>
         </div>
         {props.revision.parentRevisionRef && props.onPrevious ? (
-          <Button onClick={props.onPrevious}>查看前一 Revision</Button>
+          <Button onClick={props.onPrevious}>查看前一版本</Button>
         ) : null}
       </div>
       <Descriptions
@@ -83,16 +91,27 @@ export function TeachingPlanView(props: {
         ).map((field) => ({
           key: field,
           label: planFieldLabels[field],
-          children: renderPlanValue(props.revision.content[field])
+          children: renderPlanValue(
+            props.revision.content[field],
+            field
+          )
         }))}
       />
     </article>
   );
 }
 
-function valueText(value: TeachingPlanDiffChange["before"]) {
+function valueText(
+  value: TeachingPlanDiffChange["before"],
+  field: keyof TeachingPlan
+) {
   if (value === null) return "（无）";
-  return Array.isArray(value) ? value.join("\n") : value;
+  if (!Array.isArray(value)) return cleanDisplayText(value);
+  return (
+    field === "evidenceRefs"
+      ? Array.from(new Set(value.map(evidenceLabel)))
+      : value.map(cleanDisplayText)
+  ).join("\n");
 }
 
 export function TeachingPlanDiffView(props: {
@@ -147,16 +166,16 @@ export function TeachingPlanDiffView(props: {
     >
       <div className="section-heading">
         <div>
-          <Text className="section-kicker">STRUCTURED DIFF</Text>
-          <Title level={3}>教学计划变更审阅</Title>
+          <Text className="section-kicker">变更审阅</Text>
+          <Title level={3}>教学计划修改对比</Title>
           <Text type="secondary">
             父版本{" "}
             {props.parentRevisionNumber
-              ? `v${props.parentRevisionNumber}`
+              ? `第 ${props.parentRevisionNumber} 版`
               : "当前版本"}{" "}
             → 建议草稿{" "}
             {props.draftRevisionNumber
-              ? `v${props.draftRevisionNumber}`
+              ? `第 ${props.draftRevisionNumber} 版`
               : "下一版本"}
           </Text>
         </div>
@@ -177,7 +196,7 @@ export function TeachingPlanDiffView(props: {
       <div
         className="diff-view-toggle"
         role="group"
-        aria-label="Diff 查看范围"
+        aria-label="变更查看范围"
       >
         <button
           type="button"
@@ -263,7 +282,9 @@ const diffGroups: Array<{
 ];
 
 function DiffRow({ change }: { change: DisplayDiffRow }) {
-  const evidenceRefs = Array.from(new Set(change.evidenceRefs));
+  const evidenceLabels = Array.from(
+    new Set(change.evidenceRefs.map(evidenceLabel))
+  );
   return (
     <article
       className={`diff-row diff-row--${change.kind}`}
@@ -278,22 +299,22 @@ function DiffRow({ change }: { change: DisplayDiffRow }) {
       <div className="diff-columns">
         <div className="diff-before">
           <Text type="secondary">修改前</Text>
-          <Paragraph>{valueText(change.before)}</Paragraph>
+          <Paragraph>{valueText(change.before, change.field)}</Paragraph>
         </div>
         <div className="diff-after">
-          <Text type="secondary">建议后</Text>
-          <Paragraph>{valueText(change.after)}</Paragraph>
+          <Text type="secondary">修改后</Text>
+          <Paragraph>{valueText(change.after, change.field)}</Paragraph>
         </div>
       </div>
       <div className="diff-reason">
         <Text strong>原因：</Text>
         <Text>{change.reason}</Text>
       </div>
-      {evidenceRefs.length ? (
+      {evidenceLabels.length ? (
         <div className="diff-evidence">
-          {evidenceRefs.map((reference) => (
-            <Tag key={reference} title={reference}>
-              {evidenceLabel(reference)}
+          {evidenceLabels.map((label) => (
+            <Tag key={label}>
+              {label}
             </Tag>
           ))}
         </div>
@@ -304,10 +325,10 @@ function DiffRow({ change }: { change: DisplayDiffRow }) {
 
 function evidenceLabel(reference: string): string {
   if (reference.includes("observation")) {
-    return `直接观察 · ${reference.split(":").at(-1)}`;
+    return "直接观察";
   }
   if (reference.includes("claim")) {
-    return `待复核解释 · ${reference.split(":").at(-1)}`;
+    return "待复核解释";
   }
-  return "证据引用";
+  return "依据";
 }

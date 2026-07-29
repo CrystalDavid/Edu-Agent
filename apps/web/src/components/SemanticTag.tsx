@@ -11,12 +11,12 @@ export type SemanticKind =
 
 const labels: Record<SemanticKind, string> = {
   fact: "正式事实",
-  observation: "证据观察",
-  claim: "候选主张",
+  observation: "直接观察",
+  claim: "待复核解释",
   estimate: "状态估计",
   suggestion: "建议草稿",
-  artifact: "Artifact",
-  mock: "Mock"
+  artifact: "内容版本",
+  mock: "演示助手"
 };
 
 export function SemanticTag(props: {

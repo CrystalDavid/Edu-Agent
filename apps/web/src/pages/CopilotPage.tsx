@@ -12,6 +12,7 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
   Divider,
   Drawer,
   Input,
@@ -33,6 +34,7 @@ import {
   planFieldLabels,
   TeachingPlanDiffView
 } from "../components/TeachingPlanView";
+import { cleanDisplayText } from "../presentation";
 import type { AppRoute } from "../route";
 import { applyDiffToPlan } from "../teaching-plan";
 
@@ -158,18 +160,13 @@ export function CopilotPage(props: {
     <div className="page-stack copilot-page">
       <header className="page-header page-header--compact">
         <div>
-          <Space wrap size={8}>
-            <Text className="section-kicker">TEACHER COPILOT</Text>
-            <SemanticTag kind="mock" />
-            <SemanticTag kind="suggestion">
-              建议草稿
-            </SemanticTag>
-          </Space>
-          <Title>调整明天课堂</Title>
-          <Paragraph>
-            围绕当前 Goal 和学习证据比较策略。短生命周期协调器只生成
-            Proposal 与 Diff，教师保留最终判断。
-          </Paragraph>
+          <span className="page-icon page-icon--purple" aria-hidden="true">✦</span>
+          <div>
+            <Title>教师助手</Title>
+            <Paragraph>
+              围绕当前教学目标和学习证据比较策略，最终判断始终由教师完成。
+            </Paragraph>
+          </div>
         </div>
         <Button
           className="context-drawer-trigger"
@@ -183,8 +180,8 @@ export function CopilotPage(props: {
         className="proposal-boundary"
         type="info"
         showIcon
-        title="这是教学建议草稿，不是正式教学决定，也不表示已实施。"
-        description="接受建议最多创建一个 in_review TeachingPlan Revision；不会写入 InstructionalDecision、ObservedPedagogicalMove，也不会自动发布。"
+        title="以下内容为教学建议草稿，需由教师判断和修改。"
+        description="接受建议只会形成待审核的教学计划版本，不表示课堂已经实施，也不会自动发布。"
       />
 
       {error ? (
@@ -200,9 +197,9 @@ export function CopilotPage(props: {
 
       <Card className="task-composer" variant="borderless">
         <div>
-          <Text strong>本次任务</Text>
+          <Text strong>当前教学任务</Text>
           <Text type="secondary">
-            不是聊天记录；这段文字只用于明确当前比较目的
+            用一句话说明你想比较或调整什么
           </Text>
         </div>
         <Input
@@ -224,10 +221,9 @@ export function CopilotPage(props: {
       {generating ? (
         <Card className="workspace-card loading-card" variant="borderless">
           <Spin size="large" />
-          <Title level={4}>正在执行确定性 Mock 流程</Title>
+          <Title level={4}>正在准备课堂策略</Title>
           <Paragraph>
-            固定 Contract，读取当前 Evidence，并创建可审查的
-            Proposal Revision。
+            助手正在读取允许使用的证据，并形成可审查的建议草稿。
           </Paragraph>
         </Card>
       ) : null}
@@ -241,12 +237,10 @@ export function CopilotPage(props: {
           <section className="copilot-main-column">
             <div className="section-heading">
               <div>
-                <Text className="section-kicker">
-                  STRATEGY COMPARISON
-                </Text>
+                <Text className="section-kicker">课堂策略</Text>
                 <Title level={2}>比较教学策略</Title>
               </div>
-              <Tag>统一结构 · 可切换</Tag>
+              <Tag>选择后可继续修改</Tag>
             </div>
 
             <div className="strategy-comparison-grid">
@@ -291,13 +285,10 @@ export function CopilotPage(props: {
               variant="borderless"
             >
               <div>
-                <Text className="section-kicker">
-                  TEACHER CONTROL
-                </Text>
+                <Text className="section-kicker">教师控制</Text>
                 <Title level={3}>教师处置</Title>
                 <Paragraph>
-                  接受表示你完成了建议处置，不表示课堂已实施。保存只形成新的
-                  in_review Revision。
+                  接受表示你完成了建议处置，不表示课堂已实施；保存只形成待审核版本。
                 </Paragraph>
               </div>
               <Space wrap>
@@ -341,8 +332,8 @@ export function CopilotPage(props: {
                 )}`}
                 subTitle={
                   disposition.resultingRevision
-                    ? `已形成 Revision ${disposition.resultingRevision.revisionNumber}，状态 in_review；没有发布。`
-                    : "没有创建新的 TeachingPlan Revision，也没有写入已实施教学事实。"
+                    ? `已形成第 ${disposition.resultingRevision.revisionNumber} 版，状态为待审核；没有发布。`
+                    : "没有创建新的教学计划版本，也没有写入已实施教学事实。"
                 }
                 extra={[
                   <Button
@@ -378,8 +369,7 @@ export function CopilotPage(props: {
             </SemanticTag>
             <Title level={2}>先看证据，再启动任务</Title>
             <Paragraph>
-              当前只读取 CourseRun、Goal、LearningObjective、
-              Evidence 与 TeachingPlan；不会修改正式教育事实。
+              当前只读取本课程、教学目标、学习证据和教学计划；不会修改正式教育事实。
             </Paragraph>
             <Button
               type="primary"
@@ -405,7 +395,7 @@ export function CopilotPage(props: {
       </Drawer>
 
       <Modal
-        title="编辑建议中的 TeachingPlan 变更"
+        title="编辑教学计划变更"
         open={editOpen}
         onCancel={() => setEditOpen(false)}
         width={820}
@@ -515,17 +505,17 @@ function EvidenceContext({
 }) {
   return (
     <Card className="workspace-card evidence-context" variant="borderless">
-      <Text className="section-kicker">CURRENT CONTEXT</Text>
+      <Text className="section-kicker">当前依据</Text>
       <Title level={3}>目标与证据</Title>
       <section>
-        <Text type="secondary">当前 Goal</Text>
+        <Text type="secondary">当前教学目标</Text>
         <p>{workspace.goal.title}</p>
       </section>
       <section>
         <Text type="secondary">直接观察</Text>
         {workspace.evidence.observations.map((observation) => (
           <article key={observation.observationRef}>
-            <strong>{observation.learnerLabel}</strong>
+            <strong>{cleanDisplayText(observation.learnerLabel)}</strong>
             <p>{observation.summary}</p>
             <small>
               {new Date(observation.observedAt).toLocaleString(
@@ -550,7 +540,7 @@ function EvidenceContext({
         </ul>
       </section>
       <section>
-        <Text type="secondary">Assistance</Text>
+        <Text type="secondary">辅助情况</Text>
         <p>
           {workspace.evidence.observations[0]?.assistance
             .description ?? "未记录"}
@@ -587,52 +577,62 @@ function StrategyCard(props: {
         <span>{props.label}</span>
         <Tag>{props.selected ? "当前选择" : "选择此策略"}</Tag>
       </div>
-      <Title level={3}>{props.strategy.title}</Title>
-      <Paragraph>{props.strategy.rationale}</Paragraph>
+      <Title level={3}>
+        {cleanDisplayText(props.strategy.title)}
+      </Title>
+      <Paragraph>
+        {cleanDisplayText(props.strategy.rationale)}
+      </Paragraph>
       <StrategySection title="使用证据">
         <div className="strategy-evidence">
-          {Array.from(new Set(props.strategy.evidenceRefs)).map(
-            (reference) => (
-              <Tag key={reference}>{shortEvidenceLabel(reference)}</Tag>
+          {Array.from(
+            new Set(
+              props.strategy.evidenceRefs.map(shortEvidenceLabel)
             )
-          )}
+          ).map((label) => (
+            <Tag key={label}>{label}</Tag>
+          ))}
         </div>
       </StrategySection>
       <StrategySection title="证据缺口">
         <ul>
           {props.strategy.knownGaps.map((gap) => (
-            <li key={gap}>{gap}</li>
+            <li key={gap}>{cleanDisplayText(gap)}</li>
           ))}
         </ul>
       </StrategySection>
       <StrategySection title="适用条件">
-        <p>{props.strategy.applicability}</p>
+        <p>{cleanDisplayText(props.strategy.applicability)}</p>
       </StrategySection>
       <StrategySection title="不适用条件">
         <ul>
           {props.strategy.unsuitableConditions.map((condition) => (
-            <li key={condition}>{condition}</li>
+            <li key={condition}>
+              {cleanDisplayText(condition)}
+            </li>
           ))}
         </ul>
       </StrategySection>
       <StrategySection title="建议课堂动作">
         <ol>
           {props.strategy.suggestedMoves.map((move) => (
-            <li key={move}>{move}</li>
+            <li key={move}>{cleanDisplayText(move)}</li>
           ))}
         </ol>
       </StrategySection>
       <StrategySection title="后续需要采集的证据">
         <ul>
           {props.strategy.followUpEvidence.map((evidence) => (
-            <li key={evidence}>{evidence}</li>
+            <li key={evidence}>{cleanDisplayText(evidence)}</li>
           ))}
         </ul>
       </StrategySection>
       <Alert
         type="warning"
         title="把握说明（不是概率）"
-        description={props.strategy.confidenceExplanation}
+        description={cleanDisplayText(
+          props.strategy.confidenceExplanation
+        )}
       />
     </article>
   );
@@ -656,7 +656,7 @@ function CopilotContextPanel(props: {
 }) {
   return (
     <Card className="workspace-card context-panel" variant="borderless">
-      <Text className="section-kicker">WHY THIS SUGGESTION</Text>
+      <Text className="section-kicker">建议解释</Text>
       <Title level={3}>建议依据与控制边界</Title>
       <dl>
         <div>
@@ -668,14 +668,12 @@ function CopilotContextPanel(props: {
           </dd>
         </div>
         <div>
-          <dt>Contract</dt>
-          <dd>{props.task ? "已固定精确版本" : "任务启动后固定"}</dd>
+          <dt>本次任务边界</dt>
+          <dd>{props.task ? "已固定，不随后台变化" : "任务启动时固定"}</dd>
         </div>
         <div>
-          <dt>模型</dt>
-          <dd>
-            <SemanticTag kind="mock">MockModelProvider</SemanticTag>
-          </dd>
+          <dt>助手状态</dt>
+          <dd>本地演示助手，不连接外部模型</dd>
         </div>
         <div>
           <dt>教师控制</dt>
@@ -685,7 +683,37 @@ function CopilotContextPanel(props: {
       <Alert
         type="info"
         title="边界"
-        description="建议不会改写 EvidenceClaim、Goal 或已发布内容；AuthorizationDecision 引用仅用于审计。"
+        description="建议不会改写已有证据、教学目标或已发布内容；系统也不能代替教师作出教学承诺。"
+      />
+      <Collapse
+        ghost
+        size="small"
+        className="technical-disclosure"
+        items={[
+          {
+            key: "technical",
+            label: "查看技术详情",
+            children: (
+              <dl className="detail-list">
+                <div>
+                  <dt>Contract</dt>
+                  <dd>{props.task?.contractRef ?? "任务创建后生成"}</dd>
+                </div>
+                <div>
+                  <dt>AuthorizationDecision</dt>
+                  <dd>
+                    {props.task?.authorizationDecisionRef ??
+                      "任务创建后生成"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>ModelProvider</dt>
+                  <dd>MockModelProvider</dd>
+                </div>
+              </dl>
+            )
+          }
+        ]}
       />
     </Card>
   );
@@ -699,14 +727,13 @@ function fieldTestId(field: keyof TeachingPlan): string {
 }
 
 function shortEvidenceLabel(reference: string): string {
-  const suffix = reference.split(":").at(-1);
   if (reference.includes("observation")) {
-    return `直接观察 · ${suffix}`;
+    return "直接观察";
   }
   if (reference.includes("claim")) {
-    return `待复核解释 · ${suffix}`;
+    return "待复核解释";
   }
-  return "证据引用";
+  return "其他依据";
 }
 
 function errorMessage(error: unknown): string {
