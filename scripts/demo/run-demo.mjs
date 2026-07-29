@@ -76,9 +76,9 @@ async function waitForHtml(url, timeoutMs = 30_000) {
   throw new Error(`${url} 首页启动检查超时。`);
 }
 
-function startPackage(packageName, environment) {
+function startPackage(packageName, environment, script = "dev") {
   const child = spawnPnpm(
-    ["--filter", packageName, "dev"],
+    ["--filter", packageName, script],
     environment
   );
   processes.push(child);
@@ -124,7 +124,7 @@ try {
     PORT: "3001"
   };
 
-  startPackage("@edu-agent/api", environment);
+  startPackage("@edu-agent/api", environment, "demo");
   await waitForJson(
     `${apiOrigin}${apiRoutes.health}`,
     (payload) =>
