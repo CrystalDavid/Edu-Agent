@@ -1,225 +1,387 @@
 import type { TeacherWorkspace } from "@edu-agent/contracts";
-import { Button, Card, Space, Tag, Typography } from "antd";
+import { Button, Tag } from "antd";
 
-import { SemanticTag } from "../components/SemanticTag";
+import {
+  cleanDisplayText,
+  formatDisplayDate,
+  teachingPlanStateLabel
+} from "../presentation";
 import type { AppRoute } from "../route";
 
-const { Paragraph, Text, Title } = Typography;
+type QuickIconName =
+  | "goal"
+  | "evidence"
+  | "copilot"
+  | "plan"
+  | "runs";
+
+const quickLinks: Array<{
+  label: string;
+  route: AppRoute;
+  icon: QuickIconName;
+  tone: string;
+}> = [
+  {
+    label: "教学目标",
+    route: "/goals",
+    icon: "goal",
+    tone: "blue"
+  },
+  {
+    label: "学习证据",
+    route: "/evidence",
+    icon: "evidence",
+    tone: "orange"
+  },
+  {
+    label: "教师助手",
+    route: "/copilot",
+    icon: "copilot",
+    tone: "purple"
+  },
+  {
+    label: "教学计划",
+    route: "/teaching-plan",
+    icon: "plan",
+    tone: "cyan"
+  },
+  {
+    label: "运行记录",
+    route: "/runs",
+    icon: "runs",
+    tone: "green"
+  }
+];
+
+function QuickIcon({ name }: { name: QuickIconName }) {
+  const paths: Record<QuickIconName, string[]> = {
+    goal: [
+      "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
+      "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
+      "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"
+    ],
+    evidence: ["M5 3h14v18H5z", "M8 8h8", "M8 12h8", "M8 16h5"],
+    copilot: [
+      "M7 7.5A5 5 0 0 1 17 7.5v3A5 5 0 0 1 12 15a5 5 0 0 1-5-4.5z",
+      "M9 19h6",
+      "M12 15v4",
+      "M4 9h3",
+      "M17 9h3"
+    ],
+    plan: ["M6 3h12v18H6z", "M9 8h6", "M9 12h6", "M9 16h4"],
+    runs: ["M4 12a8 8 0 1 0 2.3-5.7L4 8.6", "M4 4v4.6h4.6", "M12 8v5l3 2"]
+  };
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name].map((path) => (
+        <path d={path} key={path} />
+      ))}
+    </svg>
+  );
+}
 
 export function DashboardPage(props: {
   workspace: TeacherWorkspace;
   navigate: (route: AppRoute) => void;
-  openInspector: () => void;
 }) {
-  const observation = props.workspace.evidence.observations[0];
-  const claim = props.workspace.evidence.claims[0];
   const pending = props.workspace.pendingSuggestions.filter(
     (item) => item.status === "pending"
   ).length;
+  const teacherName = cleanDisplayText(
+    props.workspace.identity.teacherName
+  );
+  const className = cleanDisplayText(
+    props.workspace.courseRun.className
+  );
+  const planState = teachingPlanStateLabel(
+    props.workspace.latestTeachingPlan.state
+  );
+  const quickStatus: Record<QuickIconName, string> = {
+    goal: "1 个目标待持续验证",
+    evidence: `${props.workspace.evidence.observations.length} 条直接观察`,
+    copilot: pending ? `${pending} 条建议待处理` : "可生成课堂策略",
+    plan: `${planState} · 第 ${props.workspace.latestTeachingPlan.revisionNumber} 版`,
+    runs: "查看最近一次过程"
+  };
 
   return (
-    <div className="page-stack dashboard-page">
-      <section className="focus-card">
-        <div className="focus-card__body">
-          <Space wrap size={8}>
-            <Text className="section-kicker">明日教学焦点</Text>
-            <SemanticTag kind="fact">当前 CourseRun</SemanticTag>
-          </Space>
-          <Title>
-            明天的课，先解决“斜率”为什么改变图像
-          </Title>
-          <Paragraph>
-            两条直接观察提示：学生可能会判断结果，却仍把截距位置当成斜率大小依据。
-            这只是待复核解释，不是能力定论。
-          </Paragraph>
-          <Space wrap>
+    <div className="dashboard-page">
+      <header className="dashboard-greeting">
+        <div>
+          <h1>工作台</h1>
+          <p>上午好，{teacherName}</p>
+        </div>
+        <span>{className} · {props.workspace.courseRun.subject}</span>
+      </header>
+
+      <section
+        className="teaching-headline"
+        aria-labelledby="headline-title"
+      >
+        <div className="teaching-headline__content">
+          <span className="headline-label">明日教学重点</span>
+          <h2 id="headline-title">
+            先帮助学生理解“斜率为什么改变图像”
+          </h2>
+          <p>当前缺少新情境下的独立解释证据</p>
+          <div className="headline-actions">
             <Button
-              type="primary"
+              className="headline-primary"
               onClick={() => props.navigate("/copilot")}
             >
               打开教师助手
             </Button>
-            <Button onClick={() => props.navigate("/evidence")}>
+            <Button
+              className="headline-secondary"
+              onClick={() => props.navigate("/evidence")}
+            >
               查看学习证据
             </Button>
-            <Button type="text" onClick={props.openInspector}>
-              为什么显示这些内容
-            </Button>
-          </Space>
-        </div>
-        <aside className="focus-card__signal" aria-label="当前证据缺口">
-          <span>当前主要证据缺口</span>
-          <strong>缺少新情境中的独立解释</strong>
-          <small>需要课堂复评，不自动生成学生状态结论</small>
-        </aside>
-      </section>
-
-      <section aria-labelledby="today-heading">
-        <div className="section-heading">
-          <div>
-            <Text className="section-kicker">TODAY</Text>
-            <Title id="today-heading" level={2}>
-              今天需要处理
-            </Title>
           </div>
         </div>
-        <div className="attention-grid">
-          <button
-            type="button"
-            onClick={() => props.navigate("/evidence")}
-          >
-            <span className="attention-grid__count">
-              {props.workspace.evidence.claims.length}
-            </span>
-            <strong>待复核解释</strong>
-            <small>候选 EvidenceClaim</small>
-          </button>
-          <button
-            type="button"
-            onClick={() => props.navigate("/copilot")}
-          >
-            <span className="attention-grid__count">{pending}</span>
-            <strong>待处理建议</strong>
-            <small>Proposal only</small>
-          </button>
-          <button
-            type="button"
-            onClick={() => props.navigate("/teaching-plan")}
-          >
-            <span className="attention-grid__count">
-              {props.workspace.latestTeachingPlan.state ===
-              "in_review"
-                ? 1
-                : 0}
-            </span>
-            <strong>待审教学计划</strong>
-            <small>TeachingPlan Revision</small>
-          </button>
-          <button
-            type="button"
-            onClick={() => props.navigate("/goals")}
-          >
-            <span className="attention-grid__count">1</span>
-            <strong>即将复评的目标</strong>
-            <small>教师教学改进 Goal</small>
-          </button>
+        <div className="teaching-headline__visual" aria-hidden="true">
+          <svg viewBox="0 0 270 150">
+            <path className="visual-grid" d="M28 18v112M76 18v112M124 18v112M172 18v112M220 18v112M18 35h226M18 75h226M18 115h226" />
+            <path className="visual-axis" d="M25 120h220M45 132V15" />
+            <path className="visual-line visual-line--one" d="m48 108 174-72" />
+            <path className="visual-line visual-line--two" d="m48 58 174 46" />
+            <circle className="visual-point" cx="128" cy="75" r="5" />
+          </svg>
         </div>
       </section>
 
-      <div className="dashboard-grid dashboard-grid--context">
-        <Card className="workspace-card" variant="borderless">
-          <div className="section-heading">
-            <div>
-              <Text className="section-kicker">COURSE & GOAL</Text>
-              <Title level={3}>当前课程与教学目标</Title>
-            </div>
-            <Button
-              type="link"
-              onClick={() => props.navigate("/goals")}
+      <section className="dashboard-section" aria-labelledby="quick-heading">
+        <div className="dashboard-section__heading">
+          <h2 id="quick-heading">我的常用</h2>
+        </div>
+        <div className="quick-grid">
+          {quickLinks.map((item) => (
+            <button
+              type="button"
+              className="quick-card"
+              key={item.route}
+              onClick={() => props.navigate(item.route)}
             >
-              查看详情
-            </Button>
-          </div>
-          <div className="course-goal-grid">
-            <article>
-              <Text type="secondary">当前课程</Text>
-              <Title level={4}>
-                {props.workspace.courseRun.className} ·{" "}
-                {props.workspace.courseRun.subject}
-              </Title>
-              <Paragraph>
-                {props.workspace.learningObjective.title}
-              </Paragraph>
-            </article>
-            <article>
-              <SemanticTag kind="fact">教师个人 Goal</SemanticTag>
-              <Title level={4}>{props.workspace.goal.title}</Title>
-              <Paragraph>
-                目前已有方向判断与解释缺口证据；仍需收集不提供答案时的迁移解释。
-              </Paragraph>
-              <Tag>证据覆盖：部分</Tag>
-              <Text type="secondary">
-                不表示学生“完成”或“已掌握”
-              </Text>
-            </article>
-          </div>
-        </Card>
+              <span className={`quick-card__icon quick-card__icon--${item.tone}`}>
+                <QuickIcon name={item.icon} />
+              </span>
+              <span className="quick-card__copy">
+                <strong>{item.label}</strong>
+                <small>{quickStatus[item.icon]}</small>
+              </span>
+              <span className="quick-card__arrow" aria-hidden="true">›</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
-        <Card className="workspace-card plan-preview" variant="borderless">
-          <div className="section-heading">
-            <div>
-              <Text className="section-kicker">TEACHING PLAN</Text>
-              <Title level={3}>最近教学计划</Title>
-            </div>
-            <Tag>{props.workspace.latestTeachingPlan.state}</Tag>
-          </div>
-          <div className="revision-summary">
-            <span>
-              Revision{" "}
-              {props.workspace.latestTeachingPlan.revisionNumber}
-            </span>
-            <strong>
-              {props.workspace.latestTeachingPlan.title}
-            </strong>
-            <p>
-              {
-                props.workspace.latestTeachingPlan.content
-                  .lessonFocus
-              }
-            </p>
-          </div>
-          <Button
-            block
-            onClick={() => props.navigate("/teaching-plan")}
-          >
-            查看版本与 Diff
-          </Button>
-        </Card>
-      </div>
-
-      <Card className="workspace-card" variant="borderless">
-        <div className="section-heading">
-          <div>
-            <Text className="section-kicker">LEARNING EVIDENCE</Text>
-            <Title level={3}>学习证据摘要</Title>
-          </div>
-          <Button
-            type="link"
+      <section className="dashboard-section" aria-labelledby="todo-heading">
+        <div className="dashboard-section__heading">
+          <h2 id="todo-heading">今日待办</h2>
+          <span>按需要处理，不代表学生完成度</span>
+        </div>
+        <div className="todo-grid">
+          <TodoItem
+            count={props.workspace.evidence.claims.length}
+            label="待复核解释"
+            tone="orange"
             onClick={() => props.navigate("/evidence")}
-          >
+          />
+          <TodoItem
+            count={pending}
+            label="待处理建议"
+            tone="purple"
+            onClick={() => props.navigate("/copilot")}
+          />
+          <TodoItem
+            count={
+              props.workspace.latestTeachingPlan.state === "in_review"
+                ? 1
+                : 0
+            }
+            label="待审教学计划"
+            tone="cyan"
+            onClick={() => props.navigate("/teaching-plan")}
+          />
+          <TodoItem
+            count={1}
+            label="即将复评目标"
+            tone="blue"
+            onClick={() => props.navigate("/goals")}
+          />
+        </div>
+      </section>
+
+      <section className="dashboard-section" aria-labelledby="insight-heading">
+        <div className="dashboard-section__heading">
+          <h2 id="insight-heading">教学洞察</h2>
+          <button type="button" onClick={() => props.navigate("/evidence")}>
             查看全部
-          </Button>
+          </button>
         </div>
-        <div className="evidence-summary-grid">
-          <article>
-            <SemanticTag kind="observation">直接观察</SemanticTag>
-            <p>{observation?.summary ?? "暂无直接观察"}</p>
-            <small>
-              Assistance：{observation?.assistance.description ?? "无"}
-            </small>
+        <div className="insight-grid">
+          <article className="dashboard-card evidence-overview">
+            <div className="card-title-row">
+              <div>
+                <span className="card-eyebrow">学习证据</span>
+                <h3>最近直接观察</h3>
+              </div>
+              <span className="compact-count">
+                {props.workspace.evidence.observations.length} 条
+              </span>
+            </div>
+            <div className="evidence-mini-list">
+              {props.workspace.evidence.observations
+                .slice(0, 2)
+                .map((observation) => (
+                  <button
+                    type="button"
+                    key={observation.observationRef}
+                    onClick={() => props.navigate("/evidence")}
+                  >
+                    <span className="student-avatar">
+                      {cleanDisplayText(observation.learnerLabel)
+                        .replace("学生 ", "")
+                        .slice(-2)}
+                    </span>
+                    <span className="evidence-mini-list__content">
+                      <strong>
+                        {cleanDisplayText(observation.learnerLabel)}
+                      </strong>
+                      <small>{observation.summary}</small>
+                    </span>
+                    <span className="evidence-mini-list__meta">
+                      <Tag>
+                        {observation.assistance.answerReleased
+                          ? "使用辅助"
+                          : "独立作答"}
+                      </Tag>
+                      <time>{formatDisplayDate(observation.observedAt)}</time>
+                    </span>
+                  </button>
+                ))}
+            </div>
           </article>
-          <article>
-            <SemanticTag kind="claim">待复核解释</SemanticTag>
-            <p>{claim?.summary ?? "暂无候选解释"}</p>
-            <small>需要教师结合课堂观察复核</small>
-          </article>
-          <article>
-            <SemanticTag kind="estimate">证据缺口</SemanticTag>
-            <p>
-              {observation?.unknowns[0] ??
-                "尚未获得独立表现证据"}
-            </p>
-            <small>不计算 LearnerStateEstimate</small>
-          </article>
-          <article>
-            <SemanticTag kind="fact">表现条件</SemanticTag>
-            <p>
-              现有样本包含受助表现；独立迁移表现仍需下一轮采集。
-            </p>
-            <small>用条件描述，不给学生贴标签</small>
-          </article>
+
+          <div className="insight-side">
+            <article className="dashboard-card goal-overview">
+              <div className="card-title-row">
+                <div>
+                  <span className="card-eyebrow">当前教学目标</span>
+                  <h3>{props.workspace.goal.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => props.navigate("/goals")}
+                >
+                  查看
+                </button>
+              </div>
+              <p>
+                已有方向判断证据；仍需验证学生能否在新情境中独立解释。
+              </p>
+              <div className="coverage-note">
+                <span aria-hidden="true" />
+                证据覆盖部分条件，不代表已经掌握
+              </div>
+            </article>
+
+            <article className="dashboard-card plan-overview">
+              <div className="card-title-row">
+                <div>
+                  <span className="card-eyebrow">最近教学计划</span>
+                  <h3>{props.workspace.latestTeachingPlan.title}</h3>
+                </div>
+                <Tag>{planState}</Tag>
+              </div>
+              <p>
+                第 {props.workspace.latestTeachingPlan.revisionNumber} 版 ·{" "}
+                {props.workspace.latestTeachingPlan.content.lessonFocus}
+              </p>
+              <button
+                type="button"
+                onClick={() => props.navigate("/teaching-plan")}
+              >
+                查看变更
+              </button>
+            </article>
+          </div>
         </div>
-      </Card>
+      </section>
+
+      <section className="dashboard-section recent-section" aria-labelledby="recent-heading">
+        <div className="dashboard-section__heading">
+          <h2 id="recent-heading">最近活动</h2>
+        </div>
+        <div className="dashboard-card recent-activity">
+          <ActivityItem
+            tone="purple"
+            title="生成课堂调整建议"
+            detail="教师助手准备了两种可比较策略"
+            time="今天 09:20"
+          />
+          <ActivityItem
+            tone="cyan"
+            title="更新教学计划"
+            detail={`保存为第 ${props.workspace.latestTeachingPlan.revisionNumber} 版${planState}`}
+            time="昨天 16:45"
+          />
+          <ActivityItem
+            tone="orange"
+            title="复核学习证据"
+            detail="保留两条解释等待课堂验证"
+            time="昨天 15:30"
+          />
+          <ActivityItem
+            tone="blue"
+            title="查看运行记录"
+            detail="确认建议来源与教师控制边界"
+            time="昨天 15:28"
+          />
+        </div>
+      </section>
     </div>
+  );
+}
+
+function TodoItem(props: {
+  count: number;
+  label: string;
+  tone: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="todo-card" onClick={props.onClick}>
+      <span className={`todo-card__marker todo-card__marker--${props.tone}`} />
+      <strong>{props.count}</strong>
+      <span>{props.label}</span>
+      <span aria-hidden="true">›</span>
+    </button>
+  );
+}
+
+function ActivityItem(props: {
+  tone: string;
+  title: string;
+  detail: string;
+  time: string;
+}) {
+  return (
+    <article>
+      <span className={`activity-dot activity-dot--${props.tone}`} />
+      <div>
+        <strong>{props.title}</strong>
+        <small>{props.detail}</small>
+      </div>
+      <time>{props.time}</time>
+    </article>
   );
 }
