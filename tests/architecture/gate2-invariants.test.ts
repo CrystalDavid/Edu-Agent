@@ -84,6 +84,29 @@ describe("Gate 2 architecture invariants", () => {
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
   });
 
+  it("centralizes the bright blue design and presentation vocabulary", () => {
+    const tokens = source("apps/web/src/design-tokens.ts");
+    const main = source("apps/web/src/main.tsx");
+    const presentation = source("apps/web/src/presentation.ts");
+    const dashboard = source(
+      "apps/web/src/pages/DashboardPage.tsx"
+    );
+
+    expect(tokens).toContain('colorBrand: "#3370FF"');
+    expect(tokens).toContain(
+      'sidebarCollapsed: "84px"'
+    );
+    expect(main).toContain("installDesignTokens");
+    expect(main).toContain("theme={antdTheme}");
+    expect(presentation).toContain("teachingPlanStateLabel");
+    expect(presentation).toContain("合成学生");
+    expect(dashboard).toContain("明日教学重点");
+    expect(dashboard).toContain("我的常用");
+    expect(dashboard).toContain("今日待办");
+    expect(dashboard).toContain("教学洞察");
+    expect(dashboard).toContain("最近活动");
+  });
+
   it("uses one shared route contract instead of handwritten web paths", () => {
     const webApi = source("apps/web/src/api.ts");
     const apiApp = source("apps/api/src/app.ts");
