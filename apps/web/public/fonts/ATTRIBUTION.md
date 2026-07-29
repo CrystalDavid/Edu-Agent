@@ -1,8 +1,26 @@
 # Self-hosted font attribution
 
-Only the WOFF2 files used by the browser are committed. No font source
+Only browser-ready font files used by the demo are committed. No font source
 repository, CDN stylesheet, remote runtime request, or Base64 font is
 included.
+
+## HarmonyOS Sans SC / 鸿蒙黑体
+
+- Publisher: Huawei Device Co., Ltd.
+- Official source:
+  `https://developer.huawei.com/consumer/cn/design/resource/?catalogVersion=V1`
+- Official package date shown by the source page: 2026-06-12
+- Font internal version: 2.040
+- Local file:
+  `harmonyos-sans-sc/HarmonyOS_Sans_SC.ttf`
+- SHA-256:
+  `8978E05044E7089AD6A9DE38C505C8148305607983487435A916D2610700A7CA`
+- Delivery decision: the original variable TTF is redistributed unchanged.
+  It covers the 400, 500, 600 and 700 weights used by this demo.
+- Why no WOFF2/subset: the bundled licence prohibits modifying the font.
+- Licence: HarmonyOS Sans Fonts License Agreement
+- Licence copy: `licenses/HarmonyOS-Sans-License.txt`
+- Required notice: this software uses HarmonyOS Sans Fonts.
 
 ## Nunito
 

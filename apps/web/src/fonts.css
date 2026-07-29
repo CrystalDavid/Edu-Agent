@@ -11,6 +11,25 @@
 }
 
 /*
+ * HarmonyOS Sans SC 2.040 is the unchanged variable TTF from Huawei's
+ * official HarmonyOS Sans package. Its licence permits embedding and
+ * redistribution with software, forbids modifying the font, and requires
+ * attribution plus the original agreement. See public/fonts/ATTRIBUTION.md
+ * and public/fonts/licenses/HarmonyOS-Sans-License.txt.
+ */
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src:
+    local("HarmonyOS Sans SC"),
+    local("HarmonyOS Sans SC Regular"),
+    url("/fonts/harmonyos-sans-sc/HarmonyOS_Sans_SC.ttf")
+      format("truetype-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+}
+
+/*
  * Chiron GoRound TC v1.011 is intentionally limited to the exact
  * Traditional Chinese display glyphs used by this demo. Simplified
  * Chinese body copy uses the system SC fallback to avoid mixed regional
