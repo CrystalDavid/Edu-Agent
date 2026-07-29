@@ -76,7 +76,7 @@ export function RunsPage(props: {
             </Paragraph>
           </div>
         </div>
-        {explanation ? <Tag color="success">运行完成</Tag> : null}
+        {explanation ? <Tag color="processing">运行完成</Tag> : null}
       </header>
 
       {error ? (
@@ -277,7 +277,7 @@ function TechnicalDetails({
                     {
                       key: "effect",
                       label: "Effect",
-                      children: <Tag color="success">allow</Tag>
+                      children: <Tag color="processing">allow</Tag>
                     }
                   ]}
                 />
@@ -347,7 +347,7 @@ function teacherTimeline(explanation: RunExplanation) {
       description: explanation.disposition
         ? "已记录教师的接受、修改、拒绝或延后选择；这不表示课堂已经实施。"
         : "当前尚未形成外部承诺或正式教学决定。",
-      color: explanation.disposition ? "green" : "gray"
+      color: explanation.disposition ? "blue" : "gray"
     },
     {
       title: explanation.disposition
@@ -356,7 +356,7 @@ function teacherTimeline(explanation: RunExplanation) {
       description: explanation.disposition
         ? "如有修改，仅创建待审核版本，不会自动发布。"
         : "建议、后台处理和操作记录保持可追溯。",
-      color: explanation.disposition ? "green" : "gray"
+      color: explanation.disposition ? "blue" : "gray"
     }
   ];
 }

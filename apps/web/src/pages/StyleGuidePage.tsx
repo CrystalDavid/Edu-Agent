@@ -13,7 +13,7 @@ const swatches = [
   ["主文字", designTokens.colorText],
   ["边框", designTokens.colorBorder],
   ["警告", designTokens.colorWarning],
-  ["成功", designTokens.colorSuccess]
+  ["错误", designTokens.colorDanger]
 ] as const;
 
 export function StyleGuidePage() {
@@ -92,7 +92,7 @@ export function StyleGuidePage() {
           </article>
         </div>
         <div className="weight-samples">
-          {[300, 400, 500, 600, 700, 800].map((weight) => (
+          {[400, 600].map((weight) => (
             <div key={weight}>
               <span>{weight}</span>
               <p
