@@ -71,29 +71,35 @@ describe("Gate 2 architecture invariants", () => {
 
   it("keeps the teacher UI centered on daily work rather than system concepts", () => {
     const app = source("apps/web/src/App.tsx");
-    const dashboard = source(
-      "apps/web/src/pages/DashboardPage.tsx"
+    const sidebar = source(
+      "apps/web/src/components/portal/TeacherSidebar.tsx"
+    );
+    const overview = source(
+      "apps/web/src/pages/OverviewPage.tsx"
+    );
+    const agent = source(
+      "apps/web/src/components/portal/AgentComponents.tsx"
     );
     for (const route of [
-      "工作台",
+      "概览",
       "日程",
-      "课程",
+      "教学",
       "学生",
-      "作业",
-      "文件"
+      "文件",
+      "Agent"
     ]) {
-      expect(app).toContain(route);
+      expect(sidebar).toContain(route);
     }
-    expect(app).toContain(
-      "搜索课程、学生和文件，或告诉我你想完成什么"
-    );
-    expect(app).toContain("准备明天的课程");
-    expect(dashboard).toContain("今日课程");
-    expect(dashboard).toContain("快捷操作");
-    expect(dashboard).toContain("需要处理");
-    expect(dashboard).toContain("备课与课件");
-    expect(dashboard).toContain("学生学习情况");
-    expect(dashboard).toContain("今日日程与待办");
+    expect(sidebar).not.toContain("学习证据");
+    expect(sidebar).not.toContain("运行记录");
+    expect(agent).toContain("有什么可以帮你？");
+    expect(agent).toContain("描述你想完成的教学任务");
+    expect(overview).toContain("今天需要做什么");
+    expect(overview).toContain("今日课程");
+    expect(overview).toContain("学生概况");
+    expect(overview).toContain("备课组动态");
+    expect(overview).toContain("学校动态");
+    expect(overview).toContain("最近文件");
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
   });
 
@@ -101,23 +107,23 @@ describe("Gate 2 architecture invariants", () => {
     const tokens = source("apps/web/src/design-tokens.ts");
     const main = source("apps/web/src/main.tsx");
     const presentation = source("apps/web/src/presentation.ts");
-    const dashboard = source(
-      "apps/web/src/pages/DashboardPage.tsx"
+    const overview = source(
+      "apps/web/src/pages/OverviewPage.tsx"
     );
 
     expect(tokens).toContain('colorBrand: "#3370FF"');
     expect(tokens).toContain(
-      'sidebarWidth: "68px"'
+      'sidebarWidth: "260px"'
     );
     expect(main).toContain("installDesignTokens");
     expect(main).toContain("theme={antdTheme}");
     expect(presentation).toContain("teachingPlanStateLabel");
     expect(presentation).toContain("合成学生");
-    expect(dashboard).not.toContain("明日教学重点");
-    expect(dashboard).not.toContain("我的常用");
-    expect(dashboard).toContain("今日课程");
-    expect(dashboard).toContain("备课与课件");
-    expect(dashboard).toContain("最近文件");
+    expect(overview).not.toContain("明日教学重点");
+    expect(overview).not.toContain("我的常用");
+    expect(overview).toContain("今日课程");
+    expect(overview).toContain("备课组动态");
+    expect(overview).toContain("最近文件");
   });
 
   it("uses one shared route contract instead of handwritten web paths", () => {
@@ -136,23 +142,29 @@ describe("Gate 2 architecture invariants", () => {
     );
   });
 
-  it("keeps fonts self-hosted, pinned and honest about Simplified Chinese", () => {
+  it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(
       "apps/web/public/fonts/ATTRIBUTION.md"
     );
     const styleGuide = source(
-      "apps/web/src/pages/StyleGuidePage.tsx"
+      "apps/web/src/pages/TeacherStyleGuidePage.tsx"
     );
 
     expect(fonts).not.toMatch(/https?:\/\//);
+    expect(fonts).toContain(
+      '/fonts/harmonyos-sans-sc/HarmonyOS_Sans_SC.ttf'
+    );
+    expect(attribution).toContain("HarmonyOS Sans SC / 鸿蒙黑体");
+    expect(attribution).toContain("Font internal version: 2.040");
+    expect(attribution).toContain(
+      "licenses/HarmonyOS-Sans-License.txt"
+    );
     expect(attribution).toContain("v1.011");
     expect(attribution).toContain(
       "8c6a9bb9732545b9ed53f29ec5e1ab0ff53c4e6f"
     );
-    expect(styleGuide).toContain(
-      "昭源環方不宣称完整支持简化字"
-    );
-    expect(styleGuide).toContain("font-system-sc");
+    expect(styleGuide).toContain("HarmonyOS Sans SC 2.040");
+    expect(styleGuide).toContain("加载失败时回退");
   });
 });

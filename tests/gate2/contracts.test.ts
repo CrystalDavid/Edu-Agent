@@ -20,11 +20,14 @@ describe("Gate 2 UI and domain contracts", () => {
   it("freezes teacher-task routes and preserves detail routes", () => {
     expect(appRoutes).toEqual([
       "/",
+      "/overview",
       "/schedule",
+      "/teaching",
       "/courses",
       "/students",
       "/assignments",
       "/files",
+      "/agent",
       "/settings",
       "/goals",
       "/evidence",
