@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 
 export const appRoutes = [
   "/",
+  "/schedule",
+  "/courses",
+  "/students",
+  "/assignments",
+  "/files",
+  "/settings",
   "/goals",
   "/evidence",
   "/copilot",

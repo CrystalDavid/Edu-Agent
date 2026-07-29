@@ -47,6 +47,7 @@ export function CopilotPage(props: {
   setTask: (task: CreateTeacherCopilotTaskResult) => void;
   refreshWorkspace: () => Promise<void>;
   navigate: (route: AppRoute) => void;
+  initialPrompt?: string;
 }) {
   const [generating, setGenerating] = useState(false);
   const [disposing, setDisposing] = useState(false);
@@ -62,8 +63,15 @@ export function CopilotPage(props: {
   const [disposition, setDisposition] =
     useState<SuggestionDispositionResult | null>(null);
   const [taskPrompt, setTaskPrompt] = useState(
-    "根据当前学习证据，比较两种明日课堂调整策略"
+    props.initialPrompt ||
+      "根据当前学习证据，比较两种明日课堂调整策略"
   );
+
+  useEffect(() => {
+    if (props.initialPrompt) {
+      setTaskPrompt(props.initialPrompt);
+    }
+  }, [props.initialPrompt]);
 
   useEffect(() => {
     if (

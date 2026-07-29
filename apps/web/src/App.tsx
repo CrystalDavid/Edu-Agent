@@ -3,7 +3,6 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from "react";
@@ -19,7 +18,6 @@ import {
   Result,
   Skeleton,
   Space,
-  Tag,
   Tooltip,
   Typography
 } from "antd";
@@ -29,12 +27,47 @@ import {
   loadTeacherWorkbench,
   loadWorkspace
 } from "./api";
+import {
+  WorkspaceIcon,
+  type WorkspaceIconName
+} from "./components/WorkspaceIcon";
+import { recentFiles } from "./demo-read-model";
 import { cleanDisplayText } from "./presentation";
 import { useAppRoute, type AppRoute } from "./route";
 
 const DashboardPage = lazy(() =>
   import("./pages/DashboardPage").then((module) => ({
     default: module.DashboardPage
+  }))
+);
+const SchedulePage = lazy(() =>
+  import("./pages/SchedulePage").then((module) => ({
+    default: module.SchedulePage
+  }))
+);
+const CoursesPage = lazy(() =>
+  import("./pages/CoursesPage").then((module) => ({
+    default: module.CoursesPage
+  }))
+);
+const StudentsPage = lazy(() =>
+  import("./pages/StudentsPage").then((module) => ({
+    default: module.StudentsPage
+  }))
+);
+const AssignmentsPage = lazy(() =>
+  import("./pages/AssignmentsPage").then((module) => ({
+    default: module.AssignmentsPage
+  }))
+);
+const FilesPage = lazy(() =>
+  import("./pages/FilesPage").then((module) => ({
+    default: module.FilesPage
+  }))
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((module) => ({
+    default: module.SettingsPage
   }))
 );
 const GoalsPage = lazy(() =>
@@ -73,117 +106,35 @@ const InspectorPanel = lazy(() =>
   }))
 );
 
-const { Text } = Typography;
-
-type NavIconName =
-  | "workspace"
-  | "goal"
-  | "evidence"
-  | "copilot"
-  | "plan"
-  | "runs"
-  | "style"
-  | "settings"
-  | "search"
-  | "help"
-  | "plus";
-
 type NavigationItem = {
-  key: Exclude<AppRoute, "/style-guide">;
+  route:
+    | "/"
+    | "/schedule"
+    | "/courses"
+    | "/students"
+    | "/assignments"
+    | "/files";
   label: string;
-  compactLabel: string;
-  icon: NavIconName;
+  icon: WorkspaceIconName;
 };
 
 const navigation: NavigationItem[] = [
-  {
-    key: "/",
-    label: "今日工作台",
-    compactLabel: "工作台",
-    icon: "workspace"
-  },
-  {
-    key: "/goals",
-    label: "教学目标",
-    compactLabel: "目标",
-    icon: "goal"
-  },
-  {
-    key: "/evidence",
-    label: "学习证据",
-    compactLabel: "证据",
-    icon: "evidence"
-  },
-  {
-    key: "/copilot",
-    label: "教师助手",
-    compactLabel: "助手",
-    icon: "copilot"
-  },
-  {
-    key: "/teaching-plan",
-    label: "教学计划",
-    compactLabel: "计划",
-    icon: "plan"
-  },
-  {
-    key: "/runs",
-    label: "运行记录",
-    compactLabel: "记录",
-    icon: "runs"
-  }
+  { route: "/", label: "工作台", icon: "workspace" },
+  { route: "/schedule", label: "日程", icon: "schedule" },
+  { route: "/courses", label: "课程", icon: "course" },
+  { route: "/students", label: "学生", icon: "students" },
+  { route: "/assignments", label: "作业", icon: "assignment" },
+  { route: "/files", label: "文件", icon: "files" }
 ];
 
-function AppIcon({
-  name,
-  className
-}: {
-  name: NavIconName;
-  className?: string;
-}) {
-  const paths: Record<NavIconName, string[]> = {
-    workspace: ["M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h6v6h-6z"],
-    goal: [
-      "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z",
-      "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
-      "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"
-    ],
-    evidence: ["M5 3h14v18H5z", "M8 8h8", "M8 12h8", "M8 16h5"],
-    copilot: [
-      "M7 7.5A5 5 0 0 1 17 7.5v3A5 5 0 0 1 12 15a5 5 0 0 1-5-4.5z",
-      "M9 19h6",
-      "M12 15v4",
-      "M4 9h3",
-      "M17 9h3"
-    ],
-    plan: ["M6 3h12v18H6z", "M9 8h6", "M9 12h6", "M9 16h4", "M9 3v3", "M15 3v3"],
-    runs: ["M4 12a8 8 0 1 0 2.3-5.7L4 8.6", "M4 4v4.6h4.6", "M12 8v5l3 2"],
-    style: ["M5 19 12 5l7 14", "M8 14h8"],
-    settings: [
-      "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
-      "M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3l-.7.3a1.7 1.7 0 0 0-1.1 1.5V21H9v-.2a1.7 1.7 0 0 0-1.1-1.5l-.7-.3a1.7 1.7 0 0 0-1.9.3l-.1.1L2.4 16.6l.1-.1a1.7 1.7 0 0 0 .3-1.9l-.3-.7A1.7 1.7 0 0 0 1 12.8V9h.2a1.7 1.7 0 0 0 1.5-1.1l.3-.7a1.7 1.7 0 0 0-.3-1.9l-.1-.1L5.4 2.4l.1.1a1.7 1.7 0 0 0 1.9.3l.7-.3A1.7 1.7 0 0 0 9.2 1H13v.2a1.7 1.7 0 0 0 1.1 1.5l.7.3a1.7 1.7 0 0 0 1.9-.3l.1-.1 2.8 2.8-.1.1a1.7 1.7 0 0 0-.3 1.9l.3.7A1.7 1.7 0 0 0 21 9.2V13h-.2a1.7 1.7 0 0 0-1.5 1.1z"
-    ],
-    search: ["M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14z", "m16 16 4 4"],
-    help: ["M9.5 9a2.6 2.6 0 1 1 3.4 2.5c-.9.3-1.4.9-1.4 1.8", "M11.5 17h.01", "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"],
-    plus: ["M12 5v14", "M5 12h14"]
-  };
-  return (
-    <svg
-      className={className ?? "app-icon"}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name].map((path) => (
-        <path d={path} key={path} />
-      ))}
-    </svg>
-  );
-}
+const quickCommands = [
+  "准备明天的课程",
+  "制作一次函数课件",
+  "根据最近作业调整教学重点",
+  "查看今天未交作业",
+  "查看需要关注的学生",
+  "安排本周备课时间"
+] as const;
 
 function PageLoading() {
   return (
@@ -191,6 +142,48 @@ function PageLoading() {
       <Skeleton active paragraph={{ rows: 6 }} />
     </div>
   );
+}
+
+function activePrimaryRoute(route: AppRoute): NavigationItem["route"] | null {
+  if (navigation.some((item) => item.route === route)) {
+    return route as NavigationItem["route"];
+  }
+  if (
+    route === "/goals" ||
+    route === "/copilot" ||
+    route === "/teaching-plan"
+  ) {
+    return "/courses";
+  }
+  if (route === "/evidence") return "/students";
+  return null;
+}
+
+function commandDestination(command: string): AppRoute {
+  if (command.includes("未交") || command.includes("作业")) {
+    return command.includes("调整") ? "/copilot" : "/assignments";
+  }
+  if (command.includes("学生") || command.includes("学情")) {
+    return "/students";
+  }
+  if (command.includes("日程") || command.includes("备课时间")) {
+    return "/schedule";
+  }
+  if (
+    command.includes("课件") ||
+    command.includes("文件") ||
+    command.includes("教案")
+  ) {
+    return "/files";
+  }
+  if (
+    command.includes("准备") ||
+    command.includes("调整") ||
+    command.includes("策略")
+  ) {
+    return "/copilot";
+  }
+  return "/courses";
 }
 
 export function App() {
@@ -202,8 +195,11 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandText, setCommandText] = useState("");
+  const [agentTaskPrompt, setAgentTaskPrompt] = useState("");
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
   const initialRequest = useRef<Promise<TeacherWorkspace> | null>(
     null
   );
@@ -241,42 +237,53 @@ export function App() {
 
   useEffect(() => bootstrap(), [bootstrap]);
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "k"
+      ) {
+        event.preventDefault();
+        setCommandText("");
+        setNotificationOpen(false);
+        setIdentityOpen(false);
+        setCommandOpen(true);
+        return;
+      }
+      if (event.key === "Escape") {
+        setCommandOpen(false);
+        setNotificationOpen(false);
+        setIdentityOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, []);
+
   const retryBootstrap = () => {
     initialRequest.current = null;
     setWorkspace(null);
     bootstrap();
   };
 
-  const searchOptions = useMemo(
-    () =>
-      workspace
-        ? [
-            {
-              label: cleanDisplayText(workspace.courseRun.className),
-              hint: "当前课程",
-              route: "/goals" as const
-            },
-            {
-              label: workspace.learningObjective.title,
-              hint: "教学目标",
-              route: "/goals" as const
-            },
-            {
-              label: "学习证据",
-              hint: `${workspace.evidence.observations.length} 条直接观察`,
-              route: "/evidence" as const
-            },
-            {
-              label: workspace.latestTeachingPlan.title,
-              hint: "教学计划",
-              route: "/teaching-plan" as const
-            }
-          ].filter((item) =>
-            `${item.label}${item.hint}`.includes(searchTerm.trim())
-          )
-        : [],
-    [searchTerm, workspace]
-  );
+  const openCommand = (initialValue = "") => {
+    setCommandText(initialValue);
+    setNotificationOpen(false);
+    setIdentityOpen(false);
+    setCommandOpen(true);
+  };
+
+  const executeCommand = (value: string) => {
+    const command = value.trim();
+    if (!command) return;
+    const destination = commandDestination(command);
+    if (destination === "/copilot") {
+      setAgentTaskPrompt(command);
+    }
+    setCommandText("");
+    setCommandOpen(false);
+    navigate(destination);
+  };
 
   if (loading) {
     return (
@@ -347,93 +354,77 @@ export function App() {
 
   const teacherName = cleanDisplayText(workspace.identity.teacherName);
   const className = cleanDisplayText(workspace.courseRun.className);
+  const activeRoute = activePrimaryRoute(route);
 
   return (
-    <div
-      className={`teacher-shell ${
-        sidebarExpanded ? "teacher-shell--expanded" : ""
-      }`}
-    >
+    <div className="teacher-shell">
       <aside className="side-rail" aria-label="教师工作台导航">
-        <div className="brand">
-          <div className="brand__mark font-brand">教</div>
-          <div className="brand__copy">
-            <strong>Edu Agent</strong>
-            <span>教师工作台</span>
-          </div>
-        </div>
+        <Tooltip title={`${teacherName} · 数学教师`} placement="right">
+          <button
+            type="button"
+            className="rail-avatar"
+            aria-label="林老师头像"
+            onClick={() => {
+              setIdentityOpen((current) => !current);
+              setNotificationOpen(false);
+            }}
+          >
+            <Avatar size={38}>林</Avatar>
+          </button>
+        </Tooltip>
 
         <nav className="primary-nav" aria-label="主要页面">
           {navigation.map((item) => (
             <Tooltip
-              key={item.key}
-              title={sidebarExpanded ? null : item.label}
+              key={item.route}
+              title={item.label}
               placement="right"
             >
               <button
                 type="button"
                 className={
-                  route === item.key ? "nav-item nav-item--active" : "nav-item"
+                  activeRoute === item.route
+                    ? "nav-item nav-item--active"
+                    : "nav-item"
                 }
-                aria-current={route === item.key ? "page" : undefined}
+                aria-current={
+                  activeRoute === item.route ? "page" : undefined
+                }
                 aria-label={item.label}
-                onClick={() => navigate(item.key)}
+                onClick={() => navigate(item.route)}
               >
-                <AppIcon name={item.icon} />
-                <span className="nav-item__compact">{item.compactLabel}</span>
-                <span className="nav-item__expanded">{item.label}</span>
+                <WorkspaceIcon name={item.icon} />
+                <span>{item.label}</span>
               </button>
             </Tooltip>
           ))}
         </nav>
 
         <div className="rail-footer">
-          <Tooltip
-            title={sidebarExpanded ? null : "样式与字体"}
-            placement="right"
-          >
+          <Tooltip title="设置" placement="right">
             <button
               type="button"
               className={
+                route === "/settings" ||
+                route === "/runs" ||
                 route === "/style-guide"
                   ? "nav-item nav-item--active"
                   : "nav-item"
               }
               aria-current={
-                route === "/style-guide" ? "page" : undefined
+                route === "/settings" ||
+                route === "/runs" ||
+                route === "/style-guide"
+                  ? "page"
+                  : undefined
               }
-              aria-label="样式与字体"
-              onClick={() => navigate("/style-guide")}
-            >
-              <AppIcon name="style" />
-              <span className="nav-item__compact">样式</span>
-              <span className="nav-item__expanded">样式与字体</span>
-            </button>
-          </Tooltip>
-          <Tooltip
-            title={sidebarExpanded ? null : "设置"}
-            placement="right"
-          >
-            <button
-              type="button"
-              className="nav-item"
               aria-label="设置"
-              onClick={() => setInspectorOpen(true)}
+              onClick={() => navigate("/settings")}
             >
-              <AppIcon name="settings" />
-              <span className="nav-item__compact">设置</span>
-              <span className="nav-item__expanded">设置</span>
+              <WorkspaceIcon name="settings" />
+              <span>设置</span>
             </button>
           </Tooltip>
-          <button
-            type="button"
-            className="rail-expand-button"
-            aria-label={sidebarExpanded ? "收起侧栏" : "展开侧栏"}
-            onClick={() => setSidebarExpanded((current) => !current)}
-          >
-            <span aria-hidden="true">{sidebarExpanded ? "‹" : "›"}</span>
-            <span className="nav-item__expanded">收起侧栏</span>
-          </button>
         </div>
       </aside>
 
@@ -444,70 +435,87 @@ export function App() {
             <span>{className} · {workspace.courseRun.subject}</span>
           </div>
 
-          <div className="global-search">
-            <Input
-              value={searchTerm}
-              allowClear
-              prefix={<AppIcon name="search" />}
-              placeholder="搜索课程、目标、证据和教学计划"
-              aria-label="全局搜索"
-              onChange={(event) => setSearchTerm(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && searchOptions[0]) {
-                  navigate(searchOptions[0].route);
-                  setSearchTerm("");
-                }
-              }}
-            />
-            {searchTerm.trim() ? (
-              <div className="search-results" role="listbox">
-                {searchOptions.length ? (
-                  searchOptions.map((item) => (
-                    <button
-                      key={`${item.route}:${item.label}`}
-                      type="button"
-                      onClick={() => {
-                        navigate(item.route);
-                        setSearchTerm("");
-                      }}
-                    >
-                      <span>{item.label}</span>
-                      <small>{item.hint}</small>
-                    </button>
-                  ))
-                ) : (
-                  <p>没有找到匹配内容</p>
-                )}
-              </div>
-            ) : null}
-          </div>
+          <button
+            type="button"
+            className="global-command"
+            aria-label="打开搜索与任务输入"
+            aria-haspopup="dialog"
+            onClick={() => openCommand()}
+            data-testid="global-agent-input"
+          >
+            <WorkspaceIcon name="search" />
+            <span>搜索课程、学生和文件，或告诉我你想完成什么</span>
+            <kbd>Ctrl K</kbd>
+          </button>
 
           <div className="topbar__actions">
             <Button
               type="primary"
-              icon={<AppIcon name="plus" />}
-              onClick={() => navigate("/copilot")}
+              icon={<WorkspaceIcon name="plus" />}
+              onClick={() => openCommand()}
             >
-              新建任务
+              新建
             </Button>
-            <Tooltip title="帮助与使用边界">
+            <div className="topbar-popover-anchor">
+              <Tooltip title="通知">
+                <Button
+                  type="text"
+                  className="icon-button"
+                  aria-label="通知"
+                  icon={<WorkspaceIcon name="bell" />}
+                  onClick={() => {
+                    setNotificationOpen((current) => !current);
+                    setIdentityOpen(false);
+                  }}
+                />
+              </Tooltip>
+              {notificationOpen ? (
+                <div className="compact-popover" role="status">
+                  <strong>通知</strong>
+                  <span>暂无新通知</span>
+                </div>
+              ) : null}
+            </div>
+            <Tooltip title="帮助">
               <Button
                 type="text"
                 className="icon-button"
                 aria-label="帮助"
-                icon={<AppIcon name="help" />}
+                icon={<WorkspaceIcon name="help" />}
                 onClick={() => setInspectorOpen(true)}
               />
             </Tooltip>
-            <Tooltip title="当前使用示例数据，未连接真实学校系统">
-              <Tag className="demo-environment-tag">演示环境</Tag>
-            </Tooltip>
-            <div className="teacher-identity">
-              <Avatar>{teacherName.slice(0, 1)}</Avatar>
-              <div>
-                <strong>{teacherName}</strong>
-                <small>数学教师</small>
-              </div>
+            <div className="topbar-popover-anchor">
+              <button
+                type="button"
+                className="teacher-identity"
+                aria-label="林老师身份菜单"
+                onClick={() => {
+                  setIdentityOpen((current) => !current);
+                  setNotificationOpen(false);
+                }}
+              >
+                <Avatar size={34}>林</Avatar>
+                <span>{teacherName}</span>
+              </button>
+              {identityOpen ? (
+                <div className="identity-popover">
+                  <strong>{teacherName}</strong>
+                  <span>数学教师</span>
+                  <span className="demo-note">
+                    演示环境 · 当前使用示例数据
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdentityOpen(false);
+                      navigate("/settings");
+                    }}
+                  >
+                    打开设置
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
@@ -518,7 +526,29 @@ export function App() {
               <DashboardPage
                 workspace={workspace}
                 navigate={navigate}
+                openAgentTask={executeCommand}
               />
+            ) : null}
+            {route === "/schedule" ? (
+              <SchedulePage navigate={navigate} />
+            ) : null}
+            {route === "/courses" ? (
+              <CoursesPage workspace={workspace} navigate={navigate} />
+            ) : null}
+            {route === "/students" ? (
+              <StudentsPage workspace={workspace} navigate={navigate} />
+            ) : null}
+            {route === "/assignments" ? (
+              <AssignmentsPage
+                navigate={navigate}
+                openAgentTask={executeCommand}
+              />
+            ) : null}
+            {route === "/files" ? (
+              <FilesPage workspace={workspace} navigate={navigate} />
+            ) : null}
+            {route === "/settings" ? (
+              <SettingsPage navigate={navigate} />
             ) : null}
             {route === "/goals" ? (
               <GoalsPage workspace={workspace} />
@@ -533,6 +563,7 @@ export function App() {
                 setTask={setTask}
                 refreshWorkspace={refreshWorkspace}
                 navigate={navigate}
+                initialPrompt={agentTaskPrompt}
               />
             ) : null}
             {route === "/teaching-plan" ? (
@@ -549,6 +580,16 @@ export function App() {
         </main>
       </div>
 
+      {commandOpen ? (
+        <CommandPalette
+          value={commandText}
+          onChange={setCommandText}
+          onClose={() => setCommandOpen(false)}
+          onExecute={executeCommand}
+          className={className}
+        />
+      ) : null}
+
       {inspectorOpen ? (
         <Suspense fallback={null}>
           <InspectorPanel
@@ -559,6 +600,103 @@ export function App() {
           />
         </Suspense>
       ) : null}
+    </div>
+  );
+}
+
+function CommandPalette(props: {
+  value: string;
+  className: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onExecute: (value: string) => void;
+}) {
+  const filteredCommands = props.value.trim()
+    ? quickCommands.filter((command) =>
+        command.includes(props.value.trim())
+      )
+    : quickCommands;
+
+  return (
+    <div
+      className="command-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <section
+        className="command-palette"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="command-title"
+        data-testid="agent-command-palette"
+      >
+        <header>
+          <div>
+            <h2 id="command-title">搜索或开始一项任务</h2>
+            <p>当前范围：{props.className} · 数学</p>
+          </div>
+          <button
+            type="button"
+            className="command-close"
+            aria-label="关闭任务面板"
+            onClick={props.onClose}
+          >
+            ×
+          </button>
+        </header>
+        <Input
+          autoFocus
+          value={props.value}
+          size="large"
+          prefix={<WorkspaceIcon name="search" />}
+          placeholder="输入课程、学生、文件或想完成的事情"
+          aria-label="搜索与任务输入"
+          onChange={(event) => props.onChange(event.target.value)}
+          onPressEnter={() => {
+            const next = props.value.trim() || filteredCommands[0];
+            if (next) props.onExecute(next);
+          }}
+        />
+
+        <div className="command-section">
+          <span className="command-section__label">快捷任务</span>
+          <div className="command-list">
+            {filteredCommands.length ? (
+              filteredCommands.map((command) => (
+                <button
+                  type="button"
+                  key={command}
+                  onClick={() => props.onExecute(command)}
+                >
+                  <WorkspaceIcon name="chevron" />
+                  <span>{command}</span>
+                </button>
+              ))
+            ) : (
+              <button
+                type="button"
+                onClick={() => props.onExecute(props.value)}
+              >
+                <WorkspaceIcon name="chevron" />
+                <span>作为新任务开始：{props.value}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="command-context">
+          <div>
+            <span>建议使用</span>
+            <strong>{props.className} · 一次函数</strong>
+          </div>
+          <div>
+            <span>最近文件</span>
+            <strong>{recentFiles[0]?.name}</strong>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
