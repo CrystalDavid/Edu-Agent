@@ -17,9 +17,15 @@ import {
 import { appRoutes } from "../../apps/web/src/route.js";
 
 describe("Gate 2 UI and domain contracts", () => {
-  it("freezes the six teacher-workspace routes and the auxiliary style guide", () => {
+  it("freezes teacher-task routes and preserves detail routes", () => {
     expect(appRoutes).toEqual([
       "/",
+      "/schedule",
+      "/courses",
+      "/students",
+      "/assignments",
+      "/files",
+      "/settings",
       "/goals",
       "/evidence",
       "/copilot",

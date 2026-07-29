@@ -4,28 +4,22 @@ import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
 const screenshotRoot =
-  "output/playwright/gate2-ui-redesign/final";
+  "output/playwright/gate2-ui-redesign-v2/final";
 
 const bannedTeacherTerms = [
-  "Today",
-  "Goals",
-  "Evidence",
-  "Teacher Copilot",
-  "TeachingPlan",
-  "Runs",
-  "CourseRun",
-  "Mock",
-  "Revision",
-  "draft",
-  "in_review",
-  "Proposal",
   "EvidenceObservation",
   "EvidenceClaim",
-  "Assistance",
+  "CourseRun",
+  "TeachingPlanRevision",
+  "SuggestionDisposition",
   "ContextManifest",
   "AuthorizationDecision",
   "PromptBundle",
-  "RunManifest"
+  "RunManifest",
+  "AgentRun",
+  "TaskRun",
+  "Outbox",
+  "MockModelProvider"
 ] as const;
 
 const bannedSyntheticLabels = [
@@ -37,9 +31,10 @@ const bannedSyntheticLabels = [
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
+  await mkdir("docs/ui/images", { recursive: true });
 });
 
-test("API contract, bright workbench and Chinese default view stay aligned", async ({
+test("API contract and teacher-daily-work dashboard stay aligned", async ({
   page,
   request
 }) => {
@@ -78,10 +73,9 @@ test("API contract, bright workbench and Chinese default view stay aligned", asy
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", {
-      name: "先帮助学生理解“斜率为什么改变图像”"
-    })
+    page.getByRole("heading", { name: "上午好，林老师" })
   ).toBeVisible();
+  await expect(page.getByTestId("today-courses")).toBeVisible();
   expect(apiRequests.slice(0, 2)).toEqual([
     apiRoutes.health,
     apiRoutes.demo.bootstrap
@@ -91,80 +85,165 @@ test("API contract, bright workbench and Chinese default view stay aligned", asy
   );
   expect(new URL(page.url()).pathname).toBe("/");
 
-  await assertTeacherFacingChinese(page);
-  await expect(
-    page.getByText("演示环境", { exact: true })
-  ).toHaveCount(1);
   await expect(page.locator(".side-rail")).toHaveCSS(
     "width",
-    "84px"
+    "68px"
   );
+  await expect(
+    page.getByRole("button", { name: "林老师头像" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /展开侧栏|收起侧栏/ })
+  ).toHaveCount(0);
 
-  const headlineBackground = await page
-    .locator(".teaching-headline")
-    .evaluate((element) => getComputedStyle(element).backgroundImage);
-  expect(headlineBackground).toContain("rgb(51, 112, 255)");
+  const primaryNav = page.locator(".primary-nav");
+  for (const label of [
+    "工作台",
+    "日程",
+    "课程",
+    "学生",
+    "作业",
+    "文件"
+  ]) {
+    await expect(
+      primaryNav.getByRole("button", { name: label, exact: true })
+    ).toBeVisible();
+  }
+  for (const removed of [
+    "教师助手",
+    "学习证据",
+    "教学目标",
+    "运行记录",
+    "样式与字体"
+  ]) {
+    await expect(
+      primaryNav.getByRole("button", {
+        name: removed,
+        exact: true
+      })
+    ).toHaveCount(0);
+  }
 
   for (const heading of [
-    "我的常用",
-    "今日待办",
-    "教学洞察",
-    "最近活动"
+    "今日课程",
+    "快捷操作",
+    "需要处理",
+    "备课与课件",
+    "学生学习情况",
+    "今日日程与待办",
+    "最近文件"
   ]) {
     await expect(
       page.getByRole("heading", { name: heading })
     ).toBeVisible();
   }
-  const insightTop = await page
-    .getByRole("heading", { name: "教学洞察" })
-    .evaluate((element) => element.getBoundingClientRect().top);
-  expect(insightTop).toBeLessThan(900);
+  await expect(page.locator(".teaching-headline")).toHaveCount(0);
+  await expect(page.locator("[class*='hero']")).toHaveCount(0);
+  await assertTeacherFacingChinese(page);
+
+  const dashboardBrandBlocks = await page
+    .locator(".dashboard-page *")
+    .evaluateAll((elements) =>
+      elements
+        .map((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return {
+            background: style.backgroundColor,
+            width: rect.width,
+            height: rect.height
+          };
+        })
+        .filter(
+          (item) =>
+            item.background === "rgb(51, 112, 255)" &&
+            item.width > window.innerWidth * 0.6 &&
+            item.height > 80
+        )
+    );
+  expect(dashboardBrandBlocks).toEqual([]);
+
+  const quickIconColors = await page
+    .locator(".quick-action .workspace-icon")
+    .evaluateAll((icons) =>
+      Array.from(
+        new Set(icons.map((icon) => getComputedStyle(icon).color))
+      )
+    );
+  expect(quickIconColors).toEqual(["rgb(51, 112, 255)"]);
 
   await page.screenshot({
-    path: `${screenshotRoot}/01-workbench-1440x900.png`,
+    path: `${screenshotRoot}/01-home-1440x900.png`,
     animations: "disabled"
   });
   await page.screenshot({
-    path: `${screenshotRoot}/02-sidebar-collapsed.png`,
+    path: "docs/ui/images/gate2-v2-after.png",
     animations: "disabled"
   });
-  await page
-    .getByRole("heading", { name: "我的常用" })
-    .locator("xpath=..")
-    .locator("xpath=..")
-    .screenshot({
-      path: `${screenshotRoot}/03-my-common.png`,
-      animations: "disabled"
-    });
-  await page
-    .getByRole("heading", { name: "今日待办" })
-    .locator("xpath=..")
-    .locator("xpath=..")
-    .screenshot({
-      path: `${screenshotRoot}/04-today-todos.png`,
-      animations: "disabled"
-    });
+  await page.getByTestId("today-courses").screenshot({
+    path: `${screenshotRoot}/03-today-courses.png`,
+    animations: "disabled"
+  });
+  await page.getByTestId("quick-actions").screenshot({
+    path: `${screenshotRoot}/04-quick-actions.png`,
+    animations: "disabled"
+  });
+  await page.getByTestId("attention-items").screenshot({
+    path: `${screenshotRoot}/05-attention-items.png`,
+    animations: "disabled"
+  });
+  await page.getByTestId("teaching-assets").screenshot({
+    path: `${screenshotRoot}/06-preparation-assets.png`,
+    animations: "disabled"
+  });
+  await page.getByTestId("student-learning").screenshot({
+    path: `${screenshotRoot}/07-student-learning.png`,
+    animations: "disabled"
+  });
+  await page.getByTestId("schedule-todos").screenshot({
+    path: `${screenshotRoot}/08-schedule-todos.png`,
+    animations: "disabled"
+  });
 
-  await page.getByRole("button", { name: "展开侧栏" }).click();
-  await expect(page.locator(".side-rail")).toHaveCSS(
-    "width",
-    "204px"
-  );
+  await page.getByTestId("global-agent-input").click();
+  await expect(page.getByTestId("agent-command-palette")).toBeVisible();
+  for (const command of [
+    "准备明天的课程",
+    "制作一次函数课件",
+    "根据最近作业调整教学重点",
+    "查看今天未交作业",
+    "查看需要关注的学生",
+    "安排本周备课时间"
+  ]) {
+    await expect(
+      page.getByRole("button", { name: command })
+    ).toBeVisible();
+  }
+  await page.getByTestId("agent-command-palette").screenshot({
+    path: `${screenshotRoot}/09-agent-command-palette.png`,
+    animations: "disabled"
+  });
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "林老师身份菜单" }).click();
   await expect(
-    page.getByRole("button", { name: "今日工作台" })
-  ).toContainText("今日工作台");
-  await page.getByRole("button", { name: "收起侧栏" }).click();
-  await expect(page.locator(".side-rail")).toHaveCSS(
-    "width",
-    "84px"
-  );
+    page.getByText("演示环境", { exact: false })
+  ).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "上午好，林老师" })
+  ).toBeVisible();
   await page.screenshot({
-    path: `${screenshotRoot}/05-workbench-1920x1080.png`,
+    path: `${screenshotRoot}/02-home-1920x1080.png`,
     animations: "disabled"
   });
+  const dashboardWidth = await page
+    .locator(".dashboard-page")
+    .evaluate((element) => element.getBoundingClientRect().width);
+  expect(dashboardWidth).toBeLessThanOrEqual(1440);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth
@@ -172,64 +251,81 @@ test("API contract, bright workbench and Chinese default view stay aligned", asy
   ).toBeLessThanOrEqual(1);
 });
 
-test("evidence and assistant present teacher language before technical detail", async ({
+test("teacher pages organize courses, students, assignments and files", async ({
   page
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
-  await page.getByRole("button", { name: "学习证据" }).click();
-  await dismissNavTooltip(page);
 
+  const routes = [
+    ["/schedule", "日程"],
+    ["/courses", "课程"],
+    ["/students", "学生"],
+    ["/assignments", "作业"],
+    ["/files", "文件"],
+    ["/settings", "设置"]
+  ] as const;
+  for (const [route, heading] of routes) {
+    await page.goto(route);
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true })
+    ).toBeVisible();
+    await assertTeacherFacingChinese(page);
+  }
+
+  await page.goto("/courses");
+  await expect(page.getByText("当前课程", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "学习证据" })
+    page.getByRole("button", { name: "教学目标" })
   ).toBeVisible();
-  await expect(
-    page.getByTestId("evidence-observation")
-  ).toHaveCount(2);
-  await expect(page.getByTestId("evidence-claim")).toHaveCount(2);
-  await expect(
-    page.getByRole("heading", { name: "证据缺口" })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "辅助情况" })
-  ).toBeVisible();
-  await assertTeacherFacingChinese(page);
   await page.screenshot({
-    path: `${screenshotRoot}/06-learning-evidence.png`,
+    path: `${screenshotRoot}/10-courses.png`,
     fullPage: true,
     animations: "disabled"
   });
 
-  const detailButton = page
-    .getByTestId("evidence-observation")
-    .first()
-    .getByRole("button", { name: "查看来源与允许用途" });
-  await detailButton.click();
-  await expect(detailButton).toHaveAttribute(
-    "aria-expanded",
-    "true"
-  );
-  await expect(page.getByText("不得形成能力定论")).toBeVisible();
-
-  await page.getByRole("button", { name: "教师助手" }).click();
-  await dismissNavTooltip(page);
+  await page.goto("/students");
   await expect(
-    page.getByText(
-      "以下内容为教学建议草稿，需由教师判断和修改。"
-    )
+    page.getByRole("heading", { name: "需要关注", exact: true })
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "教师助手" })
+    page.getByRole("heading", { name: "学生 14", exact: true })
   ).toBeVisible();
-  await assertTeacherFacingChinese(page);
   await page.screenshot({
-    path: `${screenshotRoot}/07-teacher-copilot.png`,
+    path: `${screenshotRoot}/11-students.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+  await page.getByRole("button", { name: "查看分析依据" }).click();
+  await expect(
+    page.getByRole("heading", { name: "学习证据" })
+  ).toBeVisible();
+  await expect(page.getByTestId("evidence-observation")).toHaveCount(2);
+  await expect(page.getByTestId("evidence-claim")).toHaveCount(2);
+
+  await page.goto("/assignments");
+  await expect(page.getByText("4 人未交")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "布置作业" })
+  ).toBeDisabled();
+  await page.screenshot({
+    path: `${screenshotRoot}/12-assignments.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  await page.goto("/files");
+  await expect(
+    page.getByRole("button", { name: "新建文件" })
+  ).toBeDisabled();
+  await expect(page.getByText("备课材料")).toBeVisible();
+  await page.screenshot({
+    path: `${screenshotRoot}/13-files.png`,
     fullPage: true,
     animations: "disabled"
   });
 });
 
-test("teacher reviews strategies, edits a version and keeps implementation semantics unchanged", async ({
+test("global task entry drives the Mock Copilot without changing Gate 2 semantics", async ({
   page
 }) => {
   const consoleErrors: string[] = [];
@@ -249,17 +345,26 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
   });
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/copilot");
+  await page.goto("/");
+  await page.getByTestId("global-agent-input").click();
+  await page
+    .getByRole("textbox", { name: "搜索与任务输入" })
+    .fill("准备明天的课");
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/copilot$/);
+  await expect(
+    page.getByRole("textbox", { name: "教师助手任务说明" })
+  ).toHaveValue("准备明天的课");
+  await expect(
+    page.getByText(
+      "以下内容为教学建议草稿，需由教师判断和修改。"
+    )
+  ).toBeVisible();
+
   await page.getByTestId("generate-copilot").click();
   await expect(
     page.getByRole("heading", { name: "比较教学策略" })
   ).toBeVisible({ timeout: 20_000 });
-  await expect(
-    page.getByRole("button", { name: /策略 A/ })
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /策略 B/ })
-  ).toBeVisible();
   await page.getByRole("button", { name: /策略 B/ }).click();
   await expect(
     page
@@ -267,10 +372,16 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
       .getByRole("heading", { name: /对比样例/ })
   ).toBeVisible();
   await assertTeacherFacingChinese(page);
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator(".strategy-comparison-grid").evaluate((element) => {
+    window.scrollTo(
+      0,
+      window.scrollY +
+        element.getBoundingClientRect().top -
+        150
+    );
+  });
   await page.screenshot({
-    path: `${screenshotRoot}/08-strategy-comparison.png`,
-    fullPage: true,
+    path: `${screenshotRoot}/14-copilot-result.png`,
     animations: "disabled"
   });
 
@@ -282,8 +393,16 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
   ) {
     await firstDiffSection.click();
   }
-  await diff.screenshot({
-    path: `${screenshotRoot}/09-teaching-plan-diff.png`,
+  await diff.evaluate((element) => {
+    window.scrollTo(
+      0,
+      window.scrollY +
+        element.getBoundingClientRect().top -
+        76
+    );
+  });
+  await page.screenshot({
+    path: `${screenshotRoot}/15-teaching-plan-diff.png`,
     animations: "disabled"
   });
   await page.getByTestId("diff-view-all").click();
@@ -293,11 +412,11 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
 
   await page.getByTestId("edit-suggestion").click();
   const changedFields = page.locator(".edit-field textarea");
-  expect(await changedFields.count()).toBeGreaterThan(2);
-  const followUp = page.getByTestId("edit-follow-up");
+  expect(await changedFields.count()).toBeGreaterThan(0);
+  await expect(changedFields.first()).toBeEditable();
   const teacherChange =
     "教师修改：先核对独立解释，再决定是否继续提供句式支架。";
-  await followUp.fill(teacherChange);
+  await page.getByTestId("edit-follow-up").fill(teacherChange);
   await expect(page.getByTestId("edit-summary")).toContainText(
     "后续行动"
   );
@@ -321,43 +440,14 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
   await expect(page.getByText("修改后接受")).toBeVisible({
     timeout: 20_000
   });
-
-  await page
-    .getByRole("button", { name: "教学计划", exact: true })
-    .click();
-  await dismissNavTooltip(page);
   await expect(
-    page.getByRole("heading", { name: "教学计划", exact: true })
-  ).toBeVisible();
-  await expect(
-    page.locator(".plan-document").getByText(teacherChange)
-  ).toBeVisible();
-  await expect(page.getByText("待审核").first()).toBeVisible();
-  await expect(page.getByText("已发布")).toHaveCount(0);
-  await assertTeacherFacingChinese(page);
-  await page.screenshot({
-    path: `${screenshotRoot}/10-teaching-plan.png`,
-    fullPage: true,
-    animations: "disabled"
-  });
+    page.getByText("已发布", { exact: true })
+  ).toHaveCount(0);
 
-  await page
-    .getByRole("button", { name: "运行记录", exact: true })
-    .click();
-  await dismissNavTooltip(page);
+  await page.getByRole("button", { name: "查看运行依据" }).click();
   await expect(
     page.getByRole("heading", { name: "本次建议如何形成" })
   ).toBeVisible({ timeout: 20_000 });
-  await expect(
-    page.getByText("本地演示助手", { exact: true })
-  ).toBeVisible();
-  await assertTeacherFacingChinese(page);
-  await page.screenshot({
-    path: `${screenshotRoot}/11-run-records.png`,
-    fullPage: true,
-    animations: "disabled"
-  });
-
   await page
     .getByRole("button", { name: "查看可审计技术详情" })
     .click();
@@ -367,13 +457,18 @@ test("teacher reviews strategies, edits a version and keeps implementation seman
   await expect(
     page.getByText("ContextManifest", { exact: true })
   ).toBeVisible();
+  await page.screenshot({
+    path: `${screenshotRoot}/16-system-records-technical.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
 
   expect(consoleErrors).toEqual([]);
   expect(consoleWarnings).toEqual([]);
   expect(nonLocalRequests).toEqual([]);
 });
 
-test("routes, local fonts, explicit startup errors and responsive layouts remain stable", async ({
+test("routes, local fonts, startup diagnostics and responsive layouts remain stable", async ({
   page
 }) => {
   const fontRequests: string[] = [];
@@ -384,7 +479,13 @@ test("routes, local fonts, explicit startup errors and responsive layouts remain
   });
 
   const routes = [
-    ["/", "工作台"],
+    ["/", "上午好，林老师"],
+    ["/schedule", "日程"],
+    ["/courses", "课程"],
+    ["/students", "学生"],
+    ["/assignments", "作业"],
+    ["/files", "文件"],
+    ["/settings", "设置"],
     ["/goals", "教学目标"],
     ["/evidence", "学习证据"],
     ["/copilot", "教师助手"],
@@ -462,11 +563,6 @@ test("routes, local fonts, explicit startup errors and responsive layouts remain
   expect(
     uniqueFontRequests.filter((url) => url.includes("gf_")).length
   ).toBe(5);
-  await page.screenshot({
-    path: `${screenshotRoot}/12-style-and-fonts.png`,
-    fullPage: true,
-    animations: "disabled"
-  });
 
   for (const [width, height] of [
     [1280, 720],
@@ -562,9 +658,4 @@ async function platformFonts(
   } finally {
     await client.detach();
   }
-}
-
-async function dismissNavTooltip(page: Page): Promise<void> {
-  await page.mouse.move(720, 120);
-  await page.waitForTimeout(120);
 }

@@ -6,6 +6,7 @@ coverage/
 playwright-report/
 test-results/
 output/playwright/
+.playwright-cli/
 .pglite/
 .gate1a-data/
 .demo/

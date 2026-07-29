@@ -69,18 +69,31 @@ describe("Gate 2 architecture invariants", () => {
     );
   });
 
-  it("keeps the teacher UI workbench-centered rather than chat-centered", () => {
+  it("keeps the teacher UI centered on daily work rather than system concepts", () => {
     const app = source("apps/web/src/App.tsx");
+    const dashboard = source(
+      "apps/web/src/pages/DashboardPage.tsx"
+    );
     for (const route of [
-      "今日工作台",
-      "教学目标",
-      "学习证据",
-      "教师助手",
-      "教学计划",
-      "运行记录"
+      "工作台",
+      "日程",
+      "课程",
+      "学生",
+      "作业",
+      "文件"
     ]) {
       expect(app).toContain(route);
     }
+    expect(app).toContain(
+      "搜索课程、学生和文件，或告诉我你想完成什么"
+    );
+    expect(app).toContain("准备明天的课程");
+    expect(dashboard).toContain("今日课程");
+    expect(dashboard).toContain("快捷操作");
+    expect(dashboard).toContain("需要处理");
+    expect(dashboard).toContain("备课与课件");
+    expect(dashboard).toContain("学生学习情况");
+    expect(dashboard).toContain("今日日程与待办");
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
   });
 
@@ -94,17 +107,17 @@ describe("Gate 2 architecture invariants", () => {
 
     expect(tokens).toContain('colorBrand: "#3370FF"');
     expect(tokens).toContain(
-      'sidebarCollapsed: "84px"'
+      'sidebarWidth: "68px"'
     );
     expect(main).toContain("installDesignTokens");
     expect(main).toContain("theme={antdTheme}");
     expect(presentation).toContain("teachingPlanStateLabel");
     expect(presentation).toContain("合成学生");
-    expect(dashboard).toContain("明日教学重点");
-    expect(dashboard).toContain("我的常用");
-    expect(dashboard).toContain("今日待办");
-    expect(dashboard).toContain("教学洞察");
-    expect(dashboard).toContain("最近活动");
+    expect(dashboard).not.toContain("明日教学重点");
+    expect(dashboard).not.toContain("我的常用");
+    expect(dashboard).toContain("今日课程");
+    expect(dashboard).toContain("备课与课件");
+    expect(dashboard).toContain("最近文件");
   });
 
   it("uses one shared route contract instead of handwritten web paths", () => {
