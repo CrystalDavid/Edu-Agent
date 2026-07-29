@@ -3,17 +3,22 @@ export const designTokens = {
   colorBrandHover: "#2859D9",
   colorBrandSoft: "#EEF4FF",
   colorSurface: "#FFFFFF",
-  colorPage: "#F5F6F8",
+  colorPage: "#F5F7FA",
   colorText: "#1F2329",
   colorTextSecondary: "#646A73",
+  colorTextMuted: "#8F959E",
   colorBorder: "#E5E6EB",
+  colorDivider: "#EFF0F2",
+  colorSuccess: "#2E9B63",
   colorWarning: "#F5A623",
   colorDanger: "#F54A45",
-  radiusSmall: "10px",
-  radiusMedium: "12px",
-  sidebarWidth: "68px",
-  topbarHeight: "62px",
-  contentMaxWidth: "1440px"
+  radiusSmall: "12px",
+  radiusMedium: "18px",
+  radiusPill: "999px",
+  sidebarWidth: "260px",
+  contentMaxWidth: "1540px",
+  fontUi:
+    '"HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei UI", "PingFang SC", "Microsoft YaHei", sans-serif'
 } as const;
 
 const cssVariableNames: Record<keyof typeof designTokens, string> = {
@@ -24,14 +29,18 @@ const cssVariableNames: Record<keyof typeof designTokens, string> = {
   colorPage: "--color-page",
   colorText: "--color-text",
   colorTextSecondary: "--color-text-secondary",
+  colorTextMuted: "--color-text-muted",
   colorBorder: "--color-border",
+  colorDivider: "--color-divider",
+  colorSuccess: "--color-success",
   colorWarning: "--color-warning",
   colorDanger: "--color-danger",
   radiusSmall: "--radius-small",
   radiusMedium: "--radius-medium",
+  radiusPill: "--radius-pill",
   sidebarWidth: "--sidebar-width",
-  topbarHeight: "--topbar-height",
-  contentMaxWidth: "--content-max-width"
+  contentMaxWidth: "--content-max-width",
+  fontUi: "--font-ui"
 };
 
 export function installDesignTokens(root: HTMLElement): void {
@@ -49,7 +58,7 @@ export const antdTheme = {
     colorPrimaryHover: designTokens.colorBrandHover,
     colorPrimaryActive: designTokens.colorBrandHover,
     colorInfo: designTokens.colorBrand,
-    colorSuccess: designTokens.colorBrand,
+    colorSuccess: designTokens.colorSuccess,
     colorWarning: designTokens.colorWarning,
     colorError: designTokens.colorDanger,
     colorText: designTokens.colorText,
@@ -57,22 +66,21 @@ export const antdTheme = {
     colorBgLayout: designTokens.colorPage,
     colorBgContainer: designTokens.colorSurface,
     colorBorder: designTokens.colorBorder,
-    borderRadius: 10,
-    borderRadiusLG: 12,
+    borderRadius: 12,
+    borderRadiusLG: 18,
     fontSize: 14,
-    fontFamily:
-      '"Nunito", "Microsoft YaHei UI", "PingFang SC", "Microsoft YaHei", sans-serif'
+    fontFamily: designTokens.fontUi
   },
   components: {
     Button: {
-      controlHeight: 34,
-      controlHeightLG: 40,
-      borderRadius: 8,
-      borderRadiusLG: 10,
+      controlHeight: 36,
+      controlHeightLG: 42,
+      borderRadius: 18,
+      borderRadiusLG: 22,
       primaryShadow: "none"
     },
     Card: {
-      borderRadiusLG: 12
+      borderRadiusLG: 18
     },
     Input: {
       activeShadow: "0 0 0 3px rgb(51 112 255 / 12%)"

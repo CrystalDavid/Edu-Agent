@@ -8,6 +8,7 @@ import { antdTheme, installDesignTokens } from "./design-tokens";
 import "antd/dist/reset.css";
 import "./fonts.css";
 import "./styles.css";
+import "./teacher-portal.css";
 
 const root = document.getElementById("root");
 if (!root) {
