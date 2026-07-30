@@ -69,6 +69,10 @@ class StringSchema extends Schema {
     this.checks = checks;
   }
 
+  trim() {
+    return this;
+  }
+
   min(length) {
     return new StringSchema([
       ...this.checks,
