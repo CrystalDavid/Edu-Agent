@@ -55,10 +55,15 @@ function runPlaywright(environment) {
 }
 
 const runId = createE2eRunId();
+const databasePort = await allocatePort();
+const apiPort = await allocatePort();
+const webPort = await allocatePort();
 const databaseEnvironment = createE2eDatabaseEnvironment(
   runId,
-  await allocatePort()
+  databasePort
 );
+databaseEnvironment.E2E_API_PORT = String(apiPort);
+databaseEnvironment.E2E_WEB_PORT = String(webPort);
 const volumeName = e2eVolumeName(runId);
 const protectedStateBefore = snapshotProtectedLocalState();
 

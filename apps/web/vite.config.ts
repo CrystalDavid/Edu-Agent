@@ -7,10 +7,13 @@ export default defineConfig({
     manifest: true
   },
   server: {
-    port: 5173,
+    host: "127.0.0.1",
+    port: Number(process.env.E2E_WEB_PORT ?? 5173),
     strictPort: true,
     proxy: {
-      "/api": "http://localhost:3001"
+      "/api":
+        process.env.E2E_API_ORIGIN ??
+        "http://localhost:3001"
     }
   }
 });

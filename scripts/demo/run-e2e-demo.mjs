@@ -13,8 +13,6 @@ import {
   runCompose
 } from "../postgres/database-lifecycle.mjs";
 
-const apiOrigin = "http://localhost:3001";
-const webOrigin = "http://localhost:5173";
 const processes = [];
 let shuttingDown = false;
 
@@ -29,6 +27,18 @@ function requiredEnvironment(name) {
 }
 
 const runId = normalizeE2eRunId(requiredEnvironment("E2E_RUN_ID"));
+const apiPort = Number(requiredEnvironment("E2E_API_PORT"));
+const webPort = Number(requiredEnvironment("E2E_WEB_PORT"));
+if (
+  !Number.isInteger(apiPort) ||
+  !Number.isInteger(webPort) ||
+  apiPort < 1 ||
+  webPort < 1
+) {
+  throw new Error("E2E API and Web ports must be positive integers.");
+}
+const apiOrigin = `http://127.0.0.1:${apiPort}`;
+const webOrigin = `http://127.0.0.1:${webPort}`;
 const expectedProject = e2eComposeProject(runId);
 const expectedVolume = e2eVolumeName(runId);
 if (
@@ -55,7 +65,9 @@ const databaseEnvironment = Object.fromEntries(
     "POSTGRES_WORKER_PASSWORD",
     "COMPOSE_PROJECT_NAME",
     "POSTGRES_VOLUME_NAME",
-    "E2E_RUN_ID"
+    "E2E_RUN_ID",
+    "E2E_API_PORT",
+    "E2E_WEB_PORT"
   ].map((name) => [name, requiredEnvironment(name)])
 );
 
@@ -161,8 +173,8 @@ async function shutdown(exitCode, reason) {
 
 try {
   await Promise.all([
-    assertPortAvailable(3001, "API"),
-    assertPortAvailable(5173, "Web")
+    assertPortAvailable(apiPort, "API"),
+    assertPortAvailable(webPort, "Web")
   ]);
   process.stdout.write(
     `Starting isolated ${expectedProject} with volume ${expectedVolume}.\n`
@@ -198,7 +210,9 @@ try {
     COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
-    PORT: "3001"
+    PORT: String(apiPort),
+    E2E_API_ORIGIN: apiOrigin,
+    E2E_WEB_PORT: String(webPort)
   };
 
   startPackage("@edu-agent/api", applicationEnvironment, "demo");

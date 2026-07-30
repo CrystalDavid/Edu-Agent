@@ -113,7 +113,9 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     "学校动态",
     "最近文件"
   ]) {
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: heading, exact: true })
+    ).toBeVisible();
   }
   await expect(page.locator("[class*='hero']")).toHaveCount(0);
   await assertNoInternalTerms(page);
@@ -201,18 +203,21 @@ test("teaching workspace supports course files, homework and assessment analysis
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/teaching");
-  await expect(page.getByRole("heading", { name: "教学" })).toBeVisible();
-  await expect(page.getByTestId("course-tree")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "教学", exact: true })
+  ).toBeVisible();
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
+  await expect(page.getByTestId("lesson-detail")).toContainText(
+    "斜率与图像变化"
+  );
   await page.screenshot({
     path: `${screenshotRoot}/06-teaching-course-tree.png`,
     animations: "disabled"
   });
 
-  await page.getByTestId("course-tree").getByRole("button", { name: /第二单元/ }).click();
-  await page.getByTestId("course-tree").getByRole("button", { name: /第一节 数据的收集/ }).click();
-  await page.getByTestId("course-file-list").getByRole("button", { name: /八年级作业完成情况/ }).click();
-  await expect(page.getByTestId("file-preview")).toContainText(
-    "八年级作业完成情况"
+  await page.getByTestId("lesson-5").click();
+  await expect(page.getByTestId("lesson-detail")).toContainText(
+    "一次函数的应用"
   );
   await page.screenshot({
     path: `${screenshotRoot}/07-course-file-preview.png`,
@@ -230,7 +235,7 @@ test("teaching workspace supports course files, homework and assessment analysis
     animations: "disabled"
   });
 
-  await page.getByRole("tab", { name: /测试/ }).click();
+  await page.getByRole("tab", { name: /考试/ }).click();
   await expect(page.getByTestId("exam-dashboard")).toBeVisible();
   await page.getByTestId("exam-list").getByRole("button", { name: /期中阶段测评/ }).click();
   await expect(page.getByTestId("exam-dashboard")).toContainText(
@@ -402,7 +407,9 @@ test("all new routes and legacy redirects remain reachable", async ({
   }
 
   await page.goto("/courses");
-  await expect(page.getByRole("heading", { name: "教学" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "教学", exact: true })
+  ).toBeVisible();
   await page.goto("/assignments");
   await expect(page.getByTestId("homework-dashboard")).toBeVisible();
   await page.goto("/");
@@ -606,6 +613,207 @@ test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rej
   await expect(page.getByRole("cell", { name: "processed" }).first()).toBeVisible({
     timeout: 20_000
   });
+  await assertCleanMonitor(monitor);
+});
+
+test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved plan workflow", async ({
+  page,
+  request
+}) => {
+  const monitor = monitorPage(page);
+  const headers = {
+    "x-demo-tenant": "tenant:demo-school",
+    "x-demo-actor": "user:teacher-001"
+  };
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/teaching");
+  await page.getByTestId("lesson-3").click();
+  const lessonDetail = page.getByTestId("lesson-detail");
+  await expect(lessonDetail).toContainText("斜率与图像变化");
+  await expect(lessonDetail).toContainText(
+    "当前课时没有未完成的备课任务"
+  );
+  const initialPlansResponse = await request.get(
+    apiRoutes.teacher.lessonTeachingPlans(
+      "lesson:slope-and-graph-change"
+    ),
+    { headers }
+  );
+  expect(initialPlansResponse.status()).toBe(200);
+  const initialPlans = await initialPlansResponse.json();
+
+  await page.getByTestId("start-lesson-preparation").click();
+  await expect(page).toHaveURL(/\/agent\/tasks\//);
+  await expect(page.getByTestId("task-working-set")).toContainText(
+    "斜率与图像变化"
+  );
+  await expect(page.getByTestId("task-working-set")).toContainText(
+    "baseline approved plan"
+  );
+  const taskInput = page.getByRole("textbox", {
+    name: "教师助手任务说明"
+  });
+  const firstRequest =
+    "请强化斜率变化与图像陡峭程度的联系，并加入独立检查。";
+  await taskInput.fill(firstRequest);
+  const createResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        apiRoutes.demo.createTeacherCopilotTask
+      ) &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("generate-copilot").click();
+  const createdResponse = await createResponse;
+  expect(createdResponse.status()).toBe(201);
+  const created = await createdResponse.json();
+  expect(created.preparationTaskRef).toBeTruthy();
+  expect(created.authorizedContextPlanRef).toBeTruthy();
+  await expect(page).toHaveURL(/\/copilot\/proposals\//);
+  await expect(
+    page.getByRole("heading", { name: "比较教学策略" })
+  ).toBeVisible({ timeout: 20_000 });
+
+  let duplicateGenerationCalls = 0;
+  page.on("request", (webRequest) => {
+    if (
+      new URL(webRequest.url()).pathname ===
+        apiRoutes.demo.createTeacherCopilotTask &&
+      webRequest.method() === "POST"
+    ) {
+      duplicateGenerationCalls += 1;
+    }
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "比较教学策略" })
+  ).toBeVisible({ timeout: 20_000 });
+  expect(duplicateGenerationCalls).toBe(0);
+  await expect(page.getByText(firstRequest).first()).toBeVisible();
+
+  await page.getByTestId("edit-suggestion").click();
+  await page
+    .getByTestId("edit-lesson-focus")
+    .fill(
+      "教师修改：比较同方向直线的斜率绝对值与陡峭程度。"
+    );
+  await page.getByTestId("save-teacher-edits").click();
+  await expect(page.getByText("修改后接受")).toBeVisible({
+    timeout: 20_000
+  });
+
+  const beforeApprovalResponse = await request.get(
+    apiRoutes.teacher.lessonTeachingPlans(
+      "lesson:slope-and-graph-change"
+    ),
+    { headers }
+  );
+  const beforeApproval = await beforeApprovalResponse.json();
+  expect(beforeApproval.currentApproved.revisionRef).toBe(
+    initialPlans.currentApproved.revisionRef
+  );
+  expect(beforeApproval.activeInReview).not.toBeNull();
+
+  await page.getByRole("button", { name: "查看教学计划" }).click();
+  await expect(page).toHaveURL(/\/teaching-plan\/tasks\//);
+  await expect(
+    page.getByTestId("teaching-plan-preparation-task")
+  ).toContainText("awaiting_plan_review");
+  await page.getByTestId("approve-teaching-plan").click();
+  await expect(
+    page.getByTestId("teaching-plan-preparation-task")
+  ).toContainText("ready_for_use", { timeout: 20_000 });
+  const afterApprovalResponse = await request.get(
+    apiRoutes.teacher.lessonTeachingPlans(
+      "lesson:slope-and-graph-change"
+    ),
+    { headers }
+  );
+  const afterApproval = await afterApprovalResponse.json();
+  expect(afterApproval.currentApproved.revisionRef).not.toBe(
+    initialPlans.currentApproved.revisionRef
+  );
+  expect(afterApproval.activeInReview).toBeNull();
+
+  await page.getByTestId("complete-lesson-preparation").click();
+  await expect(
+    page.getByTestId("teaching-plan-preparation-task")
+  ).toContainText("completed", { timeout: 20_000 });
+  await page.reload();
+  await expect(
+    page.getByTestId("teaching-plan-preparation-task")
+  ).toContainText("completed", { timeout: 20_000 });
+  const summaryResponse = await request.get(
+    apiRoutes.teacher.lessonPreparationSummary,
+    { headers }
+  );
+  const summary = await summaryResponse.json();
+  expect(
+    summary.incompleteTasks.some(
+      (task: { taskRef: string }) =>
+        task.taskRef === created.preparationTaskRef
+    )
+  ).toBe(false);
+
+  await page.getByRole("button", { name: "返回备课 Task" }).click();
+  await expect(page).toHaveURL(/\/agent\/tasks\//);
+  await taskInput.fill(
+    "创建第二条建议，用于验证拒绝不会改变已批准计划。"
+  );
+  await page.getByTestId("generate-copilot").click();
+  await expect(
+    page.getByRole("heading", { name: "比较教学策略" })
+  ).toBeVisible({ timeout: 20_000 });
+  await page.getByTestId("reject-suggestion").click();
+  await expect(page.getByText("已拒绝")).toBeVisible({
+    timeout: 20_000
+  });
+  const afterRejectResponse = await request.get(
+    apiRoutes.teacher.lessonTeachingPlans(
+      "lesson:slope-and-graph-change"
+    ),
+    { headers }
+  );
+  const afterReject = await afterRejectResponse.json();
+  expect(afterReject.currentApproved.revisionRef).toBe(
+    afterApproval.currentApproved.revisionRef
+  );
+
+  await page.getByRole("button", { name: "查看运行依据" }).click();
+  await expect(page).toHaveURL(/\/runs\/tasks\//);
+  await page.getByText("查看可审计技术详情").click();
+  await page.getByText("备课 Task 与封存上下文").click();
+  await expect(
+    page.getByText("AuthorizedContextPlan", { exact: true })
+  ).toBeVisible();
+  await page.screenshot({
+    path: `${screenshotRoot}/19-gate2-5-recoverable-lesson-preparation.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  await page.goto("/overview");
+  await expect(
+    page.getByRole("heading", {
+      name: "今天需要做什么",
+      exact: true
+    })
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("today-work")
+  ).not.toContainText("斜率与图像变化");
+  await page
+    .getByTestId("today-courses")
+    .locator("article")
+    .filter({ hasText: "一次函数的应用" })
+    .getByRole("button", { name: "打开课时" })
+    .click();
+  await expect(page).toHaveURL(
+    /\/teaching\/lessons\/lesson(?:%3A|:)linear-function-application/
+  );
+  await expect(page.getByTestId("lesson-detail")).toContainText(
+    "一次函数的应用"
+  );
   await assertCleanMonitor(monitor);
 });
 

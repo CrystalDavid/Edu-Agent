@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const webOrigin = `http://127.0.0.1:${
+  process.env.E2E_WEB_PORT ?? "5173"
+}`;
+
 export default defineConfig({
   testDir: "./tests/playwright",
   outputDir: "./test-results/playwright",
@@ -18,7 +22,7 @@ export default defineConfig({
     ]
   ],
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: webOrigin,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -29,7 +33,7 @@ export default defineConfig({
   },
   webServer: {
     command: "pnpm demo:test-server",
-    url: "http://localhost:5173/api/health",
+    url: `${webOrigin}/api/health`,
     reuseExistingServer:
       process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",
     timeout: 120_000
