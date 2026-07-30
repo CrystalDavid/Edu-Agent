@@ -66,7 +66,7 @@ export function FilesPage(props: {
               <span className="status-text">
                 {asset.type === "教案"
                   ? teachingPlanStateLabel(
-                      props.workspace.latestTeachingPlan.state
+                      props.workspace.currentTeachingPlan.state
                     )
                   : asset.status}
               </span>

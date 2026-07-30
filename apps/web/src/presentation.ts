@@ -11,12 +11,18 @@ export function cleanDisplayText(value: string): string {
 }
 
 export function teachingPlanStateLabel(
-  state: "draft" | "proposal" | "in_review" | "published"
+  state:
+    | "draft"
+    | "proposal"
+    | "in_review"
+    | "approved"
+    | "published"
 ): string {
   return {
     draft: "草稿",
     proposal: "建议草稿",
     in_review: "待审核",
+    approved: "已批准",
     published: "已发布"
   }[state];
 }

@@ -56,7 +56,7 @@ function renderPlanValue(
 }
 
 export function TeachingPlanView(props: {
-  revision: TeacherWorkspace["latestTeachingPlan"];
+  revision: TeacherWorkspace["currentTeachingPlan"];
   onPrevious?: () => void;
 }) {
   return (

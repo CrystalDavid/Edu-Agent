@@ -16,7 +16,7 @@ export function CoursesPage(props: {
     props.workspace.courseRun.className
   );
   const planState = teachingPlanStateLabel(
-    props.workspace.latestTeachingPlan.state
+    props.workspace.currentTeachingPlan.state
   );
 
   return (

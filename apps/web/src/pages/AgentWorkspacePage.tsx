@@ -128,6 +128,10 @@ export function AgentWorkspacePage(props: {
   };
   const handleAction = (action: string) => {
     if (action === "创建教学任务") {
+      window.sessionStorage.setItem(
+        "copilot-prefill",
+        "根据当前学习证据，比较两种明日课堂调整策略"
+      );
       props.navigate("/copilot");
       return;
     }

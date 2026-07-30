@@ -17,12 +17,22 @@ export function TeachingWorkspacePage(props: {
 }) {
   const [tab, setTab] = useState<TeachingTab>(props.initialTab ?? "course");
   const handleAction = (action: string) => {
+    if (action === "调整下一课" || action === "生成新版本") {
+      window.sessionStorage.setItem(
+        "copilot-prefill",
+        action === "调整下一课"
+          ? "根据当前学习证据，提出并比较下一课的两种调整策略"
+          : "根据当前教学目标和证据，生成可审阅的教学计划新版本建议"
+      );
+      props.navigate("/copilot");
+      return;
+    }
     if (action.includes("Agent") || action.includes("讲评") || action.includes("调整下一课") || action.includes("个别指导")) {
       window.sessionStorage.setItem("agent-prefill", action);
       props.navigate("/agent");
       return;
     }
-    if (action === "查看历史" || action === "查看变更" || action === "生成新版本") {
+    if (action === "查看历史" || action === "查看变更") {
       props.navigate("/teaching-plan");
       return;
     }

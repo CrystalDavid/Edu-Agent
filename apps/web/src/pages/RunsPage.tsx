@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import type {
-  CreateTeacherCopilotTaskResult,
   RunExplanation,
   TeacherWorkspace
 } from "@edu-agent/contracts";
@@ -18,13 +17,16 @@ import {
   Typography
 } from "antd";
 
-import { loadRunExplanation } from "../api";
+import {
+  loadRunExplanation,
+  type RecoverableCopilotTask
+} from "../api";
 
 const { Paragraph, Text, Title } = Typography;
 
 export function RunsPage(props: {
   workspace: TeacherWorkspace;
-  task: CreateTeacherCopilotTaskResult | null;
+  task: RecoverableCopilotTask | null;
 }) {
   const latestTaskRef =
     props.task?.taskRef ??
@@ -123,6 +125,10 @@ export function RunsPage(props: {
               <Title level={3}>本次边界</Title>
               <dl className="summary-list">
                 <div>
+                  <dt>教师请求</dt>
+                  <dd>{explanation.task.request.requestText}</dd>
+                </div>
+                <div>
                   <dt>助手</dt>
                   <dd>本地演示助手</dd>
                 </div>
@@ -198,6 +204,18 @@ function TechnicalDetails({
                     children: explanation.task.taskRef
                   },
                   {
+                    key: "request",
+                    label: "Request text",
+                    children:
+                      explanation.task.request.requestText
+                  },
+                  {
+                    key: "request-version",
+                    label: "Request version",
+                    children:
+                      explanation.task.request.requestVersion
+                  },
+                  {
                     key: "task-run",
                     label: "TaskRun",
                     children: explanation.taskRun.taskRunRef
@@ -244,6 +262,21 @@ function TechnicalDetails({
                     label: "ContextManifest",
                     children:
                       explanation.contextManifest.contextManifestRef
+                  },
+                  {
+                    key: "request-summary",
+                    label: "Request summary",
+                    children:
+                      explanation.contextManifest.requestSummary
+                        .requestText
+                  },
+                  {
+                    key: "evidence",
+                    label: "Evidence refs",
+                    children:
+                      explanation.contextManifest.evidenceRefs.join(
+                        "；"
+                      )
                   },
                   {
                     key: "unknowns",

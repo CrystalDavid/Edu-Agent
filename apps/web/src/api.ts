@@ -1,14 +1,21 @@
 import {
   apiRoutes,
+  ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
   CreateTeacherCopilotTaskResultSchema,
+  PendingProposalListSchema,
+  ProposalReviewDetailSchema,
   RunExplanationSchema,
   SuggestionDispositionResultSchema,
   TeacherWorkspaceSchema,
   TeachingPlanRevisionViewSchema,
   type ApiHealth,
+  type ApproveTeachingPlanRequest,
+  type ApproveTeachingPlanResult,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
+  type PendingProposalList,
+  type ProposalReviewDetail,
   type RunExplanation,
   type SuggestionDispositionRequest,
   type SuggestionDispositionResult,
@@ -26,6 +33,10 @@ const demoHeaders = {
   "x-demo-actor": "user:teacher-001"
 };
 
+export type RecoverableCopilotTask =
+  | CreateTeacherCopilotTaskResult
+  | ProposalReviewDetail;
+
 type ResponseSchema<T> = {
   safeParse: (
     value: unknown
@@ -40,7 +51,8 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly service: string,
-    readonly requestUrl: string
+    readonly requestUrl: string,
+    readonly details?: Record<string, unknown>
   ) {
     super(message);
     this.name = "ApiError";
@@ -103,13 +115,15 @@ async function request<T>(
       .catch(() => ({}))) as {
       code?: string;
       message?: string;
+      details?: Record<string, unknown>;
     };
     throw new ApiError(
       response.status,
       payload.code ?? "UNKNOWN_API_ERROR",
       payload.message ?? `请求失败（HTTP ${response.status}）`,
       service,
-      requestUrl
+      requestUrl,
+      payload.details
     );
   }
 
@@ -168,6 +182,80 @@ export function disposeSuggestion(
   );
 }
 
+export function loadPendingProposals(): Promise<PendingProposalList> {
+  return request(
+    "待审建议列表",
+    apiRoutes.demo.pendingProposals,
+    PendingProposalListSchema
+  );
+}
+
+export function loadProposalDetail(
+  proposalRevisionRef: string
+): Promise<ProposalReviewDetail> {
+  return request(
+    "建议审阅详情",
+    apiRoutes.demo.proposalDetail(proposalRevisionRef),
+    ProposalReviewDetailSchema
+  );
+}
+
+export function approveTeachingPlan(
+  revisionRef: string,
+  input: ApproveTeachingPlanRequest
+): Promise<ApproveTeachingPlanResult> {
+  return request(
+    "批准教学计划",
+    apiRoutes.demo.approveTeachingPlan(revisionRef),
+    ApproveTeachingPlanResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function loadTeachingPlanState(): Promise<{
+  currentApproved: TeacherWorkspace["currentTeachingPlan"];
+  currentInReview: TeacherWorkspace["currentInReviewPlan"];
+  drafts: Array<TeacherWorkspace["currentTeachingPlan"]>;
+  history: Array<TeacherWorkspace["currentTeachingPlan"]>;
+}> {
+  const [
+    currentApproved,
+    currentInReview,
+    drafts,
+    history
+  ] = await Promise.all([
+    request(
+      "当前已批准教学计划",
+      apiRoutes.demo.currentApprovedTeachingPlan,
+      TeachingPlanRevisionViewSchema
+    ),
+    request(
+      "当前待审核教学计划",
+      apiRoutes.demo.currentInReviewTeachingPlan,
+      TeachingPlanRevisionViewSchema.nullable()
+    ),
+    request(
+      "教学计划草稿",
+      apiRoutes.demo.teachingPlanDrafts,
+      TeachingPlanRevisionViewSchema.array()
+    ),
+    request(
+      "教学计划版本历史",
+      apiRoutes.demo.teachingPlanHistory,
+      TeachingPlanRevisionViewSchema.array()
+    )
+  ]);
+  return {
+    currentApproved,
+    currentInReview,
+    drafts,
+    history
+  };
+}
+
 export function loadRunExplanation(
   taskRef: string
 ): Promise<RunExplanation> {
@@ -180,7 +268,7 @@ export function loadRunExplanation(
 
 export function loadTeachingPlanRevision(
   revisionRef: string
-): Promise<TeacherWorkspace["latestTeachingPlan"]> {
+): Promise<TeacherWorkspace["currentTeachingPlan"]> {
   return request(
     "教学计划修订",
     apiRoutes.demo.teachingPlanRevision(revisionRef),

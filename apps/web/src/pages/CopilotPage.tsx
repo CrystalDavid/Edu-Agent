@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
-  CreateTeacherCopilotTaskResult,
   PedagogicalStrategy,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
@@ -27,7 +26,10 @@ import {
 import {
   ApiError,
   createTeacherCopilotTask,
-  disposeSuggestion
+  disposeSuggestion,
+  loadPendingProposals,
+  loadProposalDetail,
+  type RecoverableCopilotTask
 } from "../api";
 import { SemanticTag } from "../components/SemanticTag";
 import {
@@ -43,13 +45,16 @@ const { TextArea } = Input;
 
 export function CopilotPage(props: {
   workspace: TeacherWorkspace;
-  task: CreateTeacherCopilotTaskResult | null;
-  setTask: (task: CreateTeacherCopilotTaskResult) => void;
+  task: RecoverableCopilotTask | null;
+  setTask: (task: RecoverableCopilotTask) => void;
   refreshWorkspace: () => Promise<void>;
   navigate: (route: AppRoute) => void;
+  proposalRevisionRef: string | null;
+  navigateProposal: (proposalRevisionRef: string) => void;
   initialPrompt?: string;
 }) {
   const [generating, setGenerating] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [disposing, setDisposing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStrategyId, setSelectedStrategyId] = useState<
@@ -62,6 +67,11 @@ export function CopilotPage(props: {
   >({});
   const [disposition, setDisposition] =
     useState<SuggestionDispositionResult | null>(null);
+  const [pendingProposals, setPendingProposals] = useState(
+    props.workspace.pendingSuggestions.filter(
+      (proposal) => proposal.status === "pending"
+    )
+  );
   const [taskPrompt, setTaskPrompt] = useState(
     props.initialPrompt ||
       "根据当前学习证据，比较两种明日课堂调整策略"
@@ -70,8 +80,72 @@ export function CopilotPage(props: {
   useEffect(() => {
     if (props.initialPrompt) {
       setTaskPrompt(props.initialPrompt);
+      return;
+    }
+    const prefill = window.sessionStorage.getItem("copilot-prefill");
+    if (prefill) {
+      setTaskPrompt(prefill);
+      window.sessionStorage.removeItem("copilot-prefill");
     }
   }, [props.initialPrompt]);
+
+  useEffect(() => {
+    let active = true;
+    void loadPendingProposals()
+      .then((result) => {
+        if (active) setPendingProposals(result.items);
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(errorMessage(caught));
+      });
+    return () => {
+      active = false;
+    };
+  }, [props.workspace.pendingSuggestions]);
+
+  useEffect(() => {
+    if (!props.proposalRevisionRef) return;
+    let active = true;
+    setRecovering(true);
+    setError(null);
+    void loadProposalDetail(props.proposalRevisionRef)
+      .then((detail) => {
+        if (!active) return;
+        props.setTask(detail);
+        setTaskPrompt(detail.request.requestText);
+        setSelectedStrategyId(
+          detail.disposition?.selectedStrategyId ??
+            detail.strategies[0]?.strategyId ??
+            null
+        );
+        setTeacherEdits(
+          (detail.disposition?.teacherEdits ??
+            {}) as Partial<TeachingPlan>
+        );
+        setDisposition(
+          detail.disposition
+            ? {
+                replayed: true,
+                dispositionRef:
+                  detail.disposition.dispositionRef,
+                disposition: detail.disposition.disposition,
+                implementationObserved: false,
+                instructionalDecisionCreated: false,
+                resultingRevision: detail.inReviewRevision
+              }
+            : null
+        );
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (active) setRecovering(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [props.proposalRevisionRef, props.setTask]);
 
   useEffect(() => {
     if (
@@ -93,13 +167,21 @@ export function CopilotPage(props: {
     selectedStrategyId && props.task
       ? props.task.diffsByStrategy[selectedStrategyId]
       : undefined;
+  const baselineRevision =
+    props.task && "baselineRevision" in props.task
+      ? props.task.baselineRevision
+      : props.workspace.currentTeachingPlan;
   const selectedPlan = useMemo(() => {
     if (!selectedDiff) return null;
     return applyDiffToPlan(
-      props.workspace.latestTeachingPlan.content,
+      baselineRevision.content,
       selectedDiff
     );
-  }, [props.workspace.latestTeachingPlan.content, selectedDiff]);
+  }, [baselineRevision.content, selectedDiff]);
+  const proposalDisposed =
+    props.task !== null &&
+    "status" in props.task &&
+    props.task.status === "disposed";
 
   async function generate() {
     setGenerating(true);
@@ -107,8 +189,21 @@ export function CopilotPage(props: {
     setDisposition(null);
     try {
       const result = await createTeacherCopilotTask({
+        requestText: taskPrompt,
         courseRunRef: props.workspace.courseRun.courseRunRef,
         goalRef: props.workspace.goal.goalRef,
+        learningObjectiveRefs: [
+          props.workspace.learningObjective.objectiveRef
+        ],
+        selectedEvidenceRefs: [
+          ...props.workspace.evidence.observations.map(
+            (item) => item.observationRef
+          ),
+          ...props.workspace.evidence.claims.map(
+            (item) => item.claimRef
+          )
+        ],
+        requestVersion: 1,
         purpose: "teacher-copilot.adjust-next-lesson",
         idempotencyKey: `ui:teacher-copilot:${crypto.randomUUID()}`
       });
@@ -118,6 +213,7 @@ export function CopilotPage(props: {
       );
       setTeacherEdits({});
       await props.refreshWorkspace();
+      props.navigateProposal(result.proposalRevisionRef);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -128,7 +224,7 @@ export function CopilotPage(props: {
   async function submitDisposition(
     kind: SuggestionDispositionKind
   ) {
-    if (!props.task || !selectedStrategyId) return;
+    if (!props.task || !selectedStrategyId || proposalDisposed) return;
     setDisposing(true);
     setError(null);
     try {
@@ -140,6 +236,10 @@ export function CopilotPage(props: {
             `ui:suggestion-disposition:${crypto.randomUUID()}`,
           disposition: kind,
           selectedStrategyId,
+          expectedProposalRevisionNumber:
+            "proposalRevisionNumber" in props.task
+              ? props.task.proposalRevisionNumber
+              : 1,
           teacherEdits:
             kind === "accepted_with_changes" ? teacherEdits : {},
           note:
@@ -150,6 +250,12 @@ export function CopilotPage(props: {
       );
       setDisposition(result);
       await props.refreshWorkspace();
+      const [detail, pending] = await Promise.all([
+        loadProposalDetail(props.task.proposalRevisionRef),
+        loadPendingProposals()
+      ]);
+      props.setTask(detail);
+      setPendingProposals(pending.items);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -191,6 +297,12 @@ export function CopilotPage(props: {
         title="以下内容为教学建议草稿，需由教师判断和修改。"
         description="接受建议只会形成待审核的教学计划版本，不表示课堂已经实施，也不会自动发布。"
       />
+      <Alert
+        type="warning"
+        showIcon
+        title="当前使用本地演示教师身份"
+        description="前端显式发送合成教师身份；这不是正式登录或 SSO。服务端默认不会在缺失身份时自动放行。"
+      />
 
       {error ? (
         <Alert
@@ -222,9 +334,62 @@ export function CopilotPage(props: {
           onClick={generate}
           data-testid="generate-copilot"
         >
-          {props.task ? "重新生成策略" : "生成两种策略"}
+          {props.task ? "提交新的备课任务" : "生成两种策略"}
         </Button>
       </Card>
+
+      <Card
+        className="workspace-card"
+        variant="borderless"
+        data-testid="pending-proposals"
+      >
+        <div className="section-heading">
+          <div>
+            <Text className="section-kicker">可恢复审阅</Text>
+            <Title level={3}>待审建议</Title>
+          </div>
+          <Tag>{pendingProposals.length} 条</Tag>
+        </div>
+        {pendingProposals.length ? (
+          <Space orientation="vertical" size="middle">
+            {pendingProposals.map((proposal) => (
+              <Card
+                key={proposal.proposalRevisionRef}
+                size="small"
+              >
+                <Space orientation="vertical" size="small">
+                  <Text strong>{proposal.requestText}</Text>
+                  <Text type="secondary">
+                    {proposal.strategyTitles.join(" / ")} ·{" "}
+                    {new Date(proposal.createdAt).toLocaleString(
+                      "zh-CN"
+                    )}
+                  </Text>
+                  <Button
+                    onClick={() =>
+                      props.navigateProposal(
+                        proposal.proposalRevisionRef
+                      )
+                    }
+                    data-testid="continue-proposal-review"
+                  >
+                    继续审阅
+                  </Button>
+                </Space>
+              </Card>
+            ))}
+          </Space>
+        ) : (
+          <Text type="secondary">当前没有待审建议。</Text>
+        )}
+      </Card>
+
+      {recovering ? (
+        <Card className="workspace-card loading-card" variant="borderless">
+          <Spin />
+          <Text>正在从 PostgreSQL 恢复建议、请求与证据…</Text>
+        </Card>
+      ) : null}
 
       {generating ? (
         <Card className="workspace-card loading-card" variant="borderless">
@@ -239,7 +404,10 @@ export function CopilotPage(props: {
       {props.task && selectedStrategy ? (
         <div className="copilot-workspace">
           <aside className="copilot-evidence-column">
-            <EvidenceContext workspace={props.workspace} />
+            <EvidenceContext
+              workspace={props.workspace}
+              task={props.task}
+            />
           </aside>
 
           <section className="copilot-main-column">
@@ -272,9 +440,7 @@ export function CopilotPage(props: {
             {selectedDiff && selectedPlan ? (
               <TeachingPlanDiffView
                 diff={selectedDiff}
-                baseline={
-                  props.workspace.latestTeachingPlan.content
-                }
+                baseline={baselineRevision.content}
                 proposed={selectedPlan}
                 parentRevisionNumber={
                   Math.max(
@@ -288,49 +454,58 @@ export function CopilotPage(props: {
               />
             ) : null}
 
-            <Card
-              className="workspace-card disposition-card"
-              variant="borderless"
-            >
-              <div>
-                <Text className="section-kicker">教师控制</Text>
-                <Title level={3}>教师处置</Title>
-                <Paragraph>
-                  接受表示你完成了建议处置，不表示课堂已实施；保存只形成待审核版本。
-                </Paragraph>
-              </div>
-              <Space wrap>
-                <Button
-                  type="primary"
-                  loading={disposing}
-                  onClick={() => submitDisposition("accepted")}
-                  data-testid="accept-suggestion"
-                >
-                  接受并提交审阅
-                </Button>
-                <Button
-                  onClick={() => setEditOpen(true)}
-                  data-testid="edit-suggestion"
-                >
-                  修改字段
-                </Button>
-                <Button
-                  danger
-                  loading={disposing}
-                  onClick={() => submitDisposition("rejected")}
-                  data-testid="reject-suggestion"
-                >
-                  拒绝
-                </Button>
-                <Button
-                  loading={disposing}
-                  onClick={() => submitDisposition("deferred")}
-                  data-testid="defer-suggestion"
-                >
-                  延后
-                </Button>
-              </Space>
-            </Card>
+            {proposalDisposed ? (
+              <Alert
+                type="info"
+                showIcon
+                title="这条建议已经完成最终处置"
+                description="系统从持久化记录恢复了原处置；同一 Proposal 版本不能再次处置。"
+              />
+            ) : (
+              <Card
+                className="workspace-card disposition-card"
+                variant="borderless"
+              >
+                <div>
+                  <Text className="section-kicker">教师控制</Text>
+                  <Title level={3}>教师处置</Title>
+                  <Paragraph>
+                    接受表示你完成了建议处置，不表示课堂已实施；保存只形成待审核版本。
+                  </Paragraph>
+                </div>
+                <Space wrap>
+                  <Button
+                    type="primary"
+                    loading={disposing}
+                    onClick={() => submitDisposition("accepted")}
+                    data-testid="accept-suggestion"
+                  >
+                    接受并提交审阅
+                  </Button>
+                  <Button
+                    onClick={() => setEditOpen(true)}
+                    data-testid="edit-suggestion"
+                  >
+                    修改字段
+                  </Button>
+                  <Button
+                    danger
+                    loading={disposing}
+                    onClick={() => submitDisposition("rejected")}
+                    data-testid="reject-suggestion"
+                  >
+                    拒绝
+                  </Button>
+                  <Button
+                    loading={disposing}
+                    onClick={() => submitDisposition("deferred")}
+                    data-testid="defer-suggestion"
+                  >
+                    延后
+                  </Button>
+                </Space>
+              </Card>
+            )}
 
             {disposition ? (
               <Result
@@ -370,7 +545,7 @@ export function CopilotPage(props: {
         </div>
       ) : (
         <div className="copilot-empty-grid">
-          <EvidenceContext workspace={props.workspace} />
+          <EvidenceContext workspace={props.workspace} task={null} />
           <Card className="workspace-card copilot-launch" variant="borderless">
             <SemanticTag kind="claim">
               {`${props.workspace.evidence.claims.length} 条待复核解释`}
@@ -507,10 +682,31 @@ export function CopilotPage(props: {
 }
 
 function EvidenceContext({
-  workspace
+  workspace,
+  task
 }: {
   workspace: TeacherWorkspace;
+  task: RecoverableCopilotTask | null;
 }) {
+  const evidence =
+    task && "evidence" in task
+      ? task.evidence
+      : {
+          observations: workspace.evidence.observations.filter(
+            (item) =>
+              !task ||
+              task.request.selectedEvidenceRefs.includes(
+                item.observationRef
+              )
+          ),
+          claims: workspace.evidence.claims.filter(
+            (item) =>
+              !task ||
+              task.request.selectedEvidenceRefs.includes(
+                item.claimRef
+              )
+          )
+        };
   return (
     <Card className="workspace-card evidence-context" variant="borderless">
       <Text className="section-kicker">当前依据</Text>
@@ -521,7 +717,7 @@ function EvidenceContext({
       </section>
       <section>
         <Text type="secondary">直接观察</Text>
-        {workspace.evidence.observations.map((observation) => (
+        {evidence.observations.map((observation) => (
           <article key={observation.observationRef}>
             <strong>{cleanDisplayText(observation.learnerLabel)}</strong>
             <p>{observation.summary}</p>
@@ -538,7 +734,7 @@ function EvidenceContext({
         <ul>
           {Array.from(
             new Set(
-              workspace.evidence.observations.flatMap(
+              evidence.observations.flatMap(
                 (item) => item.unknowns
               )
             )
@@ -550,9 +746,13 @@ function EvidenceContext({
       <section>
         <Text type="secondary">辅助情况</Text>
         <p>
-          {workspace.evidence.observations[0]?.assistance
+          {evidence.observations[0]?.assistance
             .description ?? "未记录"}
         </p>
+      </section>
+      <section>
+        <Text type="secondary">待复核解释</Text>
+        <p>{evidence.claims.length} 条（不作为学生能力定论）</p>
       </section>
     </Card>
   );
@@ -660,7 +860,7 @@ function StrategySection(props: {
 
 function CopilotContextPanel(props: {
   workspace: TeacherWorkspace;
-  task: CreateTeacherCopilotTaskResult | null;
+  task: RecoverableCopilotTask | null;
 }) {
   return (
     <Card className="workspace-card context-panel" variant="borderless">
@@ -676,8 +876,19 @@ function CopilotContextPanel(props: {
           </dd>
         </div>
         <div>
+          <dt>教师原始请求</dt>
+          <dd>
+            {props.task?.request.requestText ??
+              "任务启动后按原文持久化"}
+          </dd>
+        </div>
+        <div>
           <dt>本次任务边界</dt>
-          <dd>{props.task ? "已固定，不随后台变化" : "任务启动时固定"}</dd>
+          <dd>
+            {props.task
+              ? `${props.task.request.selectedEvidenceRefs.length} 条证据引用已固定，不随后台变化`
+              : "任务启动时固定"}
+          </dd>
         </div>
         <div>
           <dt>助手状态</dt>

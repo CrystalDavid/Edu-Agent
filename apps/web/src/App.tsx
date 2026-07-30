@@ -7,10 +7,7 @@ import {
   useState
 } from "react";
 
-import type {
-  CreateTeacherCopilotTaskResult,
-  TeacherWorkspace
-} from "@edu-agent/contracts";
+import type { TeacherWorkspace } from "@edu-agent/contracts";
 import {
   Button,
   Result,
@@ -21,6 +18,7 @@ import {
 
 import {
   ApiError,
+  type RecoverableCopilotTask,
   loadTeacherWorkbench,
   loadWorkspace
 } from "./api";
@@ -106,9 +104,15 @@ function PageLoading() {
   );
 }
 export function App() {
-  const { route, navigate } = useAppRoute();
+  const {
+    route,
+    navigate,
+    proposalRevisionRef,
+    navigateProposal
+  } = useAppRoute();
   const [workspace, setWorkspace] = useState<TeacherWorkspace | null>(null);
-  const [task, setTask] = useState<CreateTeacherCopilotTaskResult | null>(null);
+  const [task, setTask] =
+    useState<RecoverableCopilotTask | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -245,6 +249,8 @@ export function App() {
                 setTask={setTask}
                 refreshWorkspace={refreshWorkspace}
                 navigate={navigate}
+                proposalRevisionRef={proposalRevisionRef}
+                navigateProposal={navigateProposal}
                 initialPrompt=""
               />
             </div>
@@ -255,7 +261,11 @@ export function App() {
                 <button type="button" onClick={() => navigate("/teaching")}><WorkspaceIcon name="arrowLeft" />返回教学</button>
                 <span>教学计划版本与变更</span>
               </header>
-              <TeachingPlanPage workspace={workspace} task={task} />
+              <TeachingPlanPage
+                workspace={workspace}
+                task={task}
+                refreshWorkspace={refreshWorkspace}
+              />
             </div>
           ) : null}
           {route === "/runs" ? (

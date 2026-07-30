@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import type {
-  CreateTeacherCopilotTaskResult,
   TeacherWorkspace
 } from "@edu-agent/contracts";
 import {
@@ -14,7 +13,13 @@ import {
   Typography
 } from "antd";
 
-import { loadTeachingPlanRevision } from "../api";
+import {
+  ApiError,
+  approveTeachingPlan,
+  loadTeachingPlanRevision,
+  loadTeachingPlanState,
+  type RecoverableCopilotTask
+} from "../api";
 import {
   TeachingPlanDiffView,
   TeachingPlanView
@@ -25,28 +30,65 @@ const { Paragraph, Text, Title } = Typography;
 
 export function TeachingPlanPage(props: {
   workspace: TeacherWorkspace;
-  task: CreateTeacherCopilotTaskResult | null;
+  task: RecoverableCopilotTask | null;
+  refreshWorkspace: () => Promise<void>;
 }) {
+  const [planState, setPlanState] = useState({
+    currentApproved: props.workspace.currentTeachingPlan,
+    currentInReview: props.workspace.currentInReviewPlan,
+    drafts: [] as Array<
+      TeacherWorkspace["currentTeachingPlan"]
+    >,
+    history: [
+      props.workspace.currentTeachingPlan
+    ] as Array<TeacherWorkspace["currentTeachingPlan"]>
+  });
   const [revision, setRevision] = useState(
-    props.workspace.latestTeachingPlan
+    props.workspace.currentTeachingPlan
   );
+  const [loadingState, setLoadingState] = useState(false);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    setRevision(props.workspace.latestTeachingPlan);
-  }, [props.workspace.latestTeachingPlan]);
+    setRevision(props.workspace.currentTeachingPlan);
+  }, [props.workspace.currentTeachingPlan]);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingState(true);
+    setError(null);
+    void loadTeachingPlanState()
+      .then((result) => {
+        if (!active) return;
+        setPlanState(result);
+        setRevision(result.currentApproved);
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (active) setLoadingState(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [props.workspace.currentTeachingPlan.revisionRef]);
 
   const selectedStrategyId =
-    props.workspace.latestTeachingPlan.selectedStrategyId ??
+    planState.currentInReview?.selectedStrategyId ??
+    planState.currentApproved.selectedStrategyId ??
     props.task?.strategies[0]?.strategyId;
   const selectedDiff =
     props.task && selectedStrategyId
       ? props.task.diffsByStrategy[selectedStrategyId]
       : undefined;
   const diffBaseline =
-    props.task?.draftRevision.content ??
-    props.workspace.latestTeachingPlan.content;
+    props.task && "baselineRevision" in props.task
+      ? props.task.baselineRevision.content
+      : planState.currentApproved.content;
   const diffProposed = selectedDiff
     ? applyDiffToPlan(diffBaseline, selectedDiff)
     : null;
@@ -68,6 +110,36 @@ export function TeachingPlanPage(props: {
     }
   }
 
+  async function approveCurrentInReview() {
+    const inReview = planState.currentInReview;
+    if (!inReview) return;
+    setApproving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await approveTeachingPlan(
+        inReview.revisionRef,
+        {
+          purpose: "teacher-copilot.approve-plan",
+          idempotencyKey:
+            `ui:teaching-plan-approval:${crypto.randomUUID()}`,
+          expectedInReviewRevisionRef: inReview.revisionRef
+        }
+      );
+      const nextState = await loadTeachingPlanState();
+      setPlanState(nextState);
+      setRevision(nextState.currentApproved);
+      await props.refreshWorkspace();
+      setSuccess(
+        `已创建并批准第 ${result.approvedRevision.revisionNumber} 版；原已批准版本保持不可变。`
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setApproving(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -82,13 +154,7 @@ export function TeachingPlanPage(props: {
         </div>
         <Space wrap>
           <Tag color="processing">
-            {revision.state === "in_review"
-              ? "待审核"
-              : revision.state === "published"
-                ? "已发布"
-                : revision.state === "proposal"
-                  ? "建议草稿"
-                  : "草稿"}
+            {revisionStateLabel(revision.state)}
           </Tag>
         </Space>
       </header>
@@ -96,15 +162,69 @@ export function TeachingPlanPage(props: {
       <Alert
         type="info"
         showIcon
-        title="发布边界"
-        description="页面没有自动发布路径；接受建议也只会形成待审核版本。"
+        title="审核与批准是两个独立动作"
+        description="接受建议只形成 in_review；只有下方单独批准操作才会创建新的 approved Revision。本 Gate 不实现 published。"
       />
 
       {error ? (
         <Alert type="error" showIcon title={error} />
       ) : null}
+      {success ? (
+        <Alert type="success" showIcon title={success} />
+      ) : null}
 
-      <Spin spinning={loadingPrevious}>
+      <Card className="workspace-card" variant="borderless">
+        <Text className="section-kicker">明确读取语义</Text>
+        <Title level={3}>当前版本状态</Title>
+        <Space orientation="vertical" size="middle">
+          <div>
+            <Text strong>当前正式教学计划</Text>
+            <Paragraph>
+              第 {planState.currentApproved.revisionNumber} 版 ·
+              approved
+            </Paragraph>
+            <Button
+              onClick={() =>
+                setRevision(planState.currentApproved)
+              }
+              data-testid="view-current-approved"
+            >
+              查看已批准版本
+            </Button>
+          </div>
+          {planState.currentInReview ? (
+            <div>
+              <Text strong>当前待审核版本</Text>
+              <Paragraph>
+                第 {planState.currentInReview.revisionNumber} 版 ·
+                in_review（尚未成为当前正式计划）
+              </Paragraph>
+              <Space wrap>
+                <Button
+                  onClick={() =>
+                    setRevision(planState.currentInReview!)
+                  }
+                  data-testid="view-current-in-review"
+                >
+                  查看待审核版本
+                </Button>
+                <Button
+                  type="primary"
+                  loading={approving}
+                  onClick={approveCurrentInReview}
+                  data-testid="approve-teaching-plan"
+                >
+                  批准为当前教学计划
+                </Button>
+              </Space>
+            </div>
+          ) : (
+            <Text type="secondary">当前没有待审核版本。</Text>
+          )}
+        </Space>
+      </Card>
+
+      <Spin spinning={loadingPrevious || loadingState}>
         <TeachingPlanView
           revision={revision}
           onPrevious={showPrevious}
@@ -112,7 +232,7 @@ export function TeachingPlanPage(props: {
       </Spin>
 
       {revision.revisionRef !==
-      props.workspace.latestTeachingPlan.revisionRef ? (
+      planState.currentApproved.revisionRef ? (
         <Card className="workspace-card revision-return" variant="borderless">
           <div>
             <Title level={4}>你正在查看历史版本</Title>
@@ -123,10 +243,10 @@ export function TeachingPlanPage(props: {
           <Button
             type="primary"
             onClick={() =>
-              setRevision(props.workspace.latestTeachingPlan)
+              setRevision(planState.currentApproved)
             }
           >
-            返回最近版本
+            返回当前已批准版本
           </Button>
         </Card>
       ) : null}
@@ -146,7 +266,8 @@ export function TeachingPlanPage(props: {
             props.task!.draftRevision.revisionNumber
           }
           teacherSelection={
-            props.workspace.latestTeachingPlan.teacherSelection
+            planState.currentInReview?.teacherSelection ??
+            planState.currentApproved.teacherSelection
           }
         />
       ) : (
@@ -157,6 +278,46 @@ export function TeachingPlanPage(props: {
           </Paragraph>
         </Card>
       )}
+
+      <Card className="workspace-card" variant="borderless">
+        <Title level={3}>草稿与版本历史</Title>
+        <Paragraph>
+          草稿不会作为当前计划返回；历史包含 draft、in_review 与
+          approved，按 Revision 编号倒序排列。
+        </Paragraph>
+        <Space orientation="vertical" size="small">
+          <Text>
+            草稿：{planState.drafts.length} 个
+          </Text>
+          {planState.history.map((item) => (
+            <Button
+              key={item.revisionRef}
+              type="link"
+              onClick={() => setRevision(item)}
+            >
+              第 {item.revisionNumber} 版 ·{" "}
+              {revisionStateLabel(item.state)}
+            </Button>
+          ))}
+        </Space>
+      </Card>
     </div>
   );
+}
+
+function revisionStateLabel(state: string): string {
+  return {
+    draft: "建议草稿",
+    proposal: "Proposal",
+    in_review: "待审核",
+    approved: "已批准",
+    published: "已发布（本 Gate 不创建）"
+  }[state] ?? state;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    return `${error.message}（${error.code}）`;
+  }
+  return error instanceof Error ? error.message : "发生未知错误";
 }
