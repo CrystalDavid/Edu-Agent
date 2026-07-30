@@ -41,6 +41,7 @@ describe("Gate 2 UI and domain contracts", () => {
   it("returns exactly two distinct, evidence-linked Mock strategies", async () => {
     const response =
       await new MockModelProvider().generateTeacherStrategies({
+        requestText: "根据当前证据调整下一课时",
         evidenceRefs: ["observation:1", "claim:1"],
         knownGaps: ["缺少迁移证据"]
       });

@@ -162,6 +162,75 @@ describe("Gate 2 architecture invariants", () => {
     expect(apiApp).toContain("product.services");
   });
 
+  it("persists the typed teacher request through Task, Contract, ContextManifest and model input", () => {
+    const contracts = source("packages/contracts/src/gate2.ts");
+    const service = source(
+      "apps/api/src/composition/postgres-gate2-teacher-copilot-service.ts"
+    );
+    const workMigration = source(
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0004_gate2_4_task_request_and_disposition.sql"
+    );
+    const runtimeMigration = source(
+      "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0004_gate2_4_request_context.sql"
+    );
+
+    for (const field of [
+      "requestText",
+      "actorRef",
+      "purpose",
+      "courseRunRef",
+      "learningObjectiveRefs",
+      "selectedEvidenceRefs",
+      "createdAt",
+      "requestVersion"
+    ]) {
+      expect(contracts).toContain(field);
+    }
+    expect(workMigration).toContain("request_payload jsonb");
+    expect(runtimeMigration).toContain("request_summary jsonb");
+    expect(service).toContain("contractPayload");
+    expect(service).toContain("taskRequest");
+    expect(service).toContain(
+      "requestText: taskRequest.requestText"
+    );
+  });
+
+  it("uses explicit approved and in-review pointers and runs only the local Gate 2.4 Outbox consumer", () => {
+    const artifactMigration = source(
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0004_gate2_4_teaching_plan_lifecycle.sql"
+    );
+    const routes = source("packages/contracts/src/api-routes.ts");
+    const worker = source(
+      "apps/api/src/composition/local-copilot-outbox-worker.ts"
+    );
+    const productContainer = source(
+      "apps/api/src/composition/product-container.ts"
+    );
+
+    expect(artifactMigration).toContain(
+      "current_approved_revision_ref"
+    );
+    expect(artifactMigration).toContain(
+      "current_in_review_revision_ref"
+    );
+    expect(routes).toContain("currentApprovedTeachingPlan");
+    expect(routes).toContain("currentInReviewTeachingPlan");
+    expect(routes).toContain("teachingPlanDrafts");
+    expect(routes).toContain("teachingPlanHistory");
+    expect(routes).not.toContain("latestTeachingPlan");
+    for (const eventName of [
+      "TeacherCopilotTaskCompleted",
+      "SuggestionDisposed",
+      "TeachingPlanApproved"
+    ]) {
+      expect(worker).toContain(eventName);
+    }
+    expect(productContainer).toContain(
+      "LocalCopilotOutboxWorker"
+    );
+    expect(productContainer).not.toContain("InMemory");
+  });
+
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(

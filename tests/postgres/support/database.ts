@@ -86,12 +86,22 @@ export function dockerCompose(
   action: "pause" | "unpause",
   service = "postgres"
 ): void {
+  const projectName = process.env.COMPOSE_PROJECT_NAME;
+  const volumeName = process.env.POSTGRES_VOLUME_NAME;
+  if (
+    !projectName?.startsWith("edu-agent-e2e-") ||
+    !volumeName?.startsWith(`${projectName}-`)
+  ) {
+    throw new Error(
+      "PostgreSQL tests may only control their isolated E2E Compose project."
+    );
+  }
   const result = spawnSync(
     "docker",
     [
       "compose",
-      "--env-file",
-      "infra/docker/.env.local",
+      "--project-name",
+      projectName,
       "-f",
       "infra/docker/compose.postgres.yml",
       action,

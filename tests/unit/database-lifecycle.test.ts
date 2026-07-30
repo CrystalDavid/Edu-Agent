@@ -121,6 +121,17 @@ describe("PostgreSQL lifecycle isolation", () => {
     expect(runner).not.toContain("db:up");
     expect(runner).not.toContain("db:clean");
     expect(runner).not.toContain("db:env");
+
+    const databaseSupport = source(
+      "tests/postgres/support/database.ts"
+    );
+    expect(databaseSupport).toContain("edu-agent-e2e-");
+    expect(databaseSupport).not.toContain(
+      "--env-file"
+    );
+    expect(databaseSupport).not.toContain(
+      "infra/docker/.env.local"
+    );
   });
 
   it("keeps development Compose identity explicit and protected", () => {

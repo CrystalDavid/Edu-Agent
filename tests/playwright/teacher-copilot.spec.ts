@@ -412,19 +412,69 @@ test("all new routes and legacy redirects remain reachable", async ({
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible();
 });
 
-test("Gate 2 proposal, disposition and audit semantics remain unchanged", async ({
-  page
+test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rejects without changing current", async ({
+  page,
+  request
 }) => {
   const monitor = monitorPage(page);
+  const headers = {
+    "x-demo-tenant": "tenant:demo-school",
+    "x-demo-actor": "user:teacher-001"
+  };
+  const initialApprovedResponse = await request.get(
+    apiRoutes.demo.currentApprovedTeachingPlan,
+    { headers }
+  );
+  expect(initialApprovedResponse.status()).toBe(200);
+  const initialApproved = await initialApprovedResponse.json();
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/copilot");
   await expect(page.getByText("结构化教学建议详情")).toBeVisible();
   const taskInput = page.getByRole("textbox", { name: "教师助手任务说明" });
-  await taskInput.fill("准备明天的课");
+  const firstRequest =
+    "根据一次函数学习证据，比较明天课堂的两种调整策略";
+  await taskInput.fill(firstRequest);
+  const createResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        apiRoutes.demo.createTeacherCopilotTask
+      ) &&
+      response.request().method() === "POST"
+  );
   await page.getByTestId("generate-copilot").click();
+  const created = await createResponse;
+  expect(created.status()).toBe(201);
+  const createdBody = await created.json();
   await expect(page.getByRole("heading", { name: "比较教学策略" })).toBeVisible({
     timeout: 20_000
   });
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(
+        createdBody.proposalRevisionRef
+      ).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`
+    )
+  );
+  await expect(page.getByText(firstRequest).first()).toBeVisible();
+  await expect(page.getByText("直接观察", { exact: true }).first()).toBeVisible();
+
+  let createCallsAfterRefresh = 0;
+  page.on("request", (webRequest) => {
+    if (
+      new URL(webRequest.url()).pathname ===
+        apiRoutes.demo.createTeacherCopilotTask &&
+      webRequest.method() === "POST"
+    ) {
+      createCallsAfterRefresh += 1;
+    }
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "比较教学策略" })).toBeVisible({
+    timeout: 20_000
+  });
+  expect(createCallsAfterRefresh).toBe(0);
+  await expect(page.getByText(firstRequest).first()).toBeVisible();
 
   await page.getByRole("button", { name: /策略 B/ }).click();
   const diff = page.getByTestId("teaching-plan-diff");
@@ -460,6 +510,102 @@ test("Gate 2 proposal, disposition and audit semantics remain unchanged", async 
   await expect(page.getByText("已发布", { exact: true })).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("ObservedPedagogicalMove");
   await expect(page.locator("body")).not.toContainText("InstructionalDecision");
+
+  const currentBeforeApproval = await request.get(
+    apiRoutes.demo.currentApprovedTeachingPlan,
+    { headers }
+  );
+  expect((await currentBeforeApproval.json()).revisionRef).toBe(
+    initialApproved.revisionRef
+  );
+
+  await page.getByRole("button", { name: "查看教学计划" }).click();
+  await expect(page).toHaveURL(/\/teaching-plan$/);
+  await expect(page.getByText(/in_review（尚未成为当前正式计划）/)).toBeVisible({
+    timeout: 20_000
+  });
+  await expect(
+    page.getByText(
+      new RegExp(
+        `第 ${initialApproved.revisionNumber} 版.*approved`
+      )
+    )
+  ).toBeVisible();
+
+  const approvalResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/approve") &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("approve-teaching-plan").click();
+  const approvedResponse = await approvalResponse;
+  expect(approvedResponse.status()).toBe(201);
+  const approved = await approvedResponse.json();
+  await expect(page.getByText(/已创建并批准第/)).toBeVisible({
+    timeout: 20_000
+  });
+  await expect(page.getByText("当前没有待审核版本。")).toBeVisible();
+
+  const currentAfterApproval = await request.get(
+    apiRoutes.demo.currentApprovedTeachingPlan,
+    { headers }
+  );
+  expect((await currentAfterApproval.json()).revisionRef).toBe(
+    approved.approvedRevision.revisionRef
+  );
+
+  await page.goto("/copilot");
+  const secondRequest =
+    "为同一课堂创建第二条建议，用于验证拒绝不改变当前计划";
+  await taskInput.fill(secondRequest);
+  const secondCreateResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(
+        apiRoutes.demo.createTeacherCopilotTask
+      ) &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("generate-copilot").click();
+  const secondCreated = await secondCreateResponse;
+  expect(secondCreated.status()).toBe(201);
+  await expect(page.getByRole("heading", { name: "比较教学策略" })).toBeVisible({
+    timeout: 20_000
+  });
+  const rejectionResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/dispositions") &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("reject-suggestion").click();
+  expect((await rejectionResponse).status()).toBe(201);
+  await expect(page.getByText("已拒绝")).toBeVisible({
+    timeout: 20_000
+  });
+
+  const currentAfterRejection = await request.get(
+    apiRoutes.demo.currentApprovedTeachingPlan,
+    { headers }
+  );
+  expect((await currentAfterRejection.json()).revisionRef).toBe(
+    approved.approvedRevision.revisionRef
+  );
+
+  await page.getByRole("button", { name: "查看运行依据" }).click();
+  await expect(page).toHaveURL(/\/runs$/);
+  await expect(page.getByText(secondRequest).first()).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByText("查看可审计技术详情").click();
+  await page.getByText("固定契约与使用的数据").click();
+  await expect(page.getByText("Evidence refs")).toBeVisible();
+  await expect(page.getByText("权限检查与后台处理")).toBeVisible();
+  await page.getByText("权限检查与后台处理").click();
+  await expect(
+    page.getByText("AuthorizationDecision", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("cell", { name: "processed" }).first()).toBeVisible({
+    timeout: 20_000
+  });
   await assertCleanMonitor(monitor);
 });
 

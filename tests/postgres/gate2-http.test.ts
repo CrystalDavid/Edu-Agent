@@ -102,13 +102,30 @@ describe("Gate 2 HTTP contract", () => {
       .expect(({ body }) => {
         expect(body.code).toBe("AUTHORIZATION_DENIED");
       });
+    await request(app)
+      .get(apiRoutes.demo.bootstrap)
+      .set({
+        ...demoHeaders,
+        "x-demo-actor": "user:teacher-other"
+      })
+      .expect(403)
+      .expect(({ body }) => {
+        expect(body.code).toBe("AUTHORIZATION_DENIED");
+      });
   });
 
   it("runs the complete API flow and exposes a safe explanation", async () => {
     const idempotencyKey = `http:gate2:${randomUUID()}`;
     const command = {
+      requestText: "根据学习证据调整明天的一次函数课堂",
       courseRunRef: gate2DemoRefs.courseRunRef,
       goalRef: gate2DemoRefs.goalRef,
+      learningObjectiveRefs: [gate2DemoRefs.objectiveRef],
+      selectedEvidenceRefs: [
+        ...gate2DemoRefs.observationRefs,
+        ...gate2DemoRefs.claimRefs
+      ],
+      requestVersion: 1,
       purpose: "teacher-copilot.adjust-next-lesson",
       idempotencyKey
     };
@@ -127,6 +144,50 @@ describe("Gate 2 HTTP contract", () => {
     expect(replay.body.taskRef).toBe(created.body.taskRef);
     expect(replay.body.replayed).toBe(true);
 
+    const pending = await request(app)
+      .get(apiRoutes.demo.pendingProposals)
+      .set(demoHeaders)
+      .expect(200);
+    expect(pending.body.items).toEqual([
+      expect.objectContaining({
+        proposalRevisionRef:
+          created.body.proposalRevisionRef,
+        taskRef: created.body.taskRef,
+        requestText: command.requestText,
+        status: "pending"
+      })
+    ]);
+
+    const proposal = await request(app)
+      .get(
+        apiRoutes.demo.proposalDetail(
+          created.body.proposalRevisionRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200);
+    expect(proposal.body).toMatchObject({
+      taskRef: created.body.taskRef,
+      taskRunRef: created.body.taskRunRef,
+      contractRef: created.body.contractRef,
+      status: "pending",
+      request: {
+        requestText: command.requestText,
+        requestVersion: 1
+      },
+      baselineRevision: {
+        state: "approved"
+      },
+      draftRevision: {
+        state: "draft"
+      }
+    });
+
+    const currentBefore = await request(app)
+      .get(apiRoutes.demo.currentApprovedTeachingPlan)
+      .set(demoHeaders)
+      .expect(200);
+
     const disposed = await request(app)
       .post(
         apiRoutes.demo.suggestionDisposition(
@@ -140,6 +201,7 @@ describe("Gate 2 HTTP contract", () => {
         disposition: "accepted_with_changes",
         selectedStrategyId:
           created.body.strategies[0].strategyId,
+        expectedProposalRevisionNumber: 1,
         teacherEdits: {
           followUp: "教师通过 HTTP 验收修改的后续行动。"
         }
@@ -153,6 +215,115 @@ describe("Gate 2 HTTP contract", () => {
       }
     });
 
+    await request(app)
+      .get(apiRoutes.demo.pendingProposals)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items).toEqual([]);
+      });
+    await request(app)
+      .get(
+        apiRoutes.demo.proposalDetail(
+          created.body.proposalRevisionRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          status: "disposed",
+          disposition: {
+            disposition: "accepted_with_changes"
+          },
+          inReviewRevision: {
+            revisionRef:
+              disposed.body.resultingRevision.revisionRef,
+            state: "in_review"
+          }
+        });
+      });
+
+    await request(app)
+      .get(apiRoutes.demo.currentApprovedTeachingPlan)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.revisionRef).toBe(
+          currentBefore.body.revisionRef
+        );
+      });
+    await request(app)
+      .get(apiRoutes.demo.currentInReviewTeachingPlan)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.revisionRef).toBe(
+          disposed.body.resultingRevision.revisionRef
+        );
+      });
+
+    const approval = await request(app)
+      .post(
+        apiRoutes.demo.approveTeachingPlan(
+          disposed.body.resultingRevision.revisionRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        purpose: "teacher-copilot.approve-plan",
+        idempotencyKey: `http:approve:${randomUUID()}`,
+        expectedInReviewRevisionRef:
+          disposed.body.resultingRevision.revisionRef
+      })
+      .expect(201);
+    expect(approval.body.approvedRevision).toMatchObject({
+      state: "approved",
+      parentRevisionRef:
+        disposed.body.resultingRevision.revisionRef
+    });
+    await request(app)
+      .get(apiRoutes.demo.currentApprovedTeachingPlan)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.revisionRef).toBe(
+          approval.body.approvedRevision.revisionRef
+        );
+      });
+    await request(app)
+      .get(apiRoutes.demo.currentInReviewTeachingPlan)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toBeNull();
+      });
+    await request(app)
+      .get(apiRoutes.demo.teachingPlanDrafts)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ state: "draft" })
+          ])
+        );
+      });
+    await request(app)
+      .get(apiRoutes.demo.teachingPlanHistory)
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map((item: { state: string }) => item.state))
+          .toEqual(
+            expect.arrayContaining([
+              "draft",
+              "in_review",
+              "approved"
+            ])
+          );
+      });
+
     const explanation = await request(app)
       .get(apiRoutes.demo.runExplanation(created.body.taskRef))
       .set(demoHeaders)
@@ -162,6 +333,12 @@ describe("Gate 2 HTTP contract", () => {
       externalNetworkUsed: false,
       costLabel: "¥0.00（Mock）"
     });
+    expect(explanation.body.task.request.requestText).toBe(
+      command.requestText
+    );
+    expect(
+      explanation.body.contextManifest.requestSummary.requestText
+    ).toBe(command.requestText);
     expect(JSON.stringify(explanation.body)).not.toContain(
       "POSTGRES_APP_PASSWORD"
     );
@@ -184,14 +361,102 @@ describe("Gate 2 HTTP contract", () => {
       .post(apiRoutes.demo.createTeacherCopilotTask)
       .set(demoHeaders)
       .send({
+        requestText: "未授权任务",
         courseRunRef: gate2DemoRefs.courseRunRef,
         goalRef: gate2DemoRefs.goalRef,
+        learningObjectiveRefs: [gate2DemoRefs.objectiveRef],
+        selectedEvidenceRefs: [
+          ...gate2DemoRefs.observationRefs
+        ],
+        requestVersion: 1,
         purpose: "teacher-copilot.publish-plan",
         idempotencyKey: `http:denied:${randomUUID()}`
       })
       .expect(403)
       .expect(({ body }) => {
         expect(body.code).toBe("AUTHORIZATION_DENIED");
+      });
+  });
+
+  it("returns structured Proposal version and final-disposition conflicts", async () => {
+    const created = await request(app)
+      .post(apiRoutes.demo.createTeacherCopilotTask)
+      .set(demoHeaders)
+      .send({
+        requestText: "验证 Proposal 冲突",
+        courseRunRef: gate2DemoRefs.courseRunRef,
+        goalRef: gate2DemoRefs.goalRef,
+        learningObjectiveRefs: [gate2DemoRefs.objectiveRef],
+        selectedEvidenceRefs: [
+          ...gate2DemoRefs.observationRefs
+        ],
+        requestVersion: 1,
+        purpose: "teacher-copilot.adjust-next-lesson",
+        idempotencyKey: `http:conflict:${randomUUID()}`
+      })
+      .expect(201);
+
+    const reviewRequest = {
+      purpose: "teacher-copilot.review-suggestion",
+      idempotencyKey: `http:conflict-review:${randomUUID()}`,
+      disposition: "rejected",
+      selectedStrategyId: created.body.strategies[0].strategyId,
+      expectedProposalRevisionNumber: 99,
+      teacherEdits: {}
+    };
+    await request(app)
+      .post(
+        apiRoutes.demo.suggestionDisposition(
+          created.body.proposalRevisionRef
+        )
+      )
+      .set(demoHeaders)
+      .send(reviewRequest)
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          code: "PROPOSAL_VERSION_CONFLICT",
+          details: {
+            expectedRevisionNumber: 99,
+            actualRevisionNumber: 1
+          }
+        });
+      });
+
+    await request(app)
+      .post(
+        apiRoutes.demo.suggestionDisposition(
+          created.body.proposalRevisionRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        ...reviewRequest,
+        idempotencyKey: `http:reject:${randomUUID()}`,
+        expectedProposalRevisionNumber: 1
+      })
+      .expect(201);
+    await request(app)
+      .post(
+        apiRoutes.demo.suggestionDisposition(
+          created.body.proposalRevisionRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        ...reviewRequest,
+        idempotencyKey: `http:defer:${randomUUID()}`,
+        expectedProposalRevisionNumber: 1,
+        disposition: "deferred"
+      })
+      .expect(409)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          code: "PROPOSAL_ALREADY_DISPOSED",
+          details: {
+            existingDisposition: "rejected"
+          }
+        });
       });
   });
 });
