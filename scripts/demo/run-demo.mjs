@@ -119,6 +119,8 @@ try {
   );
   const environment = {
     ...readLocalPostgresEnvironment(),
+    APP_ENV: "local",
+    DEMO_AUTH_BYPASS: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
     PORT: "3001"

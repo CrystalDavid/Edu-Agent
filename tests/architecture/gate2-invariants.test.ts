@@ -142,6 +142,26 @@ describe("Gate 2 architecture invariants", () => {
     );
   });
 
+  it("keeps product and internal test composition roots separate", () => {
+    const apiIndex = source("apps/api/src/index.ts");
+    const apiApp = source("apps/api/src/app.ts");
+    const productContainer = source(
+      "apps/api/src/composition/product-container.ts"
+    );
+    const testContainer = source(
+      "apps/api/src/composition/test-container.ts"
+    );
+
+    expect(apiIndex).toContain("createProductContainer");
+    expect(apiIndex).not.toContain("createTestContainer");
+    expect(apiIndex).not.toContain("createGate1AContainer");
+    expect(productContainer).toContain("createRolePool");
+    expect(productContainer).not.toContain("InMemory");
+    expect(testContainer).toContain("createTestContainer");
+    expect(apiApp).toContain("exposeInternalTestRoutes");
+    expect(apiApp).toContain("product.services");
+  });
+
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(

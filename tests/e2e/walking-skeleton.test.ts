@@ -10,20 +10,25 @@ import {
 } from "@edu-agent/test-fixtures";
 
 import { createApp } from "../../apps/api/src/app.js";
-import { createGate1AContainer } from "../../apps/api/src/composition/gate1a-container.js";
+import {
+  createTestContainer
+} from "../../apps/api/src/composition/test-container.js";
 import {
   DeterministicIdGenerator,
   FixedClock
 } from "../../apps/api/src/platform/system.js";
 
 function setup() {
-  const container = createGate1AContainer({
+  const container = createTestContainer({
     clock: new FixedClock("2026-07-28T08:00:00.000Z"),
     ids: new DeterministicIdGenerator()
   });
   return {
     container,
-    app: createApp(container)
+    app: createApp({
+      test: container,
+      exposeInternalTestRoutes: true
+    })
   };
 }
 
@@ -50,7 +55,7 @@ describe("Gate 1A no-LLM Walking Skeleton", () => {
       .expect(404);
     expect(missing.body).toEqual({
       code: "API_ROUTE_NOT_FOUND",
-      message: "请求的 API 路由不存在。",
+      message: "The requested API route does not exist.",
       method: "GET",
       path: "/api/route-that-does-not-exist"
     });

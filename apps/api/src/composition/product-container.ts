@@ -1,12 +1,15 @@
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
 import { Gate2DemoSeedService } from "./gate2-demo-seed-service.js";
+import {
+  PostgresDemoIdentityAuditService
+} from "./postgres-demo-identity-audit-service.js";
 import { PostgresGate2ReadService } from "./postgres-gate2-read-service.js";
 import {
   PostgresGate2TeacherCopilotService
 } from "./postgres-gate2-teacher-copilot-service.js";
 
-export function createGate2Container(
+export function createProductContainer(
   environment: PostgresEnvironment
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -17,6 +20,8 @@ export function createGate2Container(
     services: {
       seed: new Gate2DemoSeedService(appPool),
       read: new PostgresGate2ReadService(appPool),
+      demoIdentityAudit:
+        new PostgresDemoIdentityAuditService(appPool),
       teacherCopilot:
         new PostgresGate2TeacherCopilotService(appPool)
     },
@@ -26,6 +31,6 @@ export function createGate2Container(
   };
 }
 
-export type Gate2Container = ReturnType<
-  typeof createGate2Container
+export type ProductContainer = ReturnType<
+  typeof createProductContainer
 >;

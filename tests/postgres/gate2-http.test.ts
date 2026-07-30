@@ -9,11 +9,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../../apps/api/src/app.js";
 import {
-  createGate1AContainer
-} from "../../apps/api/src/composition/gate1a-container.js";
-import {
-  createGate2Container
-} from "../../apps/api/src/composition/gate2-container.js";
+  createProductContainer
+} from "../../apps/api/src/composition/product-container.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -21,8 +18,15 @@ import {
 } from "./support/database.js";
 
 const adminPool = poolFor("admin");
-const gate2 = createGate2Container(postgresEnvironment);
-const app = createApp(createGate1AContainer(), gate2);
+const product = createProductContainer(postgresEnvironment);
+const app = createApp({ product });
+const bypassApp = createApp({
+  product,
+  demoIdentity: {
+    applicationEnvironment: "demo",
+    allowBypass: true
+  }
+});
 const demoHeaders = {
   "x-demo-tenant": gate2DemoRefs.tenantRef,
   "x-demo-actor": gate2DemoRefs.teacherRef
@@ -30,14 +34,52 @@ const demoHeaders = {
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await gate2.services.seed.seed();
+  await product.services.seed.seed();
 });
 
 afterAll(async () => {
-  await Promise.all([gate2.close(), adminPool.end()]);
+  await Promise.all([product.close(), adminPool.end()]);
 });
 
 describe("Gate 2 HTTP contract", () => {
+  it("requires explicit identity unless audited local bypass is enabled", async () => {
+    await request(app)
+      .get(apiRoutes.demo.bootstrap)
+      .expect(401)
+      .expect(({ body }) => {
+        expect(body.code).toBe("AUTHENTICATION_REQUIRED");
+      });
+
+    await request(app)
+      .get(apiRoutes.demo.bootstrap)
+      .set("x-demo-tenant", gate2DemoRefs.tenantRef)
+      .expect(401)
+      .expect(({ body }) => {
+        expect(body.code).toBe("AUTHENTICATION_REQUIRED");
+      });
+
+    await request(bypassApp)
+      .get(apiRoutes.demo.bootstrap)
+      .expect(200);
+
+    const audit = await adminPool.query<{
+      action: string;
+      purpose: string;
+      actor_ref: string;
+    }>(
+      `SELECT action, purpose, actor_ref
+         FROM governance.audit_record
+        WHERE record_type = 'DemoIdentityInjection'`
+    );
+    expect(audit.rows).toEqual([
+      {
+        action: "demo.identity.inject",
+        purpose: "local.demo.identity-injection",
+        actor_ref: gate2DemoRefs.teacherRef
+      }
+    ]);
+  });
+
   it("serves the teacher workspace and never returns another tenant", async () => {
     const response = await request(app)
       .get(apiRoutes.demo.bootstrap)

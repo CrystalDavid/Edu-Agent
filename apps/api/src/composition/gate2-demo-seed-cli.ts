@@ -1,9 +1,9 @@
-import { createGate2Container } from "./gate2-container.js";
+import { createProductContainer } from "./product-container.js";
 import {
   readPostgresEnvironment
 } from "../platform/postgres/config.js";
 
-const container = createGate2Container(
+const container = createProductContainer(
   readPostgresEnvironment()
 );
 

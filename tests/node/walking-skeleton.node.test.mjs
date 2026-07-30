@@ -9,14 +9,14 @@ import {
   syntheticTenant
 } from "@edu-agent/test-fixtures";
 
-import { createGate1AContainer } from "../../apps/api/src/composition/gate1a-container.ts";
+import { createTestContainer } from "../../apps/api/src/composition/test-container.ts";
 import {
   DeterministicIdGenerator,
   FixedClock
 } from "../../apps/api/src/platform/system.ts";
 
 function setup() {
-  return createGate1AContainer({
+  return createTestContainer({
     clock: new FixedClock("2026-07-28T08:00:00.000Z"),
     ids: new DeterministicIdGenerator()
   });

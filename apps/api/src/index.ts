@@ -3,25 +3,22 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { createApp } from "./app.js";
-import { createGate1AContainer } from "./composition/gate1a-container.js";
 import {
-  createGate2Container,
-  type Gate2Container
-} from "./composition/gate2-container.js";
+  createProductContainer
+} from "./composition/product-container.js";
+import {
+  createDemoIdentityPolicy
+} from "./platform/demo-identity.js";
 import {
   readPostgresEnvironment
 } from "./platform/postgres/config.js";
 
 const port = Number(process.env.PORT ?? 3001);
-const container = createGate1AContainer();
-let gate2: Gate2Container | undefined;
-
-const explicitGate2Mode = process.env.GATE2_DEMO_ENABLED;
-const localDevelopment =
-  process.env.NODE_ENV !== "production" &&
-  explicitGate2Mode !== "false";
+const localOrDemo =
+  process.env.APP_ENV === "local" ||
+  process.env.APP_ENV === "demo";
 if (
-  localDevelopment &&
+  localOrDemo &&
   !process.env.POSTGRES_HOST &&
   !process.env.POSTGRES_APP_PASSWORD
 ) {
@@ -36,21 +33,24 @@ if (
   }
 }
 
-if (explicitGate2Mode === "true" || localDevelopment) {
-  gate2 = createGate2Container(readPostgresEnvironment());
-}
-const app = createApp(container, gate2);
+const product = createProductContainer(
+  readPostgresEnvironment()
+);
+const app = createApp({
+  product,
+  demoIdentity: createDemoIdentityPolicy()
+});
 
 const server = app.listen(port, () => {
   process.stdout.write(
-    `Edu Agent ${gate2 ? "Gate 2 demo" : "Gate 1A"} API ` +
+    "Edu Agent PostgreSQL product API " +
       `listening on http://localhost:${port}\n`
   );
 });
 
 async function shutdown(): Promise<void> {
   server.close();
-  await gate2?.close();
+  await product.close();
 }
 
 process.on("SIGINT", () => {
