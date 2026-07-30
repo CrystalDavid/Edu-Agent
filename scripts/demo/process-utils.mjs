@@ -16,11 +16,11 @@ function pnpmInvocation(args) {
   };
 }
 
-export function runPnpm(args) {
+export function runPnpm(args, environment = {}) {
   const invocation = pnpmInvocation(args);
   const result = spawnSync(invocation.executable, invocation.args, {
     cwd: process.cwd(),
-    env: childEnvironment(),
+    env: childEnvironment(environment),
     stdio: "inherit",
     windowsHide: true
   });
