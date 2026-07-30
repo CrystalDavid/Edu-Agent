@@ -702,20 +702,21 @@ PostgreSQL 中会保留：
 6. **应用 Worker 是本地轮询器。** 适合本地 Gate，不是多实例生产运维方案；没有 dead-letter 管理、监控告警或跨服务消息基础设施。
 7. **数据库 app role 权限仍较宽。** 七模块 owner 已隔离 migration，但产品 app pool 对多个业务 Schema 具有 CRUD。
 
-### 16.4 下一 Gate 推荐范围
+### 16.4 Gate 2.5 已采用范围（2026-07-31 裁决）
 
-推荐：
+已进入：
 
-> **Gate 2.5 — 最小可恢复备课工作项**
+> **Gate 2.5 — 最小可恢复备课闭环**
 
-核心目标是让教师从一个真实、持久化的“备课工作项 + 最小课次上下文”进入已经验证的 Gate 2.4 Copilot 链路，并在完成批准后回写工作项状态。
+核心目标是让教师从真实 CourseRun → CurriculumUnit → Lesson 创建 `lesson_preparation` Task，进入 Gate 2.4 Copilot 链路，并在计划批准后进入 `ready_for_use`，最后由教师显式完成。
 
-建议只新增：
+已裁决：
 
-- `TeacherPreparationWorkItem`（或语义等价的窄 WorkItem），状态限定为待处理、生成中、待审、已形成计划；
-- 最小 `LessonPreparationContext`：CourseRun、班级/学期、课次或章节引用、LearningObjective、显式 Evidence 选择；
-- 概览/教学页的真实工作项列表与“准备本课”入口；
-- WorkItem → Task/Proposal → approved TeachingPlan 的关联和恢复 API；
+- 不创建 `TeacherWorkItem` / `TeacherPreparationWorkItem`；复用现有 `work.task`，以 `task_kind = lesson_preparation` 和 Work-owned 一对一扩展表达；
+- 最小课程层级固定为 CourseRun → CurriculumUnit → Lesson，不新增平行 Course、Chapter、Section 或 Topic；
+- 不创建通用 AgentContextBinding；使用 TaskWorkingSet → Resolved Contract → AuthorizedContextPlan → ContextManifest；
+- 概览/教学页接入真实 Task 列表、课时状态与“开始/继续备课”入口；
+- Task → TaskRun/Proposal → in-review → approved → ready-for-use → completed 的关联和恢复 API；
 - PostgreSQL、HTTP、Playwright 的刷新/重启恢复与失败回写测试。
 
 继续推迟：
@@ -727,9 +728,11 @@ PostgreSQL 中会保留：
 - 完整课程树、作业/考试、学生闭环；
 - DeepSeek、云部署、多 Agent。
 
-### 16.5 仍需产品所有者决定
+### 16.5 Gate 2.5 已关闭的产品问题
 
-1. 最小备课上下文使用“课次/Lesson”还是“单元/章节”；这决定 education Schema 的最小对象。
-2. 是否允许同一 TeachingPlan 同时存在多个 in-review 候选；当前实现只有一个 current in-review 指针，但历史不会丢失。
-3. WorkItem 的完成点是“形成 approved TeachingPlan”还是还要教师显式标记“备课完成”；推荐分开。
-4. 下一 Gate 是否继续使用确定性 MockModelProvider；推荐继续，以免把真实模型评测和业务建模混在一个 Gate。
+1. 最小备课上下文采用 CourseRun → CurriculumUnit → Lesson。
+2. 同一 Lesson 同时最多一个 active in-review；新版本使旧 active 关系进入 superseded 历史，Revision 本体不删除。
+3. approved 与完成备课分开：批准后 Task 为 `ready_for_use`，教师另行执行 complete。
+4. Gate 2.5 继续使用确定性 MockModelProvider；真实 Provider 进入独立后续 Gate。
+
+完整语义见 `docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md`。
