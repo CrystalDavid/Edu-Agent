@@ -103,6 +103,8 @@ Working Set 至少封存：
 
 CourseRun、Unit、Lesson、Purpose 是核心上下文，不能通过资源删除接口替换。Evidence 是可选上下文，教师可在运行前增删。每次变更创建新的不可变 Working Set Revision；已完成 AgentRun 继续引用原版本。
 
+Lesson-scoped Copilot 命令同时提交 `expectedPreparationTaskVersion` 和 Working Set version；任一版本陈旧都返回结构化 `409`，不会用最新状态偷偷替换教师看到的上下文。
+
 ## 7. TeachingPlan 多版本
 
 正式 Revision 生命周期仍为：
@@ -166,6 +168,8 @@ ActingContext
 - get latest AuthorizedContextPlan；
 - get latest sealed ContextManifest。
 
+`AuthorizedContextPlan` 没有脱离运行的“预授权”写接口。创建 Proposal 的命令会基于提交时的 Working Set version 重新执行授权、保存 AuthorizedContextPlan，并把其引用封入 ContextManifest；两个读取 API 只返回最近一次已经发生的运行事实。
+
 ### Copilot 与 TeachingPlan
 
 - Gate 2.4 create/list/detail/disposition/continue-review 保持兼容；
@@ -177,12 +181,16 @@ ActingContext
 
 前向 Migration 分别由模块 owner 执行：
 
-- Education：`curriculum_unit`、`lesson`、`lesson_learning_objective_link`、Lesson/TeachingPlan binding；
-- Work：Task version、备课扩展、Working Set revisions、状态历史、TaskRun/Proposal 关联；
-- Runtime：`authorized_context_plan` 及 ContextManifest 引用；
-- Artifact：TeachingPlan scope lifecycle、active in-review/current approved 唯一约束和 `superseded` 语义。
+| Owner | Migration | 主要变化 |
+|---|---|---|
+| Education | `0004_gate2_5_curriculum_and_lessons.sql` | `curriculum_unit`、`lesson`、目标关联、当前 Evidence 关联和 Lesson/TeachingPlan binding |
+| Work | `0005_gate2_5_lesson_preparation.sql` | Task version、备课一对一扩展、Working Set revisions、状态历史、TaskRun request 和每次 Run 的 TaskResult |
+| Runtime | `0005_gate2_5_authorized_context_plan.sql` | immutable `authorized_context_plan` 及 ContextManifest 引用 |
+| Artifact | `0005_gate2_5_lesson_plan_scope.sql` | TeachingPlan scope lifecycle、active in-review/current approved 部分唯一索引和 `superseded` 关系 |
 
-Migration 必须可从空库执行，有 checksum，不修改已应用 Migration，不依赖超级用户运行应用。
+迁移注册总数为 25。迁移器以 owner 角色运行，记录 checksum；应用继续使用非超级用户 app/worker 角色。空 Volume 从 `0001` 到 Gate 2.5 可一次执行，Gate 2.4 数据通过前向回填 TaskRun request 和 TaskResult→TaskRun 关联后保留，不修改已应用 Migration。
+
+前向修复原则：若上线前发现旧数据不满足 `task_result.task_run_ref NOT NULL`，应先新增独立 Work owner 修复 Migration 对异常记录显式报告或补齐，再增加约束；不得改写此 Migration 或手工绕过 checksum。
 
 ## 11. 应用事件
 
@@ -190,12 +198,15 @@ Migration 必须可从空库执行，有 checksum，不修改已应用 Migration
 
 - `LessonPreparationTaskCreated`；
 - `LessonPreparationStarted`；
+- `LessonPreparationReopened`；
 - `TeachingPlanReviewCreated`；
+- `LessonPreparationReviewContinued`；
 - `TeachingPlanApproved`；
 - `LessonPreparationReadyForUse`；
-- `LessonPreparationCompleted`。
+- `LessonPreparationCompleted`；
+- `LessonPreparationCancelled`。
 
-本地 Worker 负责租约领取、重试和幂等消费记录；状态转换、Plan 指针和 Lesson/Task 关联同步完成。Worker 停止不影响业务事实，恢复后可追上未处理事件。
+Task 状态/历史、Working Set、Plan Revision/指针和 Lesson/Task 关联均同步提交。现有本地 Worker 负责租约领取、重试和幂等 Consumer Effect，当前 Gate 2.5 事件的 effect 明确记录 `projectionMode = none-business-state-synchronous`；它不重复决定业务状态。Worker 停止不影响业务事实，恢复后可追上未处理或租约过期事件。
 
 ## 12. 本地 Seed
 
@@ -222,11 +233,28 @@ Migration 必须可从空库执行，有 checksum，不修改已应用 Migration
 
 ## 15. 验收
 
-除 Gate 1A、1B、2、2.4 全部回归外，必须通过：
+除 Gate 1A、1B、2、2.4 全部回归外，Gate 2.5 自动验收覆盖：
 
 - 空库和升级库 Migration；
 - 真实 PostgreSQL 领域、事务、并发和重启恢复测试；
 - 课程/课时、Task、Working Set、Proposal、Plan 和冲突 HTTP 测试；
-- 完整 Playwright A/B/C/D 流程；
+- 完整 Playwright A/B/C/D 流程及 `output/playwright/teacher-portal-ui-v1/final/19-gate2-5-recoverable-lesson-preparation.png`；
 - Production build、Architecture tests、Secret scan、Demo Doctor、`git diff --check`；
 - E2E 临时 Volume 清理和长期开发状态不变验证。
+
+浏览器流程不使用假成功 fallback；API 失败显示真实错误，浏览器控制台错误会使测试失败。测试和 Demo 均不进行真实网络或模型请求。
+
+Gate 2.5 完成时的验证快照：
+
+| 门禁 | 结果 |
+|---|---|
+| TypeScript | 4 个 workspace project 通过 |
+| Vitest | 11 files / 53 tests 通过 |
+| Architecture | 4 files / 28 tests 通过 |
+| HTTP E2E | 1 file / 5 tests 通过 |
+| Node smoke | 5 tests 通过 |
+| PGlite Migration | 1 test 通过，空库含 25 个已注册 Migration |
+| PostgreSQL | 9 files / 50 tests 通过，独立临时 Volume 已清理 |
+| Playwright | 11 tests 通过，独立临时 Volume 已清理 |
+| Production build / bundle analysis | 通过 |
+| Demo Doctor / Secret scan / `git diff --check` | 通过 |

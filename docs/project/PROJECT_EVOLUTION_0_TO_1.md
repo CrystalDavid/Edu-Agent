@@ -2,7 +2,7 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.4 实施复核：2026-07-31；本文末次更新已将实现后的事实合并进时间线和 ADR 判断。
+> Gate 2.5 实施复核：2026-07-31；本文末次更新已将 Gate 2.4 合并基线和 Gate 2.5 实现事实合并进时间线。
 > 本文是调查记录，不是新的产品承诺，也不修改既有架构决策。
 
 ## 1. 调查口径
@@ -28,14 +28,16 @@
                  └─ 62d36f7 … f6bb200 UI redesign
                       └─ 2287568 … 42b4a4b UI redesign v2
                            └─ 19339e7 … 43c8e03 ordinary teacher portal UI v1
-                                └─ 8ce69f7 … Gate 2.4 correctness / recovery
+                                └─ 8ce69f7 … b353f35 Gate 2.4 correctness / recovery
+                                     └─ 3ec7f10 main / gate-2-4-verified
+                                          └─ 8124108 … Gate 2.5 recoverable lesson preparation
 ```
 
 关键事实：
 
-- `main` 停留在 `6d1335a`，即 Gate 1B；所有 Gate 2 和教师门户提交仍未合并到 `main`。
-- 唯一的 Merge Commit 是 `6d1335a`，它合并了 `feat/round-1-skeleton`。
-- 唯一的 Tag 是 annotated tag `gate-1b-verified`，指向 `6d1335a`。
+- `main` 已在 PR #2 通过 Merge Commit `3ec7f10` 合并 Gate 2.4；Gate 2.5 从该 main 创建，尚未合并。
+- 关键 Merge Commit 是 Gate 1B 的 `6d1335a` 和 Gate 2.4 的 `3ec7f10`。
+- annotated tags 为 `gate-1b-verified`（`6d1335a`）和 `gate-2-4-verified`（`3ec7f10`）。
 - 仓库没有 Gate 1A Tag；Gate 1A 只能由根提交 `3a98ecf` 标识。
 - 远程历史功能分支仍在，但它们是同一条演进链上的阶段锚点。
 
@@ -56,7 +58,8 @@
 | UI redesign v1 | `62d36f7`–`f6bb200` | 明亮蓝视觉、本地化、简化系统术语、稳定启动、截图验收 | 视觉基础部分延续；导航和工作模型被 v2 替代 |
 | UI redesign v2 | `2287568`–`42b4a4b` | 从系统对象导航改为教师日常任务视角；课程、待办、Agent 工作区高保真 Mock；蓝白视觉 | 产品方向仍有参考价值；页面实现被普通教师门户 v1 再次重构 |
 | 普通教师端 UI v1 | `19339e7`、`99b3a51`、`fd73627`、`43c8e03` / `feat/teacher-portal-ui-v1` | 概览、日程、教学、学生、文件、Agent、设置七页面框架；HarmonyOS Sans；Playwright 验收；UI 说明文档 | 当前目标版本；除旧 Gate 2 切片外，主体是高保真 Mock |
-| Gate 2.4 正确性与可恢复性 | `8ce69f7`、`c9556d9`、`b2073e7`、`b750471`、`35805ed`、`0a7a2d4`、`c68d226`、`affd4a9` / `feat/gate-2-4-copilot-correctness` | 调查记录、E2E/PG 数据库隔离、身份 fail closed、Product/Test Root、TeacherRequest、Proposal 恢复、TeachingPlan 独立审核/批准、应用 Worker、真实浏览器闭环 | 已实现并通过类型、PG、HTTP、Playwright 第一轮验证；普通七页面的大部分宽 UI 仍是 Mock |
+| Gate 2.4 正确性与可恢复性 | `8ce69f7`–`b353f35`、PR #2、`3ec7f10`、`gate-2-4-verified` | 调查记录、E2E/PG 数据库隔离、身份 fail closed、Product/Test Root、TeacherRequest、Proposal 恢复、TeachingPlan 独立审核/批准、应用 Worker、真实浏览器闭环 | 已合并 main、人工验收并以 annotated tag 固化 |
+| Gate 2.5 最小可恢复备课闭环 | `8124108` 起 / `feat/gate-2-5-recoverable-lesson-prep` | CourseRun → CurriculumUnit → Lesson、Work-owned `lesson_preparation` Task、TaskWorkingSet、每 Run 授权与封存、Lesson/Task-scoped Proposal/Plan、多版本唯一约束、`ready_for_use` 与显式完成、概览/教学/Agent/Plan/Runs 联动 | 已实现并通过 PostgreSQL、HTTP、架构和 Playwright 验收；尚未创建 PR、合并或 Tag |
 
 ## 4. 每个阶段为何这样设计
 
@@ -166,13 +169,13 @@ UI 的演进方向非常清楚：
 
 ### 明显过时或冲突
 
-- 根 `README.md` 在调查基线中仍停留在 Gate 1B；Gate 2.4 已将其更新为当前真实范围。
+- 根 `README.md` 在调查基线中停留在 Gate 1B；Gate 2.4 与 Gate 2.5 已持续更新为当前真实范围。
 - UI 文档中的部分 Mock 数量与当前数组不完全一致，例如待办数量。
 - 静态权限测试仍读取旧的 `0001_runtime_role.sql` 角色名称；真实启动和角色测试使用后续 Migration。
-- 当前 Commit 中没有单独的“产品功能矩阵”文档；恢复前 `docs/product/` 是未跟踪的错误 Gate 2.5A 内容，已被清理。
+- 调查基线没有产品功能矩阵；Gate 2.4 建立矩阵，Gate 2.5 已按逐交互真实状态更新。
 
 ## 8. 演进结论
 
-项目已经从架构概念走到一个被真实 PostgreSQL、事务、角色、审计、Outbox、Artifact Revision 和应用 Worker 支撑的窄 Teacher Copilot 演示闭环，并拥有成熟度较高的普通教师端视觉原型。
+项目已经从架构概念走到一个被真实 PostgreSQL、事务、角色、审计、Outbox、Artifact Revision 和应用 Worker 支撑的最小教师备课闭环，并拥有成熟度较高的普通教师端视觉原型。
 
-Gate 2.4 完成了“请求与 Proposal 可恢复、审核与批准语义正确”的跨越，但没有扩大真实业务面。下一阶段应在保持 MockModelProvider、无文件、无日历的前提下，把最小课程/课次上下文与可恢复备课工作项接入这条已验证链路；不宜同时产品化全部 Mock 页面。
+Gate 2.4 完成了“请求与 Proposal 可恢复、审核与批准语义正确”的跨越；Gate 2.5 又把真实课程/课时、TaskWorkingSet、备课状态和页面联动接入同一条链路。下一阶段应在“文件与教学成果”和“可恢复真实模型 Provider”之间选择一个，不宜同时推进，更不应顺带产品化日程、作业、学生或云部署。

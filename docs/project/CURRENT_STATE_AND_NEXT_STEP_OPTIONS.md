@@ -2,23 +2,23 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.4 实施复核：2026-07-31。第 16 节是当前权威状态；前述方案分析保留为决策历史，其中被标注为 Gate 2.4 缺口的内容已经实施。
+> Gate 2.5 实施复核：2026-07-31。第 17 节是当前权威状态；前述调查和候选方案保留为决策历史。
 > 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
 
 ## 1. 执行结论
 
 当前项目不是“只有页面”，也不是“已经基本可用的教师平台”。
 
-它仍由窄真实链路和宽 Mock 门户叠加而成，但窄链路已经完成 Gate 2.4 正确性修复：
+它仍由窄真实链路和宽 Mock 门户叠加而成，但窄链路已经从 Gate 2.4 的 Copilot 正确性扩展到 Gate 2.5 的最小可恢复备课闭环：
 
-1. 一条可恢复且状态语义明确的真实链路：显式演示身份和真实请求 → PostgreSQL Task/Run/Contract/Context → Mock Teacher Copilot → Proposal 恢复 → 四种教师处置 → `in_review` → 单独批准为 `approved` → Audit / 应用 Outbox Worker；
+1. 一条可恢复且状态语义明确的真实链路：CourseRun → CurriculumUnit → Lesson → `lesson_preparation` Task → TaskWorkingSet → 每次运行重新授权 → Mock Teacher Copilot → Proposal 恢复 → 四种教师处置 → active `in_review` → 单独批准为 current `approved` → `ready_for_use` → 教师显式完成 → Audit / 应用 Outbox Worker；
 2. 一套覆盖普通教师七个模块的高保真前端原型：概览、日程、教学、学生、文件、Agent、设置。
 
-第一部分的请求、Proposal、Evidence、Disposition、TeachingPlan 和 Run 已可在刷新后恢复；输出仍是固定 Mock，课程上下文仍是单一合成切片。第二部分视觉和交互完整度较高，但数据仍几乎全部来自前端数组和 React state。
+第一部分的课程、课时、任务、请求、上下文、Proposal、Evidence、Disposition、TeachingPlan 和 Run 可在刷新与服务重启后恢复；输出仍是固定 Mock，课程内容仍是单一合成的一次函数切片。第二部分视觉和交互完整度较高，但日程、作业、考试、学生、文件、通用 Agent 和设置仍来自前端数组或 React state。
 
 因此项目目前最准确的阶段描述是：
 
-> **Gate 1B 基础设施已验证；Gate 2.4 的合成 Teacher Copilot 正确性与可恢复闭环已实现并验证；普通教师端 UI v1 的宽业务面仍是高保真原型。**
+> **Gate 1B 基础设施和 Gate 2.4 Copilot 正确性已验证；Gate 2.5 的最小课程—备课 Task—Proposal—TeachingPlan—显式完成闭环已实现并验证；普通教师端其余宽业务面仍是高保真原型。**
 
 ## 2. 调查基线依赖关系（Gate 2.4 前，保留用于对比）
 
@@ -736,3 +736,69 @@ PostgreSQL 中会保留：
 4. Gate 2.5 继续使用确定性 MockModelProvider；真实 Provider 进入独立后续 Gate。
 
 完整语义见 `docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md`。
+
+## 17. Gate 2.5 完成后的当前状态（权威更新）
+
+### 17.1 已实现并验证
+
+| 能力 | 当前事实 |
+|---|---|
+| 最小课程层级 | Education-owned `CourseRun → CurriculumUnit → Lesson`，通过正式 PostgreSQL Repository 和类型化 API 读取；本地 Seed 为八年级 3 班数学、一次函数和五个课时 |
+| 备课任务 | 复用 `work.task`，`task_kind = lesson_preparation`；一对一 details 只扩展类型字段，Task 的 status/version 是唯一真值 |
+| 状态机 | `planned → in_progress → awaiting_plan_review → ready_for_use → completed`，另有 cancel/reopen；批准不等于完成，无 approved plan 不能 complete |
+| 上下文 | Work-owned TaskWorkingSet 可版本化选择 Evidence；每个 TaskRun 重新生成 immutable AuthorizedContextPlan，并由 ContextManifest 封存 |
+| 请求与运行 | 真实 request text、Lesson/Task refs、目标、Evidence、baseline plan 和 Working Set version 进入 TaskRun、Resolved Contract、ContextManifest 和 MockModelProvider |
+| Proposal 恢复 | 同一 Task 可有多个 TaskRun/Proposal；列表、详情、直接 URL、刷新和进程重启均从 PostgreSQL 恢复，不重新生成 |
+| TeachingPlan | Lesson/Task-scoped draft、active in-review、superseded、current approved、historical approved；Revision immutable，scope lifecycle 保存可变指针语义 |
+| 唯一性 | PostgreSQL 部分唯一索引保证同一 Lesson 最多一个 active in-review 和一个 current approved；并发批准一个成功、另一个结构化 `409` |
+| 页面闭环 | 概览、教学课程区、Task-scoped Agent、Teaching Plan 和 Runs 读取真实状态；创建、继续、审阅、批准、完成及拒绝流程均无 Mock fallback |
+| Worker | Gate 2.5 Work 事件进入现有租约/重试/幂等 Worker；业务事实同步提交，Worker 重启恢复只补消费记录 |
+
+### 17.2 数据库增量
+
+- Education：`curriculum_unit`、`lesson`、`lesson_learning_objective_link`、`lesson_evidence_link`、`lesson_teaching_plan_binding`；
+- Work：`lesson_preparation_task_details`、`task_working_set`、immutable `task_working_set_revision`、`preparation_status_history`，并将 TaskResult 明确绑定 TaskRun；
+- Runtime：immutable `authorized_context_plan`，ContextManifest 引用当次授权计划；
+- Artifact：`teaching_plan_scope_lifecycle`、`teaching_plan_scope_event`，以及 active in-review/current approved 部分唯一索引；
+- Migration 总数为 25，仍由七 Schema owner、checksum 和非超级用户应用角色约束。
+
+### 17.3 页面和产品边界
+
+Gate 2.5 真实范围：
+
+- 概览的备课 Task、待审核/已准备统计和最近课时；
+- 教学页的课程、单元、课时、目标、计划和 Task 入口；
+- `/agent/tasks/:taskRef` 的 Working Set、真实请求和 Proposal；
+- Teaching Plan 的 scoped lifecycle、批准和显式完成；
+- Runs 的请求、上下文、权限、Plan/Work、Audit 和 Outbox 解释。
+
+仍是 Mock/只读/未实现：
+
+- 日程、通用 Todo、作业、考试、学生长期模型；
+- 文件字节、上传下载、ObjectStore 和文件版本；
+- 通用 `/agent` 对话、长期会话和记忆；
+- 正式登录/SSO、真实模型、云部署和多角色。
+
+详细逐交互状态见 `docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md`；Gate 2.5 闭环内 `DEAD = 0`。
+
+### 17.4 当前主要风险
+
+1. **真实模型前的长事务风险。** 当前 MockModelProvider 是本地确定性调用，仍位于业务事务链内；任何网络 Provider 接入前必须拆分可恢复的执行阶段，并设计 timeout、retry、取消、费用和重复调用语义。
+2. **合成 fixture 仍进入运行时。** 课程 Seed、演示 refs 和策略模板用于 local/demo，不是学校配置或真实课程导入。
+3. **应用角色权限仍较宽。** 模块 Repository 维持 owner 边界，但单体 Product app role 可访问多个业务 Schema；学校生产前需收紧写权限或引入更强模块服务边界。
+4. **Worker 仍是单机轮询器。** 它验证恢复机制，但没有 dead-letter 管理、监控告警、多实例运维或生产消息基础设施。
+5. **Lesson 状态是同步投影。** Work Task 是真值，Education Lesson 便于查询；后续若拆服务，必须以幂等事件投影替代当前同库协调。
+6. **宽门户仍会造成完成度错觉。** 日程、学生、文件等高保真页面必须继续保持 Mock/只读标记。
+
+### 17.5 下一阶段判断
+
+在 `Gate 2.5B — 文件和教学成果` 与 `Gate 2.6 — 真实 DeepSeek Provider` 之间，当前更合理的顺序是先讨论 **Gate 2.6**，但它必须被定义为“可恢复的真实 Provider 执行与评测 Gate”，不能只把 Mock 调用替换为 HTTP 请求。
+
+理由：
+
+- Gate 2.5 已能用结构化 TeachingPlan 完成教师结果闭环，当前并不依赖二进制文件；
+- 最大产品真实性缺口已从“工作流不存在”变为“智能输出仍是固定模板”；
+- 文件/ObjectStore 会新增路径安全、MIME、容量、孤儿清理和备份问题，却不会提高建议质量；
+- 真实 Provider 前必须先解决事务外执行、Run 恢复、幂等重试、超时/取消、内容安全、脱敏、成本上限和确定性评测。
+
+若产品所有者下一目标是“下载并带走课件/讲义”，则应改选 Gate 2.5B；否则推荐 Gate 2.6。两者不得并行推进。
