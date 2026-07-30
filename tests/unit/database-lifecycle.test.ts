@@ -107,6 +107,22 @@ describe("PostgreSQL lifecycle isolation", () => {
     );
   });
 
+  it("routes PostgreSQL integration tests away from development data", () => {
+    const packageJson = JSON.parse(source("package.json"));
+    expect(packageJson.scripts["test:postgres"]).toBe(
+      "node scripts/postgres/run-integration-tests.mjs"
+    );
+    const runner = source(
+      "scripts/postgres/run-integration-tests.mjs"
+    );
+    expect(runner).toContain("createE2eDatabaseEnvironment");
+    expect(runner).toContain("snapshotProtectedLocalState");
+    expect(runner).toContain('"--volumes"');
+    expect(runner).not.toContain("db:up");
+    expect(runner).not.toContain("db:clean");
+    expect(runner).not.toContain("db:env");
+  });
+
   it("keeps development Compose identity explicit and protected", () => {
     const compose = source("infra/docker/compose.postgres.yml");
     expect(compose).toContain(
