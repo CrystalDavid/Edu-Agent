@@ -101,6 +101,17 @@ export const EvidenceClaimViewSchema = z.object({
   supportingObservationRefs: z.array(z.string().min(1))
 });
 
+export const TeacherTaskRequestSchema = z.object({
+  requestText: z.string().trim().min(1).max(2000),
+  actorRef: z.string().min(1),
+  purpose: z.string().min(1),
+  courseRunRef: z.string().min(1),
+  learningObjectiveRefs: z.array(z.string().min(1)).min(1),
+  selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
+  createdAt: z.string().datetime(),
+  requestVersion: z.literal(1)
+});
+
 export const TeachingPlanRevisionViewSchema = z.object({
   artifactRef: z.string().min(1),
   revisionRef: z.string().min(1),
@@ -111,7 +122,13 @@ export const TeachingPlanRevisionViewSchema = z.object({
     .enum(["accepted", "modified"])
     .nullable()
     .default(null),
-  state: z.enum(["draft", "proposal", "in_review", "published"]),
+  state: z.enum([
+    "draft",
+    "proposal",
+    "in_review",
+    "approved",
+    "published"
+  ]),
   title: z.string().min(1),
   content: TeachingPlanSchema,
   createdAt: z.string().datetime()
@@ -122,6 +139,7 @@ export const SuggestionSummarySchema = z.object({
   proposalRevisionRef: z.string().min(1),
   taskRef: z.string().min(1),
   status: z.enum(["pending", "disposed"]),
+  requestText: z.string().min(1),
   strategyTitles: z.array(z.string().min(1)).min(1),
   createdAt: z.string().datetime()
 });
@@ -158,14 +176,20 @@ export const TeacherWorkspaceSchema = z.object({
     estimateStatus: z.literal("not-computed"),
     estimateExplanation: z.string().min(1)
   }),
-  latestTeachingPlan: TeachingPlanRevisionViewSchema,
+  currentTeachingPlan: TeachingPlanRevisionViewSchema,
+  currentInReviewPlan:
+    TeachingPlanRevisionViewSchema.nullable(),
   pendingSuggestions: z.array(SuggestionSummarySchema),
   generatedAt: z.string().datetime()
 });
 
 export const CreateTeacherCopilotTaskRequestSchema = z.object({
+  requestText: z.string().trim().min(1).max(2000),
   courseRunRef: z.string().min(1),
   goalRef: z.string().min(1),
+  learningObjectiveRefs: z.array(z.string().min(1)).min(1),
+  selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
+  requestVersion: z.literal(1).default(1),
   purpose: z.string().min(1),
   idempotencyKey: z.string().min(8)
 });
@@ -176,6 +200,7 @@ export const CreateTeacherCopilotTaskResultSchema = z.object({
   taskRunRef: z.string().min(1),
   agentRunRef: z.string().min(1),
   contractRef: z.string().min(1),
+  request: TeacherTaskRequestSchema,
   proposalArtifactRef: z.string().min(1),
   proposalRevisionRef: z.string().min(1),
   teachingPlanArtifactRef: z.string().min(1),
@@ -199,7 +224,8 @@ export const SuggestionDispositionRequestSchema = z
     disposition: SuggestionDispositionKindSchema,
     selectedStrategyId: z.string().min(1),
     teacherEdits: TeachingPlanSchema.partial().default({}),
-    note: z.string().max(500).optional()
+    note: z.string().max(500).optional(),
+    expectedProposalRevisionNumber: z.number().int().positive()
   })
   .superRefine((value, context) => {
     if (
@@ -223,12 +249,72 @@ export const SuggestionDispositionResultSchema = z.object({
   resultingRevision: TeachingPlanRevisionViewSchema.nullable()
 });
 
+export const SuggestionDispositionViewSchema = z.object({
+  dispositionRef: z.string().min(1),
+  disposition: SuggestionDispositionKindSchema,
+  selectedStrategyId: z.string().min(1),
+  teacherEdits: TeachingPlanSchema.partial(),
+  note: z.string().nullable(),
+  resultingRevisionRef: z.string().nullable(),
+  implementationObserved: z.literal(false),
+  createdAt: z.string().datetime()
+});
+
+export const ProposalReviewDetailSchema = z.object({
+  proposalArtifactRef: z.string().min(1),
+  proposalRevisionRef: z.string().min(1),
+  proposalRevisionNumber: z.number().int().positive(),
+  status: z.enum(["pending", "disposed"]),
+  taskRef: z.string().min(1),
+  taskRunRef: z.string().min(1),
+  agentRunRef: z.string().min(1),
+  contractRef: z.string().min(1),
+  teachingPlanArtifactRef: z.string().min(1),
+  authorizationDecisionRef: z.string().min(1),
+  request: TeacherTaskRequestSchema,
+  strategies: z.array(PedagogicalStrategySchema).length(2),
+  diffsByStrategy: z.record(z.string(), TeachingPlanDiffSchema),
+  evidence: z.object({
+    observations: z.array(EvidenceObservationViewSchema),
+    claims: z.array(EvidenceClaimViewSchema)
+  }),
+  baselineRevision: TeachingPlanRevisionViewSchema,
+  draftRevision: TeachingPlanRevisionViewSchema,
+  disposition: SuggestionDispositionViewSchema.nullable(),
+  inReviewRevision: TeachingPlanRevisionViewSchema.nullable()
+});
+
+export const PendingProposalListSchema = z.object({
+  items: z.array(SuggestionSummarySchema),
+  generatedAt: z.string().datetime()
+});
+
+export const ApproveTeachingPlanRequestSchema = z.object({
+  purpose: z.literal("teacher-copilot.approve-plan"),
+  idempotencyKey: z.string().min(8),
+  expectedInReviewRevisionRef: z.string().min(1)
+});
+
+export const ApproveTeachingPlanResultSchema = z.object({
+  replayed: z.boolean(),
+  approvedRevision: TeachingPlanRevisionViewSchema,
+  previousApprovedRevisionRef: z.string().min(1)
+});
+
+export const TeachingPlanStateViewSchema = z.object({
+  currentApproved: TeachingPlanRevisionViewSchema,
+  currentInReview: TeachingPlanRevisionViewSchema.nullable(),
+  drafts: z.array(TeachingPlanRevisionViewSchema),
+  history: z.array(TeachingPlanRevisionViewSchema)
+});
+
 export const RunExplanationSchema = z.object({
   task: z.object({
     taskRef: z.string().min(1),
     title: z.string().min(1),
     status: z.string().min(1),
-    goalRef: z.string().min(1)
+    goalRef: z.string().min(1),
+    request: TeacherTaskRequestSchema
   }),
   taskRun: z.object({
     taskRunRef: z.string().min(1),
@@ -255,7 +341,8 @@ export const RunExplanationSchema = z.object({
     evidenceRefs: z.array(z.string().min(1)),
     resourceRefs: z.array(z.string().min(1)),
     unknowns: z.array(z.string().min(1)),
-    fieldMask: z.array(z.string().min(1))
+    fieldMask: z.array(z.string().min(1)),
+    requestSummary: TeacherTaskRequestSchema
   }),
   authorization: z.object({
     decisionRef: z.string().min(1),
@@ -311,6 +398,9 @@ export const RunExplanationSchema = z.object({
 });
 
 export type TeachingPlan = z.infer<typeof TeachingPlanSchema>;
+export type TeacherTaskRequest = z.infer<
+  typeof TeacherTaskRequestSchema
+>;
 export type TeachingPlanDiff = z.infer<
   typeof TeachingPlanDiffSchema
 >;
@@ -337,5 +427,23 @@ export type SuggestionDispositionRequest = z.infer<
 >;
 export type SuggestionDispositionResult = z.infer<
   typeof SuggestionDispositionResultSchema
+>;
+export type SuggestionDispositionView = z.infer<
+  typeof SuggestionDispositionViewSchema
+>;
+export type ProposalReviewDetail = z.infer<
+  typeof ProposalReviewDetailSchema
+>;
+export type PendingProposalList = z.infer<
+  typeof PendingProposalListSchema
+>;
+export type ApproveTeachingPlanRequest = z.infer<
+  typeof ApproveTeachingPlanRequestSchema
+>;
+export type ApproveTeachingPlanResult = z.infer<
+  typeof ApproveTeachingPlanResultSchema
+>;
+export type TeachingPlanStateView = z.infer<
+  typeof TeachingPlanStateViewSchema
 >;
 export type RunExplanation = z.infer<typeof RunExplanationSchema>;

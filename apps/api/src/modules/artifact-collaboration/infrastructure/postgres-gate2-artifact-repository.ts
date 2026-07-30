@@ -36,7 +36,12 @@ export interface StructuredTeachingPlanRevision {
   parentRevisionRef: string | null;
   selectedStrategyId: string | null;
   teacherSelection: "accepted" | "modified" | null;
-  state: "draft" | "proposal" | "in_review" | "published";
+  state:
+    | "draft"
+    | "proposal"
+    | "in_review"
+    | "approved"
+    | "published";
   title: string;
   content: TeachingPlan;
   createdAt: string;
@@ -64,6 +69,7 @@ export class PostgresGate2ArtifactRepository {
         artifactRef: input.artifactRef,
         artifactType: "ContentArtifact",
         latestRevisionRef: input.revisionRef,
+        currentApprovedRevisionRef: input.revisionRef,
         metadata: input.metadata
       },
       revision: {
@@ -73,13 +79,13 @@ export class PostgresGate2ArtifactRepository {
         artifactType: "TeachingPlan",
         title: input.title,
         body: JSON.stringify(input.content),
-        revisionState: "draft",
+        revisionState: "approved",
         contentHash: buildArtifactContentHash(
           input.title,
           JSON.stringify(input.content)
         ),
         structuredContent: input.content,
-        changeReason: "合成演示的初始 TeachingPlan 草稿",
+        changeReason: "合成演示的初始已批准 TeachingPlan",
         evidenceRefs: input.content.evidenceRefs,
         teacherSelection: {
           source: "synthetic-seed"
@@ -88,7 +94,7 @@ export class PostgresGate2ArtifactRepository {
       },
       outbox: {
         outboxRef: input.outboxRef,
-        eventName: "TeachingPlanDraftSeeded",
+        eventName: "TeachingPlanApprovedSeeded",
         aggregateRef: input.artifactRef,
         payload: {
           revisionRef: input.revisionRef,
@@ -212,6 +218,12 @@ export class PostgresGate2ArtifactRepository {
       },
       metadata: draftMetadata
     });
+    await client.query(
+      `UPDATE artifact.artifact
+          SET latest_revision_ref = $2
+        WHERE artifact_ref = $1`,
+      [input.teachingPlanArtifactRef, input.draftRevisionRef]
+    );
     const draftReceipt = createReceipt({
       writeRef: input.draftRevisionRef,
       recordType: "ArtifactRevision",
@@ -307,6 +319,13 @@ export class PostgresGate2ArtifactRepository {
       },
       metadata
     });
+    await client.query(
+      `UPDATE artifact.artifact
+          SET latest_revision_ref = $2,
+              current_in_review_revision_ref = $2
+        WHERE artifact_ref = $1`,
+      [input.artifactRef, revisionRef]
+    );
     const revisionReceipt = createReceipt({
       writeRef: revisionRef,
       recordType: "ArtifactRevision",
@@ -347,10 +366,63 @@ export class PostgresGate2ArtifactRepository {
     };
   }
 
-  async getLatestTeachingPlan(
+  async getCurrentApprovedTeachingPlan(
     executor: SqlExecutor,
     artifactRef: string
   ): Promise<StructuredTeachingPlanRevision | undefined> {
+    const result = await executor.query<StructuredRevisionRow>(
+      `SELECT revision.revision_ref, revision.artifact_ref,
+              revision.revision_number,
+              revision.parent_revision_ref,
+              revision.revision_state, revision.title,
+              revision.structured_content,
+              revision.teacher_selection,
+              revision.created_at
+         FROM artifact.artifact AS artifact_record
+         JOIN artifact.artifact_revision AS revision
+           ON revision.revision_ref =
+                artifact_record.current_approved_revision_ref
+        WHERE artifact_record.artifact_ref = $1
+          AND revision.artifact_type = 'TeachingPlan'
+          AND revision.revision_state = 'approved'`,
+      [artifactRef]
+    );
+    return result.rows[0]
+      ? toStructuredRevision(result.rows[0])
+      : undefined;
+  }
+
+  async getCurrentInReviewTeachingPlan(
+    executor: SqlExecutor,
+    artifactRef: string
+  ): Promise<StructuredTeachingPlanRevision | undefined> {
+    const result = await executor.query<StructuredRevisionRow>(
+      `SELECT revision.revision_ref, revision.artifact_ref,
+              revision.revision_number,
+              revision.parent_revision_ref,
+              revision.revision_state, revision.title,
+              revision.structured_content,
+              revision.teacher_selection,
+              revision.created_at
+         FROM artifact.artifact AS artifact_record
+         JOIN artifact.artifact_revision AS revision
+           ON revision.revision_ref =
+                artifact_record.current_in_review_revision_ref
+        WHERE artifact_record.artifact_ref = $1
+          AND revision.artifact_type = 'TeachingPlan'
+          AND revision.revision_state = 'in_review'`,
+      [artifactRef]
+    );
+    return result.rows[0]
+      ? toStructuredRevision(result.rows[0])
+      : undefined;
+  }
+
+  async listTeachingPlanRevisions(
+    executor: SqlExecutor,
+    artifactRef: string,
+    state?: "draft"
+  ): Promise<StructuredTeachingPlanRevision[]> {
     const result = await executor.query<StructuredRevisionRow>(
       `SELECT revision_ref, artifact_ref, revision_number,
               parent_revision_ref, revision_state, title,
@@ -358,13 +430,142 @@ export class PostgresGate2ArtifactRepository {
          FROM artifact.artifact_revision
         WHERE artifact_ref = $1
           AND artifact_type = 'TeachingPlan'
-        ORDER BY revision_number DESC
-        LIMIT 1`,
+          AND ($2::text IS NULL OR revision_state = $2)
+        ORDER BY revision_number DESC`,
+      [artifactRef, state ?? null]
+    );
+    return result.rows.map(toStructuredRevision);
+  }
+
+  async lockTeachingPlanLifecycle(
+    client: PostgresClient,
+    artifactRef: string
+  ): Promise<
+    | {
+        currentApprovedRevisionRef: string;
+        currentInReviewRevisionRef: string | null;
+      }
+    | undefined
+  > {
+    const result = await client.query<{
+      current_approved_revision_ref: string | null;
+      current_in_review_revision_ref: string | null;
+    }>(
+      `SELECT current_approved_revision_ref,
+              current_in_review_revision_ref
+         FROM artifact.artifact
+        WHERE artifact_ref = $1
+        FOR UPDATE`,
       [artifactRef]
     );
-    return result.rows[0]
-      ? toStructuredRevision(result.rows[0])
+    const row = result.rows[0];
+    return row?.current_approved_revision_ref
+      ? {
+          currentApprovedRevisionRef:
+            row.current_approved_revision_ref,
+          currentInReviewRevisionRef:
+            row.current_in_review_revision_ref
+        }
       : undefined;
+  }
+
+  async insertApprovedRevision(
+    client: PostgresClient,
+    input: {
+      inReviewRevision: StructuredTeachingPlanRevision;
+      previousApprovedRevisionRef: string;
+      writeContext: WriteContext;
+    }
+  ): Promise<{
+    revision: StructuredTeachingPlanRevision;
+    receipts: readonly FormalWriteReceipt[];
+  }> {
+    const revisionNumber = await this.nextRevisionNumber(
+      client,
+      input.inReviewRevision.artifactRef
+    );
+    const revisionRef = `artifact-revision:${randomUUID()}`;
+    const title = "一次函数斜率与图像关系｜已批准教学计划";
+    const metadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      "approved-teaching-plan"
+    );
+    await this.base.insertRevision(client, {
+      revisionRef,
+      artifactRef: input.inReviewRevision.artifactRef,
+      revisionNumber,
+      artifactType: "TeachingPlan",
+      title,
+      body: JSON.stringify(input.inReviewRevision.content),
+      parentRevisionRef: input.inReviewRevision.revisionRef,
+      revisionState: "approved",
+      contentHash: buildArtifactContentHash(
+        title,
+        JSON.stringify(input.inReviewRevision.content)
+      ),
+      structuredContent: input.inReviewRevision.content,
+      changeReason: "教师单独批准为当前教学计划",
+      evidenceRefs: input.inReviewRevision.content.evidenceRefs,
+      teacherSelection: {
+        approvalFromRevisionRef:
+          input.inReviewRevision.revisionRef,
+        selectedStrategyId:
+          input.inReviewRevision.selectedStrategyId,
+        disposition:
+          input.inReviewRevision.teacherSelection === "accepted"
+            ? "accepted"
+            : "accepted_with_changes"
+      },
+      metadata
+    });
+    await client.query(
+      `UPDATE artifact.artifact
+          SET latest_revision_ref = $2,
+              current_approved_revision_ref = $2,
+              current_in_review_revision_ref = NULL
+        WHERE artifact_ref = $1`,
+      [input.inReviewRevision.artifactRef, revisionRef]
+    );
+    const revisionReceipt = createReceipt({
+      writeRef: revisionRef,
+      recordType: "ArtifactRevision",
+      metadata
+    });
+    const outboxReceipt = await this.insertOutbox(client, {
+      outboxRef: `outbox:${randomUUID()}`,
+      eventName: "TeachingPlanApproved",
+      aggregateRef: input.inReviewRevision.artifactRef,
+      payload: {
+        revisionRef,
+        inReviewRevisionRef:
+          input.inReviewRevision.revisionRef,
+        previousApprovedRevisionRef:
+          input.previousApprovedRevisionRef
+      },
+      metadata: createWriteMetadata(
+        input.writeContext,
+        "artifact",
+        "approved-teaching-plan-outbox"
+      )
+    });
+    return {
+      revision: {
+        artifactRef: input.inReviewRevision.artifactRef,
+        revisionRef,
+        revisionNumber,
+        parentRevisionRef: input.inReviewRevision.revisionRef,
+        selectedStrategyId:
+          input.inReviewRevision.selectedStrategyId,
+        teacherSelection:
+          input.inReviewRevision.teacherSelection,
+        state: "approved",
+        title,
+        content: input.inReviewRevision.content,
+        createdAt: input.writeContext.createdAt
+      },
+      receipts: [revisionReceipt, outboxReceipt]
+    };
   }
 
   async getTeachingPlanRevision(
@@ -387,24 +588,28 @@ export class PostgresGate2ArtifactRepository {
 
   async getProposal(
     executor: SqlExecutor,
-    proposalRevisionRef: string
+    proposalRevisionRef: string,
+    options: { forUpdate?: boolean } = {}
   ): Promise<
     | {
+        revisionNumber: number;
         strategies: PedagogicalStrategy[];
         diffsByStrategy: Record<string, TeachingPlanDiff>;
       }
     | undefined
   > {
     const result = await executor.query<{
+      revision_number: number;
       structured_content: {
         strategies: unknown;
         diffsByStrategy: Record<string, unknown>;
       };
     }>(
-      `SELECT structured_content
+      `SELECT revision_number, structured_content
          FROM artifact.artifact_revision
         WHERE revision_ref = $1
-          AND artifact_type = 'PedagogicalSuggestion'`,
+          AND artifact_type = 'PedagogicalSuggestion'
+        ${options.forUpdate ? "FOR UPDATE" : ""}`,
       [proposalRevisionRef]
     );
     const content = result.rows[0]?.structured_content;
@@ -421,6 +626,7 @@ export class PostgresGate2ArtifactRepository {
       ])
     );
     return {
+      revisionNumber: result.rows[0]!.revision_number,
       strategies,
       diffsByStrategy
     };
@@ -561,7 +767,12 @@ interface StructuredRevisionRow {
   artifact_ref: string;
   revision_number: number;
   parent_revision_ref: string | null;
-  revision_state: "draft" | "proposal" | "in_review" | "published";
+  revision_state:
+    | "draft"
+    | "proposal"
+    | "in_review"
+    | "approved"
+    | "published";
   title: string;
   structured_content: unknown;
   teacher_selection: unknown;

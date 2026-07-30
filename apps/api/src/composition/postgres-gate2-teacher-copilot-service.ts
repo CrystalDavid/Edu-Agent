@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  ApproveTeachingPlanResultSchema,
   CreateTeacherCopilotTaskResultSchema,
   SuggestionDispositionResultSchema,
   TeachingPlanSchema,
+  type ApproveTeachingPlanRequest,
+  type ApproveTeachingPlanResult,
   type AuthorizationDecision,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
@@ -12,10 +15,12 @@ import {
   type SuggestionDispositionRequest,
   type SuggestionDispositionResult,
   type TeachingPlan,
+  type TeacherTaskRequest,
   type TeachingPlanDiff,
   type TeachingPlanDiffChange
 } from "@edu-agent/contracts";
 import {
+  gate2DemoRefs,
   strategyTeachingPlans
 } from "@edu-agent/test-fixtures";
 import type { Pool } from "pg";
@@ -49,6 +54,7 @@ import {
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-work-repository.js";
 import {
   AuthorizationDeniedError,
+  DomainConflictError,
   NotFoundError
 } from "../platform/errors.js";
 import {
@@ -58,6 +64,7 @@ import {
 
 const GENERATE_PURPOSE = "teacher-copilot.adjust-next-lesson";
 const REVIEW_PURPOSE = "teacher-copilot.review-suggestion";
+const APPROVE_PURPOSE = "teacher-copilot.approve-plan";
 
 const planFields = [
   "objective",
@@ -222,20 +229,57 @@ export class PostgresGate2TeacherCopilotService {
           "当前租户下没有可用的教学改进 Goal。"
         );
       }
-      const baseline = await this.artifacts.getLatestTeachingPlan(
-        client,
-        educationContext.teachingPlanArtifactRef
-      );
+      const baseline =
+        await this.artifacts.getCurrentApprovedTeachingPlan(
+          client,
+          educationContext.teachingPlanArtifactRef
+        );
       if (!baseline) {
         throw new NotFoundError("TeachingPlan 基线不存在。");
       }
 
-      const evidenceRefs = [
+      const availableEvidenceRefs = [
         ...educationContext.observations.map(
           (item) => item.observationRef
         ),
         ...educationContext.claims.map((item) => item.claimRef)
       ];
+      const availableEvidence = new Set(availableEvidenceRefs);
+      if (
+        input.request.learningObjectiveRefs.some(
+          (reference) =>
+            reference !==
+            educationContext.objective.objectiveRef
+        )
+      ) {
+        throw new NotFoundError(
+          "A selected learning objective is not available in this CourseRun."
+        );
+      }
+      if (
+        input.request.selectedEvidenceRefs.some(
+          (reference) => !availableEvidence.has(reference)
+        )
+      ) {
+        throw new NotFoundError(
+          "A selected Evidence reference is not available in this CourseRun."
+        );
+      }
+      const evidenceRefs = [
+        ...new Set(input.request.selectedEvidenceRefs)
+      ];
+      const taskRequest: TeacherTaskRequest = {
+        requestText: input.request.requestText,
+        actorRef: input.actorRef,
+        purpose: input.request.purpose,
+        courseRunRef: input.request.courseRunRef,
+        learningObjectiveRefs: [
+          ...new Set(input.request.learningObjectiveRefs)
+        ],
+        selectedEvidenceRefs: evidenceRefs,
+        createdAt: now,
+        requestVersion: input.request.requestVersion
+      };
       const knownGaps = Array.from(
         new Set(
           educationContext.observations.flatMap(
@@ -261,6 +305,7 @@ export class PostgresGate2TeacherCopilotService {
 
       const modelResult =
         await this.model.generateTeacherStrategies({
+          requestText: taskRequest.requestText,
           evidenceRefs,
           knownGaps
         });
@@ -331,11 +376,12 @@ export class PostgresGate2TeacherCopilotService {
         ...(await this.work.insertTaskBundle(client, {
           task: {
             taskRef,
-            title: "根据学习证据调整明天课堂",
+            title: taskRequest.requestText.slice(0, 120),
             status: "completed",
             taskKind: "TeacherCopilotLessonAdjustment",
             caseRef: goal.caseRef,
             goalRef: goal.goalRef,
+            request: taskRequest,
             metadata: createWriteMetadata(
               writeContext,
               "work",
@@ -359,7 +405,8 @@ export class PostgresGate2TeacherCopilotService {
             aggregateRef: taskRunRef,
             payload: {
               taskRef,
-              goalRef: goal.goalRef
+              goalRef: goal.goalRef,
+              requestVersion: taskRequest.requestVersion
             },
             metadata: createWriteMetadata(
               writeContext,
@@ -371,6 +418,8 @@ export class PostgresGate2TeacherCopilotService {
       );
 
       const contractPayload = {
+        taskRef,
+        taskRequest,
         profileRef: educationContext.profile.profileRef,
         profileVersion: educationContext.profile.profileVersion,
         profileContentHash: educationContext.profile.contentHash,
@@ -427,6 +476,8 @@ export class PostgresGate2TeacherCopilotService {
               promptBundleRef: modelResult.promptBundleRef,
               inputSummary: {
                 agentRunRef,
+                requestText: taskRequest.requestText,
+                requestVersion: taskRequest.requestVersion,
                 courseRunRef: input.request.courseRunRef,
                 evidenceRefs,
                 knownGaps
@@ -493,7 +544,8 @@ export class PostgresGate2TeacherCopilotService {
             contentHash: hash({
               contractContentHash,
               promptBundleRef: modelResult.promptBundleRef,
-              evidenceRefs
+              evidenceRefs,
+              taskRequest
             }),
             metadata: createWriteMetadata(
               writeContext,
@@ -532,6 +584,8 @@ export class PostgresGate2TeacherCopilotService {
           evidenceRefs,
           unknowns: knownGaps,
           requestedFieldMask: decision.requestedFieldMask,
+          taskRef,
+          requestSummary: taskRequest,
           metadata: createWriteMetadata(
             writeContext,
             "runtime",
@@ -580,6 +634,7 @@ export class PostgresGate2TeacherCopilotService {
         taskRunRef,
         agentRunRef,
         contractRef,
+        request: taskRequest,
         proposalArtifactRef,
         proposalRevisionRef,
         teachingPlanArtifactRef:
@@ -617,6 +672,16 @@ export class PostgresGate2TeacherCopilotService {
         "该用途未获得建议处置权限。"
       );
     }
+    const dispositionFingerprint = hash({
+      proposalRevisionRef: input.proposalRevisionRef,
+      purpose: input.request.purpose,
+      disposition: input.request.disposition,
+      selectedStrategyId: input.request.selectedStrategyId,
+      teacherEdits: input.request.teacherEdits,
+      note: input.request.note ?? null,
+      expectedProposalRevisionNumber:
+        input.request.expectedProposalRevisionNumber
+    });
     const rootKey = [
       input.tenantRef,
       input.actorRef,
@@ -677,10 +742,75 @@ export class PostgresGate2TeacherCopilotService {
       }
       const proposal = await this.artifacts.getProposal(
         client,
-        input.proposalRevisionRef
+        input.proposalRevisionRef,
+        { forUpdate: true }
       );
       if (!proposal) {
         throw new NotFoundError("建议内容不存在。");
+      }
+      if (
+        proposal.revisionNumber !==
+        input.request.expectedProposalRevisionNumber
+      ) {
+        throw new DomainConflictError(
+          "PROPOSAL_VERSION_CONFLICT",
+          "The Proposal version no longer matches the review request.",
+          {
+            expectedRevisionNumber:
+              input.request.expectedProposalRevisionNumber,
+            actualRevisionNumber: proposal.revisionNumber
+          }
+        );
+      }
+      const existingDisposition =
+        await this.gate2Work.getSuggestionDisposition(
+          client,
+          input.proposalRevisionRef
+        );
+      if (existingDisposition) {
+        if (
+          existingDisposition.requestFingerprint !==
+          dispositionFingerprint
+        ) {
+          throw new DomainConflictError(
+            "PROPOSAL_ALREADY_DISPOSED",
+            "This Proposal version already has a different final disposition.",
+            {
+              proposalRevisionRef: input.proposalRevisionRef,
+              existingDisposition:
+                existingDisposition.kind,
+              existingDispositionRef:
+                existingDisposition.dispositionRef
+            }
+          );
+        }
+        const existingRevision =
+          existingDisposition.resultingRevisionRef
+            ? await this.artifacts.getTeachingPlanRevision(
+                client,
+                existingDisposition.resultingRevisionRef
+              )
+            : null;
+        const replayResult =
+          SuggestionDispositionResultSchema.parse({
+            replayed: true,
+            dispositionRef:
+              existingDisposition.dispositionRef,
+            disposition: existingDisposition.kind,
+            implementationObserved: false,
+            instructionalDecisionCreated: false,
+            resultingRevision: existingRevision
+          });
+        await this.governance.completeIdempotency(client, {
+          rootKey,
+          result: replayResult,
+          completedAt: now
+        });
+        await this.governance.saveAudits(client, [
+          reservation.receipt!
+        ]);
+        await client.query("COMMIT");
+        return replayResult;
       }
       const selectedStrategy = proposal.strategies.find(
         (strategy) =>
@@ -777,6 +907,7 @@ export class PostgresGate2TeacherCopilotService {
                     resultingRevision.revisionRef
                 }
               : {}),
+            requestFingerprint: dispositionFingerprint,
             metadata: createWriteMetadata(
               writeContext,
               "work",
@@ -830,6 +961,208 @@ export class PostgresGate2TeacherCopilotService {
     }
   }
 
+  async approveTeachingPlan(input: {
+    tenantRef: string;
+    actorRef: string;
+    inReviewRevisionRef: string;
+    request: ApproveTeachingPlanRequest;
+  }): Promise<ApproveTeachingPlanResult> {
+    this.assertDemoActor(input.tenantRef, input.actorRef);
+    if (input.request.purpose !== APPROVE_PURPOSE) {
+      throw new AuthorizationDeniedError(
+        "This purpose is not authorized to approve a TeachingPlan."
+      );
+    }
+    if (
+      input.request.expectedInReviewRevisionRef !==
+      input.inReviewRevisionRef
+    ) {
+      throw new DomainConflictError(
+        "TEACHING_PLAN_REVIEW_VERSION_CONFLICT",
+        "The route and expected in-review revision do not match."
+      );
+    }
+    const rootKey = [
+      input.tenantRef,
+      input.actorRef,
+      input.request.purpose,
+      input.request.idempotencyKey
+    ].join("|");
+    const decisionRef = stableDecisionRef(rootKey);
+    const now = new Date().toISOString();
+    const writeContext: WriteContext = {
+      actorRef: input.actorRef,
+      purpose: input.request.purpose,
+      rootIdempotencyKey: input.request.idempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt: now
+    };
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(
+        client,
+        {
+          idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+          rootKey,
+          requestFingerprint: hash({
+            inReviewRevisionRef: input.inReviewRevisionRef,
+            ...input.request
+          }),
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "teaching-plan-approval-idempotency"
+          )
+        }
+      );
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return ApproveTeachingPlanResultSchema.parse({
+          ...reservation.result,
+          replayed: true
+        });
+      }
+
+      const educationContext =
+        await this.education.getTeacherCopilotContext(client, {
+          tenantRef: input.tenantRef,
+          courseRunRef: gate2DemoRefs.courseRunRef
+        });
+      if (!educationContext) {
+        throw new NotFoundError(
+          "The tenant TeachingPlan context is not available."
+        );
+      }
+      const inReview =
+        await this.artifacts.getTeachingPlanRevision(
+          client,
+          input.inReviewRevisionRef
+        );
+      if (
+        !inReview ||
+        inReview.artifactRef !==
+          educationContext.teachingPlanArtifactRef
+      ) {
+        throw new NotFoundError(
+          "The in-review TeachingPlan revision was not found."
+        );
+      }
+      if (inReview.state !== "in_review") {
+        throw new DomainConflictError(
+          "TEACHING_PLAN_NOT_IN_REVIEW",
+          "Only an in-review TeachingPlan can be approved.",
+          {
+            revisionRef: inReview.revisionRef,
+            state: inReview.state
+          }
+        );
+      }
+      const lifecycle =
+        await this.artifacts.lockTeachingPlanLifecycle(
+          client,
+          inReview.artifactRef
+        );
+      if (!lifecycle) {
+        throw new NotFoundError(
+          "The TeachingPlan lifecycle was not found."
+        );
+      }
+      if (
+        lifecycle.currentInReviewRevisionRef !==
+        inReview.revisionRef
+      ) {
+        throw new DomainConflictError(
+          "TEACHING_PLAN_REVIEW_VERSION_CONFLICT",
+          "A newer in-review TeachingPlan replaced this revision.",
+          {
+            expectedInReviewRevisionRef: inReview.revisionRef,
+            currentInReviewRevisionRef:
+              lifecycle.currentInReviewRevisionRef
+          }
+        );
+      }
+
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: input.actorRef,
+        tenantRef: input.tenantRef,
+        purpose: input.request.purpose,
+        action: "teacher-copilot.approve-plan",
+        resourceRef: inReview.revisionRef,
+        requestedFieldMask: [
+          "teachingPlan.currentApprovedRevisionRef"
+        ],
+        effect: "allow",
+        reasonCodes: [
+          "synthetic-teacher-role",
+          "separate-approval-required"
+        ],
+        policyVersion: "policy:teacher-copilot-approval@1",
+        decidedAt: now
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "teaching-plan-approval-authorization"
+          )
+        })
+      ];
+      const approval =
+        await this.artifacts.insertApprovedRevision(client, {
+          inReviewRevision: inReview,
+          previousApprovedRevisionRef:
+            lifecycle.currentApprovedRevisionRef,
+          writeContext
+        });
+      receipts.push(...approval.receipts);
+      receipts.push(
+        await this.gate2Work.insertOutbox(client, {
+          outboxRef: `outbox:${randomUUID()}`,
+          eventName: "TeachingPlanApproved",
+          aggregateRef: approval.revision.revisionRef,
+          payload: {
+            approvedRevisionRef:
+              approval.revision.revisionRef,
+            inReviewRevisionRef: inReview.revisionRef,
+            previousApprovedRevisionRef:
+              lifecycle.currentApprovedRevisionRef
+          },
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "teaching-plan-approval-outbox"
+          )
+        })
+      );
+
+      const result = ApproveTeachingPlanResultSchema.parse({
+        replayed: false,
+        approvedRevision: approval.revision,
+        previousApprovedRevisionRef:
+          lifecycle.currentApprovedRevisionRef
+      });
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private assertDemoActor(
     tenantRef: string,
     actorRef: string
@@ -847,7 +1180,8 @@ export class PostgresGate2TeacherCopilotService {
 
 export const gate2TeacherCopilotPurposes = {
   generate: GENERATE_PURPOSE,
-  review: REVIEW_PURPOSE
+  review: REVIEW_PURPOSE,
+  approve: APPROVE_PURPOSE
 } as const;
 
 export function planForStrategy(

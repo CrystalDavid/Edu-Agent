@@ -18,6 +18,8 @@ export const taskTable = workSchema.table("task", {
   taskKind: text("task_kind").notNull(),
   caseRef: text("case_ref"),
   goalRef: text("goal_ref"),
+  requestPayload: jsonb("request_payload").notNull(),
+  requestVersion: integer("request_version").notNull(),
   ...formalWriteColumns()
 });
 
@@ -153,6 +155,7 @@ export const suggestionDispositionTable = workSchema.table(
     teacherEdits: jsonb("teacher_edits").notNull(),
     note: text("note"),
     resultingRevisionRef: text("resulting_revision_ref"),
+    requestFingerprint: text("request_fingerprint").notNull(),
     implementationObserved: boolean(
       "implementation_observed"
     ).notNull(),

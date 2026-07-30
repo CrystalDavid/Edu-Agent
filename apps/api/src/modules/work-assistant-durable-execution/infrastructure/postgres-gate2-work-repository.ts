@@ -1,7 +1,11 @@
 import type {
   FormalWriteMetadata,
   FormalWriteReceipt,
-  SuggestionDispositionKind
+  SuggestionDispositionKind,
+  TeacherTaskRequest
+} from "@edu-agent/contracts";
+import {
+  TeacherTaskRequestSchema
 } from "@edu-agent/contracts";
 
 import type {
@@ -174,6 +178,7 @@ export class PostgresGate2WorkRepository {
       teacherEdits: Record<string, unknown>;
       note?: string;
       resultingRevisionRef?: string;
+      requestFingerprint: string;
       metadata: WorkMetadata;
     }
   ): Promise<FormalWriteReceipt> {
@@ -188,6 +193,7 @@ export class PostgresGate2WorkRepository {
          teacher_edits,
          note,
          resulting_revision_ref,
+         request_fingerprint,
          implementation_observed,
          actor_ref,
          purpose,
@@ -197,8 +203,8 @@ export class PostgresGate2WorkRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, false,
-         $10, $11, $12, $13, $14, $15, $16
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false,
+         $11, $12, $13, $14, $15, $16, $17
        )`,
       [
         input.dispositionRef,
@@ -210,6 +216,7 @@ export class PostgresGate2WorkRepository {
         toPostgresJson(input.teacherEdits),
         input.note ?? null,
         input.resultingRevisionRef ?? null,
+        input.requestFingerprint,
         ...formalMetadataValues(input.metadata)
       ]
     );
@@ -326,6 +333,7 @@ export class PostgresGate2WorkRepository {
       proposalRevisionRef: string;
       taskRef: string;
       disposed: boolean;
+      requestText: string;
       createdAt: string;
     }>
   > {
@@ -334,6 +342,7 @@ export class PostgresGate2WorkRepository {
       proposal_revision_ref: string;
       task_ref: string;
       disposed: boolean;
+      request_text: string;
       created_at: Date;
     }>(
       `SELECT
@@ -341,8 +350,11 @@ export class PostgresGate2WorkRepository {
          result.proposal_revision_ref,
          result.task_ref,
          (disposition.disposition_ref IS NOT NULL) AS disposed,
+         task.request_payload ->> 'requestText' AS request_text,
          result.created_at
        FROM work.task_result AS result
+       JOIN work.task AS task
+         ON task.task_ref = result.task_ref
        JOIN work.goal_record AS goal
          ON goal.goal_ref = result.goal_ref
        LEFT JOIN work.suggestion_disposition AS disposition
@@ -357,6 +369,7 @@ export class PostgresGate2WorkRepository {
       proposalRevisionRef: row.proposal_revision_ref,
       taskRef: row.task_ref,
       disposed: row.disposed,
+      requestText: row.request_text,
       createdAt: row.created_at.toISOString()
     }));
   }
@@ -403,6 +416,97 @@ export class PostgresGate2WorkRepository {
       : undefined;
   }
 
+  async getSuggestionDisposition(
+    executor: SqlExecutor,
+    proposalRevisionRef: string
+  ): Promise<StoredSuggestionDisposition | undefined> {
+    const result =
+      await executor.query<StoredSuggestionDispositionRow>(
+        `SELECT disposition_ref, proposal_revision_ref,
+                disposition_kind, selected_strategy_id,
+                teacher_edits, note, resulting_revision_ref,
+                implementation_observed, request_fingerprint,
+                created_at
+           FROM work.suggestion_disposition
+          WHERE proposal_revision_ref = $1`,
+        [proposalRevisionRef]
+      );
+    const row = result.rows[0];
+    return row
+      ? {
+          dispositionRef: row.disposition_ref,
+          proposalRevisionRef: row.proposal_revision_ref,
+          kind: row.disposition_kind,
+          selectedStrategyId: row.selected_strategy_id,
+          teacherEdits: row.teacher_edits,
+          note: row.note,
+          resultingRevisionRef: row.resulting_revision_ref,
+          implementationObserved: row.implementation_observed,
+          requestFingerprint: row.request_fingerprint,
+          createdAt: row.created_at.toISOString()
+        }
+      : undefined;
+  }
+
+  async getProposalReviewWork(
+    executor: SqlExecutor,
+    input: {
+      tenantRef: string;
+      proposalRevisionRef: string;
+    }
+  ): Promise<ProposalReviewWork | undefined> {
+    const result = await executor.query<{
+      task_ref: string;
+      task_run_ref: string;
+      authorization_decision_ref: string;
+      request_payload: unknown;
+      contract_ref: string;
+      proposal_artifact_ref: string;
+      proposal_revision_ref: string;
+      teaching_plan_artifact_ref: string;
+      draft_revision_ref: string;
+    }>(
+      `SELECT task.task_ref, task_run.task_run_ref,
+              task.authorization_decision_ref,
+              task.request_payload, contract.contract_ref,
+              result.proposal_artifact_ref,
+              result.proposal_revision_ref,
+              result.teaching_plan_artifact_ref,
+              result.draft_revision_ref
+         FROM work.task_result AS result
+         JOIN work.task AS task
+           ON task.task_ref = result.task_ref
+         JOIN work.task_run AS task_run
+           ON task_run.task_ref = task.task_ref
+         JOIN work.resolved_learning_interaction_contract AS contract
+           ON contract.bound_run_kind = 'TaskRun'
+          AND contract.bound_run_ref = task_run.task_run_ref
+         JOIN work.goal_record AS goal
+           ON goal.goal_ref = result.goal_ref
+        WHERE result.proposal_revision_ref = $1
+          AND goal.tenant_ref = $2`,
+      [input.proposalRevisionRef, input.tenantRef]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          taskRef: row.task_ref,
+          taskRunRef: row.task_run_ref,
+          authorizationDecisionRef:
+            row.authorization_decision_ref,
+          contractRef: row.contract_ref,
+          request: TeacherTaskRequestSchema.parse(
+            row.request_payload
+          ),
+          proposalArtifactRef: row.proposal_artifact_ref,
+          proposalRevisionRef: row.proposal_revision_ref,
+          teachingPlanArtifactRef:
+            row.teaching_plan_artifact_ref,
+          draftRevisionRef: row.draft_revision_ref
+        }
+      : undefined;
+  }
+
   async getRunExplanationWork(
     executor: SqlExecutor,
     taskRef: string
@@ -414,6 +518,7 @@ export class PostgresGate2WorkRepository {
          task.status AS task_status,
          task.goal_ref,
          task.authorization_decision_ref,
+         task.request_payload,
          task_run.task_run_ref,
          task_run.status AS task_run_status,
          task_run.created_at AS task_run_created_at,
@@ -430,7 +535,9 @@ export class PostgresGate2WorkRepository {
          disposition.authorization_decision_ref AS
            disposition_authorization_decision_ref,
          disposition.resulting_revision_ref,
-         disposition.created_at AS disposition_created_at
+         disposition.created_at AS disposition_created_at,
+         approval_outbox.authorization_decision_ref AS
+           approval_authorization_decision_ref
        FROM work.task AS task
        JOIN work.task_run AS task_run
          ON task_run.task_ref = task.task_ref
@@ -442,6 +549,10 @@ export class PostgresGate2WorkRepository {
        LEFT JOIN work.suggestion_disposition AS disposition
          ON disposition.proposal_revision_ref =
               result.proposal_revision_ref
+       LEFT JOIN work.outbox_record AS approval_outbox
+         ON approval_outbox.event_name = 'TeachingPlanApproved'
+        AND approval_outbox.payload ->> 'inReviewRevisionRef' =
+              disposition.resulting_revision_ref
        WHERE task.task_ref = $1`,
       [taskRef]
     );
@@ -455,6 +566,9 @@ export class PostgresGate2WorkRepository {
       taskStatus: row.task_status,
       goalRef: row.goal_ref,
       authorizationDecisionRef: row.authorization_decision_ref,
+      request: TeacherTaskRequestSchema.parse(
+        row.request_payload
+      ),
       taskRunRef: row.task_run_ref,
       taskRunStatus: row.task_run_status,
       taskRunCreatedAt: row.task_run_created_at.toISOString(),
@@ -475,6 +589,8 @@ export class PostgresGate2WorkRepository {
               kind: row.disposition_kind,
               authorizationDecisionRef:
                 row.disposition_authorization_decision_ref,
+              approvalAuthorizationDecisionRef:
+                row.approval_authorization_decision_ref,
               resultingRevisionRef:
                 row.resulting_revision_ref,
               createdAt: row.disposition_created_at.toISOString()
@@ -490,6 +606,7 @@ interface Gate2WorkExplanationRow {
   task_status: string;
   goal_ref: string;
   authorization_decision_ref: string;
+  request_payload: unknown;
   task_run_ref: string;
   task_run_status: string;
   task_run_created_at: Date;
@@ -506,6 +623,7 @@ interface Gate2WorkExplanationRow {
   disposition_authorization_decision_ref: string | null;
   resulting_revision_ref: string | null;
   disposition_created_at: Date | null;
+  approval_authorization_decision_ref: string | null;
 }
 
 export interface Gate2WorkExplanation {
@@ -514,6 +632,7 @@ export interface Gate2WorkExplanation {
   taskStatus: string;
   goalRef: string;
   authorizationDecisionRef: string;
+  request: TeacherTaskRequest;
   taskRunRef: string;
   taskRunStatus: string;
   taskRunCreatedAt: string;
@@ -529,7 +648,46 @@ export interface Gate2WorkExplanation {
     dispositionRef: string;
     kind: SuggestionDispositionKind;
     authorizationDecisionRef: string | null;
+    approvalAuthorizationDecisionRef: string | null;
     resultingRevisionRef: string | null;
     createdAt: string;
   } | null;
+}
+
+interface StoredSuggestionDispositionRow {
+  disposition_ref: string;
+  proposal_revision_ref: string;
+  disposition_kind: SuggestionDispositionKind;
+  selected_strategy_id: string;
+  teacher_edits: Record<string, unknown>;
+  note: string | null;
+  resulting_revision_ref: string | null;
+  implementation_observed: false;
+  request_fingerprint: string;
+  created_at: Date;
+}
+
+export interface StoredSuggestionDisposition {
+  dispositionRef: string;
+  proposalRevisionRef: string;
+  kind: SuggestionDispositionKind;
+  selectedStrategyId: string;
+  teacherEdits: Record<string, unknown>;
+  note: string | null;
+  resultingRevisionRef: string | null;
+  implementationObserved: false;
+  requestFingerprint: string;
+  createdAt: string;
+}
+
+export interface ProposalReviewWork {
+  taskRef: string;
+  taskRunRef: string;
+  authorizationDecisionRef: string;
+  contractRef: string;
+  request: TeacherTaskRequest;
+  proposalArtifactRef: string;
+  proposalRevisionRef: string;
+  teachingPlanArtifactRef: string;
+  draftRevisionRef: string;
 }

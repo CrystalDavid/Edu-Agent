@@ -1,6 +1,10 @@
 import type {
   FormalWriteMetadata,
-  FormalWriteReceipt
+  FormalWriteReceipt,
+  TeacherTaskRequest
+} from "@edu-agent/contracts";
+import {
+  TeacherTaskRequestSchema
 } from "@edu-agent/contracts";
 
 import type {
@@ -23,6 +27,8 @@ export class PostgresGate2RuntimeRepository {
       evidenceRefs: readonly string[];
       unknowns: readonly string[];
       requestedFieldMask: readonly string[];
+      taskRef: string;
+      requestSummary: TeacherTaskRequest;
       metadata: FormalWriteMetadata & { owner: "runtime" };
     }
   ): Promise<FormalWriteReceipt> {
@@ -34,6 +40,9 @@ export class PostgresGate2RuntimeRepository {
          evidence_refs,
          unknowns,
          requested_field_mask,
+         task_ref,
+         request_summary,
+         request_version,
          actor_ref,
          purpose,
          owner_module,
@@ -42,8 +51,8 @@ export class PostgresGate2RuntimeRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6,
-         $7, $8, $9, $10, $11, $12, $13
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14, $15, $16
        )`,
       [
         input.contextManifestRef,
@@ -52,6 +61,9 @@ export class PostgresGate2RuntimeRepository {
         toPostgresJson(input.evidenceRefs),
         toPostgresJson(input.unknowns),
         toPostgresJson(input.requestedFieldMask),
+        input.taskRef,
+        toPostgresJson(input.requestSummary),
+        input.requestSummary.requestVersion,
         ...formalMetadataValues(input.metadata)
       ]
     );
@@ -77,6 +89,7 @@ export class PostgresGate2RuntimeRepository {
         resourceRefs: string[];
         unknowns: string[];
         requestedFieldMask: string[];
+        requestSummary: TeacherTaskRequest;
       }
     | undefined
   > {
@@ -91,6 +104,7 @@ export class PostgresGate2RuntimeRepository {
       resource_refs: string[];
       unknowns: string[];
       requested_field_mask: string[];
+      request_summary: unknown;
     }>(
       `SELECT
          agent_run.agent_run_ref,
@@ -102,7 +116,8 @@ export class PostgresGate2RuntimeRepository {
          context.evidence_refs,
          context.resource_refs,
          context.unknowns,
-         context.requested_field_mask
+         context.requested_field_mask,
+         context.request_summary
        FROM runtime.agent_run AS agent_run
        JOIN runtime.run_manifest AS manifest
          ON manifest.agent_run_ref = agent_run.agent_run_ref
@@ -124,7 +139,10 @@ export class PostgresGate2RuntimeRepository {
           evidenceRefs: row.evidence_refs,
           resourceRefs: row.resource_refs,
           unknowns: row.unknowns,
-          requestedFieldMask: row.requested_field_mask
+          requestedFieldMask: row.requested_field_mask,
+          requestSummary: TeacherTaskRequestSchema.parse(
+            row.request_summary
+          )
         }
       : undefined;
   }

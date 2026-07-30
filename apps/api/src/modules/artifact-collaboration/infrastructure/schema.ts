@@ -17,6 +17,12 @@ export const artifactTable = artifactSchema.table("artifact", {
     "latest_published_revision_ref"
   ),
   latestRevisionRef: text("latest_revision_ref"),
+  currentApprovedRevisionRef: text(
+    "current_approved_revision_ref"
+  ),
+  currentInReviewRevisionRef: text(
+    "current_in_review_revision_ref"
+  ),
   ...formalWriteColumns()
 });
 

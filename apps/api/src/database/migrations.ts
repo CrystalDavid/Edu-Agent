@@ -25,6 +25,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0003_gate2_teacher_copilot.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0004_gate2_4_task_request_and_disposition.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"
@@ -38,6 +43,11 @@ export const moduleMigrations = [
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0003_gate2_context_manifest.sql"
+  },
+  {
+    owner: "runtime",
+    relativePath:
+      "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0004_gate2_4_request_context.sql"
   },
   {
     owner: "capability",
@@ -68,6 +78,11 @@ export const moduleMigrations = [
     owner: "artifact",
     relativePath:
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0003_gate2_structured_revision.sql"
+  },
+  {
+    owner: "artifact",
+    relativePath:
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0004_gate2_4_teaching_plan_lifecycle.sql"
   },
   {
     owner: "education",

@@ -57,12 +57,13 @@ export class MockModelProvider implements ModelProvider {
   }
 
   async generateTeacherStrategies(input: {
+    requestText: string;
     evidenceRefs: readonly string[];
     knownGaps: readonly string[];
   }): Promise<{
     provider: "mock";
     modelProfile: "teacher-copilot-deterministic@1";
-    promptBundleRef: "prompt-bundle:teacher-copilot-slope@1";
+    promptBundleRef: "prompt-bundle:teacher-copilot-slope@2";
     externalNetworkUsed: false;
     strategies: readonly [
       PedagogicalStrategy,
@@ -133,7 +134,7 @@ export class MockModelProvider implements ModelProvider {
     return {
       provider: "mock",
       modelProfile: "teacher-copilot-deterministic@1",
-      promptBundleRef: "prompt-bundle:teacher-copilot-slope@1",
+      promptBundleRef: "prompt-bundle:teacher-copilot-slope@2",
       externalNetworkUsed: false,
       strategies,
       usage: {

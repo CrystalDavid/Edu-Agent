@@ -27,6 +27,8 @@ export interface PostgresArtifactBundle {
       | "EvidenceAsset";
     latestPublishedRevisionRef?: string;
     latestRevisionRef?: string;
+    currentApprovedRevisionRef?: string;
+    currentInReviewRevisionRef?: string;
     metadata: FormalWriteMetadata & { owner: "artifact" };
   };
   revision: {
@@ -42,6 +44,7 @@ export interface PostgresArtifactBundle {
       | "draft"
       | "proposal"
       | "in_review"
+      | "approved"
       | "published";
     contentHash: string;
     structuredContent?: Record<string, unknown>;
@@ -68,6 +71,7 @@ export interface ArtifactRevisionView {
     | "draft"
     | "proposal"
     | "in_review"
+    | "approved"
     | "published";
   title: string;
   body: string;
@@ -91,6 +95,8 @@ export class PostgresArtifactRepository {
          artifact_type,
          latest_published_revision_ref,
          latest_revision_ref,
+         current_approved_revision_ref,
+         current_in_review_revision_ref,
          actor_ref,
          purpose,
          owner_module,
@@ -99,8 +105,8 @@ export class PostgresArtifactRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4,
-         $5, $6, $7, $8, $9, $10, $11
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12, $13
        )`,
       [
         bundle.artifact.artifactRef,
@@ -108,6 +114,8 @@ export class PostgresArtifactRepository {
         bundle.artifact.latestPublishedRevisionRef ?? null,
         bundle.artifact.latestRevisionRef ??
           bundle.revision.revisionRef,
+        bundle.artifact.currentApprovedRevisionRef ?? null,
+        bundle.artifact.currentInReviewRevisionRef ?? null,
         ...formalMetadataValues(bundle.artifact.metadata)
       ]
     );

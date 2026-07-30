@@ -6,6 +6,7 @@ import express, {
 } from "express";
 import {
   apiRoutes,
+  ApproveTeachingPlanRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
   SuggestionDispositionRequestSchema,
@@ -27,6 +28,7 @@ import {
 import {
   AuthenticationRequiredError,
   AuthorizationDeniedError,
+  DomainConflictError,
   IdempotencyConflictError,
   NotFoundError
 } from "./platform/errors.js";
@@ -235,6 +237,53 @@ export function createApp(
       }
     );
 
+    app.get(
+      apiRoutes.demo.pendingProposals,
+      markRoute("product.teacher-copilot.proposals.pending"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.listPendingProposals({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.demo.proposalDetailPattern,
+      markRoute("product.teacher-copilot.proposal.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.getProposalDetail({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              proposalRevisionRef: routeParameter(
+                request.params["proposalRevisionRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
     app.post(
       apiRoutes.demo.suggestionDispositionPattern,
       markRoute("product.suggestion.disposition"),
@@ -307,6 +356,122 @@ export function createApp(
               )
             });
           response.json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.demo.approveTeachingPlanPattern,
+      markRoute("product.teaching-plan.approve"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          const result =
+            await product.services.teacherCopilot.approveTeachingPlan({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              inReviewRevisionRef: routeParameter(
+                request.params["revisionRef"]
+              ),
+              request: ApproveTeachingPlanRequestSchema.parse(
+                request.body
+              )
+            });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.demo.currentApprovedTeachingPlan,
+      markRoute("product.teaching-plan.current-approved"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.getCurrentApprovedTeachingPlan({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.demo.currentInReviewTeachingPlan,
+      markRoute("product.teaching-plan.current-in-review"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.getCurrentInReviewTeachingPlan({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.demo.teachingPlanDrafts,
+      markRoute("product.teaching-plan.drafts"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.listTeachingPlanDrafts({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.demo.teachingPlanHistory,
+      markRoute("product.teaching-plan.history"),
+      async (request, response, next) => {
+        try {
+          const contexts = await productContextsFromRequest(
+            request,
+            product,
+            demoIdentity
+          );
+          response.json(
+            await product.services.read.listTeachingPlanHistory({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
         } catch (error) {
           next(error);
         }
@@ -452,6 +617,16 @@ export function createApp(
         response.status(409).json({
           code: error.code,
           message: error.message
+        });
+        return;
+      }
+      if (error instanceof DomainConflictError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
+        response.status(409).json({
+          code: error.code,
+          message: error.message,
+          details: error.details
         });
         return;
       }

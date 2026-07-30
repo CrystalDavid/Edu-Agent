@@ -71,6 +71,9 @@ export const contextManifestTable = runtimeSchema.table(
     evidenceRefs: jsonb("evidence_refs").notNull(),
     unknowns: jsonb("unknowns").notNull(),
     requestedFieldMask: jsonb("requested_field_mask").notNull(),
+    taskRef: text("task_ref"),
+    requestSummary: jsonb("request_summary").notNull(),
+    requestVersion: integer("request_version").notNull(),
     ...formalWriteColumns()
   }
 );

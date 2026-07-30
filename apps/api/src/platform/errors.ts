@@ -42,3 +42,14 @@ export class IdempotencyConflictError extends Error {
     this.name = "IdempotencyConflictError";
   }
 }
+
+export class DomainConflictError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details: Record<string, unknown> = {}
+  ) {
+    super(message);
+    this.name = "DomainConflictError";
+  }
+}
