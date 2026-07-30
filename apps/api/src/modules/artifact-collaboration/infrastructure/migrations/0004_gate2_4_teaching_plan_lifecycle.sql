@@ -52,6 +52,16 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF OLD.revision_state = 'published' THEN
+    RAISE EXCEPTION
+      'Published ArtifactRevision is immutable: %',
+      OLD.revision_ref;
+  END IF;
+  IF OLD.revision_state = 'approved' THEN
+    RAISE EXCEPTION
+      'Approved ArtifactRevision is immutable: %',
+      OLD.revision_ref;
+  END IF;
   RAISE EXCEPTION
     'ArtifactRevision is immutable: %',
     OLD.revision_ref;
