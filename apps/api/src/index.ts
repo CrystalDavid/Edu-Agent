@@ -40,6 +40,12 @@ const app = createApp({
   product,
   demoIdentity: createDemoIdentityPolicy()
 });
+if (process.env.COPILOT_OUTBOX_WORKER_ENABLED === "true") {
+  product.workers.copilotOutbox.start();
+  process.stdout.write(
+    "Teacher Copilot local outbox worker enabled.\n"
+  );
+}
 
 const server = app.listen(port, () => {
   process.stdout.write(

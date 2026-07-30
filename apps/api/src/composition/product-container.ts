@@ -8,6 +8,9 @@ import { PostgresGate2ReadService } from "./postgres-gate2-read-service.js";
 import {
   PostgresGate2TeacherCopilotService
 } from "./postgres-gate2-teacher-copilot-service.js";
+import {
+  LocalCopilotOutboxWorker
+} from "./local-copilot-outbox-worker.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment
@@ -16,6 +19,13 @@ export function createProductContainer(
     max: 6,
     connectionTimeoutMillis: 3_000
   });
+  const workerPool = createRolePool(environment, "worker", {
+    max: 2,
+    connectionTimeoutMillis: 3_000
+  });
+  const copilotOutbox = new LocalCopilotOutboxWorker(
+    workerPool
+  );
   return {
     services: {
       seed: new Gate2DemoSeedService(appPool),
@@ -25,8 +35,12 @@ export function createProductContainer(
       teacherCopilot:
         new PostgresGate2TeacherCopilotService(appPool)
     },
+    workers: {
+      copilotOutbox
+    },
     async close(): Promise<void> {
-      await appPool.end();
+      await copilotOutbox.stop();
+      await Promise.all([appPool.end(), workerPool.end()]);
     }
   };
 }

@@ -195,6 +195,7 @@ try {
     ...databaseEnvironment,
     APP_ENV: "demo",
     DEMO_AUTH_BYPASS: "true",
+    COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
     PORT: "3001"
