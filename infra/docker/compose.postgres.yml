@@ -1,4 +1,4 @@
-name: edu-agent-gate1b
+name: ${COMPOSE_PROJECT_NAME:-edu-agent-dev}
 
 services:
   postgres:
@@ -25,4 +25,4 @@ services:
 
 volumes:
   postgres-data:
-    name: edu-agent-gate1b-postgres-data
+    name: ${POSTGRES_VOLUME_NAME:-edu-agent-dev-postgres-data}

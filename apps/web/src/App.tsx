@@ -1,107 +1,291 @@
-import { useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState
+} from "react";
 
-interface WalkingResult {
-  replayed: boolean;
-  taskRef: string;
-  taskRunRef: string;
-  agentRunRef: string;
-  artifactRef: string;
-  artifactRevisionRef: string;
-  modelProvider: "mock";
-  toolName: "fake.echo";
-}
+import type { TeacherWorkspace } from "@edu-agent/contracts";
+import {
+  Button,
+  Result,
+  Skeleton,
+  Space,
+  Typography
+} from "antd";
 
-const command = {
-  kind: "Command",
-  envelopeId: "envelope:web:gate1a",
-  tenantRef: "tenant:demo-school",
-  actorRef: "user:teacher-001",
-  purpose: "gate1a.walking-skeleton",
-  idempotencyKey: "idem:web:gate1a:0001",
-  occurredAt: "2026-07-28T08:00:00.000Z",
-  commandName: "CreateWalkingSkeletonArtifact",
-  payload: {
-    title: "Gate 1A 无 LLM 骨架",
-    body: "本次执行只使用 MockModelProvider、FakeTool 和合成数据。"
-  }
-};
+import {
+  ApiError,
+  type RecoverableCopilotTask,
+  loadTeacherWorkbench,
+  loadWorkspace
+} from "./api";
+import { TeacherSidebar } from "./components/portal/TeacherSidebar";
+import { WorkspaceIcon } from "./components/WorkspaceIcon";
+import { cleanDisplayText } from "./presentation";
+import { useAppRoute } from "./route";
 
-export function App() {
-  const [result, setResult] = useState<WalkingResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [running, setRunning] = useState(false);
+const OverviewPage = lazy(() =>
+  import("./pages/OverviewPage").then((module) => ({
+    default: module.OverviewPage
+  }))
+);
+const TeacherSchedulePage = lazy(() =>
+  import("./pages/TeacherSchedulePage").then((module) => ({
+    default: module.TeacherSchedulePage
+  }))
+);
+const TeachingWorkspacePage = lazy(() =>
+  import("./pages/TeachingWorkspacePage").then((module) => ({
+    default: module.TeachingWorkspacePage
+  }))
+);
+const StudentWorkspacePage = lazy(() =>
+  import("./pages/StudentWorkspacePage").then((module) => ({
+    default: module.StudentWorkspacePage
+  }))
+);
+const TeacherFilesPage = lazy(() =>
+  import("./pages/TeacherFilesPage").then((module) => ({
+    default: module.TeacherFilesPage
+  }))
+);
+const AgentWorkspacePage = lazy(() =>
+  import("./pages/AgentWorkspacePage").then((module) => ({
+    default: module.AgentWorkspacePage
+  }))
+);
+const TeacherSettingsPage = lazy(() =>
+  import("./pages/TeacherSettingsPage").then((module) => ({
+    default: module.TeacherSettingsPage
+  }))
+);
+const TeacherStyleGuidePage = lazy(() =>
+  import("./pages/TeacherStyleGuidePage").then((module) => ({
+    default: module.TeacherStyleGuidePage
+  }))
+);
 
-  async function runSkeleton() {
-    setRunning(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        "/api/v1/commands/walking-skeleton",
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-demo-tenant": "tenant:demo-school",
-            "x-demo-actor": "user:teacher-001"
-          },
-          body: JSON.stringify(command)
-        }
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      setResult((await response.json()) as WalkingResult);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Unknown error"
-      );
-    } finally {
-      setRunning(false);
-    }
-  }
+// Gate 2 semantic detail pages remain reachable but are no longer primary
+// teacher navigation. This preserves the verified proposal/diff/audit flow.
+const GoalsPage = lazy(() =>
+  import("./pages/GoalsPage").then((module) => ({
+    default: module.GoalsPage
+  }))
+);
+const EvidencePage = lazy(() =>
+  import("./pages/EvidencePage").then((module) => ({
+    default: module.EvidencePage
+  }))
+);
+const CopilotPage = lazy(() =>
+  import("./pages/CopilotPage").then((module) => ({
+    default: module.CopilotPage
+  }))
+);
+const TeachingPlanPage = lazy(() =>
+  import("./pages/TeachingPlanPage").then((module) => ({
+    default: module.TeachingPlanPage
+  }))
+);
+const RunsPage = lazy(() =>
+  import("./pages/RunsPage").then((module) => ({
+    default: module.RunsPage
+  }))
+);
 
+function PageLoading() {
   return (
-    <main>
-      <section className="hero">
-        <p className="eyebrow">教育智能体平台 · Gate 1A</p>
-        <h1>无 LLM Walking Skeleton</h1>
-        <p className="lede">
-          验证五类 Ingress、Run 归属、正式写入治理、Outbox、
-          Audit、MockModelProvider 与 FakeTool。当前不包含真实模型和教育领域推断。
-        </p>
-        <button type="button" onClick={runSkeleton} disabled={running}>
-          {running ? "执行中…" : "运行确定性闭环"}
-        </button>
-      </section>
+    <div className="portal-route-loading" aria-label="页面加载中">
+      <Skeleton active paragraph={{ rows: 8 }} />
+    </div>
+  );
+}
+export function App() {
+  const {
+    route,
+    navigate,
+    proposalRevisionRef,
+    navigateProposal
+  } = useAppRoute();
+  const [workspace, setWorkspace] = useState<TeacherWorkspace | null>(null);
+  const [task, setTask] =
+    useState<RecoverableCopilotTask | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const initialRequest = useRef<Promise<TeacherWorkspace> | null>(null);
+  const noticeTimer = useRef<number | null>(null);
 
-      <section className="status" aria-live="polite">
-        {error ? <p className="error">执行失败：{error}</p> : null}
-        {!result ? (
-          <p>尚未执行。服务端不会访问任何外部模型。</p>
-        ) : (
-          <>
-            <div className="badge">完成 · {result.modelProvider}</div>
-            <dl>
-              <div>
-                <dt>TaskRun</dt>
-                <dd>{result.taskRunRef}</dd>
-              </div>
-              <div>
-                <dt>AgentRun</dt>
-                <dd>{result.agentRunRef}</dd>
-              </div>
-              <div>
-                <dt>ArtifactRevision</dt>
-                <dd>{result.artifactRevisionRef}</dd>
-              </div>
-              <div>
-                <dt>Tool</dt>
-                <dd>{result.toolName}</dd>
-              </div>
-            </dl>
-          </>
-        )}
-      </section>
-    </main>
+  const refreshWorkspace = useCallback(async () => {
+    const next = await loadWorkspace();
+    setWorkspace(next);
+  }, []);
+
+  const bootstrap = useCallback(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+    initialRequest.current ??= loadTeacherWorkbench();
+    void initialRequest.current
+      .then((result) => {
+        if (active) setWorkspace(result);
+      })
+      .catch((caught: unknown) => {
+        if (active) {
+          setError(caught instanceof Error ? caught : new Error("无法加载教师工作空间"));
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => bootstrap(), [bootstrap]);
+  useEffect(() => () => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+  }, []);
+
+  const showNotice = (message: string) => {
+    setNotice(message);
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 3200);
+  };
+
+  const retryBootstrap = () => {
+    initialRequest.current = null;
+    setWorkspace(null);
+    bootstrap();
+  };
+
+  if (loading) {
+    return (
+      <div className="portal-boot-screen">
+        <div className="portal-boot-card">
+          <span className="brand-mark">EA</span>
+          <Skeleton active paragraph={{ rows: 7 }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !workspace) {
+    return (
+      <div className="portal-boot-screen">
+        <Result
+          status="error"
+          title={<Typography.Title level={2}>教师工作空间未能启动</Typography.Title>}
+          subTitle={
+            <div className="startup-diagnostic">
+              <p>{error?.message ?? "请确认本地演示服务已经启动。"}</p>
+              {error instanceof ApiError ? (
+                <dl>
+                  <div><dt>请求服务</dt><dd>{error.service}</dd></div>
+                  <div><dt>安全错误代码</dt><dd>{error.code}</dd></div>
+                </dl>
+              ) : null}
+              <details>
+                <summary>查看本地启动指南</summary>
+                <p>运行 <code>corepack pnpm demo:doctor</code>，再运行 <code>corepack pnpm demo:dev</code>。</p>
+                <p>完整说明：<code>docs/demo/LOCAL_DEMO.md</code></p>
+              </details>
+            </div>
+          }
+          extra={
+            <Space>
+              <Button type="primary" onClick={retryBootstrap}>重试</Button>
+              <Button href="/api/health" target="_blank" rel="noreferrer">检查服务状态</Button>
+            </Space>
+          }
+        />
+      </div>
+    );
+  }
+
+  const teacherName = cleanDisplayText(workspace.identity.teacherName);
+  return (
+    <div className="teacher-portal-shell">
+      <TeacherSidebar route={route} teacherName={teacherName} onNavigate={navigate} />
+      <main className={`teacher-portal-main${route === "/agent" ? " teacher-portal-main--agent" : ""}`}>
+        <Suspense fallback={<PageLoading />}>
+          {route === "/" || route === "/overview" ? (
+            <OverviewPage workspace={workspace} navigate={navigate} onAction={showNotice} />
+          ) : null}
+          {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
+          {route === "/teaching" || route === "/courses" ? (
+            <TeachingWorkspacePage navigate={navigate} initialTab="course" onAction={showNotice} />
+          ) : null}
+          {route === "/assignments" ? (
+            <TeachingWorkspacePage navigate={navigate} initialTab="homework" onAction={showNotice} />
+          ) : null}
+          {route === "/students" ? (
+            <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
+          ) : null}
+          {route === "/files" ? <TeacherFilesPage onAction={showNotice} /> : null}
+          {route === "/agent" ? (
+            <AgentWorkspacePage navigate={navigate} onAction={showNotice} />
+          ) : null}
+          {route === "/settings" ? (
+            <TeacherSettingsPage navigate={navigate} onAction={showNotice} />
+          ) : null}
+          {route === "/style-guide" ? <TeacherStyleGuidePage /> : null}
+
+          {route === "/goals" ? <GoalsPage workspace={workspace} /> : null}
+          {route === "/evidence" ? <EvidencePage workspace={workspace} /> : null}
+          {route === "/copilot" ? (
+            <div className="legacy-detail-shell">
+              <header>
+                <button type="button" onClick={() => navigate("/agent")}><WorkspaceIcon name="arrowLeft" />返回 Agent</button>
+                <span>结构化教学建议详情 · 保留 Gate 2 语义</span>
+              </header>
+              <CopilotPage
+                workspace={workspace}
+                task={task}
+                setTask={setTask}
+                refreshWorkspace={refreshWorkspace}
+                navigate={navigate}
+                proposalRevisionRef={proposalRevisionRef}
+                navigateProposal={navigateProposal}
+                initialPrompt=""
+              />
+            </div>
+          ) : null}
+          {route === "/teaching-plan" ? (
+            <div className="legacy-detail-shell">
+              <header>
+                <button type="button" onClick={() => navigate("/teaching")}><WorkspaceIcon name="arrowLeft" />返回教学</button>
+                <span>教学计划版本与变更</span>
+              </header>
+              <TeachingPlanPage
+                workspace={workspace}
+                task={task}
+                refreshWorkspace={refreshWorkspace}
+              />
+            </div>
+          ) : null}
+          {route === "/runs" ? (
+            <div className="legacy-detail-shell">
+              <header>
+                <button type="button" onClick={() => navigate("/settings")}><WorkspaceIcon name="arrowLeft" />返回设置</button>
+                <span>系统记录与技术详情</span>
+              </header>
+              <RunsPage workspace={workspace} task={task} />
+            </div>
+          ) : null}
+        </Suspense>
+      </main>
+      {notice ? (
+        <div className="portal-toast" role="status">
+          <WorkspaceIcon name="check" />
+          <span>{notice}</span>
+          <button type="button" aria-label="关闭提示" onClick={() => setNotice(null)}><WorkspaceIcon name="close" /></button>
+        </div>
+      ) : null}
+    </div>
   );
 }

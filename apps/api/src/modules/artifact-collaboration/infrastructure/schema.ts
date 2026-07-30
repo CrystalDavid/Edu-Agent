@@ -16,6 +16,13 @@ export const artifactTable = artifactSchema.table("artifact", {
   latestPublishedRevisionRef: text(
     "latest_published_revision_ref"
   ),
+  latestRevisionRef: text("latest_revision_ref"),
+  currentApprovedRevisionRef: text(
+    "current_approved_revision_ref"
+  ),
+  currentInReviewRevisionRef: text(
+    "current_in_review_revision_ref"
+  ),
   ...formalWriteColumns()
 });
 
@@ -32,6 +39,10 @@ export const artifactRevisionTable = artifactSchema.table(
     parentRevisionRef: text("parent_revision_ref"),
     revisionState: text("revision_state").notNull(),
     contentHash: text("content_hash").notNull(),
+    structuredContent: jsonb("structured_content"),
+    changeReason: text("change_reason"),
+    evidenceRefs: jsonb("evidence_refs").notNull(),
+    teacherSelection: jsonb("teacher_selection").notNull(),
     ...formalWriteColumns()
   }
 );

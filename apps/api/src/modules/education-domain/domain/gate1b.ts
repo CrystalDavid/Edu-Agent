@@ -6,6 +6,7 @@ export interface CourseRunRecord {
   curriculumFrameworkRef: string;
   subject: string;
   gradeLevel: string;
+  className?: string;
   academicTerm: string;
   metadata: FormalWriteMetadata & { owner: "education" };
 }

@@ -9,6 +9,8 @@
     "dev": "vite"
   },
   "dependencies": {
+    "@edu-agent/contracts": "workspace:*",
+    "antd": "^6.5.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

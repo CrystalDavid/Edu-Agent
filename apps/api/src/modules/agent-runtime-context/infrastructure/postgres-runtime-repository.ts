@@ -26,6 +26,7 @@ export interface PostgresAgentRunBundle {
     manifestRef: string;
     agentRunRef: string;
     contractRef?: string;
+    contextManifestRef?: string;
     promptVersionRef: string;
     policyVersionRef: string;
     capabilityRefs: readonly string[];
@@ -85,6 +86,7 @@ export class PostgresRuntimeRepository {
          manifest_ref,
          agent_run_ref,
          contract_ref,
+         context_manifest_ref,
          prompt_version_ref,
          policy_version_ref,
          capability_refs,
@@ -98,13 +100,14 @@ export class PostgresRuntimeRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8,
-         $9, $10, $11, $12, $13, $14, $15
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14, $15, $16
        )`,
       [
         bundle.manifest.manifestRef,
         bundle.manifest.agentRunRef,
         bundle.manifest.contractRef ?? null,
+        bundle.manifest.contextManifestRef ?? null,
         bundle.manifest.promptVersionRef,
         bundle.manifest.policyVersionRef,
         toPostgresJson(bundle.manifest.capabilityRefs),

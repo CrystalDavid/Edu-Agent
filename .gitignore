@@ -5,8 +5,11 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+output/playwright/
+.playwright-cli/
 .pglite/
 .gate1a-data/
+.demo/
 
 # Local environment and credentials
 .env
@@ -20,6 +23,7 @@ postgres-data/
 .postgres-data/
 docker-data/
 docker-volumes/
+docker-volume-export/
 docker-volume-exports/
 *.dump
 *.backup

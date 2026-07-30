@@ -1,0 +1,86 @@
+@font-face {
+  font-family: "Nunito";
+  src: url("/fonts/nunito/nunito-latin-variable.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range:
+    U+0000-024F, U+2000-206F, U+20AC, U+2122,
+    U+2190-21FF;
+}
+
+/*
+ * HarmonyOS Sans SC 2.040 is the unchanged variable TTF from Huawei's
+ * official HarmonyOS Sans package. Its licence permits embedding and
+ * redistribution with software, forbids modifying the font, and requires
+ * attribution plus the original agreement. See public/fonts/ATTRIBUTION.md
+ * and public/fonts/licenses/HarmonyOS-Sans-License.txt.
+ */
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src:
+    local("HarmonyOS Sans SC"),
+    local("HarmonyOS Sans SC Regular"),
+    url("/fonts/harmonyos-sans-sc/HarmonyOS_Sans_SC.ttf")
+      format("truetype-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400 700;
+}
+
+/*
+ * Chiron GoRound TC v1.011 is intentionally limited to the exact
+ * Traditional Chinese display glyphs used by this demo. Simplified
+ * Chinese body copy uses the system SC fallback to avoid mixed regional
+ * glyph forms. Each file is an unchanged official WOFF2 subset.
+ */
+@font-face {
+  font-family: "Chiron GoRound TC WS";
+  src: url("/fonts/chiron-goround-tc/gf_115.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+81FA;
+}
+
+@font-face {
+  font-family: "Chiron GoRound TC WS";
+  src: url("/fonts/chiron-goround-tc/gf_116.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+6E90, U+74B0;
+}
+
+@font-face {
+  font-family: "Chiron GoRound TC WS";
+  src: url("/fonts/chiron-goround-tc/gf_117.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+5E2B, U+6559;
+}
+
+@font-face {
+  font-family: "Chiron GoRound TC WS";
+  src: url("/fonts/chiron-goround-tc/gf_118.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+5DE5, U+65B9, U+662D, U+9AD4;
+}
+
+@font-face {
+  font-family: "Chiron GoRound TC WS";
+  src: url("/fonts/chiron-goround-tc/gf_119.woff2")
+    format("woff2-variations");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 200 900;
+  unicode-range: U+4F5C;
+}

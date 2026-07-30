@@ -32,16 +32,22 @@ export async function resetGate1BData(
       governance.idempotency_record,
       governance.authorization_decision,
       work.outbox_consumer_effect,
+      work.suggestion_disposition,
+      work.task_result,
       work.resolved_learning_interaction_contract,
       work.outbox_record,
       work.idempotency_record,
       work.query_run,
       work.task_run,
       work.task,
+      work.goal_record,
+      work.case_record,
+      runtime.context_manifest,
       runtime.run_manifest,
       runtime.outbox_record,
       runtime.agent_run,
       capability.outbox_record,
+      capability.model_execution,
       capability.tool_execution,
       education.evidence_claim_observation,
       education.evidence_claim,
@@ -80,12 +86,22 @@ export function dockerCompose(
   action: "pause" | "unpause",
   service = "postgres"
 ): void {
+  const projectName = process.env.COMPOSE_PROJECT_NAME;
+  const volumeName = process.env.POSTGRES_VOLUME_NAME;
+  if (
+    !projectName?.startsWith("edu-agent-e2e-") ||
+    !volumeName?.startsWith(`${projectName}-`)
+  ) {
+    throw new Error(
+      "PostgreSQL tests may only control their isolated E2E Compose project."
+    );
+  }
   const result = spawnSync(
     "docker",
     [
       "compose",
-      "--env-file",
-      "infra/docker/.env.local",
+      "--project-name",
+      projectName,
       "-f",
       "infra/docker/compose.postgres.yml",
       action,

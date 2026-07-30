@@ -1,3 +1,12 @@
+export class AuthenticationRequiredError extends Error {
+  readonly code = "AUTHENTICATION_REQUIRED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthenticationRequiredError";
+  }
+}
+
 export class AuthorizationDeniedError extends Error {
   readonly code = "AUTHORIZATION_DENIED";
 
@@ -31,5 +40,16 @@ export class IdempotencyConflictError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "IdempotencyConflictError";
+  }
+}
+
+export class DomainConflictError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details: Record<string, unknown> = {}
+  ) {
+    super(message);
+    this.name = "DomainConflictError";
   }
 }

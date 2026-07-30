@@ -6,6 +6,7 @@ import type {
 } from "@edu-agent/contracts";
 
 export * from "./gate1b.js";
+export * from "./gate2.js";
 
 export const syntheticTenant: TenantContext = {
   tenantRef: "tenant:demo-school",

@@ -16,13 +16,34 @@ export interface OutboxBusinessEffect {
   effectPayload: Record<string, unknown>;
 }
 
+export type OutboxOwner =
+  | "work"
+  | "runtime"
+  | "capability"
+  | "artifact"
+  | "education";
+
 export class PostgresOutboxWorker {
   constructor(
     private readonly pool: Pool,
     private readonly workerId: string,
     private readonly consumerName: string,
-    private readonly leaseMilliseconds = 250
-  ) {}
+    private readonly leaseMilliseconds = 250,
+    private readonly eventNames?: readonly string[],
+    private readonly owner: OutboxOwner = "work"
+  ) {
+    if (
+      ![
+        "work",
+        "runtime",
+        "capability",
+        "artifact",
+        "education"
+      ].includes(owner)
+    ) {
+      throw new Error("Unsupported Outbox owner.");
+    }
+  }
 
   async claimOne(): Promise<ClaimedOutboxEvent | undefined> {
     const client = await this.pool.connect();
@@ -38,8 +59,12 @@ export class PostgresOutboxWorker {
       }>(
         `WITH candidate AS (
            SELECT outbox_ref
-             FROM work.outbox_record
+             FROM ${this.owner}.outbox_record
             WHERE processed_at IS NULL
+              AND (
+                $3::text[] IS NULL
+                OR event_name = ANY($3::text[])
+              )
               AND (
                 status IN ('pending', 'retry')
                 OR (
@@ -51,7 +76,7 @@ export class PostgresOutboxWorker {
             FOR UPDATE SKIP LOCKED
             LIMIT 1
          )
-         UPDATE work.outbox_record AS outbox
+         UPDATE ${this.owner}.outbox_record AS outbox
             SET status = 'processing',
                 lease_owner = $1,
                 lease_expires_at =
@@ -68,7 +93,11 @@ export class PostgresOutboxWorker {
            outbox.payload,
            outbox.attempt_count,
            outbox.lease_owner`,
-        [this.workerId, this.leaseMilliseconds]
+        [
+          this.workerId,
+          this.leaseMilliseconds,
+          this.eventNames ? [...this.eventNames] : null
+        ]
       );
       await client.query("COMMIT");
       const row = result.rows[0];
@@ -113,7 +142,7 @@ export class PostgresOutboxWorker {
         ]
       );
       const completed = await client.query(
-        `UPDATE work.outbox_record
+        `UPDATE ${this.owner}.outbox_record
             SET status = 'processed',
                 processed_at = clock_timestamp(),
                 published_at = clock_timestamp(),
@@ -144,7 +173,7 @@ export class PostgresOutboxWorker {
     const message =
       error instanceof Error ? error.message : "Unknown worker error";
     await this.pool.query(
-      `UPDATE work.outbox_record
+      `UPDATE ${this.owner}.outbox_record
           SET status = 'retry',
               lease_owner = NULL,
               lease_expires_at = NULL,

@@ -13,7 +13,7 @@ const password = () => randomBytes(24).toString("base64url");
 const content = [
   "POSTGRES_HOST=127.0.0.1",
   "POSTGRES_HOST_PORT=55432",
-  "POSTGRES_DB=edu_agent_gate1b",
+  "POSTGRES_DB=edu_agent_dev",
   "POSTGRES_ADMIN_USER=edu_admin",
   `POSTGRES_ADMIN_PASSWORD=${password()}`,
   "POSTGRES_MIGRATOR_USER=edu_migrator",

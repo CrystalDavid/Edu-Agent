@@ -9,10 +9,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "demo": "node --import tsx src/index.ts"
   },
   "dependencies": {
     "@edu-agent/contracts": "workspace:*",
+    "@edu-agent/test-fixtures": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "pg": "^8.22.0",

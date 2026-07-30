@@ -1,6 +1,7 @@
 import type {
   FormalWriteMetadata,
-  FormalWriteReceipt
+  FormalWriteReceipt,
+  TeacherTaskRequest
 } from "@edu-agent/contracts";
 
 import type {
@@ -18,6 +19,10 @@ export interface PostgresTaskBundle {
     taskRef: string;
     title: string;
     status: string;
+    taskKind?: string;
+    caseRef?: string;
+    goalRef?: string;
+    request?: TeacherTaskRequest;
     metadata: FormalWriteMetadata & { owner: "work" };
   };
   taskRun: {
@@ -64,6 +69,11 @@ export class PostgresWorkRepository {
          task_ref,
          title,
          status,
+         task_kind,
+         case_ref,
+         goal_ref,
+         request_payload,
+         request_version,
          actor_ref,
          purpose,
          owner_module,
@@ -71,11 +81,19 @@ export class PostgresWorkRepository {
          authorization_decision_ref,
          audit_ref,
          created_at
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13, $14, $15
+       )`,
       [
         bundle.task.taskRef,
         bundle.task.title,
         bundle.task.status,
+        bundle.task.taskKind ?? "general",
+        bundle.task.caseRef ?? null,
+        bundle.task.goalRef ?? null,
+        toPostgresJson(bundle.task.request ?? {}),
+        bundle.task.request?.requestVersion ?? 1,
         ...formalMetadataValues(bundle.task.metadata)
       ]
     );

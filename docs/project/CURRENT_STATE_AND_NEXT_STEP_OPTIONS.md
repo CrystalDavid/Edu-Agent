@@ -1,0 +1,735 @@
+# 教育智能体平台：当前真实状态与下一步候选方案
+
+> 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
+> 调查日期：2026-07-30
+> Gate 2.4 实施复核：2026-07-31。第 16 节是当前权威状态；前述方案分析保留为决策历史，其中被标注为 Gate 2.4 缺口的内容已经实施。
+> 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
+
+## 1. 执行结论
+
+当前项目不是“只有页面”，也不是“已经基本可用的教师平台”。
+
+它仍由窄真实链路和宽 Mock 门户叠加而成，但窄链路已经完成 Gate 2.4 正确性修复：
+
+1. 一条可恢复且状态语义明确的真实链路：显式演示身份和真实请求 → PostgreSQL Task/Run/Contract/Context → Mock Teacher Copilot → Proposal 恢复 → 四种教师处置 → `in_review` → 单独批准为 `approved` → Audit / 应用 Outbox Worker；
+2. 一套覆盖普通教师七个模块的高保真前端原型：概览、日程、教学、学生、文件、Agent、设置。
+
+第一部分的请求、Proposal、Evidence、Disposition、TeachingPlan 和 Run 已可在刷新后恢复；输出仍是固定 Mock，课程上下文仍是单一合成切片。第二部分视觉和交互完整度较高，但数据仍几乎全部来自前端数组和 React state。
+
+因此项目目前最准确的阶段描述是：
+
+> **Gate 1B 基础设施已验证；Gate 2.4 的合成 Teacher Copilot 正确性与可恢复闭环已实现并验证；普通教师端 UI v1 的宽业务面仍是高保真原型。**
+
+## 2. 调查基线依赖关系（Gate 2.4 前，保留用于对比）
+
+```mermaid
+flowchart LR
+    WEB["React 教师门户"]
+    ARR["teacher-portal-data.ts<br/>React state / sessionStorage"]
+    API["Express API"]
+    G1["Gate 1A Container<br/>内存 Repository"]
+    G2["Gate 2 Container<br/>具体 PostgreSQL Service"]
+    CONTRACT["packages/contracts"]
+    FIXTURE["packages/test-fixtures<br/>也被运行时代码引用"]
+    PG[("PostgreSQL<br/>七个 Schema")]
+    MODEL["MockModelProvider<br/>固定两种策略"]
+    TOOL["FakeTool"]
+
+    WEB -->|"普通七页面"| ARR
+    WEB -->|"health / workspace / copilot / plan / run"| API
+    WEB --> CONTRACT
+    API -->|"walking-skeleton / ingress"| G1
+    API -->|"demo/*"| G2
+    G1 --> MODEL
+    G1 --> TOOL
+    G2 --> PG
+    G2 --> MODEL
+    G2 --> FIXTURE
+```
+
+重要边界：
+
+- `createGate1AContainer` 始终创建内存 Governance、Work、Runtime、Capability、Artifact Repository；相关 HTTP 数据在进程重启后丢失。
+- `createGate2Container` 使用一个 app-role PostgreSQL pool，并直接组合具体 PG Service/Repository。
+- Gate 1B 的 PG Adapter 大多由测试直接构造；它们没有全部替换 Gate 1A Port，也没有统一进入当前 HTTP Composition Root。
+- ordinary teacher portal 页面只有应用启动、教师名和旧 Gate 2 子路由依赖 workspace API；其日常业务数据仍在前端。
+- API 运行时依赖 `packages/test-fixtures` 提供 Demo seed 和 Mock 策略内容，说明 Gate 2 仍是合成演示。
+
+## 3. 七模块当前状态
+
+| 模块 | 真实状态所有者 | 当前实现 | 主要缺口 |
+|---|---|---|---|
+| Identity / Governance / Audit | `governance` | AuthorizationDecision、AuditRecord、IdempotencyRecord；PG 事务和并发测试；Demo 注入 Audit | 无真实登录、会话、组织/成员、策略引擎；显式 Header / local bypass 只用于演示 |
+| Work / Assistant / Durable Execution | `work` | typed Task request、Run、Contract、Case、Goal、Result、Disposition、Outbox；应用 Worker | 无真实教师 Todo/Calendar；部分引用只由应用保证 |
+| Agent Runtime / Context | `runtime` | AgentRun、RunManifest、含 request summary 的 ContextManifest、Outbox | 没有真实会话、长期记忆或通用上下文绑定；普通 Agent 页面不调用它 |
+| Capability / Integration | `capability` | ModelExecution、ToolExecution、Outbox；ModelProvider Port | 只有 Mock provider/FakeTool；无 DeepSeek、模型评测、外部系统连接 |
+| Artifact / Collaboration | `artifact` | Artifact、不可变 ArtifactRevision、Outbox；TeachingPlan/Suggestion；current approved/in-review 指针 | 无 published 路径、协作、ObjectStore、二进制文件 |
+| Education Domain | `education` | CourseRun、Objective、Profile、Attempt、Evidence、Claim、Alignment、Outbox | 无课程树、作业、考试、学生名册、教学活动完整模型 |
+| Personalization | `personalization` | 仅 Migration 基础设施 | 无业务表、Repository 或 API |
+
+## 4. 数据库现状
+
+每个 Schema 都另有一张 `schema_migration`。以下只列业务对象。
+
+### 4.1 Schema 与表
+
+| Schema | 业务表 / View |
+|---|---|
+| `governance` | `authorization_decision`、`audit_record`、`idempotency_record` |
+| `work` | `task`、`task_run`、`query_run`、`idempotency_record`（早期表）、`outbox_record`、`resolved_learning_interaction_contract`、`outbox_consumer_effect`、`case_record`、`goal_record`、`task_result`、`suggestion_disposition` |
+| `runtime` | `agent_run`、`run_manifest`、`context_manifest`、`outbox_record` |
+| `capability` | `tool_execution`、`model_execution`、`outbox_record` |
+| `artifact` | `artifact`、`artifact_revision`、`outbox_record` |
+| `education` | `course_run`、`learning_objective`、`learning_interaction_profile`、`attempt`、`evidence_observation`、`evidence_claim`、`evidence_claim_observation`、`teaching_plan_alignment`、`outbox_record`；View：`learning_evidence_view` |
+| `personalization` | 无业务表 |
+
+### 4.2 Repository 与存储介质
+
+真实 PostgreSQL：
+
+- Gate 2 workspace seed/read；
+- Teacher Copilot 的 Task、TaskRun、Contract、ModelExecution、AgentRun、Manifest、Artifact Revision、Disposition、Audit、Outbox；
+- Gate 1B 的 Governance、Work、Runtime、Capability、Artifact、Education Repository（目前主要由测试使用）。
+
+仍为内存：
+
+- Gate 1A walking-skeleton command/query/ingress；
+- Gate 1A 的五个模块 Repository；
+- 普通教师门户的 Todo、日程、课程树、学生、文件、Agent 对话、设置不经过 Repository，直接存在前端数组或组件 state。
+
+不存在：
+
+- ObjectStore Port 或 Adapter；
+- LocalObjectStore；
+- 文件 blob/byte 持久化；
+- 学生名册、作业、考试、教师 Todo、CalendarEvent、课程 Unit/Chapter、Agent 对话、Context Binding 的数据库表。
+
+### 4.3 数据库角色
+
+- 非登录 owner：每个 Schema 一个 owner；
+- 登录角色：`edu_migrator`、`edu_app`、`edu_runtime`、`edu_worker`；
+- `edu_runtime` 只写 runtime，并只读所需 governance authorization 和 education 数据；
+- `edu_worker` 只可读取各业务模块 Outbox、更新受限处理列，并写 `work.outbox_consumer_effect`；
+- `edu_app` 对当前业务 Schema 有较宽 CRUD 权限；
+- 真实 PostgreSQL 角色测试证明了关键隔离边界。
+
+跨 Schema 不建 FK 是明确的 ownership 设计，但部分同 Schema 引用也没有 FK，完整性依赖应用代码和测试。
+
+### 4.4 已验证的一致性语义
+
+- 事务成功时业务记录、Outbox 和 Audit/Result 同时提交；
+- 异常时共同回滚；
+- 幂等键可处理并发预留、相同请求重放和不同 payload 冲突；
+- 两个 worker 可并发领取 Outbox，租约过期可恢复，消费者副作用可去重；
+- Artifact Revision 可并发追加且版本号唯一；
+- Artifact Revision 有更新/删除拒绝 Trigger；
+- Profile 可演进，已经封存到 Run 的 Resolved Contract 不被回写；
+- SuggestionDisposition 不会自动把建议标为已经实施。
+
+### 4.5 Gate 2.4 后仍存在的一致性缺口
+
+1. Mock 模型调用仍位于数据库事务内部；接入网络模型前必须改造成可恢复的事务外执行。
+2. `current_in_review_revision_ref` 是单指针；多 Proposal 并行形成多个 in-review 时，需要明确产品选择规则。
+3. 实际 Migration/Repository 使用手写 SQL，而 Drizzle Schema 只覆盖部分列与约束，存在双重事实源漂移。
+4. 跨 Schema 引用继续依赖应用检查和测试，没有数据库 FK。
+5. 本地 Worker 没有生产级 dead-letter、指标、告警和多实例运维方案。
+
+## 5. Runtime、Artifact 与 Agent
+
+### 5.1 当前真实 Teacher Copilot 数据流
+
+1. Web 发送真实 request text、目标和 Evidence，调用 `POST /api/v1/demo/teacher-copilot/tasks`；
+2. 服务要求显式身份（或已审计的 local/demo bypass），校验 actor/purpose，预留 governance idempotency；
+3. 从 education/work/artifact 读取固定课程、证据、Profile、Goal、TeachingPlan；
+4. MockModelProvider 返回固定的两种策略；
+5. 单事务写入 Authorization、Task、TaskRun、Work Outbox、Resolved Contract、ModelExecution、Capability Outbox、AgentRun、RunManifest、ContextManifest、Runtime Outbox、PedagogicalSuggestion Revision、TeachingPlan draft、TaskResult、Audit；
+6. 教师可通过 list/detail API 或直接 URL 恢复同一 Proposal，不重新执行模型；
+7. 教师调用 disposition API；接受/修改时写 `in_review`，拒绝/稍后不改变 current approved；
+8. 教师单独批准时创建新的 immutable `approved` Revision 并更新 current approved pointer；
+9. Run 页面读取请求、合同、上下文、Evidence、授权、模型执行、Outbox 和 Audit；应用 Worker 持续消费 Gate 2.4 事件。
+
+### 5.2 真正持久化的 Artifact
+
+- Gate 1B 测试中的通用 `ContentArtifact` / published revision；
+- Gate 2 的 `PedagogicalSuggestion`；
+- Gate 2 的 `TeachingPlan` draft、`in_review` 和 `approved` revision。
+
+它们持久化的是 text/JSON 结构化内容、parent revision、状态、hash、evidence ref 和 teacher selection。门户“文件”页中的 Word/PPT/PDF/图片只是元数据数组，没有真实文件字节。
+
+### 5.3 Agent 的真实程度
+
+- 普通 `/agent` 页面：`responseFor(message)` 按“PPT/作业/日程”等关键词返回硬编码文本；上下文、步骤、对话、收藏和重命名都是前端 state。
+- 旧 `/copilot` 页面：调用真实 API 和 PG，但后端仍使用确定性 MockModelProvider 和测试 fixture；不是大模型推理。
+- `/copilot` 的任务说明进入 typed Task request、Contract、ContextManifest 和 Mock provider input，并可在 Proposal/Run 中恢复。
+- 普通 Agent 只有“创建教学任务”导航到旧 Copilot；它不会把当前消息和上下文交给后端。
+
+## 6. 当前 API Route Contract
+
+当前共享 Product Contract 包含：
+
+- `GET /api/health`
+- `GET /api/v1/demo/workspace`
+- `POST /api/v1/demo/teacher-copilot/tasks`
+- `GET /api/v1/demo/teacher-copilot/proposals`
+- `GET /api/v1/demo/teacher-copilot/proposals/:proposalRevisionRef`
+- `POST /api/v1/demo/suggestions/:proposalRevisionRef/dispositions`
+- `GET /api/v1/demo/runs/:taskRef`
+- `GET /api/v1/demo/teaching-plan/revisions/:revisionRef`
+- `POST /api/v1/demo/teaching-plan/revisions/:revisionRef/approve`
+- `GET /api/v1/demo/teaching-plan/current-approved`
+- `GET /api/v1/demo/teaching-plan/current-in-review`
+- `GET /api/v1/demo/teaching-plan/drafts`
+- `GET /api/v1/demo/teaching-plan/history`
+- Gate 1A walking-skeleton command/query/ingress routes
+
+不存在日程、Todo、课程树、学生、作业、考试、文件、设置和通用 Agent chat API。
+
+产品进程始终使用 PostgreSQL Product Container；Gate 1A 路由只在测试显式开启 internal routes 时存在。应用没有正式认证/CORS 部署设计，因此仍不能视为可公开部署。
+
+## 7. 教师端逐页功能矩阵
+
+说明：
+
+- REAL：真实 API 和 PostgreSQL；
+- MOCK：前端数组、局部 state、演示 toast 或固定响应；
+- READ_ONLY：能读取真实或演示数据，但不能形成写业务；
+- DISABLED：产品明确不允许/没有路径；
+- DEAD：控件存在但输入不影响结果、数据不随导航变化，或代码已不再路由。
+
+| 页面 / 功能 | REAL | MOCK | READ_ONLY | DISABLED | DEAD |
+|---|---|---|---|---|---|
+| 应用启动 / 教师身份 | health、PG workspace bootstrap、默认 401、local/demo bypass Audit | 固定合成 tenant/actor 和 fixture 教师 | 教师名与本地演示说明 | 无真实登录/SSO | 无 |
+| 概览 | 无日常业务写入；仅应用 bootstrap 依赖 PG | 今日安排、待办、课程、学生、动态、文件均来自数组；快捷操作为跳转/toast | 统计卡与动态 | — | 传入的 `workspace` 业务数据未被页面使用 |
+| 日程视图 | 无 | 固定日历事件；日/周/月切换只改变展示；新建日程只关弹窗 | 固定事件 | 空标题等正常表单禁用 | 上/下一周期只改标题，不更换事件数据 |
+| 待办 | 无 | 完成、优先级为组件 state；“转为日程”只确认；“交给 Agent”只写 sessionStorage | 固定待办 | 已完成项的部分操作 | 刷新/重新进入路由恢复原值 |
+| 教学 / 课程树 | “生成新版本”和“调整下一课”进入真实 Copilot | 单元/章节、文件、作业、考试、学生仍为数组 | 搜索、筛选、展开、图表 | — | 课程树本身不持久化 |
+| 作业 / 考试操作 | 无 | 新建、编辑、下载、催交等为 toast/演示跳转 | 固定统计 | — | 无后端副作用 |
+| 学生列表 / 详情 | 无 | 12 名学生、趋势、证据、Agent 建议均为数组/固定文本 | 搜索、筛选、详情抽屉 | — | “修改建议/创建待办/生成指导”提示成功但不创建对象 |
+| 文件 | 无 ObjectStore/文件 API | 10 条文件元数据；筛选、视图、排序为前端；上传/新建/编辑/下载/分享/复制/删除/对比为 toast | 固定摘要 | — | 文件大小排序用 `parseFloat`，未统一 KB/MB |
+| 普通 Agent | 无；只有跳转旧 Copilot | 关键词固定回复、固定 steps/source、对话/context/收藏/重命名/删除均为 state | 静态上下文 | — | 声称读取课程/文件但未读取；刷新全部丢失 |
+| 设置 | 无 | 账户、通知、偏好、记忆、API/连接状态均为静态或局部 state | 固定状态 | 无发布/真实连接 | 输入看似可编辑但无保存，部分为 uncontrolled |
+| 目标 `/goals` | PG workspace | 固定 Seed | 真实 PG 只读 | 无编辑 | — |
+| 学习证据 `/evidence` | PG workspace | 固定 Seed | 真实 PG 只读 | 无采集/编辑 | — |
+| Copilot `/copilot` | typed request、Task/Run/Artifact、Proposal list/detail/恢复、四种 Disposition、Audit/Outbox | 两种策略内容固定 | 可查看固定 Evidence 和请求 | 已处置 Proposal 不可再次处置；无实施确认 | 无 API fallback |
+| Teaching Plan `/teaching-plan` | current approved/in-review/drafts/history、独立 approve | 内容来自合成 Seed/Mock | 历史 Revision 只读 | approved 原地修改被拒绝；无 published | — |
+| Runs `/runs` | PG Request/Run/Manifest/Contract/Evidence/Auth/Model/Outbox/Audit read | 模型执行为 Mock | 真实 PG 只读 | 无隐藏思维链、重放/运维 | — |
+| Style Guide | 无业务 | 组件和字体示例 | 开发只读 | — | 非产品路由 |
+| 旧 Portal 页面文件 | 无 | — | — | — | 多个旧页面和 `demo-read-model.ts` 已不再 import/route |
+
+### 7.1 刷新后保留
+
+PostgreSQL 中会保留：
+
+- CourseRun、Objective、Profile、Evidence、Case、Goal、Seed TeachingPlan；
+- 生成的 Task、TaskRun、Resolved Contract、AgentRun、Run/Context Manifest；
+- ModelExecution、PedagogicalSuggestion、TeachingPlan draft；
+- SuggestionDisposition、接受/修改后的 `in_review` Revision；
+- approved Revision、current approved / current in-review pointers；
+- Teacher request、Proposal detail 与直接 URL 恢复上下文；
+- Authorization、Audit、各模块 Outbox。
+
+### 7.2 刷新或重新导航后丢失
+
+- 普通门户的 Todo 状态、优先级和新建日程草稿；
+- Agent 对话、消息、收藏、重命名和用户选择上下文；
+- 设置、记忆、通知开关；
+- 普通页面的临时筛选/选择；
+- Copilot 尚未保存但未提交的文本框/Modal 临时编辑。
+
+已提交的 Proposal、策略、diff、Evidence、Disposition 和请求可由 GET API 恢复；通用 Agent 对话仍不可恢复。
+
+## 8. 测试和运行基线
+
+### 8.1 实际执行结果
+
+| 命令 | 结果 | 真正证明的内容 |
+|---|---|---|
+| `pnpm test:static` | 通过，658 条静态断言 | 文件/字符串/结构约束；不是运行时业务验证 |
+| `pnpm typecheck` | 通过 | TypeScript 项目类型一致性 |
+| `pnpm test` | 通过，11 files / 51 tests | Contract、内存 HTTP、架构约束、数据库生命周期、PGlite 基础 Migration、启动 URL 等 |
+| `pnpm test:architecture` | 通过，4 files / 26 tests | 七模块、Product/Test Root、typed request、TeachingPlan 指针和 Worker 静态边界 |
+| `pnpm test:node-smoke` | 通过，5 tests | 构建后 Node 模块和入口可加载 |
+| `pnpm test:migrations` | 通过，1 test | PGlite 可应用 Migration；只抽查关键表，不等于完整 PG 语义 |
+| `pnpm test:postgres` | 通过，8 files / 44 tests | 真实 PG 请求持久化、Proposal 恢复、四种处置、并发/幂等、审批、不可变 Revision、Worker 恢复、角色与 HTTP |
+| `pnpm test:playwright` | 通过，10 tests | 普通 Mock 页回归 + 一条真实 Gate 2.4 刷新恢复、修改接受、独立批准、拒绝不改 current、Run/Outbox 链 |
+| `pnpm build` | 通过 | API/Web/Packages production build |
+| `pnpm analyze:bundle` | 通过 | 初始 JS 约 621.2 KiB raw / 206.2 KiB gzip；最大 table chunk 约 206.3 KiB raw / 61.8 KiB gzip |
+| `pnpm demo:doctor` | 通过 | Node/pnpm/Docker/Compose/端口/Secret 配置可启动 |
+| tracked-file secret scan | 通过，257 files | 未发现 private key、provider key、非空 DeepSeek key 或非示例 PostgreSQL credential URL；仓库仍无专用 secret-scan 命令 |
+
+没有测试报告 skip。
+
+### 8.2 测试没有证明的内容
+
+- 普通教师七页面的数据持久化；
+- 普通门户 Mock 工作项的刷新恢复（Gate 2.4 Proposal/Plan 已证明）；
+- 真实模型质量、超时、限流、成本或安全；
+- Outbox 的生产级监控、dead-letter 与多实例运维（本地应用持续消费已证明）；
+- 文件上传、下载、版本、权限和清理；
+- 真实登录、多租户隔离和学校角色权限；
+- 远程部署、CORS、云数据库和云存储；
+- 完整代码覆盖率。
+
+### 8.3 Gate 2.4 对本地数据事故的修复
+
+原 Playwright 链会间接调用 `db:clean`，这是 Gate 2.4 的首要修复项。现在 PostgreSQL/Playwright 测试每次使用独立 `edu-agent-e2e-<run-id>` Project/Volume；结束后清理并核验开发 Volume identity、ignored env 和上传目录未变化。长期开发 Volume 的删除还要求 `ALLOW_DESTRUCTIVE_DB_RESET=1`，未设置时在 Docker 调用前拒绝。
+
+## 9. 调查基线的五层判断（Gate 2.4 前；当前状态见第 16 节）
+
+### 9.1 架构和基础设施
+
+**已实现并验证：**
+
+- pnpm 模块化单体；
+- 七模块目录与 Schema ownership；
+- Migration runner、Docker PostgreSQL、角色隔离；
+- 核心事务、Outbox、Idempotency、Audit、Artifact Revision；
+- 本地可重复 Demo、production build、主要自动化测试。
+
+**已实现但未充分验证：**
+
+- Gate 2 Composition Root 与旧 Gate 1A Container 并存；
+- Route-level bundle 和视觉回归；
+- 手写 SQL 与 Drizzle Schema 并行。
+
+**尚未开始：**
+
+- 远程部署基础设施、可观测性、真实身份系统、备份/灾备。
+
+### 9.2 数据库和一致性
+
+**已实现并验证：**
+
+- Gate 1B 的事务、并发幂等、角色、Outbox 领取、Artifact 并发 Revision；
+- Gate 2 生成/处置链的真实 PG 写入。
+
+**已实现但存在语义缺陷：**
+
+- TeachingPlan latest/published；
+- proposal 重复处置错误映射；
+- Run 与 Task 的引用完整性；
+- Outbox 的实际运行消费。
+
+**只有 Schema：**
+
+- Personalization 只有迁移登记，无领域表；
+- 若干早期通用表没有当前产品入口。
+
+### 9.3 普通教师端页面
+
+**已实现并验证：**
+
+- 七页面信息架构、响应式视觉、路由、主要 Mock 交互和 Playwright 截图。
+
+**只有 Mock：**
+
+- 概览、日程、教学、学生、文件、普通 Agent、设置的绝大部分业务内容。
+
+**真实只读或窄写入：**
+
+- 旧 Goals/Evidence/TeachingPlan/Runs 是 PG 只读；
+- 旧 Copilot 是 PG 写入。
+
+### 9.4 真实教师业务闭环
+
+**已实现但未充分验证：**
+
+- 合成 evidence → 固定建议 → 教师处置 → TeachingPlan revision。
+
+**仍未闭环：**
+
+- 用户输入不影响生成；
+- proposal 刷新后不可恢复；
+- 没有发布、实施、回写课程进度；
+- 普通教学页和 Agent 页没有把真实上下文传入；
+- 拒绝/稍后处理会与“最新草稿”语义冲突。
+
+### 9.5 Agent 智能能力
+
+**只有 Mock：**
+
+- 后端 MockModelProvider 的固定两策略；
+- 前端 `responseFor` 的关键词固定回答。
+
+**只有接口：**
+
+- ModelProvider Port、ModelExecution、Run/Context Manifest。
+
+**尚未开始：**
+
+- 真实 DeepSeek、工具调用编排、检索、上下文选择策略、记忆、评测门禁和安全策略。
+
+## 10. 距离三个可用目标还缺什么
+
+### 10.1 本地基本可用教师工作台
+
+最低缺口：
+
+- 至少一条真实、可刷新恢复的教师任务闭环；
+- 真实课程/章节或明确的备课上下文；
+- 用户任务文本真正进入后端并被 Run 封存；
+- proposal 列表/详情/恢复 API；
+- 正确的 TeachingPlan latest/review/publish 语义；
+- 普通教学/Agent 页面接入真实链路；
+- 创建、失败、重试、重复提交的清晰 UI；
+- 不清库的日常启动和验收方式。
+
+### 10.2 可远程演示
+
+在本地闭环之外还需要：
+
+- 明确的同域反向代理或 CORS 方案；
+- production Gate 2 配置、托管 PostgreSQL、受控 Migration/Seed；
+- 基础登录/access code 和租户边界；
+- Secret 管理、错误日志、健康检查、演示数据重置策略；
+- 远程浏览器 E2E；
+- 20.6 MB 字体和静态资源优化；
+- 不依赖用户本机 Docker Volume 的演示环境。
+
+### 10.3 学校生产交付
+
+还需要：
+
+- 学校组织、教师/学生/家长/管理者身份和细粒度权限；
+- 真实 SIS/LMS/日历/文件系统集成；
+- 数据分级、同意、最小化、保留、导出、删除和审计运营；
+- 真实模型供应商治理、内容安全、评测、人工复核、成本与降级；
+- Backup/DR、监控告警、SLO、容量与高可用；
+- 无障碍、兼容性、安全测试、渗透和供应链治理；
+- 完整业务对象、支持流程和学校上线运营。
+
+## 11. 技术债与架构风险
+
+按严重程度排序：
+
+1. **高：普通门户的宽业务面仍是 Mock。** 概览、日程、学生、文件、作业/测试和通用 Agent 的视觉完整度会让演示者高估业务完成度。
+2. **高：未来真实模型会在长事务内执行。** 当前 Mock 调用在事务内；网络延迟/失败会占用连接并扩大锁和回滚成本。
+3. **中高：测试 fixture 仍进入产品运行时。** Demo refs 和固定策略来自 `packages/test-fixtures`，真实配置/内容边界尚未形成。
+4. **中高：手写 SQL 与 Drizzle Schema 双源。** Trigger、check 和 JSON 语义容易漂移。
+5. **中高：current in-review 是单指针。** 多 Proposal 并行产生多个 in-review 时需要明确选择规则。
+6. **中：跨/同 Schema 引用大量依赖应用完整性。** 错误路径仍可能形成逻辑孤儿。
+7. **中：本地 Worker 不是生产消息系统。** 缺少 dead-letter 管理、指标、告警和多实例运维语义。
+8. **中：远程运行缺少正式认证、CORS/反向代理和生产 Seed 策略。**
+9. **中：`edu_app` 对多个业务 Schema 权限较宽。** Product Root 统一不等于模块写权限已经最小化。
+10. **低至中：旧页面和旧 read model 仍有死代码；HarmonyOS 字体约 20.6 MB。**
+11. **低至中：无 lint、覆盖率和专用 secret scan 命令。**
+
+## 12. 下一阶段三个候选方案
+
+### A. 最小业务闭环：Gate 2.4「Copilot 正确性与可恢复性」（已完成）
+
+**解决的问题**
+
+把现有 Teacher Copilot 从“一次性演示”修到可恢复、语义正确的最小业务闭环。
+
+**涉及页面**
+
+- 旧 Copilot；
+- Teaching Plan；
+- Runs；
+- 教学页只增加一个真实入口，不产品化整棵课程树。
+
+**新增/调整领域对象**
+
+- 不强制新增大对象；
+- 给 Task 明确保存 `teacherRequest` / intent；
+- 为 proposal 增加可读取的审阅详情和状态；
+- 明确 Artifact current-review / published 指针语义。
+
+**Schema**
+
+- 主要修改 `work` 与 `artifact`；
+- 可能只需补字段、索引和状态约束；
+- 不新增 education 大模型、文件或 calendar 表。
+
+**API**
+
+- 创建任务时接收教师任务文本；
+- proposal 列表/详情/恢复；
+- 稳定的 disposition 冲突响应；
+- 明确获取 current approved / current in-review TeachingPlan。
+
+**文件存储**
+
+- 不涉及；继续使用结构化 Artifact Revision。
+
+**Agent Context**
+
+- 只把当前已有 ContextManifest 与教师请求封存，不建立通用 AgentContextBinding。
+
+**风险 / 复杂度**
+
+- 风险低至中；
+- 复杂度小；
+- 主要风险是修正 latest 语义时需要迁移既有 Demo 数据。
+
+**验收**
+
+- 不同任务文本被 API/Run 持久化；
+- 生成后刷新，可重新打开两种策略并继续处置；
+- reject/defer 不改变 current approved plan；
+- accept/modify 生成正确 parent revision；
+- 重放和不同幂等键重复处置都有确定结果；
+- UI、HTTP、真实 PG 并发测试覆盖。
+
+**明确推迟**
+
+- Todo、日程、课程树、普通 Agent 会话、文件、ObjectStore、真实模型。
+
+### B. 平衡推进：Gate 2.5「可恢复的教师备课闭环」（推荐）
+
+**解决的问题**
+
+在先修复 A 的基础上，让教师能从真实教学上下文发起备课任务，经 Agent 建议和人工修改，得到可恢复的 TeachingPlan，并把结果回写到教师工作队列。
+
+**涉及页面**
+
+- 概览：只接入“我的备课任务/状态”，不整体产品化；
+- 教学：接入最小课程 → 单元 → 章节上下文和“准备本课”；
+- Agent：普通入口接入真实 task/run，不做开放聊天；
+- Copilot/Teaching Plan/Runs：整合为可恢复审阅详情；
+- 日程、学生、文件、设置保持明确 Mock/只读标识。
+
+**新增/调整领域对象**
+
+- `TeacherWorkItem`：教师工作队列/待办，拥有状态、截止时间、来源和结果引用；
+- 最小 `CourseUnit` / `CourseChapter`，或等价的窄 `LessonPreparationContext`；
+- `TaskContextBinding`：记录教师明确选择的课程、章节、班级、Evidence、Artifact 引用；
+- 沿用现有 Task、Run、PedagogicalSuggestion、TeachingPlan，不一次新增四种教学 Artifact。
+
+**Schema**
+
+- `work`：TeacherWorkItem、Task 请求、状态/结果关联；
+- `education`：最小课程层级或备课上下文；
+- `runtime`：若现有 ContextManifest 无法表达输入绑定，再加入窄 binding；优先复用 manifest；
+- `artifact`：修正 current/review/published pointer 和 revision 状态。
+
+**API**
+
+- 列出/创建/更新教师工作项；
+- 读取最小课程/章节；
+- 从工作项或章节创建 Agent task；
+- proposal 列表/详情/恢复/处置；
+- TeachingPlan current/review/published；
+- 任务完成后回写 work item 状态。
+
+**文件存储**
+
+- 不引入 LocalObjectStore；
+- TeachingPlan 和 Suggestion 继续作为 PostgreSQL 结构化 Artifact；
+- “文件”页仍是明确推迟功能。
+
+**Agent Context**
+
+- 有，但范围严格限定为 task-scoped、用户明确选择、不可变快照；
+- 不做全局记忆、隐式检索或开放聊天历史。
+
+**风险 / 复杂度**
+
+- 风险中；
+- 复杂度中；
+- 主要风险是 Work/Education/Runtime/Artifact 四个状态所有者之间的引用和事务边界，需要先写 ADR/Contract 测试。
+
+**验收**
+
+- 教师从真实章节创建备课工作项；
+- 刷新后工作项、上下文、两种策略和修改状态都可恢复；
+- 教师任务文本和选择上下文出现在 sealed Run/Manifest；
+- 接受/修改产生正确 TeachingPlan revision，拒绝/稍后不污染 current；
+- 工作项状态从待处理 → Agent 处理中 → 待审阅 → 已形成教案；
+- 所有写入具备 authorization、idempotency、audit、outbox；
+- 普通教学页/Agent 页完成真实 Playwright + PostgreSQL E2E；
+- 不清库启动后仍能继续上一任务。
+
+**明确推迟**
+
+- 通用日历、Todo 转日程；
+- ObjectStore、二进制文件、文件版本；
+- PPT/讲义/练习/答案四类 Artifact；
+- 学生/作业/考试产品化；
+- DeepSeek、云部署、多角色。
+
+### C. 较完整教师工作流：Gate 2.5 Full「教师日常工作台」
+
+**解决的问题**
+
+把旧 Gate 2.5A 的主要设想一次性落地：Todo、日程、课程树、Agent Context、文件/ObjectStore、多个教学 Artifact 和跨页面闭环。
+
+**涉及页面**
+
+- 概览、日程、教学、文件、Agent；
+- 学生页至少提供 context/evidence 来源；
+- 旧 Copilot/Plan/Runs 被整合为审阅/追溯页面。
+
+**新增领域对象**
+
+- TeacherTodo / WorkItem、CalendarEvent；
+- CourseUnit、CourseChapter、Lesson；
+- TaskContextBinding；
+- FileAsset、FileVersion、ObjectBlob/locator；
+- LessonPlan、SlideDeck、Worksheet、AnswerKey 等教学 Artifact；
+- Artifact 与文件、任务、课程的关联对象。
+
+**Schema**
+
+- 修改 `work`、`education`、`runtime`、`artifact`、`capability`；
+- 需要决定 Calendar 的状态所有者以及文件元数据与 Artifact 的边界；
+- `personalization` 仍可不启用。
+
+**API**
+
+- Todo CRUD、Todo → Calendar；
+- Course tree CRUD/read；
+- Agent task/context；
+- 多 Artifact 生成/编辑/版本/发布；
+- 文件上传/下载/版本/删除；
+- Todo → Agent → Artifact/File、Course → LessonPlan 两条完整链。
+
+**文件存储**
+
+- 需要 ObjectStore Port 和 LocalObjectStore Adapter；
+- 需要路径穿越防护、hash、MIME/大小限制、原子写、孤儿清理、备份和下载授权。
+
+**Agent Context**
+
+- 需要完整的用户选择、课程、学生证据、文件版本绑定和追溯。
+
+**风险 / 复杂度**
+
+- 风险高；
+- 复杂度大；
+- 最大风险不是代码量，而是同时定义 Work、Calendar、Education、Artifact、File 和 Agent Context 的状态所有权，容易在未验证语义时固化错误模型。
+
+**验收**
+
+- 三条真实闭环：Todo → Agent → Artifact/File、Course → LessonPlan、Todo → Calendar；
+- 所有页面刷新恢复；
+- 文件版本、Artifact revision 和上下文引用可追溯；
+- 失败注入、并发、幂等、权限、路径安全、磁盘故障和 orphan cleanup 测试；
+- 真实 PG + 本地 ObjectStore + Playwright 全链。
+
+**明确推迟**
+
+- 真实 DeepSeek、云存储/CloudBase、Netlify、学生/家长/管理端、学校生产集成。
+
+## 13. 对旧 Gate 2.5A 设想的重新判断
+
+| 旧设想 | 判断 | 理由 |
+|---|---|---|
+| 日程与待办持久化 | **拆分** | TeacherWorkItem 对闭环有价值，建议进 B；CalendarEvent 需要来源、冲突、重复规则和权限，推迟 |
+| 课程树持久化 | **缩小后保留** | 现有 CourseRun 太薄，备课需要章节上下文；只做最小 unit/chapter，不一次产品化完整教务课程模型 |
+| LocalObjectStore | **推迟** | 当前结构化 TeachingPlan 不依赖文件；先引入会带来路径安全、清理和备份风险 |
+| 文件版本 | **区分后推迟** | 结构化内容继续使用现有 ArtifactRevision；通用二进制 FileVersion 留到 C |
+| AgentContextBinding | **缩小并保留** | 必须证明 Agent 用了教师明确选择的上下文；应做 task-scoped immutable binding，优先复用 ContextManifest，不做全局记忆 |
+| 四种教学 Artifact | **拒绝作为下一 Gate 范围** | 当前只有 TeachingPlan/Suggestion 真正持久化；同时引入四类编辑器和文件语义会稀释闭环 |
+| 待办 → Agent → 文件 | **拆分** | B 做 WorkItem → Agent → TeachingPlan；“文件”是 Artifact 展示还是二进制资产需先定边界 |
+| 课程 → 教案 | **优先** | 与现有 CourseRun、Evidence、Teacher Copilot、TeachingPlan 的真实资产最接近，新增模型最少 |
+| 待办 → 日程 | **推迟** | 只有在 WorkItem 和 CalendarEvent 各自语义稳定后才应做转换 |
+
+## 14. 推荐方案
+
+推荐下一 Gate 名称：
+
+> **Gate 2.5 — 可恢复的教师备课闭环**
+
+推荐它而不是直接恢复旧 Gate 2.5A 的原因：
+
+- Gate 2.4 已修复真实链路恢复、任务输入和 TeachingPlan current 语义，下一缺口是缺少持久化备课工作项与真实课次入口；
+- 课程 → 备课 → Agent → TeachingPlan 与已有代码距离最近，能复用已经验证的事务、Audit、Idempotency、Run 和 Revision；
+- 加入一个最小 TeacherWorkItem 能让概览和日常工作状态第一次有真实意义；
+- 文件/ObjectStore、通用日历和四种 Artifact 会把下一阶段扩成多个尚未定义状态所有权的子系统。
+
+建议顺序：
+
+1. 决定最小上下文使用 Lesson/课次还是 Unit/Chapter；
+2. 定义窄 TeacherPreparationWorkItem 及其状态机；
+3. 复用 Gate 2.4 ContextManifest 封存教师显式选择，不新增通用 binding；
+4. 打通教学页/概览 → WorkItem → Agent Task → Proposal review；
+5. approved TeachingPlan 后回写 WorkItem 状态；
+6. 补真实 PG、HTTP、Playwright、刷新/进程重启和失败恢复测试；
+7. 继续推迟真实模型、文件和日历。
+
+## 15. 需要产品所有者决定的问题
+
+1. 下一 Gate 的首个真实用户结果，是“形成可审阅教案”还是“生成可下载课件/文件”？推荐前者。
+2. Gate 2.4 已确定 `draft → in_review → approved`；何时引入 `published` 及谁有发布权限仍需后续决定。
+3. 最小课程层级是“课程 → 单元 → 章节”，还是还必须包含班级/学期/课次？这会决定 education Schema 的最小模型。
+4. TeacherWorkItem 是否可以作为待办的统一领域对象，并把 CalendarEvent 留到后续？推荐可以。
+5. 下一 Gate 是否接受继续使用确定性 MockModelProvider，以先验证业务闭环？推荐接受，真实模型应有独立 eval/safety gate。
+
+## 16. Gate 2.4 完成后的当前状态（权威更新）
+
+本节覆盖本文前面关于“缺省身份、两套产品执行路径、请求未保存、Proposal 不可恢复、latest 含混、Worker 未接入”的旧判断。
+
+### 16.1 已实现并验证
+
+| 能力 | 当前状态 |
+|---|---|
+| 数据库测试安全 | 开发 Volume 固定为 `edu-agent-dev-postgres-data`；PG/Playwright 每次用独立 `edu-agent-e2e-<run-id>-postgres-data`，清理后核验开发 Volume identity、ignored env 和上传目录未变化 |
+| Demo identity | 默认缺失 Header 为 401；错误 actor/tenant 为 403；local/demo 显式 bypass 才能注入，production 禁止，注入写 Audit |
+| Composition Root | 产品进程只创建 PostgreSQL Product Container；Gate 1A 内存实现只在 Test Container / internal test routes |
+| Teacher request | `requestText`、actor、purpose、CourseRun、Objective、Evidence、时间和版本进入 Task、Resolved Contract、ContextManifest、Mock input 与 Run explanation |
+| Proposal 恢复 | pending list、tenant-scoped detail、关联 Task/Run/Contract/Evidence/Disposition/candidate Revision；直接 URL 刷新恢复且不新建 ModelExecution |
+| TeachingPlan | 明确 `draft → in_review → approved`；接受不改变 current，单独批准创建新 immutable approved Revision |
+| 读取语义 | current approved、current in-review、drafts、history 四套 API；产品不再用一个 `latest` 表示正式计划 |
+| Disposition | 四种处置、Proposal 行锁、expected version、语义 fingerprint、并发唯一结果、相同请求重放、不同 payload 结构化 409 |
+| 实施事实边界 | 所有处置保持 `implementationObserved=false`、`instructionalDecisionCreated=false`；无 ObservedPedagogicalMove / InstructionalDecision 表 |
+| Outbox | Demo 应用 Worker 消费 Gate 2.4 的 Work/Runtime/Capability/Artifact 事件；租约、retry、幂等 effect 和崩溃恢复已测 |
+| UI 闭环 | 真实任务文本 → Proposal → 刷新恢复 → 修改后接受 → in-review → 单独批准 → 第二 Proposal 拒绝不改 current → Runs 查看请求/Evidence/权限/Outbox |
+
+数据库新增的是字段、指针与约束，不是新业务聚合：
+
+- `work.task.request_payload` / `request_version`；
+- `work.suggestion_disposition.request_fingerprint`；
+- `runtime.context_manifest.task_ref` / `request_summary` / `request_version`；
+- `artifact.artifact.current_approved_revision_ref` / `current_in_review_revision_ref`；
+- `approved` Revision state、不可变 Trigger 和 lifecycle index。
+
+### 16.2 仍只有 Mock 或尚未开始
+
+- `/agent` 的通用对话、回复和上下文仍是前端固定逻辑；真实链路是 Copilot 详情，不是开放聊天；
+- 概览待办、日程、课程树、作业、考试、学生、文件和设置仍是前端数组/state；
+- MockModelProvider 虽收到真实 request text，但两种策略内容仍是固定合成模板；
+- 没有正式登录/SSO、真实模型、ObjectStore、文件字节、TeacherWorkItem、CalendarEvent、完整课程/课次模型、学生长期模型或云部署。
+
+### 16.3 当前主要技术债与风险
+
+1. **宽 UI / 窄后端落差仍大。** 七个一级页面容易让演示观看者误判完成度，必须持续维护功能矩阵和 Mock 标签。
+2. **测试 fixture 仍进入运行时。** Gate 2.4 的合成策略与 demo refs 仍来自 `packages/test-fixtures`；真实产品配置边界尚未形成。
+3. **Mock 模型仍在数据库事务内调用。** 当前确定性本地调用风险可控；真实网络模型接入前必须拆成长事务外执行/恢复设计。
+4. **手写 SQL 与 Drizzle Schema 双重事实源。** Gate 2.4 同步更新了声明，但 Trigger、约束和部分 JSON 语义仍只存在于 SQL migration。
+5. **current in-review 为单指针。** 当前只支持一个“当前待审核”版本；多提案并行审阅时，新 in-review 会替换指针，历史仍保留。下一 Gate 需要决定这是否符合产品规则。
+6. **应用 Worker 是本地轮询器。** 适合本地 Gate，不是多实例生产运维方案；没有 dead-letter 管理、监控告警或跨服务消息基础设施。
+7. **数据库 app role 权限仍较宽。** 七模块 owner 已隔离 migration，但产品 app pool 对多个业务 Schema 具有 CRUD。
+
+### 16.4 下一 Gate 推荐范围
+
+推荐：
+
+> **Gate 2.5 — 最小可恢复备课工作项**
+
+核心目标是让教师从一个真实、持久化的“备课工作项 + 最小课次上下文”进入已经验证的 Gate 2.4 Copilot 链路，并在完成批准后回写工作项状态。
+
+建议只新增：
+
+- `TeacherPreparationWorkItem`（或语义等价的窄 WorkItem），状态限定为待处理、生成中、待审、已形成计划；
+- 最小 `LessonPreparationContext`：CourseRun、班级/学期、课次或章节引用、LearningObjective、显式 Evidence 选择；
+- 概览/教学页的真实工作项列表与“准备本课”入口；
+- WorkItem → Task/Proposal → approved TeachingPlan 的关联和恢复 API；
+- PostgreSQL、HTTP、Playwright 的刷新/重启恢复与失败回写测试。
+
+继续推迟：
+
+- 通用 Todo/Calendar 与待办转日程；
+- LocalObjectStore、文件上传、二进制版本；
+- 四种教学 Artifact、PPT/Word/Excel；
+- 通用 AgentContextBinding 和开放 Agent 对话；
+- 完整课程树、作业/考试、学生闭环；
+- DeepSeek、云部署、多 Agent。
+
+### 16.5 仍需产品所有者决定
+
+1. 最小备课上下文使用“课次/Lesson”还是“单元/章节”；这决定 education Schema 的最小对象。
+2. 是否允许同一 TeachingPlan 同时存在多个 in-review 候选；当前实现只有一个 current in-review 指针，但历史不会丢失。
+3. WorkItem 的完成点是“形成 approved TeachingPlan”还是还要教师显式标记“备课完成”；推荐分开。
+4. 下一 Gate 是否继续使用确定性 MockModelProvider；推荐继续，以免把真实模型评测和业务建模混在一个 Gate。
