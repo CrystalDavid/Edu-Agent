@@ -15,11 +15,17 @@ import {
   PostgresGate2ArtifactRepository
 } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
 import {
+  PostgresGate25EducationRepository
+} from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
+import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
   PostgresGovernanceRepository
 } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
+import {
+  PostgresGate25WorkRepository
+} from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
 import {
   PostgresGate2WorkRepository
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
@@ -27,6 +33,10 @@ import {
   createWriteMetadata,
   type WriteContext
 } from "../platform/postgres/write-context.js";
+import {
+  gate25CurriculumFixture,
+  gate25DemoRefs
+} from "./gate2-5-demo-fixture.js";
 
 function hash(value: unknown): string {
   return createHash("sha256")
@@ -42,10 +52,33 @@ export class Gate2DemoSeedService {
     private readonly work = new PostgresGate2WorkRepository(),
     private readonly artifacts =
       new PostgresGate2ArtifactRepository(),
-    private readonly education = new PostgresEducationRepository()
+    private readonly education = new PostgresEducationRepository(),
+    private readonly gate25Education =
+      new PostgresGate25EducationRepository(),
+    private readonly gate25Work =
+      new PostgresGate25WorkRepository()
   ) {}
 
-  async seed(): Promise<{
+  async seed(
+    options: { includeGate25?: boolean } = {}
+  ): Promise<{
+    replayed: boolean;
+    courseRunRef: string;
+    goalRef: string;
+    teachingPlanArtifactRef: string;
+  }> {
+    const gate24 = await this.seedGate24();
+    if (!options.includeGate25) {
+      return gate24;
+    }
+    const gate25 = await this.seedGate25();
+    return {
+      ...gate24,
+      replayed: gate24.replayed && gate25.replayed
+    };
+  }
+
+  private async seedGate24(): Promise<{
     replayed: boolean;
     courseRunRef: string;
     goalRef: string;
@@ -373,6 +406,302 @@ export class Gate2DemoSeedService {
                 "evidence-outbox-2"
               )
             }
+          }
+        ))
+      );
+
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: createdAt
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async seedGate25(): Promise<{ replayed: boolean }> {
+    const rootIdempotencyKey =
+      "gate2-5:recoverable-lesson-preparation-seed:v1";
+    const rootKey = [
+      gate2DemoRefs.tenantRef,
+      gate2DemoRefs.teacherRef,
+      "gate2-5.lesson-preparation.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const decisionRef =
+      "authorization-decision:gate2-5-lesson-preparation-seed";
+    const createdAt = "2026-09-18T08:05:00.000Z";
+    const writeContext: WriteContext = {
+      actorRef: gate2DemoRefs.teacherRef,
+      purpose: "gate2-5.lesson-preparation.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const result = { replayed: false };
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(
+        client,
+        {
+          idempotencyRef:
+            "idempotency:gate2-5-lesson-preparation-seed",
+          rootKey,
+          requestFingerprint: hash({
+            fixture: "gate2-5-linear-functions@1"
+          }),
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-5-seed-idempotency"
+          )
+        }
+      );
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: gate2DemoRefs.teacherRef,
+        tenantRef: gate2DemoRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "gate2-5.lesson-preparation.seed",
+        resourceRef: gate2DemoRefs.courseRunRef,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["local-synthetic-demo-bootstrap"],
+        policyVersion: "policy:gate2-5-local-demo-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-5-seed-authorization"
+          )
+        })
+      ];
+
+      const educationMetadata = (suffix: string) =>
+        createWriteMetadata(
+          writeContext,
+          "education",
+          `gate2-5-seed-${suffix}`
+        );
+      receipts.push(
+        ...(await this.gate25Education.insertCurriculumSeed(
+          client,
+          {
+            courseRunRef: gate2DemoRefs.courseRunRef,
+            courseRunPresentation: {
+              className: "八年级 3 班",
+              academicTerm: "当前学期"
+            },
+            unit: {
+              ...gate25CurriculumFixture.unit,
+              metadata: educationMetadata("unit")
+            },
+            lessons: gate25CurriculumFixture.lessons.map(
+              (lesson) => ({
+                ...lesson,
+                preparationState:
+                  lesson.lessonRef ===
+                  gate25DemoRefs.lessonRefs
+                    .linearFunctionApplication
+                    ? ("planned" as const)
+                    : ("not_started" as const),
+                ...(lesson.lessonRef ===
+                gate25DemoRefs.lessonRefs.slopeAndGraph
+                  ? {
+                      currentApprovedPlanRef:
+                        gate2DemoRefs.teachingPlanRevisionRef
+                    }
+                  : {}),
+                ...(lesson.lessonRef ===
+                gate25DemoRefs.lessonRefs
+                  .linearFunctionApplication
+                  ? {
+                      activePreparationTaskRef:
+                        gate25DemoRefs.seededPreparationTaskRef
+                    }
+                  : {}),
+                metadata: educationMetadata(
+                  `lesson-${lesson.sequence}`
+                )
+              })
+            ),
+            additionalObjective: {
+              objectiveRef:
+                gate25DemoRefs.applicationObjectiveRef,
+              title: "运用一次函数解决真实情境问题",
+              description:
+                "学生能从真实情境中识别变量关系，建立一次函数模型并解释结果。",
+              knowledgeConceptRefs: [
+                "knowledge-concept:linear-function-model"
+              ],
+              competencyRefs: [
+                "competency:mathematical-modelling"
+              ],
+              metadata: educationMetadata(
+                "application-objective"
+              )
+            },
+            objectiveLinks: [
+              {
+                lessonRef:
+                  gate25DemoRefs.lessonRefs.slopeAndGraph,
+                objectiveRef: gate2DemoRefs.objectiveRef,
+                metadata: educationMetadata(
+                  "slope-objective-link"
+                )
+              },
+              {
+                lessonRef:
+                  gate25DemoRefs.lessonRefs
+                    .linearFunctionApplication,
+                objectiveRef:
+                  gate25DemoRefs.applicationObjectiveRef,
+                metadata: educationMetadata(
+                  "application-objective-link"
+                )
+              }
+            ],
+            evidenceLinks: [
+              ...gate2DemoRefs.observationRefs.map(
+                (evidenceRef, index) => ({
+                  lessonRef:
+                    gate25DemoRefs.lessonRefs.slopeAndGraph,
+                  evidenceRef,
+                  evidenceKind: "observation" as const,
+                  metadata: educationMetadata(
+                    `slope-observation-${index + 1}`
+                  )
+                })
+              ),
+              ...gate2DemoRefs.claimRefs.map(
+                (evidenceRef, index) => ({
+                  lessonRef:
+                    gate25DemoRefs.lessonRefs.slopeAndGraph,
+                  evidenceRef,
+                  evidenceKind: "claim" as const,
+                  metadata: educationMetadata(
+                    `slope-claim-${index + 1}`
+                  )
+                })
+              ),
+              ...gate2DemoRefs.observationRefs.map(
+                (evidenceRef, index) => ({
+                  lessonRef:
+                    gate25DemoRefs.lessonRefs
+                      .linearFunctionApplication,
+                  evidenceRef,
+                  evidenceKind: "observation" as const,
+                  metadata: educationMetadata(
+                    `application-observation-${index + 1}`
+                  )
+                })
+              )
+            ],
+            currentPlanBinding: {
+              bindingRef:
+                "lesson-plan-binding:slope-baseline",
+              lessonRef:
+                gate25DemoRefs.lessonRefs.slopeAndGraph,
+              teachingPlanArtifactRef:
+                gate2DemoRefs.teachingPlanArtifactRef,
+              teachingPlanRevisionRef:
+                gate2DemoRefs.teachingPlanRevisionRef,
+              metadata: educationMetadata(
+                "slope-current-plan-binding"
+              )
+            }
+          }
+        ))
+      );
+      receipts.push(
+        ...(await this.artifacts.insertTeachingPlanSeedScope(
+          client,
+          {
+            artifactRef:
+              gate2DemoRefs.teachingPlanArtifactRef,
+            revisionRef:
+              gate2DemoRefs.teachingPlanRevisionRef,
+            lessonRef:
+              gate25DemoRefs.lessonRefs.slopeAndGraph,
+            writeContext
+          }
+        ))
+      );
+
+      const workMetadata = (suffix: string) =>
+        createWriteMetadata(
+          writeContext,
+          "work",
+          `gate2-5-seed-${suffix}`
+        );
+      receipts.push(
+        ...(await this.gate25Work.insertLessonPreparationTask(
+          client,
+          {
+            taskRef: gate25DemoRefs.seededPreparationTaskRef,
+            tenantRef: gate2DemoRefs.tenantRef,
+            title: "准备课时：一次函数的应用",
+            caseRef: gate2DemoRefs.caseRef,
+            goalRef: gate2DemoRefs.goalRef,
+            courseRunRef: gate2DemoRefs.courseRunRef,
+            curriculumUnitRef: gate25DemoRefs.unitRef,
+            lessonRef:
+              gate25DemoRefs.lessonRefs
+                .linearFunctionApplication,
+            dueAt: "2026-09-23T00:00:00.000Z",
+            priority: "normal",
+            createdBy: gate2DemoRefs.teacherRef,
+            workingSet: {
+              courseRunRef: gate2DemoRefs.courseRunRef,
+              curriculumUnitRef: gate25DemoRefs.unitRef,
+              lessonRef:
+                gate25DemoRefs.lessonRefs
+                  .linearFunctionApplication,
+              learningObjectiveRefs: [
+                gate25DemoRefs.applicationObjectiveRef
+              ],
+              evidenceRefs: [...gate2DemoRefs.observationRefs],
+              baselineTeachingPlanRef: null,
+              purpose: "lesson-preparation.copilot",
+              requestedFieldMask: [
+                "lesson.title",
+                "lesson.learningObjectives",
+                "evidence.summary",
+                "teachingPlan.content"
+              ]
+            },
+            metadata: {
+              task: workMetadata("task"),
+              details: workMetadata("task-details"),
+              workingSetRevision: workMetadata(
+                "working-set-revision"
+              ),
+              history: workMetadata("task-history"),
+              outbox: workMetadata("task-outbox")
+            },
+            outboxRef:
+              "outbox:gate2-5-seeded-preparation-task",
+            historyRef:
+              "preparation-history:gate2-5-seeded-task"
           }
         ))
       );

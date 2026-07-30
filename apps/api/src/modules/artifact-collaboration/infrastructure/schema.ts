@@ -73,3 +73,33 @@ export const artifactOutboxTable = artifactSchema.table(
     ...formalWriteColumns()
   }
 );
+
+export const teachingPlanScopeLifecycleTable =
+  artifactSchema.table("teaching_plan_scope_lifecycle", {
+    scopeRef: text("scope_ref").primaryKey(),
+    artifactRef: text("artifact_ref").notNull(),
+    revisionRef: text("revision_ref").notNull().unique(),
+    lessonRef: text("lesson_ref").notNull(),
+    preparationTaskRef: text("preparation_task_ref"),
+    lifecycleStatus: text("lifecycle_status").notNull(),
+    supersededByRevisionRef: text(
+      "superseded_by_revision_ref"
+    ),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    ...formalWriteColumns()
+  });
+
+export const teachingPlanScopeEventTable =
+  artifactSchema.table("teaching_plan_scope_event", {
+    eventRef: text("event_ref").primaryKey(),
+    artifactRef: text("artifact_ref").notNull(),
+    revisionRef: text("revision_ref").notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    preparationTaskRef: text("preparation_task_ref"),
+    eventName: text("event_name").notNull(),
+    eventPayload: jsonb("event_payload").notNull(),
+    ...formalWriteColumns()
+  });

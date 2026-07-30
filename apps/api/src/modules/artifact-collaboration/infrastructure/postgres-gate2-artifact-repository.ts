@@ -40,6 +40,7 @@ export interface StructuredTeachingPlanRevision {
     | "draft"
     | "proposal"
     | "in_review"
+    | "superseded"
     | "approved"
     | "published";
   title: string;
@@ -118,6 +119,8 @@ export class PostgresGate2ArtifactRepository {
       parentTeachingPlanRevisionRef: string;
       draftRevisionRef: string;
       draftPlan: TeachingPlan;
+      lessonRef?: string;
+      preparationTaskRef?: string;
       writeContext: WriteContext;
     }
   ): Promise<{
@@ -243,12 +246,29 @@ export class PostgresGate2ArtifactRepository {
         "teaching-plan-draft-outbox"
       )
     });
+    const scopeReceipts =
+      input.lessonRef && input.preparationTaskRef
+        ? await this.insertTeachingPlanScope(client, {
+            artifactRef: input.teachingPlanArtifactRef,
+            revisionRef: input.draftRevisionRef,
+            lessonRef: input.lessonRef,
+            preparationTaskRef: input.preparationTaskRef,
+            lifecycleStatus: "draft",
+            eventName: "TeachingPlanDraftScoped",
+            eventPayload: {
+              parentRevisionRef:
+                input.parentTeachingPlanRevisionRef
+            },
+            writeContext: input.writeContext
+          })
+        : [];
 
     return {
       receipts: [
         ...proposalReceipts,
         draftReceipt,
-        draftOutboxReceipt
+        draftOutboxReceipt,
+        ...scopeReceipts
       ],
       draftRevision: {
         artifactRef: input.teachingPlanArtifactRef,
@@ -276,6 +296,8 @@ export class PostgresGate2ArtifactRepository {
         | "accepted"
         | "accepted_with_changes";
       teacherEdits: Record<string, unknown>;
+      lessonRef?: string;
+      preparationTaskRef?: string;
       writeContext: WriteContext;
     }
   ): Promise<{
@@ -293,6 +315,16 @@ export class PostgresGate2ArtifactRepository {
       "teacher-reviewed-teaching-plan"
     );
     const title = "一次函数斜率与图像关系｜教师审阅版";
+    const supersededReceipts =
+      input.lessonRef && input.preparationTaskRef
+        ? await this.supersedeActiveReview(client, {
+            artifactRef: input.artifactRef,
+            lessonRef: input.lessonRef,
+            preparationTaskRef: input.preparationTaskRef,
+            supersededByRevisionRef: revisionRef,
+            writeContext: input.writeContext
+          })
+        : [];
     await this.base.insertRevision(client, {
       revisionRef,
       artifactRef: input.artifactRef,
@@ -346,6 +378,21 @@ export class PostgresGate2ArtifactRepository {
         "teacher-reviewed-teaching-plan-outbox"
       )
     });
+    const scopeReceipts =
+      input.lessonRef && input.preparationTaskRef
+        ? await this.insertTeachingPlanScope(client, {
+            artifactRef: input.artifactRef,
+            revisionRef,
+            lessonRef: input.lessonRef,
+            preparationTaskRef: input.preparationTaskRef,
+            lifecycleStatus: "active_in_review",
+            eventName: "TeachingPlanReviewActivated",
+            eventPayload: {
+              parentRevisionRef: input.parentRevisionRef
+            },
+            writeContext: input.writeContext
+          })
+        : [];
     return {
       revision: {
         artifactRef: input.artifactRef,
@@ -362,8 +409,138 @@ export class PostgresGate2ArtifactRepository {
         content: input.content,
         createdAt: input.writeContext.createdAt
       },
-      receipts: [revisionReceipt, outboxReceipt]
+      receipts: [
+        revisionReceipt,
+        outboxReceipt,
+        ...supersededReceipts,
+        ...scopeReceipts
+      ]
     };
+  }
+
+  async insertTeachingPlanSeedScope(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      revisionRef: string;
+      lessonRef: string;
+      writeContext: WriteContext;
+    }
+  ): Promise<readonly FormalWriteReceipt[]> {
+    return this.insertTeachingPlanScope(client, {
+      artifactRef: input.artifactRef,
+      revisionRef: input.revisionRef,
+      lessonRef: input.lessonRef,
+      lifecycleStatus: "current_approved",
+      eventName: "TeachingPlanApprovedForLesson",
+      eventPayload: {
+        source: "synthetic-seed"
+      },
+      writeContext: input.writeContext
+    });
+  }
+
+  async getTeachingPlanRevisionScope(
+    executor: SqlExecutor,
+    revisionRef: string
+  ): Promise<
+    | {
+        artifactRef: string;
+        revisionRef: string;
+        lessonRef: string;
+        preparationTaskRef: string | null;
+        lifecycleStatus:
+          | "draft"
+          | "active_in_review"
+          | "superseded"
+          | "current_approved"
+          | "historical_approved";
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      artifact_ref: string;
+      revision_ref: string;
+      lesson_ref: string;
+      preparation_task_ref: string | null;
+      lifecycle_status:
+        | "draft"
+        | "active_in_review"
+        | "superseded"
+        | "current_approved"
+        | "historical_approved";
+    }>(
+      `SELECT artifact_ref, revision_ref, lesson_ref,
+              preparation_task_ref, lifecycle_status
+         FROM artifact.teaching_plan_scope_lifecycle
+        WHERE revision_ref = $1`,
+      [revisionRef]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          artifactRef: row.artifact_ref,
+          revisionRef: row.revision_ref,
+          lessonRef: row.lesson_ref,
+          preparationTaskRef: row.preparation_task_ref,
+          lifecycleStatus: row.lifecycle_status
+        }
+      : undefined;
+  }
+
+  async listLessonTeachingPlanRevisions(
+    executor: SqlExecutor,
+    lessonRef: string
+  ): Promise<
+    Array<{
+      revision: StructuredTeachingPlanRevision;
+      lifecycleStatus:
+        | "draft"
+        | "active_in_review"
+        | "superseded"
+        | "current_approved"
+        | "historical_approved";
+      preparationTaskRef: string | null;
+    }>
+  > {
+    const result = await executor.query<
+      StructuredRevisionRow & {
+        lifecycle_status:
+          | "draft"
+          | "active_in_review"
+          | "superseded"
+          | "current_approved"
+          | "historical_approved";
+        preparation_task_ref: string | null;
+      }
+    >(
+      `SELECT revision.revision_ref, revision.artifact_ref,
+              revision.revision_number,
+              revision.parent_revision_ref,
+              revision.revision_state, revision.title,
+              revision.structured_content,
+              revision.teacher_selection,
+              revision.created_at,
+              scope.lifecycle_status,
+              scope.preparation_task_ref
+         FROM artifact.teaching_plan_scope_lifecycle AS scope
+         JOIN artifact.artifact_revision AS revision
+           ON revision.revision_ref = scope.revision_ref
+        WHERE scope.lesson_ref = $1
+        ORDER BY revision.revision_number DESC`,
+      [lessonRef]
+    );
+    return result.rows.map((row) => {
+      const revision = toStructuredRevision(row);
+      return {
+        revision:
+          row.lifecycle_status === "superseded"
+            ? { ...revision, state: "superseded" }
+            : revision,
+        lifecycleStatus: row.lifecycle_status,
+        preparationTaskRef: row.preparation_task_ref
+      };
+    });
   }
 
   async getCurrentApprovedTeachingPlan(
@@ -474,6 +651,8 @@ export class PostgresGate2ArtifactRepository {
     input: {
       inReviewRevision: StructuredTeachingPlanRevision;
       previousApprovedRevisionRef: string;
+      lessonRef?: string;
+      preparationTaskRef?: string;
       writeContext: WriteContext;
     }
   ): Promise<{
@@ -549,6 +728,54 @@ export class PostgresGate2ArtifactRepository {
         "approved-teaching-plan-outbox"
       )
     });
+    const scopeReceipts: FormalWriteReceipt[] = [];
+    if (input.lessonRef && input.preparationTaskRef) {
+      await client.query(
+        `UPDATE artifact.teaching_plan_scope_lifecycle
+            SET lifecycle_status = 'historical_approved',
+                superseded_by_revision_ref = $2,
+                updated_at = $3
+          WHERE lesson_ref = $1
+            AND lifecycle_status = 'current_approved'`,
+        [
+          input.lessonRef,
+          revisionRef,
+          input.writeContext.createdAt
+        ]
+      );
+      await client.query(
+        `UPDATE artifact.teaching_plan_scope_lifecycle
+            SET lifecycle_status = 'superseded',
+                superseded_by_revision_ref = $2,
+                updated_at = $3
+          WHERE lesson_ref = $1
+            AND revision_ref = $4
+            AND lifecycle_status = 'active_in_review'`,
+        [
+          input.lessonRef,
+          revisionRef,
+          input.writeContext.createdAt,
+          input.inReviewRevision.revisionRef
+        ]
+      );
+      scopeReceipts.push(
+        ...(await this.insertTeachingPlanScope(client, {
+          artifactRef: input.inReviewRevision.artifactRef,
+          revisionRef,
+          lessonRef: input.lessonRef,
+          preparationTaskRef: input.preparationTaskRef,
+          lifecycleStatus: "current_approved",
+          eventName: "TeachingPlanApprovedForLesson",
+          eventPayload: {
+            inReviewRevisionRef:
+              input.inReviewRevision.revisionRef,
+            previousApprovedRevisionRef:
+              input.previousApprovedRevisionRef
+          },
+          writeContext: input.writeContext
+        }))
+      );
+    }
     return {
       revision: {
         artifactRef: input.inReviewRevision.artifactRef,
@@ -564,7 +791,11 @@ export class PostgresGate2ArtifactRepository {
         content: input.inReviewRevision.content,
         createdAt: input.writeContext.createdAt
       },
-      receipts: [revisionReceipt, outboxReceipt]
+      receipts: [
+        revisionReceipt,
+        outboxReceipt,
+        ...scopeReceipts
+      ]
     };
   }
 
@@ -695,6 +926,161 @@ export class PostgresGate2ArtifactRepository {
     }));
   }
 
+  private async supersedeActiveReview(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      lessonRef: string;
+      preparationTaskRef: string;
+      supersededByRevisionRef: string;
+      writeContext: WriteContext;
+    }
+  ): Promise<readonly FormalWriteReceipt[]> {
+    const result = await client.query<{ revision_ref: string }>(
+      `UPDATE artifact.teaching_plan_scope_lifecycle
+          SET lifecycle_status = 'superseded',
+              superseded_by_revision_ref = $2,
+              updated_at = $3
+        WHERE lesson_ref = $1
+          AND lifecycle_status = 'active_in_review'
+      RETURNING revision_ref`,
+      [
+        input.lessonRef,
+        input.supersededByRevisionRef,
+        input.writeContext.createdAt
+      ]
+    );
+    const receipts: FormalWriteReceipt[] = [];
+    for (const row of result.rows) {
+      receipts.push(
+        ...(await this.insertScopeEvent(client, {
+          artifactRef: input.artifactRef,
+          revisionRef: row.revision_ref,
+          lessonRef: input.lessonRef,
+          preparationTaskRef: input.preparationTaskRef,
+          eventName: "TeachingPlanReviewSuperseded",
+          eventPayload: {
+            supersededByRevisionRef:
+              input.supersededByRevisionRef
+          },
+          writeContext: input.writeContext
+        }))
+      );
+    }
+    return receipts;
+  }
+
+  private async insertTeachingPlanScope(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      revisionRef: string;
+      lessonRef: string;
+      preparationTaskRef?: string;
+      lifecycleStatus:
+        | "draft"
+        | "active_in_review"
+        | "superseded"
+        | "current_approved"
+        | "historical_approved";
+      eventName:
+        | "TeachingPlanDraftScoped"
+        | "TeachingPlanReviewActivated"
+        | "TeachingPlanReviewSuperseded"
+        | "TeachingPlanApprovedForLesson";
+      eventPayload: Record<string, unknown>;
+      writeContext: WriteContext;
+    }
+  ): Promise<readonly FormalWriteReceipt[]> {
+    const scopeRef = `teaching-plan-scope:${input.revisionRef}`;
+    const metadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      `teaching-plan-scope:${input.revisionRef}`
+    );
+    await client.query(
+      `INSERT INTO artifact.teaching_plan_scope_lifecycle (
+         scope_ref, artifact_ref, revision_ref, lesson_ref,
+         preparation_task_ref, lifecycle_status,
+         superseded_by_revision_ref,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, NULL,
+         $7, $8, $9, $10, $11, $12, $13, $13
+       )`,
+      [
+        scopeRef,
+        input.artifactRef,
+        input.revisionRef,
+        input.lessonRef,
+        input.preparationTaskRef ?? null,
+        input.lifecycleStatus,
+        ...formalMetadataValues(metadata)
+      ]
+    );
+    return [
+      createReceipt({
+        writeRef: scopeRef,
+        recordType: "TeachingPlanScopeLifecycle",
+        metadata
+      }),
+      ...(await this.insertScopeEvent(client, input))
+    ];
+  }
+
+  private async insertScopeEvent(
+    client: PostgresClient,
+    input: {
+      artifactRef: string;
+      revisionRef: string;
+      lessonRef: string;
+      preparationTaskRef?: string;
+      eventName:
+        | "TeachingPlanDraftScoped"
+        | "TeachingPlanReviewActivated"
+        | "TeachingPlanReviewSuperseded"
+        | "TeachingPlanApprovedForLesson";
+      eventPayload: Record<string, unknown>;
+      writeContext: WriteContext;
+    }
+  ): Promise<readonly FormalWriteReceipt[]> {
+    const eventRef = `teaching-plan-scope-event:${randomUUID()}`;
+    const metadata = createWriteMetadata(
+      input.writeContext,
+      "artifact",
+      `teaching-plan-scope-event:${randomUUID()}`
+    );
+    await client.query(
+      `INSERT INTO artifact.teaching_plan_scope_event (
+         event_ref, artifact_ref, revision_ref, lesson_ref,
+         preparation_task_ref, event_name, event_payload,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7,
+         $8, $9, $10, $11, $12, $13, $14
+       )`,
+      [
+        eventRef,
+        input.artifactRef,
+        input.revisionRef,
+        input.lessonRef,
+        input.preparationTaskRef ?? null,
+        input.eventName,
+        toPostgresJson(input.eventPayload),
+        ...formalMetadataValues(metadata)
+      ]
+    );
+    return [
+      createReceipt({
+        writeRef: eventRef,
+        recordType: "TeachingPlanScopeEvent",
+        metadata
+      })
+    ];
+  }
+
   private async nextRevisionNumber(
     client: PostgresClient,
     artifactRef: string
@@ -771,6 +1157,7 @@ interface StructuredRevisionRow {
     | "draft"
     | "proposal"
     | "in_review"
+    | "superseded"
     | "approved"
     | "published";
   title: string;

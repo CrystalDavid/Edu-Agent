@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import {
   ApproveTeachingPlanResultSchema,
+  AuthorizedContextPlanSchema,
   CreateTeacherCopilotTaskResultSchema,
   SuggestionDispositionResultSchema,
   TeachingPlanSchema,
@@ -41,11 +42,18 @@ import {
   MockModelProvider
 } from "../modules/capability-integration/infrastructure/mock-model-provider.js";
 import {
+  PostgresGate25EducationRepository
+} from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
+import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
   PostgresGovernanceRepository
 } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
+import {
+  PostgresGate25WorkRepository,
+  type StoredLessonPreparationTask
+} from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
 import {
   PostgresGate2WorkRepository
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
@@ -147,6 +155,8 @@ export class PostgresGate2TeacherCopilotService {
     private readonly work = new PostgresWorkRepository(),
     private readonly gate2Work =
       new PostgresGate2WorkRepository(),
+    private readonly gate25Work =
+      new PostgresGate25WorkRepository(),
     private readonly runtime = new PostgresRuntimeRepository(),
     private readonly gate2Runtime =
       new PostgresGate2RuntimeRepository(),
@@ -155,6 +165,8 @@ export class PostgresGate2TeacherCopilotService {
     private readonly artifacts =
       new PostgresGate2ArtifactRepository(),
     private readonly education = new PostgresEducationRepository(),
+    private readonly gate25Education =
+      new PostgresGate25EducationRepository(),
     private readonly model = new MockModelProvider()
   ) {}
 
@@ -209,6 +221,125 @@ export class PostgresGate2TeacherCopilotService {
         });
       }
 
+      let preparationTask:
+        | StoredLessonPreparationTask
+        | undefined;
+      if (input.request.preparationTaskRef) {
+        preparationTask =
+          await this.gate25Work.lockPreparationTask(
+            client,
+            input.tenantRef,
+            input.request.preparationTaskRef
+          );
+        if (!preparationTask) {
+          throw new NotFoundError(
+            "The lesson-preparation Task was not found."
+          );
+        }
+        if (
+          input.request.expectedPreparationTaskVersion ===
+          undefined
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_VERSION_REQUIRED",
+            "A Lesson-scoped Copilot command requires the expected Work Task version.",
+            {
+              taskRef: preparationTask.taskRef,
+              actualVersion: preparationTask.version
+            }
+          );
+        }
+        if (
+          input.request.expectedPreparationTaskVersion !==
+          preparationTask.version
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_VERSION_CONFLICT",
+            "The Work Task changed before the Copilot run started.",
+            {
+              expectedVersion:
+                input.request.expectedPreparationTaskVersion,
+              actualVersion: preparationTask.version,
+              status: preparationTask.status
+            }
+          );
+        }
+        if (
+          preparationTask.courseRunRef !==
+            input.request.courseRunRef ||
+          preparationTask.curriculumUnitRef !==
+            input.request.curriculumUnitRef ||
+          preparationTask.lessonRef !== input.request.lessonRef
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_CONTEXT_MISMATCH",
+            "The Copilot request does not match the Task-owned lesson context.",
+            {
+              preparationTaskRef: preparationTask.taskRef,
+              courseRunRef: preparationTask.courseRunRef,
+              curriculumUnitRef:
+                preparationTask.curriculumUnitRef,
+              lessonRef: preparationTask.lessonRef
+            }
+          );
+        }
+        if (
+          input.request.workingSetVersion !==
+          preparationTask.workingSet.version
+        ) {
+          throw new DomainConflictError(
+            "TASK_WORKING_SET_VERSION_CONFLICT",
+            "The selected context changed before the Copilot run was sealed.",
+            {
+              expectedWorkingSetVersion:
+                input.request.workingSetVersion,
+              actualWorkingSetVersion:
+                preparationTask.workingSet.version
+            }
+          );
+        }
+        const sameReferences = (
+          left: readonly string[],
+          right: readonly string[]
+        ) =>
+          JSON.stringify([...new Set(left)].sort()) ===
+          JSON.stringify([...new Set(right)].sort());
+        if (
+          !sameReferences(
+            input.request.learningObjectiveRefs,
+            preparationTask.workingSet.learningObjectiveRefs
+          ) ||
+          !sameReferences(
+            input.request.selectedEvidenceRefs,
+            preparationTask.workingSet.evidenceRefs
+          )
+        ) {
+          throw new DomainConflictError(
+            "TASK_WORKING_SET_SELECTION_MISMATCH",
+            "The request must use the current TaskWorkingSet selections.",
+            {
+              workingSetVersion:
+                preparationTask.workingSet.version,
+              expectedPreparationTaskVersion:
+                input.request.expectedPreparationTaskVersion
+            }
+          );
+        }
+        if (
+          preparationTask.status === "ready_for_use" ||
+          preparationTask.status === "cancelled"
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_REOPEN_REQUIRED",
+            "Reopen the Task explicitly before requesting another plan.",
+            {
+              status: preparationTask.status,
+              taskRef: preparationTask.taskRef
+            }
+          );
+        }
+      }
+
       const educationContext =
         await this.education.getTeacherCopilotContext(client, {
           tenantRef: input.tenantRef,
@@ -230,12 +361,34 @@ export class PostgresGate2TeacherCopilotService {
         );
       }
       const baseline =
-        await this.artifacts.getCurrentApprovedTeachingPlan(
-          client,
-          educationContext.teachingPlanArtifactRef
-        );
+        preparationTask?.workingSet.baselineTeachingPlanRef
+          ? await this.artifacts.getTeachingPlanRevision(
+              client,
+              preparationTask.workingSet
+                .baselineTeachingPlanRef
+            )
+          : await this.artifacts.getCurrentApprovedTeachingPlan(
+              client,
+              educationContext.teachingPlanArtifactRef
+            );
       if (!baseline) {
         throw new NotFoundError("TeachingPlan 基线不存在。");
+      }
+      if (
+        preparationTask &&
+        (baseline.artifactRef !==
+          educationContext.teachingPlanArtifactRef ||
+          baseline.state !== "approved")
+      ) {
+        throw new DomainConflictError(
+          "LESSON_PREPARATION_BASELINE_INVALID",
+          "The TaskWorkingSet baseline is not an immutable approved TeachingPlan.",
+          {
+            baselineTeachingPlanRef:
+              preparationTask.workingSet
+                .baselineTeachingPlanRef
+          }
+        );
       }
 
       const availableEvidenceRefs = [
@@ -277,6 +430,24 @@ export class PostgresGate2TeacherCopilotService {
           ...new Set(input.request.learningObjectiveRefs)
         ],
         selectedEvidenceRefs: evidenceRefs,
+        ...(preparationTask
+          ? {
+              preparationTaskRef: preparationTask.taskRef,
+              curriculumUnitRef:
+                preparationTask.curriculumUnitRef,
+              lessonRef: preparationTask.lessonRef,
+              ...(preparationTask.workingSet
+                .baselineTeachingPlanRef
+                ? {
+                    baselineTeachingPlanRef:
+                      preparationTask.workingSet
+                        .baselineTeachingPlanRef
+                  }
+                : {}),
+              workingSetVersion:
+                preparationTask.workingSet.version
+            }
+          : {}),
         createdAt: now,
         requestVersion: input.request.requestVersion
       };
@@ -287,12 +458,15 @@ export class PostgresGate2TeacherCopilotService {
           )
         )
       );
-      const taskRef = `task:${randomUUID()}`;
+      const taskRef =
+        preparationTask?.taskRef ?? `task:${randomUUID()}`;
       const taskRunRef = `task-run:${randomUUID()}`;
       const agentRunRef = `agent-run:${randomUUID()}`;
       const contractRef = `interaction-contract:${randomUUID()}`;
       const contextManifestRef =
         `context-manifest:${randomUUID()}`;
+      const authorizedContextPlanRef =
+        `authorized-context-plan:${randomUUID()}`;
       const runManifestRef = `run-manifest:${randomUUID()}`;
       const modelExecutionRef =
         `model-execution:${randomUUID()}`;
@@ -372,50 +546,77 @@ export class PostgresGate2TeacherCopilotService {
         })
       ];
 
-      receipts.push(
-        ...(await this.work.insertTaskBundle(client, {
-          task: {
+      if (preparationTask) {
+        const attempt =
+          await this.gate25Work.nextTaskRunAttempt(
+            client,
+            taskRef
+          );
+        receipts.push(
+          ...(await this.gate25Work.insertTaskRun(client, {
+            taskRunRef,
             taskRef,
-            title: taskRequest.requestText.slice(0, 120),
-            status: "completed",
-            taskKind: "TeacherCopilotLessonAdjustment",
-            caseRef: goal.caseRef,
-            goalRef: goal.goalRef,
+            attempt,
             request: taskRequest,
             metadata: createWriteMetadata(
               writeContext,
               "work",
-              "teacher-copilot-task"
-            )
-          },
-          taskRun: {
-            taskRunRef,
-            taskRef,
-            attempt: 1,
-            status: "completed",
-            metadata: createWriteMetadata(
-              writeContext,
-              "work",
-              "teacher-copilot-task-run"
-            )
-          },
-          outbox: {
+              "lesson-preparation-copilot-task-run"
+            ),
             outboxRef: `outbox:${randomUUID()}`,
-            eventName: "TeacherCopilotTaskCompleted",
-            aggregateRef: taskRunRef,
-            payload: {
-              taskRef,
-              goalRef: goal.goalRef,
-              requestVersion: taskRequest.requestVersion
-            },
-            metadata: createWriteMetadata(
+            outboxMetadata: createWriteMetadata(
               writeContext,
               "work",
-              "teacher-copilot-task-outbox"
+              "lesson-preparation-copilot-task-run-outbox"
             )
-          }
-        }))
-      );
+          }))
+        );
+      } else {
+        receipts.push(
+          ...(await this.work.insertTaskBundle(client, {
+            task: {
+              taskRef,
+              title: taskRequest.requestText.slice(0, 120),
+              status: "completed",
+              taskKind: "TeacherCopilotLessonAdjustment",
+              caseRef: goal.caseRef,
+              goalRef: goal.goalRef,
+              request: taskRequest,
+              metadata: createWriteMetadata(
+                writeContext,
+                "work",
+                "teacher-copilot-task"
+              )
+            },
+            taskRun: {
+              taskRunRef,
+              taskRef,
+              attempt: 1,
+              status: "completed",
+              metadata: createWriteMetadata(
+                writeContext,
+                "work",
+                "teacher-copilot-task-run"
+              )
+            },
+            outbox: {
+              outboxRef: `outbox:${randomUUID()}`,
+              eventName: "TeacherCopilotTaskCompleted",
+              aggregateRef: taskRunRef,
+              payload: {
+                taskRef,
+                goalRef: goal.goalRef,
+                requestVersion: taskRequest.requestVersion
+              },
+              metadata: createWriteMetadata(
+                writeContext,
+                "work",
+                "teacher-copilot-task-outbox"
+              )
+            }
+          }))
+        );
+      }
 
       const contractPayload = {
         taskRef,
@@ -464,6 +665,71 @@ export class PostgresGate2TeacherCopilotService {
           )
         })
       );
+
+      const authorizedContextPlan = preparationTask
+        ? AuthorizedContextPlanSchema.parse({
+            authorizedContextPlanRef,
+            taskRef,
+            taskRunRef,
+            workingSetVersion:
+              preparationTask.workingSet.version,
+            authorizedResourceRefs: [
+              preparationTask.courseRunRef,
+              preparationTask.curriculumUnitRef,
+              preparationTask.lessonRef,
+              ...preparationTask.workingSet
+                .learningObjectiveRefs,
+              ...(preparationTask.workingSet
+                .baselineTeachingPlanRef
+                ? [
+                    preparationTask.workingSet
+                      .baselineTeachingPlanRef
+                  ]
+                : [])
+            ],
+            authorizedEvidenceRefs: evidenceRefs,
+            deniedResourceRefs: [],
+            requestedFieldMask:
+              preparationTask.workingSet.requestedFieldMask,
+            authorizationDecisionRef: decisionRef,
+            contentHash: hash({
+              taskRef,
+              taskRunRef,
+              workingSetVersion:
+                preparationTask.workingSet.version,
+              resourceRefs: [
+                preparationTask.courseRunRef,
+                preparationTask.curriculumUnitRef,
+                preparationTask.lessonRef,
+                ...preparationTask.workingSet
+                  .learningObjectiveRefs,
+                preparationTask.workingSet
+                  .baselineTeachingPlanRef
+              ],
+              evidenceRefs,
+              requestedFieldMask:
+                preparationTask.workingSet
+                  .requestedFieldMask,
+              authorizationDecisionRef: decisionRef
+            }),
+            resolvedAt: now
+          })
+        : undefined;
+      if (authorizedContextPlan) {
+        receipts.push(
+          await this.gate2Runtime.insertAuthorizedContextPlan(
+            client,
+            {
+              ...authorizedContextPlan,
+              metadata: createWriteMetadata(
+                writeContext,
+                "runtime",
+                "lesson-preparation-authorized-context-plan"
+              )
+            }
+          )
+        );
+      }
 
       receipts.push(
         ...(await this.capability.insertModelExecutionBundle(
@@ -574,17 +840,27 @@ export class PostgresGate2TeacherCopilotService {
         await this.gate2Runtime.insertContextManifest(client, {
           contextManifestRef,
           agentRunRef,
-          resourceRefs: [
-            input.request.courseRunRef,
-            goal.caseRef,
-            goal.goalRef,
-            educationContext.objective.objectiveRef,
-            baseline.revisionRef
-          ],
+          resourceRefs: authorizedContextPlan
+            ? authorizedContextPlan.authorizedResourceRefs
+            : [
+                input.request.courseRunRef,
+                goal.caseRef,
+                goal.goalRef,
+                educationContext.objective.objectiveRef,
+                baseline.revisionRef
+              ],
           evidenceRefs,
           unknowns: knownGaps,
-          requestedFieldMask: decision.requestedFieldMask,
+          requestedFieldMask:
+            authorizedContextPlan?.requestedFieldMask ??
+            decision.requestedFieldMask,
           taskRef,
+          ...(authorizedContextPlan
+            ? {
+                authorizedContextPlanRef:
+                  authorizedContextPlan.authorizedContextPlanRef
+              }
+            : {}),
           requestSummary: taskRequest,
           metadata: createWriteMetadata(
             writeContext,
@@ -607,6 +883,12 @@ export class PostgresGate2TeacherCopilotService {
           parentTeachingPlanRevisionRef: baseline.revisionRef,
           draftRevisionRef,
           draftPlan,
+          ...(preparationTask
+            ? {
+                lessonRef: preparationTask.lessonRef,
+                preparationTaskRef: preparationTask.taskRef
+              }
+            : {}),
           writeContext
         });
       receipts.push(...artifactResult.receipts);
@@ -614,6 +896,7 @@ export class PostgresGate2TeacherCopilotService {
         await this.gate2Work.insertTaskResult(client, {
           taskResultRef,
           taskRef,
+          taskRunRef,
           goalRef: goal.goalRef,
           proposalArtifactRef,
           proposalRevisionRef,
@@ -627,6 +910,98 @@ export class PostgresGate2TeacherCopilotService {
           )
         })
       );
+
+      if (
+        preparationTask &&
+        preparationTask.status !== "completed" &&
+        preparationTask.status !== "awaiting_plan_review"
+      ) {
+        let currentStatus = preparationTask.status;
+        let currentVersion = preparationTask.version;
+        if (currentStatus === "planned") {
+          const started = await this.gate25Work.transition(
+            client,
+            {
+              taskRef,
+              fromStatus: "planned",
+              toStatus: "in_progress",
+              expectedVersion: currentVersion,
+              reason: "首次 Copilot Run 启动备课",
+              historyRef: `preparation-history:${randomUUID()}`,
+              outboxRef: `outbox:${randomUUID()}`,
+              eventName: "LessonPreparationStarted",
+              metadata: {
+                transition: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-start-preparation"
+                ),
+                history: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-start-preparation-history"
+                ),
+                outbox: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-start-preparation-outbox"
+                )
+              }
+            }
+          );
+          receipts.push(...started.receipts);
+          currentStatus = "in_progress";
+          currentVersion = started.version;
+        }
+        if (currentStatus === "in_progress") {
+          const awaiting = await this.gate25Work.transition(
+            client,
+            {
+              taskRef,
+              fromStatus: "in_progress",
+              toStatus: "awaiting_plan_review",
+              expectedVersion: currentVersion,
+              reason: "已生成可恢复的待审 TeachingPlan Proposal",
+              historyRef: `preparation-history:${randomUUID()}`,
+              outboxRef: `outbox:${randomUUID()}`,
+              eventName: "TeachingPlanReviewCreated",
+              metadata: {
+                transition: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-awaiting-plan-review"
+                ),
+                history: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-awaiting-plan-review-history"
+                ),
+                outbox: createWriteMetadata(
+                  writeContext,
+                  "work",
+                  "copilot-awaiting-plan-review-outbox"
+                )
+              }
+            }
+          );
+          receipts.push(...awaiting.receipts);
+          receipts.push(
+            await this.gate25Education.updatePreparationProjection(
+              client,
+              {
+                lessonRef: preparationTask.lessonRef,
+                state: "awaiting_plan_review",
+                activePreparationTaskRef: taskRef,
+                metadata: createWriteMetadata(
+                  writeContext,
+                  "education",
+                  "copilot-awaiting-plan-review-projection"
+                )
+              }
+            )
+          );
+        }
+      }
 
       const result = CreateTeacherCopilotTaskResultSchema.parse({
         replayed: false,
@@ -642,7 +1017,14 @@ export class PostgresGate2TeacherCopilotService {
         draftRevision: artifactResult.draftRevision,
         strategies: modelResult.strategies,
         diffsByStrategy,
-        authorizationDecisionRef: decisionRef
+        authorizationDecisionRef: decisionRef,
+        ...(preparationTask
+          ? {
+              preparationTaskRef: preparationTask.taskRef,
+              lessonRef: preparationTask.lessonRef,
+              authorizedContextPlanRef
+            }
+          : {})
       });
       await this.governance.completeIdempotency(client, {
         rootKey,
@@ -732,6 +1114,12 @@ export class PostgresGate2TeacherCopilotService {
       if (!taskResult) {
         throw new NotFoundError("待处置建议不存在。");
       }
+      const preparationTask =
+        await this.gate25Work.lockPreparationTask(
+          client,
+          input.tenantRef,
+          taskResult.taskRef
+        );
       const goal = await this.gate2Work.getDemoCaseAndGoal(
         client,
         input.tenantRef,
@@ -819,6 +1207,21 @@ export class PostgresGate2TeacherCopilotService {
       if (!selectedStrategy) {
         throw new NotFoundError("所选策略不存在。");
       }
+      if (
+        preparationTask?.status === "completed" &&
+        (input.request.disposition === "accepted" ||
+          input.request.disposition ===
+            "accepted_with_changes")
+      ) {
+        throw new DomainConflictError(
+          "LESSON_PREPARATION_REOPEN_REQUIRED",
+          "已完成的备课 Task 必须先由教师显式 reopen，才能形成新的 in-review TeachingPlan。",
+          {
+            taskRef: preparationTask.taskRef,
+            status: preparationTask.status
+          }
+        );
+      }
 
       const decision: AuthorizationDecision = {
         decisionRef,
@@ -880,6 +1283,12 @@ export class PostgresGate2TeacherCopilotService {
             selectedStrategyId: selectedStrategy.strategyId,
             disposition: input.request.disposition,
             teacherEdits: input.request.teacherEdits,
+            ...(preparationTask
+              ? {
+                  lessonRef: preparationTask.lessonRef,
+                  preparationTaskRef: preparationTask.taskRef
+                }
+              : {}),
             writeContext
           });
         resultingRevision = revisionResult.revision;
@@ -936,6 +1345,59 @@ export class PostgresGate2TeacherCopilotService {
           )
         })
       );
+      if (
+        preparationTask?.status === "awaiting_plan_review" &&
+        (input.request.disposition === "rejected" ||
+          input.request.disposition === "deferred")
+      ) {
+        const returnedToProgress =
+          await this.gate25Work.transition(client, {
+            taskRef: preparationTask.taskRef,
+            fromStatus: "awaiting_plan_review",
+            toStatus: "in_progress",
+            expectedVersion: preparationTask.version,
+            reason:
+              input.request.disposition === "rejected"
+                ? "教师拒绝本次建议，备课继续进行"
+                : "教师稍后处理本次建议，备课继续进行",
+            historyRef: `preparation-history:${randomUUID()}`,
+            outboxRef: `outbox:${randomUUID()}`,
+            eventName: "LessonPreparationReviewContinued",
+            metadata: {
+              transition: createWriteMetadata(
+                writeContext,
+                "work",
+                "disposition-return-to-progress"
+              ),
+              history: createWriteMetadata(
+                writeContext,
+                "work",
+                "disposition-return-to-progress-history"
+              ),
+              outbox: createWriteMetadata(
+                writeContext,
+                "work",
+                "disposition-return-to-progress-outbox"
+              )
+            }
+          });
+        receipts.push(...returnedToProgress.receipts);
+        receipts.push(
+          await this.gate25Education.updatePreparationProjection(
+            client,
+            {
+              lessonRef: preparationTask.lessonRef,
+              state: "in_progress",
+              activePreparationTaskRef: preparationTask.taskRef,
+              metadata: createWriteMetadata(
+                writeContext,
+                "education",
+                "disposition-return-to-progress-projection"
+              )
+            }
+          )
+        );
+      }
 
       const result = SuggestionDispositionResultSchema.parse({
         replayed: false,
@@ -1059,6 +1521,85 @@ export class PostgresGate2TeacherCopilotService {
           }
         );
       }
+      const revisionScope =
+        await this.artifacts.getTeachingPlanRevisionScope(
+          client,
+          inReview.revisionRef
+        );
+      let preparationTask:
+        | StoredLessonPreparationTask
+        | undefined;
+      if (revisionScope?.preparationTaskRef) {
+        if (
+          input.request.preparationTaskRef !==
+            revisionScope.preparationTaskRef ||
+          input.request.expectedTaskVersion === undefined
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_APPROVAL_CONTEXT_REQUIRED",
+            "Scoped TeachingPlan approval requires the Task reference and expected Task version.",
+            {
+              preparationTaskRef:
+                revisionScope.preparationTaskRef,
+              lessonRef: revisionScope.lessonRef
+            }
+          );
+        }
+        preparationTask =
+          await this.gate25Work.lockPreparationTask(
+            client,
+            input.tenantRef,
+            revisionScope.preparationTaskRef
+          );
+        if (!preparationTask) {
+          throw new NotFoundError(
+            "The TeachingPlan preparation Task was not found."
+          );
+        }
+        if (
+          preparationTask.lessonRef !==
+          revisionScope.lessonRef
+        ) {
+          throw new DomainConflictError(
+            "TEACHING_PLAN_TASK_SCOPE_MISMATCH",
+            "The TeachingPlan and Task do not belong to the same Lesson."
+          );
+        }
+        if (
+          preparationTask.version !==
+          input.request.expectedTaskVersion
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_VERSION_CONFLICT",
+            "The preparation Task changed before approval.",
+            {
+              expectedVersion:
+                input.request.expectedTaskVersion,
+              actualVersion: preparationTask.version,
+              status: preparationTask.status
+            }
+          );
+        }
+        if (
+          preparationTask.status !== "awaiting_plan_review"
+        ) {
+          throw new DomainConflictError(
+            "LESSON_PREPARATION_NOT_AWAITING_REVIEW",
+            "Only a Task awaiting plan review can advance to ready-for-use.",
+            {
+              status: preparationTask.status
+            }
+          );
+        }
+      } else if (
+        input.request.preparationTaskRef !== undefined ||
+        input.request.expectedTaskVersion !== undefined
+      ) {
+        throw new DomainConflictError(
+          "TEACHING_PLAN_TASK_SCOPE_MISMATCH",
+          "This legacy TeachingPlan revision is not scoped to a preparation Task."
+        );
+      }
       const lifecycle =
         await this.artifacts.lockTeachingPlanLifecycle(
           client,
@@ -1118,9 +1659,85 @@ export class PostgresGate2TeacherCopilotService {
           inReviewRevision: inReview,
           previousApprovedRevisionRef:
             lifecycle.currentApprovedRevisionRef,
+          ...(preparationTask && revisionScope
+            ? {
+                lessonRef: revisionScope.lessonRef,
+                preparationTaskRef: preparationTask.taskRef
+              }
+            : {}),
           writeContext
         });
       receipts.push(...approval.receipts);
+      let preparationTaskVersion: number | undefined;
+      if (preparationTask && revisionScope) {
+        const updatedWorkingSet =
+          await this.gate25Work.replaceBaselineTeachingPlan(
+            client,
+            {
+              taskRef: preparationTask.taskRef,
+              expectedVersion:
+                preparationTask.workingSet.version,
+              baselineTeachingPlanRef:
+                approval.revision.revisionRef,
+              revisionRef: `working-set-revision:${randomUUID()}`,
+              metadata: createWriteMetadata(
+                writeContext,
+                "work",
+                "approved-plan-working-set-baseline"
+              )
+            }
+          );
+        receipts.push(updatedWorkingSet.receipt);
+        const ready = await this.gate25Work.transition(client, {
+          taskRef: preparationTask.taskRef,
+          fromStatus: "awaiting_plan_review",
+          toStatus: "ready_for_use",
+          expectedVersion: preparationTask.version,
+          approvedPlanRef: approval.revision.revisionRef,
+          reason: "教师批准新的 current TeachingPlan",
+          historyRef: `preparation-history:${randomUUID()}`,
+          outboxRef: `outbox:${randomUUID()}`,
+          eventName: "LessonPreparationReadyForUse",
+          metadata: {
+            transition: createWriteMetadata(
+              writeContext,
+              "work",
+              "teaching-plan-approval-ready"
+            ),
+            history: createWriteMetadata(
+              writeContext,
+              "work",
+              "teaching-plan-approval-ready-history"
+            ),
+            outbox: createWriteMetadata(
+              writeContext,
+              "work",
+              "teaching-plan-approval-ready-outbox"
+            )
+          }
+        });
+        preparationTaskVersion = ready.version;
+        receipts.push(...ready.receipts);
+        receipts.push(
+          ...(await this.gate25Education.bindCurrentApprovedPlan(
+            client,
+            {
+              bindingRef: `lesson-plan-binding:${randomUUID()}`,
+              lessonRef: revisionScope.lessonRef,
+              preparationTaskRef: preparationTask.taskRef,
+              teachingPlanArtifactRef:
+                approval.revision.artifactRef,
+              teachingPlanRevisionRef:
+                approval.revision.revisionRef,
+              metadata: createWriteMetadata(
+                writeContext,
+                "education",
+                "teaching-plan-approval-binding"
+              )
+            }
+          ))
+        );
+      }
       receipts.push(
         await this.gate2Work.insertOutbox(client, {
           outboxRef: `outbox:${randomUUID()}`,
@@ -1145,7 +1762,15 @@ export class PostgresGate2TeacherCopilotService {
         replayed: false,
         approvedRevision: approval.revision,
         previousApprovedRevisionRef:
-          lifecycle.currentApprovedRevisionRef
+          lifecycle.currentApprovedRevisionRef,
+        ...(preparationTask && revisionScope
+          ? {
+              preparationTaskRef: preparationTask.taskRef,
+              lessonRef: revisionScope.lessonRef,
+              preparationStatus: "ready_for_use" as const,
+              preparationTaskVersion
+            }
+          : {})
       });
       await this.governance.completeIdempotency(client, {
         rootKey,

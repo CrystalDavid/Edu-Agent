@@ -7,6 +7,8 @@ import {
   type PendingProposalList,
   type ProposalReviewDetail,
   type RunExplanation,
+  type LessonPreparationStatus,
+  type TaskWorkingSet,
   type TeachingPlanStateView,
   type TeacherWorkspace
 } from "@edu-agent/contracts";
@@ -26,11 +28,17 @@ import {
   PostgresGate2CapabilityRepository
 } from "../modules/capability-integration/infrastructure/postgres-gate2-capability-repository.js";
 import {
+  PostgresGate25EducationRepository
+} from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
+import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
   PostgresGate2GovernanceRepository
 } from "../modules/identity-governance-audit/infrastructure/postgres-gate2-governance-repository.js";
+import {
+  PostgresGate25WorkRepository
+} from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
 import {
   PostgresGate2WorkRepository
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
@@ -43,6 +51,8 @@ export class PostgresGate2ReadService {
   constructor(
     private readonly pool: Pool,
     private readonly work = new PostgresGate2WorkRepository(),
+    private readonly gate25Work =
+      new PostgresGate25WorkRepository(),
     private readonly runtime =
       new PostgresGate2RuntimeRepository(),
     private readonly capability =
@@ -50,6 +60,8 @@ export class PostgresGate2ReadService {
     private readonly artifacts =
       new PostgresGate2ArtifactRepository(),
     private readonly education = new PostgresEducationRepository(),
+    private readonly gate25Education =
+      new PostgresGate25EducationRepository(),
     private readonly governance =
       new PostgresGate2GovernanceRepository()
   ) {}
@@ -139,6 +151,10 @@ export class PostgresGate2ReadService {
         proposalArtifactRef: item.proposalArtifactRef,
         proposalRevisionRef: item.proposalRevisionRef,
         taskRef: item.taskRef,
+        ...(item.preparationTaskRef
+          ? { preparationTaskRef: item.preparationTaskRef }
+          : {}),
+        ...(item.lessonRef ? { lessonRef: item.lessonRef } : {}),
         status: item.disposed ? "disposed" : "pending",
         requestText: item.requestText,
         strategyTitles:
@@ -169,6 +185,10 @@ export class PostgresGate2ReadService {
         proposalArtifactRef: item.proposalArtifactRef,
         proposalRevisionRef: item.proposalRevisionRef,
         taskRef: item.taskRef,
+        ...(item.preparationTaskRef
+          ? { preparationTaskRef: item.preparationTaskRef }
+          : {}),
+        ...(item.lessonRef ? { lessonRef: item.lessonRef } : {}),
         status: "pending",
         requestText: item.requestText,
         strategyTitles:
@@ -420,6 +440,105 @@ export class PostgresGate2ReadService {
       .sort((left, right) =>
         left.occurredAt.localeCompare(right.occurredAt)
       );
+    let lessonPreparation:
+      | {
+          preparationTaskRef: string;
+          lessonRef: string;
+          lessonTitle: string;
+          workStatus: LessonPreparationStatus;
+          workVersion: number;
+          workingSet: TaskWorkingSet;
+          authorizedContextPlan: {
+            authorizedContextPlanRef: string;
+            workingSetVersion: number;
+            authorizedResourceRefs: string[];
+            authorizedEvidenceRefs: string[];
+            deniedResourceRefs: string[];
+            requestedFieldMask: string[];
+            contentHash: string;
+          } | null;
+          planStatus:
+            | "draft"
+            | "active_in_review"
+            | "superseded"
+            | "current_approved"
+            | "historical_approved"
+            | null;
+        }
+      | undefined;
+    if (work.request.preparationTaskRef) {
+      const preparationTask =
+        await this.gate25Work.getPreparationTask(
+          this.pool,
+          input.tenantRef,
+          work.request.preparationTaskRef
+        );
+      const lesson = work.request.lessonRef
+        ? await this.gate25Education.getLesson(
+            this.pool,
+            input.tenantRef,
+            work.request.lessonRef
+          )
+        : undefined;
+      if (!preparationTask || !lesson) {
+        throw new NotFoundError(
+          "The lesson-preparation run context is incomplete."
+        );
+      }
+      const [authorizedPlan, scopedRevisions] =
+        await Promise.all([
+          this.runtime.getLatestAuthorizedContextPlan(
+            this.pool,
+            preparationTask.taskRef
+          ),
+          this.artifacts.listLessonTeachingPlanRevisions(
+            this.pool,
+            lesson.lessonRef
+          )
+        ]);
+      const resultingRevisionRef =
+        work.disposition?.resultingRevisionRef ?? null;
+      const scopedRevision =
+        (resultingRevisionRef
+          ? scopedRevisions.find(
+              (item) =>
+                item.revision.revisionRef ===
+                resultingRevisionRef
+            )
+          : undefined) ??
+        scopedRevisions.find(
+          (item) =>
+            item.preparationTaskRef ===
+              preparationTask.taskRef &&
+            item.lifecycleStatus === "draft"
+        );
+      lessonPreparation = {
+        preparationTaskRef: preparationTask.taskRef,
+        lessonRef: lesson.lessonRef,
+        lessonTitle: lesson.title,
+        workStatus: preparationTask.status,
+        workVersion: preparationTask.version,
+        workingSet: preparationTask.workingSet,
+        authorizedContextPlan: authorizedPlan
+          ? {
+              authorizedContextPlanRef:
+                authorizedPlan.authorizedContextPlanRef,
+              workingSetVersion:
+                authorizedPlan.workingSetVersion,
+              authorizedResourceRefs:
+                authorizedPlan.authorizedResourceRefs,
+              authorizedEvidenceRefs:
+                authorizedPlan.authorizedEvidenceRefs,
+              deniedResourceRefs:
+                authorizedPlan.deniedResourceRefs,
+              requestedFieldMask:
+                authorizedPlan.requestedFieldMask,
+              contentHash: authorizedPlan.contentHash
+            }
+          : null,
+        planStatus: scopedRevision?.lifecycleStatus ?? null
+      };
+    }
 
     return RunExplanationSchema.parse({
       task: {
@@ -451,6 +570,12 @@ export class PostgresGate2ReadService {
       },
       contextManifest: {
         contextManifestRef: runtime.contextManifestRef,
+        ...(runtime.authorizedContextPlanRef
+          ? {
+              authorizedContextPlanRef:
+                runtime.authorizedContextPlanRef
+            }
+          : {}),
         evidenceRefs: runtime.evidenceRefs,
         resourceRefs: runtime.resourceRefs,
         unknowns: runtime.unknowns,
@@ -486,7 +611,8 @@ export class PostgresGate2ReadService {
           }
         : null,
       outbox,
-      auditTimeline
+      auditTimeline,
+      ...(lessonPreparation ? { lessonPreparation } : {})
     });
   }
 

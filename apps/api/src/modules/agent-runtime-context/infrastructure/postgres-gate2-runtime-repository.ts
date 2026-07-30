@@ -1,4 +1,5 @@
 import type {
+  AuthorizedContextPlan,
   FormalWriteMetadata,
   FormalWriteReceipt,
   TeacherTaskRequest
@@ -28,6 +29,7 @@ export class PostgresGate2RuntimeRepository {
       unknowns: readonly string[];
       requestedFieldMask: readonly string[];
       taskRef: string;
+      authorizedContextPlanRef?: string;
       requestSummary: TeacherTaskRequest;
       metadata: FormalWriteMetadata & { owner: "runtime" };
     }
@@ -41,6 +43,7 @@ export class PostgresGate2RuntimeRepository {
          unknowns,
          requested_field_mask,
          task_ref,
+         authorized_context_plan_ref,
          request_summary,
          request_version,
          actor_ref,
@@ -51,8 +54,8 @@ export class PostgresGate2RuntimeRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13, $14, $15, $16
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         $11, $12, $13, $14, $15, $16, $17
        )`,
       [
         input.contextManifestRef,
@@ -62,6 +65,7 @@ export class PostgresGate2RuntimeRepository {
         toPostgresJson(input.unknowns),
         toPostgresJson(input.requestedFieldMask),
         input.taskRef,
+        input.authorizedContextPlanRef ?? null,
         toPostgresJson(input.requestSummary),
         input.requestSummary.requestVersion,
         ...formalMetadataValues(input.metadata)
@@ -72,6 +76,124 @@ export class PostgresGate2RuntimeRepository {
       recordType: "ContextManifest",
       metadata: input.metadata
     });
+  }
+
+  async insertAuthorizedContextPlan(
+    client: PostgresClient,
+    input: AuthorizedContextPlan & {
+      metadata: FormalWriteMetadata & { owner: "runtime" };
+    }
+  ): Promise<FormalWriteReceipt> {
+    await client.query(
+      `INSERT INTO runtime.authorized_context_plan (
+         authorized_context_plan_ref, task_ref, task_run_ref,
+         working_set_version, authorized_resource_refs,
+         authorized_evidence_refs, denied_resource_refs,
+         requested_field_mask, content_hash,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14, $15, $16
+       )`,
+      [
+        input.authorizedContextPlanRef,
+        input.taskRef,
+        input.taskRunRef,
+        input.workingSetVersion,
+        toPostgresJson(input.authorizedResourceRefs),
+        toPostgresJson(input.authorizedEvidenceRefs),
+        toPostgresJson(input.deniedResourceRefs),
+        toPostgresJson(input.requestedFieldMask),
+        input.contentHash,
+        ...formalMetadataValues(input.metadata)
+      ]
+    );
+    return createReceipt({
+      writeRef: input.authorizedContextPlanRef,
+      recordType: "AuthorizedContextPlan",
+      metadata: input.metadata
+    });
+  }
+
+  async getLatestAuthorizedContextPlan(
+    executor: SqlExecutor,
+    taskRef: string
+  ): Promise<AuthorizedContextPlan | undefined> {
+    const result = await executor.query<AuthorizedContextPlanRow>(
+      `SELECT authorized_context_plan_ref, task_ref, task_run_ref,
+              working_set_version, authorized_resource_refs,
+              authorized_evidence_refs, denied_resource_refs,
+              requested_field_mask, authorization_decision_ref,
+              content_hash, created_at
+         FROM runtime.authorized_context_plan
+        WHERE task_ref = $1
+        ORDER BY created_at DESC, authorized_context_plan_ref DESC
+        LIMIT 1`,
+      [taskRef]
+    );
+    return result.rows[0]
+      ? toAuthorizedContextPlan(result.rows[0])
+      : undefined;
+  }
+
+  async getLatestContextManifest(
+    executor: SqlExecutor,
+    taskRef: string
+  ): Promise<
+    | {
+        contextManifestRef: string;
+        agentRunRef: string;
+        taskRef: string;
+        authorizedContextPlanRef: string;
+        resourceRefs: string[];
+        evidenceRefs: string[];
+        unknowns: string[];
+        requestedFieldMask: string[];
+        requestVersion: number;
+        sealedAt: string;
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      context_manifest_ref: string;
+      agent_run_ref: string;
+      task_ref: string;
+      authorized_context_plan_ref: string | null;
+      resource_refs: string[];
+      evidence_refs: string[];
+      unknowns: string[];
+      requested_field_mask: string[];
+      request_version: number;
+      created_at: Date;
+    }>(
+      `SELECT context_manifest_ref, agent_run_ref, task_ref,
+              authorized_context_plan_ref, resource_refs,
+              evidence_refs, unknowns, requested_field_mask,
+              request_version, created_at
+         FROM runtime.context_manifest
+        WHERE task_ref = $1
+          AND authorized_context_plan_ref IS NOT NULL
+        ORDER BY created_at DESC, context_manifest_ref DESC
+        LIMIT 1`,
+      [taskRef]
+    );
+    const row = result.rows[0];
+    return row?.authorized_context_plan_ref
+      ? {
+          contextManifestRef: row.context_manifest_ref,
+          agentRunRef: row.agent_run_ref,
+          taskRef: row.task_ref,
+          authorizedContextPlanRef:
+            row.authorized_context_plan_ref,
+          resourceRefs: row.resource_refs,
+          evidenceRefs: row.evidence_refs,
+          unknowns: row.unknowns,
+          requestedFieldMask: row.requested_field_mask,
+          requestVersion: row.request_version,
+          sealedAt: row.created_at.toISOString()
+        }
+      : undefined;
   }
 
   async getRunExplanation(
@@ -85,6 +207,7 @@ export class PostgresGate2RuntimeRepository {
         modelProfile: string;
         manifestRef: string;
         contextManifestRef: string;
+        authorizedContextPlanRef: string | null;
         evidenceRefs: string[];
         resourceRefs: string[];
         unknowns: string[];
@@ -100,6 +223,7 @@ export class PostgresGate2RuntimeRepository {
       model_profile: string;
       manifest_ref: string;
       context_manifest_ref: string;
+      authorized_context_plan_ref: string | null;
       evidence_refs: string[];
       resource_refs: string[];
       unknowns: string[];
@@ -113,6 +237,7 @@ export class PostgresGate2RuntimeRepository {
          agent_run.model_profile,
          manifest.manifest_ref,
          context.context_manifest_ref,
+         context.authorized_context_plan_ref,
          context.evidence_refs,
          context.resource_refs,
          context.unknowns,
@@ -136,6 +261,8 @@ export class PostgresGate2RuntimeRepository {
           modelProfile: row.model_profile,
           manifestRef: row.manifest_ref,
           contextManifestRef: row.context_manifest_ref,
+          authorizedContextPlanRef:
+            row.authorized_context_plan_ref,
           evidenceRefs: row.evidence_refs,
           resourceRefs: row.resource_refs,
           unknowns: row.unknowns,
@@ -146,4 +273,37 @@ export class PostgresGate2RuntimeRepository {
         }
       : undefined;
   }
+}
+
+interface AuthorizedContextPlanRow {
+  authorized_context_plan_ref: string;
+  task_ref: string;
+  task_run_ref: string;
+  working_set_version: number;
+  authorized_resource_refs: string[];
+  authorized_evidence_refs: string[];
+  denied_resource_refs: string[];
+  requested_field_mask: string[];
+  authorization_decision_ref: string;
+  content_hash: string;
+  created_at: Date;
+}
+
+function toAuthorizedContextPlan(
+  row: AuthorizedContextPlanRow
+): AuthorizedContextPlan {
+  return {
+    authorizedContextPlanRef:
+      row.authorized_context_plan_ref,
+    taskRef: row.task_ref,
+    taskRunRef: row.task_run_ref,
+    workingSetVersion: row.working_set_version,
+    authorizedResourceRefs: row.authorized_resource_refs,
+    authorizedEvidenceRefs: row.authorized_evidence_refs,
+    deniedResourceRefs: row.denied_resource_refs,
+    requestedFieldMask: row.requested_field_mask,
+    authorizationDecisionRef: row.authorization_decision_ref,
+    contentHash: row.content_hash,
+    resolvedAt: row.created_at.toISOString()
+  };
 }

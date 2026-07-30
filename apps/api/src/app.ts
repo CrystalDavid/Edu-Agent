@@ -7,9 +7,12 @@ import express, {
 import {
   apiRoutes,
   ApproveTeachingPlanRequestSchema,
+  CreateLessonPreparationTaskRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
+  LessonPreparationTaskActionRequestSchema,
   SuggestionDispositionRequestSchema,
+  TaskResourceSelectionRequestSchema,
   type ActingContext,
   type TenantContext
 } from "@edu-agent/contracts";
@@ -190,6 +193,399 @@ export function createApp(
   );
 
   if (product) {
+    const preparation = product.services.lessonPreparation;
+    const withProductContext = async (request: Request) =>
+      productContextsFromRequest(
+        request,
+        product,
+        demoIdentity
+      );
+
+    app.get(
+      apiRoutes.teacher.courseRuns,
+      markRoute("product.teacher.course-runs.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.listCourseRuns({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.courseRunPattern,
+      markRoute("product.teacher.course-runs.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getCourseRun({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              courseRunRef: routeParameter(
+                request.params["courseRunRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.courseRunUnitsPattern,
+      markRoute("product.teacher.curriculum-units.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.listUnits({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              courseRunRef: routeParameter(
+                request.params["courseRunRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.unitPattern,
+      markRoute("product.teacher.curriculum-units.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getUnit({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              unitRef: routeParameter(request.params["unitRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.unitLessonsPattern,
+      markRoute("product.teacher.lessons.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.listLessons({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              unitRef: routeParameter(request.params["unitRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonPattern,
+      markRoute("product.teacher.lessons.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getLesson({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(
+                request.params["lessonRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonPreparationSummary,
+      markRoute("product.teacher.lesson-preparation.summary"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getSummary({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.preparationTasks,
+      markRoute("product.teacher.lesson-preparation.tasks.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.listTasks({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.preparationTasks,
+      markRoute("product.teacher.lesson-preparation.tasks.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await preparation.createTask({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateLessonPreparationTaskRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.preparationTaskPattern,
+      markRoute("product.teacher.lesson-preparation.tasks.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getTask({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    const preparationActions = [
+      {
+        path: apiRoutes.teacher.preparationTaskStartPattern,
+        action: "start" as const
+      },
+      {
+        path: apiRoutes.teacher.preparationTaskReopenPattern,
+        action: "reopen" as const
+      },
+      {
+        path: apiRoutes.teacher.preparationTaskCompletePattern,
+        action: "complete" as const
+      },
+      {
+        path: apiRoutes.teacher.preparationTaskCancelPattern,
+        action: "cancel" as const
+      }
+    ];
+    for (const actionRoute of preparationActions) {
+      app.post(
+        actionRoute.path,
+        markRoute(
+          `product.teacher.lesson-preparation.tasks.${actionRoute.action}`
+        ),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            const result = await preparation.transitionTask({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"]),
+              action: actionRoute.action,
+              request:
+                LessonPreparationTaskActionRequestSchema.parse(
+                  request.body
+                )
+            });
+            response
+              .status(result.replayed ? 200 : 201)
+              .json(result);
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.get(
+      apiRoutes.teacher.preparationTaskHistoryPattern,
+      markRoute("product.teacher.lesson-preparation.history"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getHistory({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.taskWorkingSetPattern,
+      markRoute("product.teacher.lesson-preparation.working-set"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getWorkingSet({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    for (const method of ["post", "delete"] as const) {
+      app[method](
+        apiRoutes.teacher.taskResourceSelectionsPattern,
+        markRoute(
+          `product.teacher.lesson-preparation.resource-${method}`
+        ),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            const parsed =
+              TaskResourceSelectionRequestSchema.parse(
+                request.body
+              );
+            const expectedPurpose =
+              method === "post"
+                ? "lesson-preparation.context.add"
+                : "lesson-preparation.context.remove";
+            if (parsed.purpose !== expectedPurpose) {
+              throw new AuthorizationDeniedError(
+                "Resource-selection method and purpose do not match."
+              );
+            }
+            const result =
+              await preparation.updateResourceSelection({
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                taskRef: routeParameter(
+                  request.params["taskRef"]
+                ),
+                operation:
+                  method === "post" ? "add" : "remove",
+                request: parsed
+              });
+            response
+              .status(result.replayed ? 200 : 201)
+              .json(result);
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.get(
+      apiRoutes.teacher.taskAuthorizedContextPlanPattern,
+      markRoute(
+        "product.teacher.lesson-preparation.authorized-context-plan"
+      ),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getLatestAuthorizedContextPlan({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.taskContextManifestPattern,
+      markRoute(
+        "product.teacher.lesson-preparation.context-manifest"
+      ),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getLatestContextManifest({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              taskRef: routeParameter(request.params["taskRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonTeachingPlansPattern,
+      markRoute("product.teacher.lessons.teaching-plans"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await preparation.getLessonTeachingPlans({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(
+                request.params["lessonRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
     app.get(
       apiRoutes.demo.bootstrap,
       markRoute("product.demo.bootstrap"),

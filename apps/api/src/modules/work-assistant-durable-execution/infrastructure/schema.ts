@@ -20,6 +20,11 @@ export const taskTable = workSchema.table("task", {
   goalRef: text("goal_ref"),
   requestPayload: jsonb("request_payload").notNull(),
   requestVersion: integer("request_version").notNull(),
+  version: integer("version").notNull(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "string"
+  }).notNull(),
   ...formalWriteColumns()
 });
 
@@ -28,6 +33,8 @@ export const taskRunTable = workSchema.table("task_run", {
   taskRef: text("task_ref").notNull(),
   attempt: integer("attempt").notNull(),
   status: text("status").notNull(),
+  requestPayload: jsonb("request_payload").notNull(),
+  requestVersion: integer("request_version").notNull(),
   ...formalWriteColumns()
 });
 
@@ -133,6 +140,7 @@ export const goalRecordTable = workSchema.table("goal_record", {
 export const taskResultTable = workSchema.table("task_result", {
   taskResultRef: text("task_result_ref").primaryKey(),
   taskRef: text("task_ref").notNull(),
+  taskRunRef: text("task_run_ref").notNull(),
   goalRef: text("goal_ref"),
   proposalArtifactRef: text("proposal_artifact_ref").notNull(),
   proposalRevisionRef: text("proposal_revision_ref").notNull(),
@@ -142,6 +150,97 @@ export const taskResultTable = workSchema.table("task_result", {
   draftRevisionRef: text("draft_revision_ref").notNull(),
   ...formalWriteColumns()
 });
+
+export const lessonPreparationTaskDetailsTable =
+  workSchema.table("lesson_preparation_task_details", {
+    taskRef: text("task_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    courseRunRef: text("course_run_ref").notNull(),
+    curriculumUnitRef: text("curriculum_unit_ref").notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    dueAt: timestamp("due_at", {
+      withTimezone: true,
+      mode: "string"
+    }),
+    priority: text("priority").notNull(),
+    preparationStatus: text("preparation_status").notNull(),
+    approvedPlanRef: text("approved_plan_ref"),
+    createdBy: text("created_by").notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    ...formalWriteColumns()
+  });
+
+export const taskWorkingSetTable = workSchema.table(
+  "task_working_set",
+  {
+    taskRef: text("task_ref").primaryKey(),
+    currentVersion: integer("current_version").notNull(),
+    courseRunRef: text("course_run_ref").notNull(),
+    curriculumUnitRef: text("curriculum_unit_ref").notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    learningObjectiveRefs: jsonb(
+      "learning_objective_refs"
+    ).notNull(),
+    evidenceRefs: jsonb("evidence_refs").notNull(),
+    baselineTeachingPlanRef: text(
+      "baseline_teaching_plan_ref"
+    ),
+    contextPurpose: text("context_purpose").notNull(),
+    requestedFieldMask: jsonb(
+      "requested_field_mask"
+    ).notNull(),
+    updatedBy: text("updated_by").notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const taskWorkingSetRevisionTable = workSchema.table(
+  "task_working_set_revision",
+  {
+    workingSetRevisionRef: text(
+      "working_set_revision_ref"
+    ).primaryKey(),
+    taskRef: text("task_ref").notNull(),
+    workingSetVersion: integer(
+      "working_set_version"
+    ).notNull(),
+    courseRunRef: text("course_run_ref").notNull(),
+    curriculumUnitRef: text("curriculum_unit_ref").notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    learningObjectiveRefs: jsonb(
+      "learning_objective_refs"
+    ).notNull(),
+    evidenceRefs: jsonb("evidence_refs").notNull(),
+    baselineTeachingPlanRef: text(
+      "baseline_teaching_plan_ref"
+    ),
+    contextPurpose: text("context_purpose").notNull(),
+    requestedFieldMask: jsonb(
+      "requested_field_mask"
+    ).notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const preparationStatusHistoryTable = workSchema.table(
+  "preparation_status_history",
+  {
+    historyRef: text("history_ref").primaryKey(),
+    taskRef: text("task_ref").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status").notNull(),
+    taskVersion: integer("task_version").notNull(),
+    reason: text("reason").notNull(),
+    ...formalWriteColumns()
+  }
+);
 
 export const suggestionDispositionTable = workSchema.table(
   "suggestion_disposition",
