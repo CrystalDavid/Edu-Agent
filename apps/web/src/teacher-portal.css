@@ -1526,6 +1526,18 @@ textarea:focus-visible,
   background: var(--color-surface);
 }
 
+.course-workspace--lesson-preparation {
+  display: block;
+  min-height: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.course-workspace--lesson-preparation > .page-grid {
+  width: 100%;
+}
+
 .course-tree,
 .course-file-list,
 .file-preview {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   PedagogicalStrategy,
+  LessonPreparationTaskDetail,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
   TeacherWorkspace,
@@ -27,8 +28,10 @@ import {
   ApiError,
   createTeacherCopilotTask,
   disposeSuggestion,
+  loadLessonPreparationTask,
   loadPendingProposals,
   loadProposalDetail,
+  updateTaskResourceSelection,
   type RecoverableCopilotTask
 } from "../api";
 import { SemanticTag } from "../components/SemanticTag";
@@ -51,6 +54,11 @@ export function CopilotPage(props: {
   navigate: (route: AppRoute) => void;
   proposalRevisionRef: string | null;
   navigateProposal: (proposalRevisionRef: string) => void;
+  preparationTaskRef: string | null;
+  navigatePreparation: (
+    taskRef: string,
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+  ) => void;
   initialPrompt?: string;
 }) {
   const [generating, setGenerating] = useState(false);
@@ -76,6 +84,40 @@ export function CopilotPage(props: {
     props.initialPrompt ||
       "根据当前学习证据，比较两种明日课堂调整策略"
   );
+  const [preparationTask, setPreparationTask] =
+    useState<LessonPreparationTaskDetail | null>(null);
+
+  useEffect(() => {
+    if (!props.preparationTaskRef) return;
+    let active = true;
+    setRecovering(true);
+    setError(null);
+    void loadLessonPreparationTask(props.preparationTaskRef)
+      .then((result) => {
+        if (!active) return;
+        setPreparationTask(result);
+        if (
+          result.latestProposalRevisionRef &&
+          !props.proposalRevisionRef
+        ) {
+          props.navigateProposal(
+            result.latestProposalRevisionRef
+          );
+        }
+      })
+      .catch((caught) => {
+        if (active) setError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (active) setRecovering(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    props.preparationTaskRef,
+    props.proposalRevisionRef
+  ]);
 
   useEffect(() => {
     if (props.initialPrompt) {
@@ -135,6 +177,13 @@ export function CopilotPage(props: {
               }
             : null
         );
+        if (detail.request.preparationTaskRef) {
+          void loadLessonPreparationTask(
+            detail.request.preparationTaskRef
+          ).then((loadedTask) => {
+            if (active) setPreparationTask(loadedTask);
+          });
+        }
       })
       .catch((caught: unknown) => {
         if (active) setError(errorMessage(caught));
@@ -190,28 +239,52 @@ export function CopilotPage(props: {
     try {
       const result = await createTeacherCopilotTask({
         requestText: taskPrompt,
-        courseRunRef: props.workspace.courseRun.courseRunRef,
+        courseRunRef:
+          preparationTask?.workingSet.courseRunRef ??
+          props.workspace.courseRun.courseRunRef,
         goalRef: props.workspace.goal.goalRef,
-        learningObjectiveRefs: [
-          props.workspace.learningObjective.objectiveRef
-        ],
-        selectedEvidenceRefs: [
-          ...props.workspace.evidence.observations.map(
-            (item) => item.observationRef
-          ),
-          ...props.workspace.evidence.claims.map(
-            (item) => item.claimRef
-          )
-        ],
+        learningObjectiveRefs:
+          preparationTask?.workingSet
+            .learningObjectiveRefs ?? [
+            props.workspace.learningObjective.objectiveRef
+          ],
+        selectedEvidenceRefs:
+          preparationTask?.workingSet.evidenceRefs ?? [
+            ...props.workspace.evidence.observations.map(
+              (item) => item.observationRef
+            ),
+            ...props.workspace.evidence.claims.map(
+              (item) => item.claimRef
+            )
+          ],
         requestVersion: 1,
         purpose: "teacher-copilot.adjust-next-lesson",
-        idempotencyKey: `ui:teacher-copilot:${crypto.randomUUID()}`
+        idempotencyKey: `ui:teacher-copilot:${crypto.randomUUID()}`,
+        ...(preparationTask
+          ? {
+              preparationTaskRef: preparationTask.taskRef,
+              curriculumUnitRef:
+                preparationTask.curriculumUnitRef,
+              lessonRef: preparationTask.lessonRef,
+              workingSetVersion:
+                preparationTask.workingSet.version,
+              expectedPreparationTaskVersion:
+                preparationTask.version
+            }
+          : {})
       });
       props.setTask(result);
       setSelectedStrategyId(
         result.strategies[0]?.strategyId ?? null
       );
       setTeacherEdits({});
+      if (preparationTask) {
+        setPreparationTask(
+          await loadLessonPreparationTask(
+            preparationTask.taskRef
+          )
+        );
+      }
       await props.refreshWorkspace();
       props.navigateProposal(result.proposalRevisionRef);
     } catch (caught) {
@@ -263,10 +336,44 @@ export function CopilotPage(props: {
     }
   }
 
+  async function removeEvidence(reference: string) {
+    if (
+      !preparationTask ||
+      preparationTask.workingSet.evidenceRefs.length <= 1
+    ) {
+      return;
+    }
+    setRecovering(true);
+    setError(null);
+    try {
+      const result = await updateTaskResourceSelection(
+        preparationTask.taskRef,
+        "remove",
+        {
+          resourceKind: "evidence",
+          resourceRef: reference,
+          expectedWorkingSetVersion:
+            preparationTask.workingSet.version,
+          purpose: "lesson-preparation.context.remove",
+          idempotencyKey: `ui:working-set:remove:${crypto.randomUUID()}`
+        }
+      );
+      setPreparationTask({
+        ...preparationTask,
+        workingSet: result.workingSet
+      });
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setRecovering(false);
+    }
+  }
+
   const contextPanel = (
     <CopilotContextPanel
       workspace={props.workspace}
       task={props.task}
+      preparationTask={preparationTask}
     />
   );
 
@@ -314,6 +421,92 @@ export function CopilotPage(props: {
           onClose={() => setError(null)}
         />
       ) : null}
+
+      {preparationTask ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="task-working-set"
+        >
+          <div className="section-heading">
+            <div>
+              <Text className="section-kicker">
+                TaskWorkingSet · v
+                {preparationTask.workingSet.version}
+              </Text>
+              <Title level={3}>{preparationTask.title}</Title>
+            </div>
+            <Tag color="processing">
+              {preparationTask.status}
+            </Tag>
+          </div>
+          <dl className="detail-list">
+            <div>
+              <dt>CourseRun</dt>
+              <dd>{preparationTask.courseRunRef}</dd>
+            </div>
+            <div>
+              <dt>单元</dt>
+              <dd>{preparationTask.curriculumUnitRef}</dd>
+            </div>
+            <div>
+              <dt>课时</dt>
+              <dd>
+                {preparationTask.lessonTitle} ·{" "}
+                {preparationTask.lessonRef}
+              </dd>
+            </div>
+            <div>
+              <dt>教学目标</dt>
+              <dd>
+                {preparationTask.workingSet.learningObjectiveRefs.join(
+                  "，"
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>baseline approved plan</dt>
+              <dd>
+                {preparationTask.workingSet
+                  .baselineTeachingPlanRef ?? "无"}
+              </dd>
+            </div>
+          </dl>
+          <Text strong>本次允许使用的 Evidence</Text>
+          <Space wrap>
+            {preparationTask.workingSet.evidenceRefs.map(
+              (reference) => (
+                <Tag
+                  key={reference}
+                  closable={
+                    preparationTask.workingSet.evidenceRefs
+                      .length > 1
+                  }
+                  onClose={(event) => {
+                    event.preventDefault();
+                    void removeEvidence(reference);
+                  }}
+                >
+                  {reference}
+                </Tag>
+              )
+            )}
+          </Space>
+          <Alert
+            type="info"
+            showIcon
+            title="核心课时与 Purpose 已锁定"
+            description="可以删除可选 Evidence；CourseRun、单元、课时、教学目标、Purpose 和字段掩码不能在此被静默替换。每次 Run 都会重新授权并封存新的 ContextManifest。"
+          />
+        </Card>
+      ) : (
+        <Alert
+          type="warning"
+          showIcon
+          title="当前是 Gate 2.4 兼容入口"
+          description="要进入可恢复备课闭环，请先从教学页面选择课时并创建备课 Task。"
+        />
+      )}
 
       <Card className="task-composer" variant="borderless">
         <div>
@@ -523,14 +716,26 @@ export function CopilotPage(props: {
                     key="plan"
                     type="primary"
                     onClick={() =>
-                      props.navigate("/teaching-plan")
+                      preparationTask
+                        ? props.navigatePreparation(
+                            preparationTask.taskRef,
+                            "/teaching-plan"
+                          )
+                        : props.navigate("/teaching-plan")
                     }
                   >
                     查看教学计划
                   </Button>,
                   <Button
                     key="run"
-                    onClick={() => props.navigate("/runs")}
+                    onClick={() =>
+                      preparationTask
+                        ? props.navigatePreparation(
+                            preparationTask.taskRef,
+                            "/runs"
+                          )
+                        : props.navigate("/runs")
+                    }
                   >
                     查看运行依据
                   </Button>
@@ -861,12 +1066,29 @@ function StrategySection(props: {
 function CopilotContextPanel(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
+  preparationTask: LessonPreparationTaskDetail | null;
 }) {
   return (
     <Card className="workspace-card context-panel" variant="borderless">
       <Text className="section-kicker">建议解释</Text>
       <Title level={3}>建议依据与控制边界</Title>
       <dl>
+        <div>
+          <dt>备课 Task / Lesson</dt>
+          <dd>
+            {props.preparationTask
+              ? `${props.preparationTask.taskRef} / ${props.preparationTask.lessonTitle}`
+              : "未绑定"}
+          </dd>
+        </div>
+        <div>
+          <dt>TaskWorkingSet</dt>
+          <dd>
+            {props.preparationTask
+              ? `v${props.preparationTask.workingSet.version} · ${props.preparationTask.workingSet.evidenceRefs.length} 条 Evidence`
+              : "未创建"}
+          </dd>
+        </div>
         <div>
           <dt>使用的数据</dt>
           <dd>

@@ -108,7 +108,11 @@ export function App() {
     route,
     navigate,
     proposalRevisionRef,
-    navigateProposal
+    navigateProposal,
+    preparationTaskRef,
+    navigatePreparation,
+    lessonRef,
+    navigateLesson
   } = useAppRoute();
   const [workspace, setWorkspace] = useState<TeacherWorkspace | null>(null);
   const [task, setTask] =
@@ -214,21 +218,36 @@ export function App() {
       <main className={`teacher-portal-main${route === "/agent" ? " teacher-portal-main--agent" : ""}`}>
         <Suspense fallback={<PageLoading />}>
           {route === "/" || route === "/overview" ? (
-            <OverviewPage workspace={workspace} navigate={navigate} onAction={showNotice} />
+            <OverviewPage workspace={workspace} navigate={navigate} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} onAction={showNotice} />
           ) : null}
           {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
           {route === "/teaching" || route === "/courses" ? (
-            <TeachingWorkspacePage navigate={navigate} initialTab="course" onAction={showNotice} />
+            <TeachingWorkspacePage navigate={navigate} navigatePreparation={navigatePreparation} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
           ) : null}
           {route === "/assignments" ? (
-            <TeachingWorkspacePage navigate={navigate} initialTab="homework" onAction={showNotice} />
+            <TeachingWorkspacePage navigate={navigate} navigatePreparation={navigatePreparation} initialTab="homework" onAction={showNotice} />
           ) : null}
           {route === "/students" ? (
             <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
           ) : null}
           {route === "/files" ? <TeacherFilesPage onAction={showNotice} /> : null}
           {route === "/agent" ? (
-            <AgentWorkspacePage navigate={navigate} onAction={showNotice} />
+            preparationTaskRef ? (
+              <CopilotPage
+                workspace={workspace}
+                task={task}
+                setTask={setTask}
+                refreshWorkspace={refreshWorkspace}
+                navigate={navigate}
+                proposalRevisionRef={proposalRevisionRef}
+                navigateProposal={navigateProposal}
+                preparationTaskRef={preparationTaskRef}
+                navigatePreparation={navigatePreparation}
+                initialPrompt=""
+              />
+            ) : (
+              <AgentWorkspacePage navigate={navigate} onAction={showNotice} />
+            )
           ) : null}
           {route === "/settings" ? (
             <TeacherSettingsPage navigate={navigate} onAction={showNotice} />
@@ -251,6 +270,8 @@ export function App() {
                 navigate={navigate}
                 proposalRevisionRef={proposalRevisionRef}
                 navigateProposal={navigateProposal}
+                preparationTaskRef={preparationTaskRef}
+                navigatePreparation={navigatePreparation}
                 initialPrompt=""
               />
             </div>
@@ -265,6 +286,8 @@ export function App() {
                 workspace={workspace}
                 task={task}
                 refreshWorkspace={refreshWorkspace}
+                preparationTaskRef={preparationTaskRef}
+                navigatePreparation={navigatePreparation}
               />
             </div>
           ) : null}
@@ -274,7 +297,7 @@ export function App() {
                 <button type="button" onClick={() => navigate("/settings")}><WorkspaceIcon name="arrowLeft" />返回设置</button>
                 <span>系统记录与技术详情</span>
               </header>
-              <RunsPage workspace={workspace} task={task} />
+              <RunsPage workspace={workspace} task={task} preparationTaskRef={preparationTaskRef} />
             </div>
           ) : null}
         </Suspense>
