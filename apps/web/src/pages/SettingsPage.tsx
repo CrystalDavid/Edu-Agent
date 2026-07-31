@@ -50,7 +50,7 @@ export function SettingsPage(props: {
           </div>
           <div>
             <dt>助手</dt>
-            <dd>本地演示助手，不调用外部模型</dd>
+            <dd>服务端受控配置；普通教师端不提供模型选择</dd>
           </div>
         </dl>
       </section>

@@ -80,7 +80,21 @@ export function RunsPage(props: {
             </Paragraph>
           </div>
         </div>
-        {explanation ? <Tag color="processing">运行完成</Tag> : null}
+        {explanation ? (
+          <Tag
+            color={
+              explanation.modelExecution.status === "succeeded"
+                ? "success"
+                : ["queued", "running", "validating", "retryable_failed"].includes(
+                      explanation.modelExecution.status
+                    )
+                  ? "processing"
+                  : "error"
+            }
+          >
+            模型执行 · {explanation.modelExecution.status}
+          </Tag>
+        ) : null}
       </header>
 
       {error ? (
@@ -132,15 +146,24 @@ export function RunsPage(props: {
                 </div>
                 <div>
                   <dt>助手</dt>
-                  <dd>本地演示助手</dd>
+                  <dd>
+                    {explanation.modelExecution.provider ===
+                    "volcengine-ark"
+                      ? `Volcengine Ark · ${explanation.modelExecution.modelDisplayName}`
+                      : "本地演示助手"}
+                  </dd>
                 </div>
                 <div>
                   <dt>外部网络</dt>
-                  <dd>未使用</dd>
+                  <dd>
+                    {explanation.modelExecution.externalNetworkUsed
+                      ? "已使用（受控服务端调用）"
+                      : "未使用"}
+                  </dd>
                 </div>
                 <div>
                   <dt>模型费用</dt>
-                  <dd>0 元</dd>
+                  <dd>{explanation.modelExecution.costLabel}</dd>
                 </div>
                 <div>
                   <dt>结果上限</dt>
@@ -277,6 +300,93 @@ function TechnicalDetails({
                     key: "provider",
                     label: "Provider",
                     children: explanation.agentRun.modelProfile
+                  }
+                ]}
+              />
+            )
+          },
+          {
+            key: "model-execution",
+            label: "模型执行安全摘要",
+            children: (
+              <Descriptions
+                column={1}
+                size="small"
+                items={[
+                  {
+                    key: "execution",
+                    label: "ModelExecution",
+                    children: explanation.modelExecution.executionRef
+                  },
+                  {
+                    key: "provider",
+                    label: "Provider / model",
+                    children: `${
+                      explanation.modelExecution.provider ===
+                      "volcengine-ark"
+                        ? "Volcengine Ark"
+                        : "Mock"
+                    } · ${explanation.modelExecution.modelDisplayName}`
+                  },
+                  {
+                    key: "status",
+                    label: "状态",
+                    children: explanation.modelExecution.status
+                  },
+                  {
+                    key: "prompt-bundle",
+                    label: "PromptBundle",
+                    children: `${explanation.modelExecution.promptBundleRef}@${explanation.modelExecution.promptBundleVersion}`
+                  },
+                  {
+                    key: "sealed-context",
+                    label: "ContextManifest",
+                    children:
+                      explanation.modelExecution.contextManifestRef ??
+                      "未记录"
+                  },
+                  {
+                    key: "usage",
+                    label: "Token usage",
+                    children: explanation.modelExecution.usageLabel
+                  },
+                  {
+                    key: "latency",
+                    label: "延迟",
+                    children:
+                      explanation.modelExecution.latencyMs === null
+                        ? "未记录"
+                        : `${explanation.modelExecution.latencyMs} ms`
+                  },
+                  {
+                    key: "cost",
+                    label: "估算费用",
+                    children: explanation.modelExecution.costLabel
+                  },
+                  {
+                    key: "attempt",
+                    label: "Attempt",
+                    children: `${explanation.modelExecution.attemptCount}/${explanation.modelExecution.maxAttempts}`
+                  },
+                  {
+                    key: "finish",
+                    label: "Finish reason",
+                    children:
+                      explanation.modelExecution.finishReason ?? "未记录"
+                  },
+                  {
+                    key: "safe-error",
+                    label: "Safe error category",
+                    children:
+                      explanation.modelExecution.safeErrorCategory ??
+                      "无"
+                  },
+                  {
+                    key: "provider-request",
+                    label: "Provider request ID",
+                    children:
+                      explanation.modelExecution
+                        .providerRequestIdMasked ?? "未提供"
                   }
                 ]}
               />
@@ -425,7 +535,10 @@ function teacherTimeline(explanation: RunExplanation) {
     },
     {
       title: "生成建议草稿",
-      description: "本地演示助手生成两种课堂策略，没有连接外部模型。",
+      description:
+        explanation.modelExecution.provider === "volcengine-ark"
+          ? `Volcengine Ark 在数据库事务外生成建议，经结构、Evidence 与权限校验后才保存。`
+          : "本地演示助手生成确定性建议，没有发起外部模型请求。",
       color: "blue"
     },
     {

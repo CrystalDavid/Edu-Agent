@@ -42,7 +42,7 @@ export function InspectorPanel(props: {
           type="info"
           showIcon
           title="当前使用示例数据"
-          description="没有连接真实学校系统或外部模型，所有建议仅用于本地产品演示。"
+          description="当前只允许合成演示数据；生成服务由服务端配置，所有建议仍仅用于本地产品演示并须由教师审阅。"
         />
 
         <section>

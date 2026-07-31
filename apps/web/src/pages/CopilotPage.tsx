@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   PedagogicalStrategy,
   LessonPreparationTaskDetail,
+  ModelExecutionStatus,
+  ModelExecutionView,
+  ProviderAvailability,
+  CreateTeacherCopilotTaskRequest,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
   TeacherWorkspace,
@@ -26,11 +30,16 @@ import {
 
 import {
   ApiError,
+  cancelModelInvocation,
+  createModelInvocation,
   createTeacherCopilotTask,
   disposeSuggestion,
   loadLessonPreparationTask,
+  loadModelInvocation,
+  loadModelProviderAvailability,
   loadPendingProposals,
   loadProposalDetail,
+  retryModelInvocation,
   updateTaskResourceSelection,
   type RecoverableCopilotTask
 } from "../api";
@@ -86,6 +95,81 @@ export function CopilotPage(props: {
   );
   const [preparationTask, setPreparationTask] =
     useState<LessonPreparationTaskDetail | null>(null);
+  const [providerAvailability, setProviderAvailability] =
+    useState<ProviderAvailability | null>(null);
+  const [modelExecution, setModelExecution] =
+    useState<ModelExecutionView | null>(null);
+  const [modelExecutionRef, setModelExecutionRef] =
+    useState<string | null>(() =>
+      new URLSearchParams(window.location.search).get(
+        "modelExecution"
+      )
+    );
+  const [modelAction, setModelAction] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void loadModelProviderAvailability()
+      .then((result) => {
+        if (active) setProviderAvailability(result);
+      })
+      .catch((caught) => {
+        if (active) setError(errorMessage(caught));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!modelExecutionRef) return;
+    let active = true;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const execution =
+          await loadModelInvocation(modelExecutionRef);
+        if (!active) return;
+        setModelExecution(execution);
+        if (
+          execution.status === "succeeded" &&
+          execution.proposalRevisionRef
+        ) {
+          const proposal = await loadProposalDetail(
+            execution.proposalRevisionRef
+          );
+          if (!active) return;
+          props.setTask(proposal);
+          setSelectedStrategyId(
+            proposal.strategies[0]?.strategyId ?? null
+          );
+          setTeacherEdits({});
+          await props.refreshWorkspace();
+          if (preparationTask) {
+            setPreparationTask(
+              await loadLessonPreparationTask(
+                preparationTask.taskRef
+              )
+            );
+          }
+          props.navigateProposal(
+            execution.proposalRevisionRef
+          );
+          return;
+        }
+        if (!terminalModelStatuses.has(execution.status)) {
+          timer = window.setTimeout(refresh, 500);
+        }
+      } catch (caught) {
+        if (active) setError(errorMessage(caught));
+      }
+    };
+    void refresh();
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [modelExecutionRef]);
 
   useEffect(() => {
     if (!props.preparationTaskRef) return;
@@ -237,7 +321,7 @@ export function CopilotPage(props: {
     setError(null);
     setDisposition(null);
     try {
-      const result = await createTeacherCopilotTask({
+      const command: CreateTeacherCopilotTaskRequest = {
         requestText: taskPrompt,
         courseRunRef:
           preparationTask?.workingSet.courseRunRef ??
@@ -272,25 +356,109 @@ export function CopilotPage(props: {
                 preparationTask.version
             }
           : {})
-      });
+      };
+      if (preparationTask) {
+        const queued = await createModelInvocation(command);
+        setModelExecution(queued.execution);
+        setModelExecutionRef(
+          queued.execution.modelExecutionRef
+        );
+        const search = new URLSearchParams(
+          window.location.search
+        );
+        search.set(
+          "modelExecution",
+          queued.execution.modelExecutionRef
+        );
+        window.history.replaceState(
+          {},
+          "",
+          `${window.location.pathname}?${search.toString()}`
+        );
+        return;
+      }
+      const result = await createTeacherCopilotTask(command);
       props.setTask(result);
       setSelectedStrategyId(
         result.strategies[0]?.strategyId ?? null
       );
       setTeacherEdits({});
-      if (preparationTask) {
-        setPreparationTask(
-          await loadLessonPreparationTask(
-            preparationTask.taskRef
-          )
-        );
-      }
       await props.refreshWorkspace();
       props.navigateProposal(result.proposalRevisionRef);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function cancelExecution() {
+    if (
+      !modelExecution ||
+      !["queued", "running", "retryable_failed"].includes(
+        modelExecution.status
+      )
+    ) {
+      return;
+    }
+    setModelAction(true);
+    setError(null);
+    try {
+      setModelExecution(
+        await cancelModelInvocation(
+          modelExecution.modelExecutionRef,
+          {
+            purpose: "teacher-copilot.cancel-model",
+            idempotencyKey: `ui:model-cancel:${crypto.randomUUID()}`,
+            expectedStatus: modelExecution.status
+          }
+        )
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setModelAction(false);
+    }
+  }
+
+  async function retryExecution() {
+    if (
+      !modelExecution ||
+      !isRetryableTerminalStatus(modelExecution.status)
+    ) {
+      return;
+    }
+    setModelAction(true);
+    setError(null);
+    try {
+      const result = await retryModelInvocation(
+        modelExecution.modelExecutionRef,
+        {
+          purpose: "teacher-copilot.retry-model",
+          idempotencyKey: `ui:model-retry:${crypto.randomUUID()}`,
+          expectedStatus: modelExecution.status
+        }
+      );
+      setModelExecution(result.execution);
+      setModelExecutionRef(
+        result.execution.modelExecutionRef
+      );
+      const search = new URLSearchParams(
+        window.location.search
+      );
+      search.set(
+        "modelExecution",
+        result.execution.modelExecutionRef
+      );
+      window.history.replaceState(
+        {},
+        "",
+        `${window.location.pathname}?${search.toString()}`
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setModelAction(false);
     }
   }
 
@@ -374,6 +542,8 @@ export function CopilotPage(props: {
       workspace={props.workspace}
       task={props.task}
       preparationTask={preparationTask}
+      providerAvailability={providerAvailability}
+      modelExecution={modelExecution}
     />
   );
 
@@ -527,9 +697,101 @@ export function CopilotPage(props: {
           onClick={generate}
           data-testid="generate-copilot"
         >
-          {props.task ? "提交新的备课任务" : "生成两种策略"}
+          {props.task ? "提交新的备课任务" : "生成备课建议"}
         </Button>
       </Card>
+
+      {providerAvailability ? (
+        <Alert
+          type={
+            providerAvailability.fallbackToMock
+              ? "warning"
+              : "info"
+          }
+          showIcon
+          title={
+            providerAvailability.activeProvider ===
+            "volcengine-ark"
+              ? `当前生成服务：${providerAvailability.modelDisplayName}`
+              : "当前生成服务：本地演示助手"
+          }
+          description={
+            providerAvailability.safeReason ??
+            "模型配置只存在于服务端；普通教师页面不会显示密钥、Base URL 或模型选择器。"
+          }
+          data-testid="model-provider-availability"
+        />
+      ) : null}
+
+      {modelExecution ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="model-execution-status"
+        >
+          <Space
+            orientation="vertical"
+            size="middle"
+            style={{ width: "100%" }}
+          >
+            <div className="section-heading">
+              <div>
+                <Text className="section-kicker">
+                  模型执行
+                </Text>
+                <Title level={3}>
+                  {modelStatusLabel(modelExecution.status)}
+                </Title>
+              </div>
+              <Tag
+                color={
+                  modelExecution.status === "succeeded"
+                    ? "success"
+                    : terminalModelStatuses.has(
+                          modelExecution.status
+                        )
+                      ? "error"
+                      : "processing"
+                }
+              >
+                attempt {modelExecution.attemptCount}/
+                {modelExecution.maxAttempts}
+              </Tag>
+            </div>
+            <Paragraph type="secondary">
+              {modelExecution.safeMessage ??
+                modelStatusDescription(
+                  modelExecution.status
+                )}
+            </Paragraph>
+            <Space wrap>
+              {["queued", "running", "retryable_failed"].includes(
+                modelExecution.status
+              ) ? (
+                <Button
+                  loading={modelAction}
+                  onClick={cancelExecution}
+                  data-testid="cancel-model-execution"
+                >
+                  取消
+                </Button>
+              ) : null}
+              {isRetryableTerminalStatus(
+                modelExecution.status
+              ) ? (
+                <Button
+                  type="primary"
+                  loading={modelAction}
+                  onClick={retryExecution}
+                  data-testid="retry-model-execution"
+                >
+                  人工重试
+                </Button>
+              ) : null}
+            </Space>
+          </Space>
+        </Card>
+      ) : null}
 
       <Card
         className="workspace-card"
@@ -764,7 +1026,7 @@ export function CopilotPage(props: {
               loading={generating}
               onClick={generate}
             >
-              生成两种课堂调整策略
+              生成备课建议
             </Button>
           </Card>
           <div className="copilot-explanation-column">
@@ -1067,6 +1329,8 @@ function CopilotContextPanel(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
   preparationTask: LessonPreparationTaskDetail | null;
+  providerAvailability: ProviderAvailability | null;
+  modelExecution: ModelExecutionView | null;
 }) {
   return (
     <Card className="workspace-card context-panel" variant="borderless">
@@ -1114,7 +1378,12 @@ function CopilotContextPanel(props: {
         </div>
         <div>
           <dt>助手状态</dt>
-          <dd>本地演示助手，不连接外部模型</dd>
+          <dd>
+            {props.providerAvailability?.activeProvider ===
+            "volcengine-ark"
+              ? `${props.providerAvailability.modelDisplayName} · 服务端受控调用`
+              : "本地演示助手 · 不发起外部模型请求"}
+          </dd>
         </div>
         <div>
           <dt>教师控制</dt>
@@ -1149,7 +1418,20 @@ function CopilotContextPanel(props: {
                 </div>
                 <div>
                   <dt>ModelProvider</dt>
-                  <dd>MockModelProvider</dd>
+                  <dd>
+                    {props.modelExecution?.provider ===
+                    "volcengine-ark"
+                      ? "Volcengine Ark"
+                      : "MockModelProvider"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>ModelExecution</dt>
+                  <dd>
+                    {props.modelExecution
+                      ? `${props.modelExecution.modelExecutionRef} · ${modelStatusLabel(props.modelExecution.status)}`
+                      : "提交任务后创建"}
+                  </dd>
                 </div>
               </dl>
             )
@@ -1193,4 +1475,85 @@ function dispositionLabel(
     rejected: "已拒绝",
     deferred: "已延后"
   }[disposition];
+}
+
+const terminalModelStatuses =
+  new Set<ModelExecutionStatus>([
+    "succeeded",
+    "timed_out",
+    "permanently_failed",
+    "validation_failed",
+    "budget_exceeded",
+    "cancelled"
+  ]);
+
+type RetryableTerminalStatus =
+  | "timed_out"
+  | "permanently_failed"
+  | "validation_failed"
+  | "budget_exceeded"
+  | "cancelled";
+
+const retryableTerminalStatuses =
+  new Set<RetryableTerminalStatus>([
+    "timed_out",
+    "permanently_failed",
+    "validation_failed",
+    "budget_exceeded",
+    "cancelled"
+  ]);
+
+function isRetryableTerminalStatus(
+  status: ModelExecutionStatus
+): status is RetryableTerminalStatus {
+  return retryableTerminalStatuses.has(
+    status as RetryableTerminalStatus
+  );
+}
+
+function modelStatusLabel(
+  status: ModelExecutionStatus
+): string {
+  return {
+    queued: "等待生成",
+    running: "正在生成",
+    validating: "正在验证",
+    retryable_failed: "正在重试",
+    succeeded: "已完成",
+    cancel_requested: "正在取消",
+    cancelled: "已取消",
+    timed_out: "生成超时",
+    validation_failed: "验证失败",
+    permanently_failed: "暂时不可用",
+    budget_exceeded: "预算超限"
+  }[status];
+}
+
+function modelStatusDescription(
+  status: ModelExecutionStatus
+): string {
+  return {
+    queued:
+      "请求、权限和上下文已经封存；后台 Worker 将在事务外调用模型。",
+    running:
+      "页面关闭不会取消任务；刷新后可继续查看同一 ModelExecution。",
+    validating:
+      "正在检查 JSON Schema、EvidenceRef、课时目标和教学安全边界。",
+    retryable_failed:
+      "遇到临时故障，正在按有限次数与退避策略重试。",
+    succeeded:
+      "验证后的建议已保存为待教师审阅 Proposal；没有自动批准教学计划。",
+    cancel_requested:
+      "已请求中止当前网络调用，不会创建 Proposal。",
+    cancelled:
+      "本次执行已取消；备课任务和当前已批准教学计划未被改写。",
+    timed_out:
+      "模型在时限内未完成；可以保留失败记录并人工重试。",
+    validation_failed:
+      "一次受控修复后仍未通过验证，未创建 Proposal。",
+    permanently_failed:
+      "模型服务未能安全完成本次调用，可以稍后人工重试。",
+    budget_exceeded:
+      "服务端预算策略在调用前阻止了请求，因此没有发生外部调用。"
+  }[status];
 }
