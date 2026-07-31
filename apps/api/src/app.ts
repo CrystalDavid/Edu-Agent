@@ -7,10 +7,13 @@ import express, {
 import {
   apiRoutes,
   ApproveTeachingPlanRequestSchema,
+  CancelModelInvocationRequestSchema,
   CreateLessonPreparationTaskRequestSchema,
+  CreateModelInvocationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
   LessonPreparationTaskActionRequestSchema,
+  RetryModelInvocationRequestSchema,
   SuggestionDispositionRequestSchema,
   TaskResourceSelectionRequestSchema,
   type ActingContext,
@@ -187,19 +190,165 @@ export function createApp(
       response.json({
         status: "ok",
         service: "edu-agent-api",
-        mode: "mock"
+        mode:
+          product?.services.modelInvocations.settings
+            .requestedMode ?? "mock"
       });
     }
   );
 
   if (product) {
     const preparation = product.services.lessonPreparation;
+    const modelInvocations =
+      product.services.modelInvocations;
     const withProductContext = async (request: Request) =>
       productContextsFromRequest(
         request,
         product,
         demoIdentity
       );
+
+    app.get(
+      apiRoutes.teacher.modelProviderAvailability,
+      markRoute("product.model-provider.availability"),
+      async (request, response, next) => {
+        try {
+          await withProductContext(request);
+          response.json(
+            modelInvocations.getAvailability()
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.modelProviderCapabilities,
+      markRoute("product.model-provider.capabilities"),
+      async (request, response, next) => {
+        try {
+          await withProductContext(request);
+          response.json(
+            await modelInvocations.getCapabilities()
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.modelUsageSummary,
+      markRoute("product.model-provider.usage"),
+      async (request, response, next) => {
+        try {
+          await withProductContext(request);
+          response.json(
+            await modelInvocations.getUsageSummary()
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.modelInvocations,
+      markRoute("product.model-invocations.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result =
+            await modelInvocations.createInvocation({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              request:
+                CreateModelInvocationRequestSchema.parse(
+                  request.body
+                )
+            });
+          response
+            .status(result.replayed ? 200 : 202)
+            .json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.modelInvocationPattern,
+      markRoute("product.model-invocations.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await modelInvocations.getInvocation({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              modelExecutionRef: routeParameter(
+                request.params["modelExecutionRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.modelInvocationCancelPattern,
+      markRoute("product.model-invocations.cancel"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await modelInvocations.cancelInvocation({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              modelExecutionRef: routeParameter(
+                request.params["modelExecutionRef"]
+              ),
+              request:
+                CancelModelInvocationRequestSchema.parse(
+                  request.body
+                )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.modelInvocationRetryPattern,
+      markRoute("product.model-invocations.retry"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result =
+            await modelInvocations.retryInvocation({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              modelExecutionRef: routeParameter(
+                request.params["modelExecutionRef"]
+              ),
+              request:
+                RetryModelInvocationRequestSchema.parse(
+                  request.body
+                )
+            });
+          response
+            .status(result.replayed ? 200 : 202)
+            .json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.courseRuns,

@@ -69,6 +69,29 @@ describe("Gate 2 architecture invariants", () => {
     );
   });
 
+  it("keeps the OpenAI-compatible SDK inside the server integration adapter", () => {
+    const apiPackage = source("apps/api/package.json");
+    const webPackage = source("apps/web/package.json");
+    const arkAdapter = source(
+      "apps/api/src/modules/capability-integration/infrastructure/volcengine-ark-provider.ts"
+    );
+    const providerPort = source(
+      "apps/api/src/modules/capability-integration/domain/capability.ts"
+    );
+    const invocationService = source(
+      "apps/api/src/composition/postgres-model-invocation-service.ts"
+    );
+
+    expect(apiPackage).toContain('"openai"');
+    expect(webPackage).not.toContain('"openai"');
+    expect(arkAdapter).toContain('from "openai"');
+    expect(providerPort).not.toContain('from "openai"');
+    expect(invocationService).not.toContain('from "openai"');
+    expect(source("packages/contracts/src/gate2-6a.ts")).not.toContain(
+      'from "openai"'
+    );
+  });
+
   it("keeps the teacher UI centered on daily work rather than system concepts", () => {
     const app = source("apps/web/src/App.tsx");
     const sidebar = source(

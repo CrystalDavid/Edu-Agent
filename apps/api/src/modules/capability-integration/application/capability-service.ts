@@ -9,7 +9,7 @@ import type { MetadataFactory } from "../../../platform/metadata.js";
 import type { IdGenerator } from "../../../platform/system.js";
 import type {
   CapabilityExecutionResult,
-  ModelProvider,
+  LegacyModelProvider,
   Tool,
   ToolExecutionRecord
 } from "../domain/capability.js";
@@ -30,7 +30,7 @@ export interface CapabilityServiceResult {
 
 export class CapabilityService {
   constructor(
-    private readonly model: ModelProvider,
+    private readonly model: LegacyModelProvider,
     private readonly tool: Tool,
     private readonly repository: CapabilityRepository,
     private readonly ids: IdGenerator

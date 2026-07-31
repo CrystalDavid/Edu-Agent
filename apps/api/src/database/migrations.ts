@@ -10,6 +10,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0002_gate1b_governance.sql"
   },
   {
+    owner: "governance",
+    relativePath:
+      "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0003_gate2_6a_model_data_manifest.sql"
+  },
+  {
     owner: "work",
     relativePath:
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0001_work.sql"
@@ -33,6 +38,11 @@ export const moduleMigrations = [
     owner: "work",
     relativePath:
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0005_gate2_5_lesson_preparation.sql"
+  },
+  {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0006_gate2_6a_task_run_lifecycle.sql"
   },
   {
     owner: "runtime",
@@ -60,6 +70,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0005_gate2_5_authorized_context_plan.sql"
   },
   {
+    owner: "runtime",
+    relativePath:
+      "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0006_gate2_6a_agent_run_lifecycle.sql"
+  },
+  {
     owner: "capability",
     relativePath:
       "apps/api/src/modules/capability-integration/infrastructure/migrations/0001_capability.sql"
@@ -73,6 +88,16 @@ export const moduleMigrations = [
     owner: "capability",
     relativePath:
       "apps/api/src/modules/capability-integration/infrastructure/migrations/0003_gate2_model_execution.sql"
+  },
+  {
+    owner: "capability",
+    relativePath:
+      "apps/api/src/modules/capability-integration/infrastructure/migrations/0004_gate2_6a_model_execution_lifecycle.sql"
+  },
+  {
+    owner: "capability",
+    relativePath:
+      "apps/api/src/modules/capability-integration/infrastructure/migrations/0005_gate2_6a_live_capability_acceptance.sql"
   },
   {
     owner: "artifact",

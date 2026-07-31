@@ -6,6 +6,7 @@ const webOrigin = `http://127.0.0.1:${
 
 export default defineConfig({
   testDir: "./tests/playwright",
+  testIgnore: "teacher-model-provider.spec.ts",
   outputDir: "./test-results/playwright",
   fullyParallel: false,
   forbidOnly: true,
@@ -32,11 +33,15 @@ export default defineConfig({
     }
   },
   webServer: {
-    command: "pnpm demo:test-server",
+    command: "node scripts/demo/run-e2e-demo.mjs",
     url: `${webOrigin}/api/health`,
     reuseExistingServer:
       process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",
-    timeout: 120_000
+    timeout: 120_000,
+    gracefulShutdown: {
+      signal: "SIGTERM",
+      timeout: 15_000
+    }
   },
   projects: [
     {

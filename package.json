@@ -12,6 +12,9 @@
     "test:architecture": "vitest run tests/architecture",
     "test:e2e": "vitest run tests/e2e",
     "test:migrations": "vitest run tests/integration/migrations.test.ts",
+    "test:model:live": "node --env-file-if-exists=.env.local node_modules/vitest/vitest.mjs run --config vitest.live.config.ts",
+    "model:probe:live": "node --env-file-if-exists=.env.local node_modules/tsx/dist/cli.mjs apps/api/src/composition/provider-capability-probe-cli.ts",
+    "test:secrets": "node scripts/security/scan-secrets.mjs",
     "test:static": "node scripts/gate1a-static-check.mjs",
     "test:node-smoke": "node --experimental-transform-types --import ./tests/support/register-gate1a-hooks.mjs --test ./tests/node/walking-skeleton.node.test.mjs",
     "db:env": "node scripts/postgres/create-local-env.mjs",
@@ -27,6 +30,7 @@
     "demo:reset": "node scripts/demo/reset-demo.mjs",
     "demo:down": "pnpm db:down",
     "test:playwright": "node scripts/demo/run-playwright-isolated.mjs",
+    "test:playwright:ark-fake": "node scripts/demo/run-playwright-isolated.mjs --ark-fake --config=playwright.ark.config.ts",
     "test:postgres": "node scripts/postgres/run-integration-tests.mjs",
     "dev": "pnpm demo:dev"
   },

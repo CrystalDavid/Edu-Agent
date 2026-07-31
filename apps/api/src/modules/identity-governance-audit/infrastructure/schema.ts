@@ -1,4 +1,5 @@
 import {
+  boolean,
   jsonb,
   pgSchema,
   text,
@@ -48,5 +49,27 @@ export const governanceIdempotencyRecordTable =
       withTimezone: true,
       mode: "string"
     }),
+    ...formalWriteColumns()
+  });
+
+export const modelDataManifestTable =
+  governanceSchema.table("model_data_manifest", {
+    modelDataManifestRef: text(
+      "model_data_manifest_ref"
+    ).primaryKey(),
+    taskRunRef: text("task_run_ref").notNull(),
+    contextManifestRef: text(
+      "context_manifest_ref"
+    ).notNull(),
+    provider: text("provider").notNull(),
+    modelIdHash: text("model_id_hash").notNull(),
+    dataCategories: jsonb("data_categories").notNull(),
+    resourceRefs: jsonb("resource_refs").notNull(),
+    fieldNames: jsonb("field_names").notNull(),
+    syntheticDataAssertion: boolean(
+      "synthetic_data_assertion"
+    ).notNull(),
+    retentionPolicy: text("retention_policy").notNull(),
+    tenantRef: text("tenant_ref").notNull(),
     ...formalWriteColumns()
   });

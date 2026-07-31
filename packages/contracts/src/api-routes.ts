@@ -11,6 +11,13 @@ const teacherPreparationTaskRoute = (taskRef: string): string =>
 const teacherLessonRoute = (lessonRef: string): string =>
   `/api/v1/teacher/lessons/${encodeRouteSegment(lessonRef)}`;
 
+const teacherModelInvocationRoute = (
+  modelExecutionRef: string
+): string =>
+  `/api/v1/teacher/model-invocations/${encodeRouteSegment(
+    modelExecutionRef
+  )}`;
+
 export const apiRoutes = {
   health: "/api/health",
   teacher: {
@@ -80,7 +87,26 @@ export const apiRoutes = {
     lessonTeachingPlansPattern:
       "/api/v1/teacher/lessons/:lessonRef/teaching-plans",
     lessonTeachingPlans: (lessonRef: string): string =>
-      `${teacherLessonRoute(lessonRef)}/teaching-plans`
+      `${teacherLessonRoute(lessonRef)}/teaching-plans`,
+    modelProviderAvailability:
+      "/api/v1/teacher/model-provider/availability",
+    modelProviderCapabilities:
+      "/api/v1/teacher/model-provider/capabilities",
+    modelUsageSummary:
+      "/api/v1/teacher/model-provider/usage",
+    modelInvocations:
+      "/api/v1/teacher/model-invocations",
+    modelInvocationPattern:
+      "/api/v1/teacher/model-invocations/:modelExecutionRef",
+    modelInvocation: teacherModelInvocationRoute,
+    modelInvocationCancelPattern:
+      "/api/v1/teacher/model-invocations/:modelExecutionRef/cancel",
+    modelInvocationCancel: (modelExecutionRef: string): string =>
+      `${teacherModelInvocationRoute(modelExecutionRef)}/cancel`,
+    modelInvocationRetryPattern:
+      "/api/v1/teacher/model-invocations/:modelExecutionRef/retry",
+    modelInvocationRetry: (modelExecutionRef: string): string =>
+      `${teacherModelInvocationRoute(modelExecutionRef)}/retry`
   },
   demo: {
     bootstrap: "/api/v1/demo/workspace",
@@ -134,7 +160,7 @@ export const apiRoutes = {
 export const ApiHealthSchema = z.object({
   status: z.literal("ok"),
   service: z.literal("edu-agent-api"),
-  mode: z.literal("mock")
+  mode: z.enum(["mock", "ark"])
 });
 
 export const ApiErrorResponseSchema = z.object({

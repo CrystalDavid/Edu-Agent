@@ -163,6 +163,15 @@ class ArraySchema extends Schema {
     ]);
   }
 
+  max(length) {
+    return new ArraySchema(this.item, [
+      ...this.checks,
+      (value, path) => {
+        if (value.length > length) fail(path, `Expected at most ${length} items`);
+      }
+    ]);
+  }
+
   length(length) {
     return new ArraySchema(this.item, [
       ...this.checks,

@@ -4,8 +4,11 @@ import {
   ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
   AuthorizedContextPlanSchema,
+  CancelModelInvocationRequestSchema,
   CourseRunListSchema,
   CreateLessonPreparationTaskRequestSchema,
+  CreateModelInvocationRequestSchema,
+  CreateModelInvocationResultSchema,
   CurriculumUnitListSchema,
   CreateTeacherCopilotTaskRequestSchema,
   CreateTeacherCopilotTaskResultSchema,
@@ -16,9 +19,14 @@ import {
   LessonPreparationTaskListSchema,
   LessonPreparationTaskResultSchema,
   LessonTeachingPlanStateSchema,
+  ModelExecutionViewSchema,
+  ModelUsageSummarySchema,
   PendingProposalListSchema,
   ProposalReviewDetailSchema,
   RunExplanationSchema,
+  ProviderAvailabilitySchema,
+  ProviderCapabilitiesSchema,
+  RetryModelInvocationRequestSchema,
   SuggestionDispositionRequestSchema,
   SuggestionDispositionResultSchema,
   TaskResourceSelectionRequestSchema,
@@ -29,6 +37,9 @@ import {
   type AuthorizedContextPlan,
   type ApproveTeachingPlanRequest,
   type ApproveTeachingPlanResult,
+  type CancelModelInvocationRequest,
+  type CreateModelInvocationRequest,
+  type CreateModelInvocationResult,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
   type CreateLessonPreparationTaskRequest,
@@ -36,9 +47,14 @@ import {
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
   type LessonTeachingPlanState,
+  type ModelExecutionView,
+  type ModelUsageSummary,
   type PendingProposalList,
   type ProposalReviewDetail,
   type RunExplanation,
+  type ProviderAvailability,
+  type ProviderCapabilities,
+  type RetryModelInvocationRequest,
   type SuggestionDispositionRequest,
   type SuggestionDispositionResult,
   type TaskResourceSelectionRequest,
@@ -311,6 +327,91 @@ export function createTeacherCopilotTask(
     "教师助手任务",
     apiRoutes.demo.createTeacherCopilotTask,
     CreateTeacherCopilotTaskResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function loadModelProviderAvailability(): Promise<ProviderAvailability> {
+  return request(
+    "模型服务可用性",
+    apiRoutes.teacher.modelProviderAvailability,
+    ProviderAvailabilitySchema
+  );
+}
+
+export function loadProviderCapabilities(): Promise<ProviderCapabilities | null> {
+  return request(
+    "模型能力摘要",
+    apiRoutes.teacher.modelProviderCapabilities,
+    ProviderCapabilitiesSchema.nullable()
+  );
+}
+
+export function loadModelUsageSummary(): Promise<ModelUsageSummary> {
+  return request(
+    "模型用量摘要",
+    apiRoutes.teacher.modelUsageSummary,
+    ModelUsageSummarySchema
+  );
+}
+
+export function createModelInvocation(
+  input: CreateModelInvocationRequest
+): Promise<CreateModelInvocationResult> {
+  CreateModelInvocationRequestSchema.parse(input);
+  return request(
+    "创建模型调用",
+    apiRoutes.teacher.modelInvocations,
+    CreateModelInvocationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function loadModelInvocation(
+  modelExecutionRef: string
+): Promise<ModelExecutionView> {
+  return request(
+    "模型调用状态",
+    apiRoutes.teacher.modelInvocation(modelExecutionRef),
+    ModelExecutionViewSchema
+  );
+}
+
+export function cancelModelInvocation(
+  modelExecutionRef: string,
+  input: CancelModelInvocationRequest
+): Promise<ModelExecutionView> {
+  CancelModelInvocationRequestSchema.parse(input);
+  return request(
+    "取消模型调用",
+    apiRoutes.teacher.modelInvocationCancel(
+      modelExecutionRef
+    ),
+    ModelExecutionViewSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function retryModelInvocation(
+  modelExecutionRef: string,
+  input: RetryModelInvocationRequest
+): Promise<CreateModelInvocationResult> {
+  RetryModelInvocationRequestSchema.parse(input);
+  return request(
+    "重试模型调用",
+    apiRoutes.teacher.modelInvocationRetry(
+      modelExecutionRef
+    ),
+    CreateModelInvocationResultSchema,
     {
       method: "POST",
       body: JSON.stringify(input)

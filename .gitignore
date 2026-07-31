@@ -4,6 +4,7 @@ dist/
 coverage/
 .vite/
 playwright-report/
+playwright-report-ark/
 test-results/
 output/playwright/
 .playwright-cli/

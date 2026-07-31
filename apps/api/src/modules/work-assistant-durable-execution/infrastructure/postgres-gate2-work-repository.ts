@@ -435,6 +435,52 @@ export class PostgresGate2WorkRepository {
       : undefined;
   }
 
+  async getTaskResultByTaskRun(
+    executor: SqlExecutor,
+    taskRunRef: string
+  ): Promise<
+    | {
+        taskResultRef: string;
+        taskRef: string;
+        taskRunRef: string;
+        proposalArtifactRef: string;
+        proposalRevisionRef: string;
+        teachingPlanArtifactRef: string;
+        draftRevisionRef: string;
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      task_result_ref: string;
+      task_ref: string;
+      task_run_ref: string;
+      proposal_artifact_ref: string;
+      proposal_revision_ref: string;
+      teaching_plan_artifact_ref: string;
+      draft_revision_ref: string;
+    }>(
+      `SELECT task_result_ref, task_ref, task_run_ref,
+              proposal_artifact_ref, proposal_revision_ref,
+              teaching_plan_artifact_ref, draft_revision_ref
+         FROM work.task_result
+        WHERE task_run_ref = $1`,
+      [taskRunRef]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          taskResultRef: row.task_result_ref,
+          taskRef: row.task_ref,
+          taskRunRef: row.task_run_ref,
+          proposalArtifactRef: row.proposal_artifact_ref,
+          proposalRevisionRef: row.proposal_revision_ref,
+          teachingPlanArtifactRef:
+            row.teaching_plan_artifact_ref,
+          draftRevisionRef: row.draft_revision_ref
+        }
+      : undefined;
+  }
+
   async getSuggestionDisposition(
     executor: SqlExecutor,
     proposalRevisionRef: string

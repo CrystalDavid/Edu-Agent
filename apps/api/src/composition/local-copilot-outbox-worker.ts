@@ -25,7 +25,10 @@ const gate24Events = {
     "LessonPreparationCancelled"
   ],
   runtime: ["AgentRunCompleted"],
-  capability: ["MockModelExecutionCompleted"],
+  capability: [
+    "MockModelExecutionCompleted",
+    "ModelInvocationQueued"
+  ],
   artifact: [
     "PedagogicalSuggestionProposed",
     "TeachingPlanDraftProposed",
@@ -37,7 +40,12 @@ const gate24Events = {
 >;
 
 export class LocalCopilotOutboxWorker {
-  private readonly workers: PostgresOutboxWorker[];
+  private readonly workers: {
+    worker: PostgresOutboxWorker;
+    handle: (
+      event: ClaimedOutboxEvent
+    ) => Promise<OutboxBusinessEffect>;
+  }[];
   private timer: NodeJS.Timeout | null = null;
   private activeTick: Promise<void> | null = null;
   private stopping = false;
@@ -45,18 +53,46 @@ export class LocalCopilotOutboxWorker {
   constructor(
     pool: Pool,
     workerId = `copilot-local:${randomUUID()}`,
-    private readonly pollMilliseconds = 100
+    private readonly pollMilliseconds = 100,
+    processModelInvocation?: (
+      modelExecutionRef: string
+    ) => Promise<void>
   ) {
     this.workers = Object.entries(gate24Events).map(
-      ([owner, eventNames]) =>
-        new PostgresOutboxWorker(
+      ([owner, eventNames]) => ({
+        worker: new PostgresOutboxWorker(
           pool,
           `${workerId}:${owner}`,
           "teacher-copilot-local-worker-v1",
           1_000,
           eventNames,
           owner as OutboxOwner
-        )
+        ),
+        handle: async (event) => {
+          if (event.eventName === "ModelInvocationQueued") {
+            if (!processModelInvocation) {
+              throw new Error(
+                "Model invocation processor is not configured."
+              );
+            }
+            const executionRef =
+              typeof event.payload["modelExecutionRef"] ===
+              "string"
+                ? event.payload["modelExecutionRef"]
+                : event.aggregateRef;
+            await processModelInvocation(executionRef);
+            return {
+              effectKey: `teacher-copilot-model:${event.outboxRef}`,
+              effectPayload: {
+                outcome: "model-invocation-processed",
+                modelExecutionRef: executionRef,
+                attemptCount: event.attemptCount
+              }
+            };
+          }
+          return handleEvent(event);
+        }
+      })
     );
   }
 
@@ -84,9 +120,11 @@ export class LocalCopilotOutboxWorker {
     let foundWork = true;
     while (processed < limit && foundWork) {
       foundWork = false;
-      for (const worker of this.workers) {
+      for (const entry of this.workers) {
         if (processed >= limit) break;
-        const outcome = await worker.processOne(handleEvent);
+        const outcome = await entry.worker.processOne(
+          entry.handle
+        );
         if (outcome === "processed") {
           processed += 1;
           foundWork = true;

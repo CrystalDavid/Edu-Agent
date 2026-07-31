@@ -14,9 +14,31 @@ import {
 import {
   LocalCopilotOutboxWorker
 } from "./local-copilot-outbox-worker.js";
+import {
+  MockModelProvider
+} from "../modules/capability-integration/infrastructure/mock-model-provider.js";
+import {
+  readModelProviderSettings
+} from "../modules/capability-integration/infrastructure/model-provider-config.js";
+import {
+  VolcengineArkProvider
+} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+import type {
+  ModelProvider
+} from "../modules/capability-integration/domain/capability.js";
+import type {
+  ModelProviderSettings
+} from "../modules/capability-integration/infrastructure/model-provider-config.js";
+import {
+  PostgresModelInvocationService
+} from "./postgres-model-invocation-service.js";
 
 export function createProductContainer(
-  environment: PostgresEnvironment
+  environment: PostgresEnvironment,
+  options: {
+    modelSettings?: ModelProviderSettings;
+    modelProvider?: ModelProvider;
+  } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
     max: 6,
@@ -26,8 +48,26 @@ export function createProductContainer(
     max: 2,
     connectionTimeoutMillis: 3_000
   });
+  const modelSettings =
+    options.modelSettings ?? readModelProviderSettings();
+  const modelProvider =
+    options.modelProvider ??
+    (modelSettings.activeProvider === "volcengine-ark" &&
+    modelSettings.ark
+      ? new VolcengineArkProvider(modelSettings.ark)
+      : new MockModelProvider());
+  const modelInvocations =
+    new PostgresModelInvocationService(
+      appPool,
+      modelProvider,
+      modelSettings
+    );
   const copilotOutbox = new LocalCopilotOutboxWorker(
-    workerPool
+    workerPool,
+    undefined,
+    100,
+    (modelExecutionRef) =>
+      modelInvocations.processExecution(modelExecutionRef)
   );
   return {
     services: {
@@ -37,6 +77,7 @@ export function createProductContainer(
         new PostgresDemoIdentityAuditService(appPool),
       teacherCopilot:
         new PostgresGate2TeacherCopilotService(appPool),
+      modelInvocations,
       lessonPreparation:
         new PostgresLessonPreparationService(appPool)
     },

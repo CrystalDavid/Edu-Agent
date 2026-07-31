@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type {
   AuthorizationDecision,
   FormalWriteMetadata,
-  FormalWriteReceipt
+  FormalWriteReceipt,
+  ModelDataManifest
 } from "@edu-agent/contracts";
 
 import { IdempotencyConflictError } from "../../../platform/errors.js";
@@ -24,6 +25,48 @@ export interface IdempotencyReservation {
 }
 
 export class PostgresGovernanceRepository {
+  async insertModelDataManifest(
+    client: PostgresClient,
+    input: {
+      manifest: ModelDataManifest;
+      metadata: FormalWriteMetadata & { owner: "governance" };
+    }
+  ): Promise<FormalWriteReceipt> {
+    const manifest = input.manifest;
+    await client.query(
+      `INSERT INTO governance.model_data_manifest (
+         model_data_manifest_ref, task_run_ref,
+         context_manifest_ref, provider, model_id_hash,
+         data_categories, resource_refs, field_names,
+         synthetic_data_assertion, retention_policy, tenant_ref,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+         $12, $13, $14, $15, $16, $17, $18
+       )`,
+      [
+        manifest.modelDataManifestRef,
+        manifest.taskRunRef,
+        manifest.contextManifestRef,
+        manifest.provider,
+        manifest.modelIdHash,
+        toPostgresJson(manifest.dataCategories),
+        toPostgresJson(manifest.resourceRefs),
+        toPostgresJson(manifest.fieldNames),
+        manifest.syntheticDataAssertion,
+        manifest.retentionPolicy,
+        manifest.tenantRef,
+        ...formalMetadataValues(input.metadata)
+      ]
+    );
+    return createReceipt({
+      writeRef: manifest.modelDataManifestRef,
+      recordType: "ModelDataManifest",
+      metadata: input.metadata
+    });
+  }
+
   async reserveIdempotency(
     client: PostgresClient,
     input: {

@@ -1,4 +1,7 @@
+import { existsSync } from "node:fs";
 import { createServer } from "node:net";
+import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 
 import { prepareDemo } from "./prepare-demo.mjs";
 import {
@@ -10,6 +13,18 @@ import {
 
 const apiOrigin = "http://localhost:3001";
 const webOrigin = "http://localhost:5173";
+const rootModelEnvironmentPath = resolve(".env.local");
+if (existsSync(rootModelEnvironmentPath)) {
+  loadEnvFile(rootModelEnvironmentPath);
+}
+const modelProviderMode =
+  process.env.MODEL_PROVIDER_MODE === "ark"
+    ? "ark"
+    : "mock";
+const expectedActiveProvider =
+  modelProviderMode === "ark"
+    ? "volcengine-ark"
+    : "mock";
 const processes = [];
 let shuttingDown = false;
 
@@ -133,13 +148,19 @@ try {
     (payload) =>
       payload?.status === "ok" &&
       payload?.service === "edu-agent-api" &&
-      payload?.mode === "mock"
+      payload?.mode === modelProviderMode
   );
   await waitForJson(
     `${apiOrigin}${apiRoutes.demo.bootstrap}`,
     (payload) =>
       payload?.identity?.dataMode === "synthetic" &&
       payload?.identity?.modelMode === "mock"
+  );
+  await waitForJson(
+    `${apiOrigin}${apiRoutes.teacher.modelProviderAvailability}`,
+    (payload) =>
+      payload?.activeProvider === expectedActiveProvider &&
+      payload?.fallbackToMock === false
   );
 
   startPackage("@edu-agent/web", environment);
@@ -153,7 +174,8 @@ try {
 
   process.stdout.write(
     "\n教师验收入口：http://localhost:5173/\n" +
-      "模式：Mock；数据：全部合成；外部模型：关闭。\n"
+      `Model Provider：${expectedActiveProvider}；` +
+      "数据：全部合成。\n"
   );
 } catch (error) {
   await shutdown(

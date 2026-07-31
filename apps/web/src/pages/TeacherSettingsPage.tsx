@@ -146,7 +146,7 @@ export function TeacherSettingsPage(props: {
             </div>
           </SettingsSection>
 
-          <SettingsSection id="privacy" title="隐私与数据" description="演示环境没有真实学生数据，也不向外部模型发送内容。">
+          <SettingsSection id="privacy" title="隐私与数据" description="演示环境只允许合成数据；启用 Ark 时，仅发送每次重新授权并封存的最小上下文。">
             <SettingsRow label="导出个人数据" description="导出演示设置、记忆和方法" control={<Button onClick={() => props.onAction("已生成演示导出清单")}>准备导出</Button>} />
             <SettingsRow label="删除个人数据" description="需要再次确认；当前只重置本地演示状态" control={<Button danger onClick={() => props.onAction("删除操作未执行：本轮仅提供界面预览")}>查看范围</Button>} />
             <SettingsRow label="模型数据外发" description="真实模型默认关闭" control={<StatusPill tone="success">未外发</StatusPill>} />

@@ -196,6 +196,83 @@ export class PostgresGate2RuntimeRepository {
       : undefined;
   }
 
+  async getContextManifestByRef(
+    executor: SqlExecutor,
+    contextManifestRef: string
+  ): Promise<
+    | {
+        contextManifestRef: string;
+        agentRunRef: string;
+        taskRef: string;
+        authorizedContextPlanRef: string;
+        resourceRefs: string[];
+        evidenceRefs: string[];
+        unknowns: string[];
+        requestedFieldMask: string[];
+        requestSummary: TeacherTaskRequest;
+        sealedAt: string;
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      context_manifest_ref: string;
+      agent_run_ref: string;
+      task_ref: string;
+      authorized_context_plan_ref: string | null;
+      resource_refs: string[];
+      evidence_refs: string[];
+      unknowns: string[];
+      requested_field_mask: string[];
+      request_summary: unknown;
+      created_at: Date;
+    }>(
+      `SELECT context_manifest_ref, agent_run_ref, task_ref,
+              authorized_context_plan_ref, resource_refs,
+              evidence_refs, unknowns, requested_field_mask,
+              request_summary, created_at
+         FROM runtime.context_manifest
+        WHERE context_manifest_ref = $1`,
+      [contextManifestRef]
+    );
+    const row = result.rows[0];
+    return row?.authorized_context_plan_ref
+      ? {
+          contextManifestRef: row.context_manifest_ref,
+          agentRunRef: row.agent_run_ref,
+          taskRef: row.task_ref,
+          authorizedContextPlanRef:
+            row.authorized_context_plan_ref,
+          resourceRefs: row.resource_refs,
+          evidenceRefs: row.evidence_refs,
+          unknowns: row.unknowns,
+          requestedFieldMask: row.requested_field_mask,
+          requestSummary: TeacherTaskRequestSchema.parse(
+            row.request_summary
+          ),
+          sealedAt: row.created_at.toISOString()
+        }
+      : undefined;
+  }
+
+  async getAuthorizedContextPlanByRef(
+    executor: SqlExecutor,
+    authorizedContextPlanRef: string
+  ): Promise<AuthorizedContextPlan | undefined> {
+    const result = await executor.query<AuthorizedContextPlanRow>(
+      `SELECT authorized_context_plan_ref, task_ref, task_run_ref,
+              working_set_version, authorized_resource_refs,
+              authorized_evidence_refs, denied_resource_refs,
+              requested_field_mask, authorization_decision_ref,
+              content_hash, created_at
+         FROM runtime.authorized_context_plan
+        WHERE authorized_context_plan_ref = $1`,
+      [authorizedContextPlanRef]
+    );
+    return result.rows[0]
+      ? toAuthorizedContextPlan(result.rows[0])
+      : undefined;
+  }
+
   async getRunExplanation(
     executor: SqlExecutor,
     taskRunRef: string
@@ -203,7 +280,7 @@ export class PostgresGate2RuntimeRepository {
     | {
         agentRunRef: string;
         status: string;
-        provider: "mock";
+        provider: "mock" | "volcengine-ark";
         modelProfile: string;
         manifestRef: string;
         contextManifestRef: string;
@@ -219,7 +296,7 @@ export class PostgresGate2RuntimeRepository {
     const result = await executor.query<{
       agent_run_ref: string;
       status: string;
-      model_provider: "mock";
+      model_provider: "mock" | "volcengine-ark";
       model_profile: string;
       manifest_ref: string;
       context_manifest_ref: string;

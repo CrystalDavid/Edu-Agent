@@ -17,6 +17,7 @@
     "@edu-agent/test-fixtures": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
+    "openai": "^7.1.0",
     "pg": "^8.22.0",
     "zod": "^4.4.3"
   },

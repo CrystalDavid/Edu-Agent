@@ -1,7 +1,9 @@
 import type {
   FormalWriteMetadata,
   ModelRequest,
+  ModelRequestV2,
   ModelResponse,
+  ModelResult,
   OutboxRecord,
   ToolRequest,
   ToolResponse
@@ -51,6 +53,16 @@ export interface ModelProvider {
   readonly descriptor: CapabilityDescriptor;
   readonly executionContract: ExecutionContract;
   readonly governanceProfile: GovernanceProfile;
+  invoke(
+    request: ModelRequestV2,
+    options?: {
+      signal?: AbortSignal;
+      requestHeaders?: Readonly<Record<string, string>>;
+    }
+  ): Promise<ModelResult>;
+}
+
+export interface LegacyModelProvider extends ModelProvider {
   generate(request: ModelRequest): Promise<ModelResponse>;
 }
 

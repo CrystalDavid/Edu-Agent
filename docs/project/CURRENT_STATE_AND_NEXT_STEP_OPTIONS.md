@@ -802,3 +802,58 @@ Gate 2.5 真实范围：
 - 真实 Provider 前必须先解决事务外执行、Run 恢复、幂等重试、超时/取消、内容安全、脱敏、成本上限和确定性评测。
 
 若产品所有者下一目标是“下载并带走课件/讲义”，则应改选 Gate 2.5B；否则推荐 Gate 2.6。两者不得并行推进。
+
+## 18. Gate 2.6A 完成后的当前状态（权威更新）
+
+本节覆盖 17.4 中“真实模型前长事务风险”和 17.5 的 Provider 选择问题。
+
+### 18.1 已实现
+
+| 能力 | 当前事实 |
+|---|---|
+| 单一生产 Provider | `VolcengineArkProvider`；OpenAI-compatible Node SDK 只在 API Integration Adapter，模型 ID 服务端配置 |
+| 默认与测试 | local/test/CI 默认 Mock；普通测试无网络；Fake Ark 独立验证协议与故障路径 |
+| 事务边界 | HTTP 事务只提交 TaskRun、授权 Context、ModelDataManifest、queued ModelExecution 和 Outbox；Worker 在事务外调用 |
+| lifecycle | queued/running/validating/succeeded，加 timeout、retryable/permanent/validation/budget/cancel 状态和 timeline |
+| Prompt/output | versioned PromptBundle；1–3 条结构化建议；JSON、Zod、Evidence、Lesson/Objective/CourseRun 和 Policy 校验 |
+| 修复与 retry | 临时网络/429/5xx 有限 retry；首次输出错误最多一次同模型、同权限修复；人工 retry 保留旧执行 |
+| 取消/恢复 | queued 取消、running cancel_requested + AbortController；刷新/重启/租约过期恢复；成功 Proposal 只创建一次 |
+| 幂等 | 同键同 payload 重放；同键不同 payload 结构化 409；Worker 重放不重复业务结果 |
+| 数据治理 | ModelDataManifest 只允许 demo tenant/actor 和 synthetic data；Secret/连接信息/个人标识在排队前阻止 |
+| 预算/usage | 调用前 Token/费用/日预算/教师预算/并发/排队检查；attempt usage、延迟和费用累计 |
+| 可观测性 | Runs 显示安全 Provider 摘要；不显示 Key、Base URL、Prompt、原始响应、错误体或隐藏思维链 |
+| Capability | 可重复 live probe；安全 hash/boolean snapshot；图片/stream/function 只探测不产品化 |
+| 评测 | 32 条合成固定集；Mock/Ark 共用核心 Contract；Fake Server 覆盖成功、429、5xx、timeout、disconnect、非 JSON、修复与取消 |
+
+### 18.2 数据库增量
+
+- Capability：扩展既有 `model_execution`，新增 lifecycle event、budget decision、provider capability snapshot；
+- Governance：immutable `model_data_manifest`；
+- Work / Runtime：TaskRun 与 AgentRun lifecycle 时间；
+- 总 Migration 29；不保存 API Key，不新建万能 model-run 表。
+
+### 18.3 尚未被仓库预先证明
+
+真实火山方舟 Live Test 默认关闭。当前实现与 Fake Contract Test 可以证明 Adapter、Worker、校验和恢复逻辑，但不能预先证明用户账户的鉴权、余额、配额、当前模型授权，以及真实模型的图片/JSON Schema/Function Calling/streaming 布尔结果。只有用户在本地显式运行 safe capability probe / live test 后，才能记录这些真实结果。
+
+### 18.4 仍未实现
+
+- 图片、文件、ObjectStore、OCR、PPT/DOCX/PDF；
+- streaming 或 Function Calling 产品流程；
+- Provider 长期会话；
+- 第二模型、多供应商、ModelRouter、自动回退或教师模型选择；
+- 正式身份/SSO、真实学校数据、云部署、生产 Worker 运维；
+- 日程、作业考试、学生长期模型、多 Agent 和 v0.4。
+
+### 18.5 下一阶段建议
+
+推荐优先讨论 **Gate 2.5B — 文件和教学成果**，而不是立即进入 Gate 2.6B。
+
+理由：
+
+- 纯文本真实 Provider 的执行、恢复、校验和治理边界已经建立；
+- Gate 2.6B 的主要候选是图片/多模态产品化，但当前没有 ObjectStore、文件权限、MIME/容量/病毒扫描、保留与删除语义；
+- 先建立受控文件/教学成果边界，才能让后续图片理解或文档生成有可靠资产来源；
+- 继续扩模型能力而没有文件真值会形成新的演示孤岛。
+
+Gate 2.5B 应保持窄范围：TeachingPlan 导出/教学成果的文件真值、LocalObjectStore、版本/校验和/权限/孤儿清理；不同时实现多模态、OCR、第二模型或云存储。Gate 2.6B 之后再基于已授权文件资产决定图片输入是否产品化。

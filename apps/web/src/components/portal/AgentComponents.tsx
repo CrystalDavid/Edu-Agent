@@ -199,7 +199,7 @@ export function AgentChat(props: {
           />
           <button type="button" className="composer-send" aria-label="发送" disabled={!message.trim()} onClick={send}><WorkspaceIcon name="send" /></button>
         </div>
-        <small>当前使用本地演示助手，不调用外部模型。生成内容需要教师判断。</small>
+        <small>生成服务由服务端配置；只发送经授权的合成数据，生成内容需要教师判断。</small>
       </div>
     </main>
   );

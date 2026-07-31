@@ -28,6 +28,19 @@ describe("local demo startup contract", () => {
     expect(runner.indexOf("apiRoutes.demo.bootstrap")).toBeLessThan(
       runner.indexOf('startPackage("@edu-agent/web"')
     );
+    expect(
+      runner.indexOf(
+        "apiRoutes.teacher.modelProviderAvailability"
+      )
+    ).toBeLessThan(
+      runner.indexOf('startPackage("@edu-agent/web"')
+    );
+    expect(runner).toContain(
+      "payload?.activeProvider === expectedActiveProvider"
+    );
+    expect(runner).toContain(
+      "payload?.fallbackToMock === false"
+    );
     expect(runner).toContain(
       "教师验收入口：http://localhost:5173/"
     );

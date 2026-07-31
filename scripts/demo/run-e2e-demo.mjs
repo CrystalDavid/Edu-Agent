@@ -29,6 +29,11 @@ function requiredEnvironment(name) {
 const runId = normalizeE2eRunId(requiredEnvironment("E2E_RUN_ID"));
 const apiPort = Number(requiredEnvironment("E2E_API_PORT"));
 const webPort = Number(requiredEnvironment("E2E_WEB_PORT"));
+const modelMode = process.env.E2E_MODEL_MODE ?? "mock";
+const fakeArkPort =
+  modelMode === "ark-fake"
+    ? Number(requiredEnvironment("E2E_FAKE_ARK_PORT"))
+    : undefined;
 if (
   !Number.isInteger(apiPort) ||
   !Number.isInteger(webPort) ||
@@ -127,6 +132,25 @@ async function waitForHtml(url, timeoutMs = 30_000) {
   throw new Error(`${url} did not serve HTML before timeout.`);
 }
 
+function startTool(arguments_, environment) {
+  const child = spawnPnpm(arguments_, environment);
+  processes.push(child);
+  child.on("error", (error) => {
+    void shutdown(
+      1,
+      `local test tool failed: ${error.message}`
+    );
+  });
+  child.on("exit", (code, signal) => {
+    if (!shuttingDown) {
+      void shutdown(
+        code ?? 1,
+        `local test tool exited unexpectedly (${signal ?? code ?? "unknown"}).`
+      );
+    }
+  });
+}
+
 function startPackage(packageName, environment, script = "dev") {
   const child = spawnPnpm(
     ["--filter", packageName, script],
@@ -200,6 +224,10 @@ try {
     ["--filter", "@edu-agent/contracts", "build"],
     databaseEnvironment
   );
+  runPnpm(
+    ["--filter", "@edu-agent/web", "build"],
+    databaseEnvironment
+  );
   const { apiRoutes } = await import(
     "../../packages/contracts/dist/api-routes.js"
   );
@@ -210,10 +238,45 @@ try {
     COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
+    MODEL_PROVIDER_MODE:
+      modelMode === "ark-fake" ? "ark" : "mock",
+    ENABLE_LIVE_MODEL_TESTS: "false",
+    MODEL_DEBUG_CONTENT: "false",
     PORT: String(apiPort),
     E2E_API_ORIGIN: apiOrigin,
     E2E_WEB_PORT: String(webPort)
   };
+  if (modelMode === "ark-fake") {
+    if (!Number.isInteger(fakeArkPort) || fakeArkPort < 1) {
+      throw new Error(
+        "Fake Ark mode requires a valid local port."
+      );
+    }
+    Object.assign(applicationEnvironment, {
+      ARK_BASE_URL: `http://127.0.0.1:${fakeArkPort}/api/v3`,
+      ARK_API_KEY: "placeholder-for-local-fake",
+      ARK_MODEL_ID: "synthetic-ark-model",
+      ARK_MODEL_DISPLAY_NAME: "Synthetic Ark Model",
+      ARK_API_MODE: "chat_completions",
+      MODEL_REQUEST_TIMEOUT_MS: "1500",
+      MODEL_MAX_OUTPUT_TOKENS: "512",
+      MODEL_MAX_RETRIES: "2",
+      E2E_FAKE_ARK_PORT: String(fakeArkPort)
+    });
+    startTool(
+      [
+        "exec",
+        "tsx",
+        "tests/support/fake-ark-server-cli.ts"
+      ],
+      applicationEnvironment
+    );
+    await waitForJson(
+      `http://127.0.0.1:${fakeArkPort}/__fake_ark/status`,
+      (payload) =>
+        payload?.provider === "fake-volcengine-ark"
+    );
+  }
 
   startPackage("@edu-agent/api", applicationEnvironment, "demo");
   await waitForJson(
@@ -224,7 +287,11 @@ try {
     `${apiOrigin}${apiRoutes.demo.bootstrap}`,
     (payload) => payload?.identity?.dataMode === "synthetic"
   );
-  startPackage("@edu-agent/web", applicationEnvironment);
+  startPackage(
+    "@edu-agent/web",
+    applicationEnvironment,
+    "preview"
+  );
   await waitForHtml(`${webOrigin}/`);
   await waitForJson(
     `${webOrigin}${apiRoutes.demo.bootstrap}`,

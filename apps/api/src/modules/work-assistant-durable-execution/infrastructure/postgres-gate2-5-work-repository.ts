@@ -5,7 +5,10 @@ import type {
   TaskWorkingSet,
   TeacherTaskRequest
 } from "@edu-agent/contracts";
-import { TaskWorkingSetSchema } from "@edu-agent/contracts";
+import {
+  TaskWorkingSetSchema,
+  TeacherTaskRequestSchema
+} from "@edu-agent/contracts";
 
 import type {
   PostgresClient,
@@ -597,10 +600,12 @@ export class PostgresGate25WorkRepository {
       taskRunRef: string;
       taskRef: string;
       attempt: number;
+      status?: "queued" | "running" | "completed" | "failed";
       request: TeacherTaskRequest;
       metadata: WorkMetadata;
       outboxRef: string;
       outboxMetadata: WorkMetadata;
+      outboxEventName?: string;
     }
   ): Promise<readonly FormalWriteReceipt[]> {
     await client.query(
@@ -623,21 +628,35 @@ export class PostgresGate25WorkRepository {
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
-         $1, $2, $3, 'completed', $4, $5,
-         $6, $7, $8, $9, $10, $11, $12
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12, $13
        )`,
       [
         input.taskRunRef,
         input.taskRef,
         input.attempt,
+        input.status ?? "completed",
         toPostgresJson(input.request),
         input.request.requestVersion,
         ...formalMetadataValues(input.metadata)
       ]
     );
+    await client.query(
+      `UPDATE work.task_run
+          SET updated_at = $2::timestamptz,
+              completed_at = CASE
+                WHEN status = 'completed'
+                  THEN $2::timestamptz
+                ELSE NULL
+              END
+        WHERE task_run_ref = $1`,
+      [input.taskRunRef, input.metadata.createdAt]
+    );
     await this.insertOutbox(client, {
       outboxRef: input.outboxRef,
-      eventName: "TeacherCopilotTaskRunCompleted",
+      eventName:
+        input.outboxEventName ??
+        "TeacherCopilotTaskRunCompleted",
       aggregateRef: input.taskRunRef,
       payload: {
         taskRef: input.taskRef,
@@ -658,6 +677,76 @@ export class PostgresGate25WorkRepository {
         metadata: input.outboxMetadata
       })
     ];
+  }
+
+  async getTaskRun(
+    executor: SqlExecutor,
+    taskRunRef: string
+  ): Promise<
+    | {
+        taskRunRef: string;
+        taskRef: string;
+        attempt: number;
+        status: string;
+        request: TeacherTaskRequest;
+        createdAt: string;
+      }
+    | undefined
+  > {
+    const result = await executor.query<{
+      task_run_ref: string;
+      task_ref: string;
+      attempt: number;
+      status: string;
+      request_payload: unknown;
+      created_at: Date;
+    }>(
+      `SELECT task_run_ref, task_ref, attempt, status,
+              request_payload, created_at
+         FROM work.task_run
+        WHERE task_run_ref = $1`,
+      [taskRunRef]
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          taskRunRef: row.task_run_ref,
+          taskRef: row.task_ref,
+          attempt: row.attempt,
+          status: row.status,
+          request: TeacherTaskRequestSchema.parse(
+            row.request_payload
+          ),
+          createdAt: row.created_at.toISOString()
+        }
+      : undefined;
+  }
+
+  async updateTaskRunStatus(
+    client: PostgresClient,
+    input: {
+      taskRunRef: string;
+      status:
+        | "queued"
+        | "running"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      updatedAt: string;
+    }
+  ): Promise<void> {
+    await client.query(
+      `UPDATE work.task_run
+          SET status = $2,
+              updated_at = $3::timestamptz,
+              completed_at = CASE
+                WHEN $2 IN ('completed', 'failed', 'cancelled')
+                  THEN $3::timestamptz
+                ELSE NULL
+              END
+        WHERE task_run_ref = $1`,
+      [input.taskRunRef, input.status, input.updatedAt]
+    );
   }
 
   private async insertWorkingSetRevision(
