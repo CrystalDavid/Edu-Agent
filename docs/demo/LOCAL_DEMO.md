@@ -1,10 +1,10 @@
-# Gate 2.4 Teacher Copilot 本地演示
+# Gate 2.5 最小可恢复备课闭环本地演示
 
 ## 演示边界
 
-本演示只使用合成的八年级数学“一次函数斜率与图像关系”数据和确定性 `MockModelProvider`。它不会调用 DeepSeek 或其他外部模型，不连接云服务，也不会产生模型费用。
+本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、教学目标、Evidence 和确定性 `MockModelProvider`。它不会调用 DeepSeek 或其他外部模型，不连接云服务，也不会产生模型费用。
 
-普通教师端七个一级页面中，只有 Teacher Copilot、Teaching Plan、Runs 及其从教学页进入的备课路径是 PostgreSQL-backed 业务切片；其他大部分页面仍是高保真 Mock。不要把视觉完整度解释为业务上线。
+普通教师端七个一级页面中，概览的备课区、教学的课程/课时区、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；日程、作业、测试、学生、文件、通用 Agent 对话和设置仍主要是高保真 Mock。不要把视觉完整度解释为业务上线。
 
 ## 前置条件
 
@@ -28,7 +28,7 @@ corepack pnpm demo:dev
 3. 初始化七个 Schema、数据库角色和 migrations；
 4. 幂等 Seed 合成数据；
 5. 显式以 `APP_ENV=local`、`DEMO_AUTH_BYPASS=true` 启动演示 API；
-6. 启动 Gate 2.4 本地 Outbox Worker；
+6. 启动 Gate 2.5 共用的本地 Copilot Outbox Worker；
 7. 等待 API 和 Web 通过启动检查。
 
 打开：
@@ -58,17 +58,20 @@ http://localhost:5173/
 
 ## 推荐验收路径
 
-1. 在“教学 → 作业”选择“调整下一课”，进入真实 Copilot；
-2. 输入一条具体备课请求并提交；
-3. 记录浏览器中的 Proposal 详情 URL，然后刷新；
-4. 确认恢复的是同一请求、同一 Proposal、同一 Evidence，不会重新生成；
-5. 选择策略，修改一个字段并“修改后接受”；
-6. 进入 Teaching Plan，确认新 Revision 为 `in_review`，原 `approved` 仍是当前正式计划；
-7. 单独点击“批准为当前教学计划”，确认系统创建新的 `approved` Revision；
-8. 创建第二条 Proposal 并拒绝，确认当前已批准计划不变；
-9. 进入 Runs，查看教师请求摘要、Evidence refs、Contract、Authorization、Audit 和 Outbox 处理状态。
+1. 打开“教学”，选择“一次函数 → 斜率与图像变化”；
+2. 查看教学目标、原 current approved TeachingPlan 和“当前课时没有未完成的备课任务”；
+3. 点击“开始备课”，进入 `/agent/tasks/:taskRef`；
+4. 检查锁定的 CourseRun、Unit、Lesson、教学目标、baseline plan、Evidence 和 TaskWorkingSet；可删除一条可选 Evidence；
+5. 输入一条具体备课请求并提交，记录 Proposal 详情 URL 后刷新；
+6. 确认恢复同一请求、TaskRun、Proposal、Evidence 和 sealed ContextManifest，不重新调用模型；
+7. 选择策略并“修改后接受”，进入 Teaching Plan；确认新 Revision 为 active `in_review`，原 current `approved` 不变；
+8. 单独点击“批准为当前教学计划”；确认新 immutable `approved` 成为 current，Task 为 `ready_for_use`；
+9. 单独点击“完成备课”；确认 Task 为 `completed`、概览未完成数量减少、课时显示“已准备”；
+10. 进入 Runs 查看 request、Lesson、TaskWorkingSet、AuthorizedContextPlan、ContextManifest、Proposal、Disposition、Plan/Work 状态、Authorization、Audit 和 Outbox；
+11. 在同一已完成 Task 创建第二 Proposal 并拒绝；确认 current approved 和 completed 状态不变；
+12. 执行 `corepack pnpm demo:down` 后重新 `corepack pnpm demo:dev`，确认上述状态仍存在。
 
-Gate 2.4 不实现 `published`。接受建议、进入审核和批准是不同语义；任何操作都不表示课堂已经实施，也不会创建 `ObservedPedagogicalMove` 或 `InstructionalDecision`。
+Gate 2.5 不实现 `published`。接受建议、进入审核、批准计划和完成备课是不同语义；任何操作都不表示课堂已经实施，也不会创建 `ObservedPedagogicalMove` 或 `InstructionalDecision`。已完成 Task 若要形成新的 in-review 计划，必须先由教师显式 reopen。
 
 ## 数据库生命周期
 
@@ -110,9 +113,9 @@ corepack pnpm test:playwright
 
 ## Outbox Worker
 
-`demo:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 消费 Gate 2.4 的 Work、Runtime、Capability 与 Artifact 事件，使用现有租约、重试和 `work.outbox_consumer_effect` 去重。
+`demo:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 消费 Gate 2.4 原有事件以及 `LessonPreparationTaskCreated`、`LessonPreparationStarted`、`TeachingPlanReviewCreated`、`LessonPreparationReadyForUse`、`LessonPreparationCompleted` 等 Gate 2.5 Work 事件，继续使用现有租约、重试和 `work.outbox_consumer_effect` 去重。
 
-业务事务中的 Task、Disposition、TeachingPlan Revision、当前指针与 Audit 同步提交；Worker 只确认异步事件消费，不负责决定业务事务是否成功。Worker 停止不会回滚业务写入，重启后会继续领取 pending/retry 或租约过期事件。本项目不声称 exactly-once。
+业务事务中的 Task、状态历史、Working Set、AuthorizedContextPlan、ContextManifest、Disposition、TeachingPlan Revision、current 指针、Lesson 投影与 Audit 同步提交；Worker 记录可恢复的异步消费效果，不负责决定业务事务是否成功。Worker 停止不会回滚业务写入，重启后会继续领取 pending/retry 或租约过期事件。本项目不声称 exactly-once。
 
 ## 常见故障
 
@@ -146,6 +149,6 @@ corepack pnpm demo:doctor
 - 真实模型、DeepSeek API Key；
 - CloudBase、Netlify、CVM；
 - 文件上传、LocalObjectStore、二进制文件；
-- Todo/Calendar、完整课程树、作业/考试业务闭环；
+- Todo/Calendar、完整课程资源树和课程 CRUD、作业/考试业务闭环；
 - 学生长期模型、多 Agent、v0.4；
 - 自动发布或外部承诺。

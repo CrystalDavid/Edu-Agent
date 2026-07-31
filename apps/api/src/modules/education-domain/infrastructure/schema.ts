@@ -1,4 +1,5 @@
 import {
+  boolean,
   integer,
   jsonb,
   numeric,
@@ -24,6 +25,93 @@ export const courseRunTable = educationSchema.table("course_run", {
   academicTerm: text("academic_term").notNull(),
   ...formalWriteColumns()
 });
+
+export const curriculumUnitTable = educationSchema.table(
+  "curriculum_unit",
+  {
+    unitRef: text("unit_ref").primaryKey(),
+    courseRunRef: text("course_run_ref").notNull(),
+    sequence: integer("sequence").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    status: text("status").notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const lessonTable = educationSchema.table("lesson", {
+  lessonRef: text("lesson_ref").primaryKey(),
+  unitRef: text("unit_ref").notNull(),
+  sequence: integer("sequence").notNull(),
+  title: text("title").notNull(),
+  plannedAt: timestamp("planned_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
+  durationMinutes: integer("duration_minutes").notNull(),
+  preparationState: text("preparation_state").notNull(),
+  currentApprovedPlanRef: text("current_approved_plan_ref"),
+  activePreparationTaskRef: text("active_preparation_task_ref"),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "string"
+  }).notNull(),
+  ...formalWriteColumns()
+});
+
+export const lessonLearningObjectiveLinkTable =
+  educationSchema.table(
+    "lesson_learning_objective_link",
+    {
+      lessonRef: text("lesson_ref").notNull(),
+      objectiveRef: text("objective_ref").notNull(),
+      ...formalWriteColumns()
+    },
+    (table) => [
+      primaryKey({
+        columns: [table.lessonRef, table.objectiveRef]
+      })
+    ]
+  );
+
+export const lessonEvidenceLinkTable = educationSchema.table(
+  "lesson_evidence_link",
+  {
+    lessonRef: text("lesson_ref").notNull(),
+    evidenceRef: text("evidence_ref").notNull(),
+    evidenceKind: text("evidence_kind").notNull(),
+    isCurrent: boolean("is_current").notNull().default(true),
+    ...formalWriteColumns()
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.lessonRef, table.evidenceRef]
+    })
+  ]
+);
+
+export const lessonTeachingPlanBindingTable =
+  educationSchema.table("lesson_teaching_plan_binding", {
+    bindingRef: text("binding_ref").primaryKey(),
+    lessonRef: text("lesson_ref").notNull(),
+    preparationTaskRef: text("preparation_task_ref"),
+    teachingPlanArtifactRef: text(
+      "teaching_plan_artifact_ref"
+    ).notNull(),
+    teachingPlanRevisionRef: text(
+      "teaching_plan_revision_ref"
+    ).notNull(),
+    bindingKind: text("binding_kind").notNull(),
+    supersededAt: timestamp("superseded_at", {
+      withTimezone: true,
+      mode: "string"
+    }),
+    ...formalWriteColumns()
+  });
 
 export const learningObjectiveTable = educationSchema.table(
   "learning_objective",

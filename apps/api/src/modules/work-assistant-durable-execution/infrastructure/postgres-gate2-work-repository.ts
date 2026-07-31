@@ -120,6 +120,7 @@ export class PostgresGate2WorkRepository {
     input: {
       taskResultRef: string;
       taskRef: string;
+      taskRunRef: string;
       goalRef?: string;
       proposalArtifactRef: string;
       proposalRevisionRef: string;
@@ -132,6 +133,7 @@ export class PostgresGate2WorkRepository {
       `INSERT INTO work.task_result (
          task_result_ref,
          task_ref,
+         task_run_ref,
          goal_ref,
          proposal_artifact_ref,
          proposal_revision_ref,
@@ -145,12 +147,13 @@ export class PostgresGate2WorkRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7,
-         $8, $9, $10, $11, $12, $13, $14
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13, $14, $15
        )`,
       [
         input.taskResultRef,
         input.taskRef,
+        input.taskRunRef,
         input.goalRef ?? null,
         input.proposalArtifactRef,
         input.proposalRevisionRef,
@@ -330,9 +333,11 @@ export class PostgresGate2WorkRepository {
   ): Promise<
     Array<{
       proposalArtifactRef: string;
-      proposalRevisionRef: string;
-      taskRef: string;
-      disposed: boolean;
+       proposalRevisionRef: string;
+       taskRef: string;
+       preparationTaskRef?: string;
+       lessonRef?: string;
+       disposed: boolean;
       requestText: string;
       createdAt: string;
     }>
@@ -341,6 +346,8 @@ export class PostgresGate2WorkRepository {
       proposal_artifact_ref: string;
       proposal_revision_ref: string;
       task_ref: string;
+      preparation_task_ref: string | null;
+      lesson_ref: string | null;
       disposed: boolean;
       request_text: string;
       created_at: Date;
@@ -349,12 +356,17 @@ export class PostgresGate2WorkRepository {
          result.proposal_artifact_ref,
          result.proposal_revision_ref,
          result.task_ref,
+         task_run.request_payload ->> 'preparationTaskRef'
+           AS preparation_task_ref,
+         task_run.request_payload ->> 'lessonRef' AS lesson_ref,
          (disposition.disposition_ref IS NOT NULL) AS disposed,
-         task.request_payload ->> 'requestText' AS request_text,
+         task_run.request_payload ->> 'requestText' AS request_text,
          result.created_at
        FROM work.task_result AS result
        JOIN work.task AS task
          ON task.task_ref = result.task_ref
+       JOIN work.task_run AS task_run
+         ON task_run.task_run_ref = result.task_run_ref
        JOIN work.goal_record AS goal
          ON goal.goal_ref = result.goal_ref
        LEFT JOIN work.suggestion_disposition AS disposition
@@ -368,6 +380,10 @@ export class PostgresGate2WorkRepository {
       proposalArtifactRef: row.proposal_artifact_ref,
       proposalRevisionRef: row.proposal_revision_ref,
       taskRef: row.task_ref,
+      ...(row.preparation_task_ref
+        ? { preparationTaskRef: row.preparation_task_ref }
+        : {}),
+      ...(row.lesson_ref ? { lessonRef: row.lesson_ref } : {}),
       disposed: row.disposed,
       requestText: row.request_text,
       createdAt: row.created_at.toISOString()
@@ -380,6 +396,7 @@ export class PostgresGate2WorkRepository {
   ): Promise<
     | {
         taskRef: string;
+        taskRunRef: string;
         goalRef: string;
         proposalArtifactRef: string;
         proposalRevisionRef: string;
@@ -390,13 +407,14 @@ export class PostgresGate2WorkRepository {
   > {
     const result = await executor.query<{
       task_ref: string;
+      task_run_ref: string;
       goal_ref: string;
       proposal_artifact_ref: string;
       proposal_revision_ref: string;
       teaching_plan_artifact_ref: string;
       draft_revision_ref: string;
     }>(
-      `SELECT task_ref, goal_ref, proposal_artifact_ref,
+      `SELECT task_ref, task_run_ref, goal_ref, proposal_artifact_ref,
               proposal_revision_ref, teaching_plan_artifact_ref,
               draft_revision_ref
          FROM work.task_result
@@ -407,6 +425,7 @@ export class PostgresGate2WorkRepository {
     return row
       ? {
           taskRef: row.task_ref,
+          taskRunRef: row.task_run_ref,
           goalRef: row.goal_ref,
           proposalArtifactRef: row.proposal_artifact_ref,
           proposalRevisionRef: row.proposal_revision_ref,
@@ -468,7 +487,7 @@ export class PostgresGate2WorkRepository {
     }>(
       `SELECT task.task_ref, task_run.task_run_ref,
               task.authorization_decision_ref,
-              task.request_payload, contract.contract_ref,
+              task_run.request_payload, contract.contract_ref,
               result.proposal_artifact_ref,
               result.proposal_revision_ref,
               result.teaching_plan_artifact_ref,
@@ -477,7 +496,7 @@ export class PostgresGate2WorkRepository {
          JOIN work.task AS task
            ON task.task_ref = result.task_ref
          JOIN work.task_run AS task_run
-           ON task_run.task_ref = task.task_ref
+           ON task_run.task_run_ref = result.task_run_ref
          JOIN work.resolved_learning_interaction_contract AS contract
            ON contract.bound_run_kind = 'TaskRun'
           AND contract.bound_run_ref = task_run.task_run_ref
@@ -518,7 +537,7 @@ export class PostgresGate2WorkRepository {
          task.status AS task_status,
          task.goal_ref,
          task.authorization_decision_ref,
-         task.request_payload,
+         task_run.request_payload,
          task_run.task_run_ref,
          task_run.status AS task_run_status,
          task_run.created_at AS task_run_created_at,
@@ -539,13 +558,13 @@ export class PostgresGate2WorkRepository {
          approval_outbox.authorization_decision_ref AS
            approval_authorization_decision_ref
        FROM work.task AS task
+       JOIN work.task_result AS result
+         ON result.task_ref = task.task_ref
        JOIN work.task_run AS task_run
-         ON task_run.task_ref = task.task_ref
+         ON task_run.task_run_ref = result.task_run_ref
        JOIN work.resolved_learning_interaction_contract AS contract
          ON contract.bound_run_kind = 'TaskRun'
         AND contract.bound_run_ref = task_run.task_run_ref
-       JOIN work.task_result AS result
-         ON result.task_ref = task.task_ref
        LEFT JOIN work.suggestion_disposition AS disposition
          ON disposition.proposal_revision_ref =
               result.proposal_revision_ref
@@ -553,7 +572,9 @@ export class PostgresGate2WorkRepository {
          ON approval_outbox.event_name = 'TeachingPlanApproved'
         AND approval_outbox.payload ->> 'inReviewRevisionRef' =
               disposition.resulting_revision_ref
-       WHERE task.task_ref = $1`,
+       WHERE task.task_ref = $1
+       ORDER BY task_run.attempt DESC
+       LIMIT 1`,
       [taskRef]
     );
     const row = result.rows[0];

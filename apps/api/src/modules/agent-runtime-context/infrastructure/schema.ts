@@ -72,8 +72,35 @@ export const contextManifestTable = runtimeSchema.table(
     unknowns: jsonb("unknowns").notNull(),
     requestedFieldMask: jsonb("requested_field_mask").notNull(),
     taskRef: text("task_ref"),
+    authorizedContextPlanRef: text(
+      "authorized_context_plan_ref"
+    ),
     requestSummary: jsonb("request_summary").notNull(),
     requestVersion: integer("request_version").notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const authorizedContextPlanTable = runtimeSchema.table(
+  "authorized_context_plan",
+  {
+    authorizedContextPlanRef: text(
+      "authorized_context_plan_ref"
+    ).primaryKey(),
+    taskRef: text("task_ref").notNull(),
+    taskRunRef: text("task_run_ref").notNull().unique(),
+    workingSetVersion: integer("working_set_version").notNull(),
+    authorizedResourceRefs: jsonb(
+      "authorized_resource_refs"
+    ).notNull(),
+    authorizedEvidenceRefs: jsonb(
+      "authorized_evidence_refs"
+    ).notNull(),
+    deniedResourceRefs: jsonb("denied_resource_refs").notNull(),
+    requestedFieldMask: jsonb(
+      "requested_field_mask"
+    ).notNull(),
+    contentHash: text("content_hash").notNull(),
     ...formalWriteColumns()
   }
 );

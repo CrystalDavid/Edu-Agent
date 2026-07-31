@@ -27,8 +27,10 @@ const { Paragraph, Text, Title } = Typography;
 export function RunsPage(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
+  preparationTaskRef: string | null;
 }) {
   const latestTaskRef =
+    props.preparationTaskRef ??
     props.task?.taskRef ??
     props.workspace.pendingSuggestions[0]?.taskRef ??
     null;
@@ -191,6 +193,52 @@ function TechnicalDetails({
         ghost
         items={[
           {
+            key: "lesson-preparation",
+            label: "备课 Task 与封存上下文",
+            children: explanation.lessonPreparation ? (
+              <Descriptions
+                column={1}
+                size="small"
+                items={[
+                  {
+                    key: "lesson",
+                    label: "Lesson",
+                    children: `${explanation.lessonPreparation.lessonTitle} · ${explanation.lessonPreparation.lessonRef}`
+                  },
+                  {
+                    key: "work-status",
+                    label: "Work status",
+                    children: `${explanation.lessonPreparation.workStatus} · v${explanation.lessonPreparation.workVersion}`
+                  },
+                  {
+                    key: "working-set",
+                    label: "TaskWorkingSet",
+                    children: `v${explanation.lessonPreparation.workingSet.version} · ${explanation.lessonPreparation.workingSet.evidenceRefs.length} Evidence`
+                  },
+                  {
+                    key: "authorized-plan",
+                    label: "AuthorizedContextPlan",
+                    children:
+                      explanation.lessonPreparation
+                        .authorizedContextPlan
+                        ?.authorizedContextPlanRef ?? "未生成"
+                  },
+                  {
+                    key: "plan-status",
+                    label: "Plan status",
+                    children:
+                      explanation.lessonPreparation.planStatus ??
+                      "无"
+                  }
+                ]}
+              />
+            ) : (
+              <Text type="secondary">
+                这是 Gate 2.4 兼容 Run，未绑定 Lesson Preparation Task。
+              </Text>
+            )
+          },
+          {
             key: "runs",
             label: "执行绑定",
             children: (
@@ -262,6 +310,13 @@ function TechnicalDetails({
                     label: "ContextManifest",
                     children:
                       explanation.contextManifest.contextManifestRef
+                  },
+                  {
+                    key: "authorized-context",
+                    label: "AuthorizedContextPlan",
+                    children:
+                      explanation.contextManifest
+                        .authorizedContextPlanRef ?? "Gate 2.4 兼容 Run"
                   },
                   {
                     key: "request-summary",

@@ -15,6 +15,7 @@ export function teachingPlanStateLabel(
     | "draft"
     | "proposal"
     | "in_review"
+    | "superseded"
     | "approved"
     | "published"
 ): string {
@@ -22,6 +23,7 @@ export function teachingPlanStateLabel(
     draft: "草稿",
     proposal: "建议草稿",
     in_review: "待审核",
+    superseded: "已被新版取代",
     approved: "已批准",
     published: "已发布"
   }[state];

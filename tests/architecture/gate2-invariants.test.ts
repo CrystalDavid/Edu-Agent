@@ -231,6 +231,86 @@ describe("Gate 2 architecture invariants", () => {
     expect(productContainer).not.toContain("InMemory");
   });
 
+  it("keeps Gate 2.5 Lesson preparation on the existing Task aggregate and PostgreSQL Product root", () => {
+    const contracts = source("packages/contracts/src/gate2-5.ts");
+    const app = source("apps/api/src/app.ts");
+    const productContainer = source(
+      "apps/api/src/composition/product-container.ts"
+    );
+    const workMigration = source(
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0005_gate2_5_lesson_preparation.sql"
+    );
+    const runtimeMigration = source(
+      "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0005_gate2_5_authorized_context_plan.sql"
+    );
+
+    expect(workMigration).toContain(
+      "REFERENCES work.task (task_ref)"
+    );
+    expect(workMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS work.task_working_set"
+    );
+    expect(runtimeMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS runtime.authorized_context_plan"
+    );
+    expect(contracts).not.toContain("TeacherWorkItem");
+    expect(contracts).not.toContain("AgentContextBinding");
+    expect(productContainer).toContain(
+      "PostgresLessonPreparationService"
+    );
+    expect(productContainer).not.toContain("InMemory");
+    expect(app).toContain("product.services.lessonPreparation");
+    expect(app).toContain(
+      "product.teacher.lesson-preparation.tasks.create"
+    );
+  });
+
+  it("enforces one active in-review and one current approved plan per Lesson", () => {
+    const educationMigration = source(
+      "apps/api/src/modules/education-domain/infrastructure/migrations/0004_gate2_5_curriculum_and_lessons.sql"
+    );
+    const artifactMigration = source(
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0005_gate2_5_lesson_plan_scope.sql"
+    );
+    const worker = source(
+      "apps/api/src/composition/local-copilot-outbox-worker.ts"
+    );
+
+    expect(educationMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS education.curriculum_unit"
+    );
+    expect(educationMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS education.lesson"
+    );
+    expect(educationMigration).toContain(
+      "CREATE TABLE IF NOT EXISTS education.lesson_evidence_link"
+    );
+    expect(artifactMigration).toContain(
+      "teaching_plan_active_review_unique"
+    );
+    expect(artifactMigration).toContain(
+      "WHERE lifecycle_status = 'active_in_review'"
+    );
+    expect(artifactMigration).toContain(
+      "teaching_plan_current_approved_unique"
+    );
+    expect(artifactMigration).toContain(
+      "WHERE lifecycle_status = 'current_approved'"
+    );
+    for (const eventName of [
+      "LessonPreparationTaskCreated",
+      "LessonPreparationStarted",
+      "TeachingPlanReviewCreated",
+      "LessonPreparationReadyForUse",
+      "LessonPreparationCompleted"
+    ]) {
+      expect(worker).toContain(eventName);
+    }
+    expect(worker).toContain(
+      "none-business-state-synchronous"
+    );
+  });
+
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(

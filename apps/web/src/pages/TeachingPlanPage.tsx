@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import type {
+  LessonPreparationTaskDetail,
+  LessonTeachingPlanState,
   TeacherWorkspace
 } from "@edu-agent/contracts";
 import {
@@ -16,8 +18,11 @@ import {
 import {
   ApiError,
   approveTeachingPlan,
+  loadLessonPreparationTask,
+  loadLessonTeachingPlans,
   loadTeachingPlanRevision,
   loadTeachingPlanState,
+  transitionLessonPreparationTask,
   type RecoverableCopilotTask
 } from "../api";
 import {
@@ -32,6 +37,11 @@ export function TeachingPlanPage(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
   refreshWorkspace: () => Promise<void>;
+  preparationTaskRef: string | null;
+  navigatePreparation: (
+    taskRef: string,
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+  ) => void;
 }) {
   const [planState, setPlanState] = useState({
     currentApproved: props.workspace.currentTeachingPlan,
@@ -51,6 +61,11 @@ export function TeachingPlanPage(props: {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [preparationTask, setPreparationTask] =
+    useState<LessonPreparationTaskDetail | null>(null);
+  const [lessonPlanState, setLessonPlanState] =
+    useState<LessonTeachingPlanState | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   useEffect(() => {
     setRevision(props.workspace.currentTeachingPlan);
@@ -60,11 +75,42 @@ export function TeachingPlanPage(props: {
     let active = true;
     setLoadingState(true);
     setError(null);
-    void loadTeachingPlanState()
+    const loading = props.preparationTaskRef
+      ? loadLessonPreparationTask(
+          props.preparationTaskRef
+        ).then(async (task) => ({
+          task,
+          scoped: await loadLessonTeachingPlans(task.lessonRef)
+        }))
+      : loadTeachingPlanState().then((state) => ({
+          task: null,
+          scoped: null,
+          state
+        }));
+    void loading
       .then((result) => {
         if (!active) return;
-        setPlanState(result);
-        setRevision(result.currentApproved);
+        if (result.task && result.scoped) {
+          const currentApproved =
+            result.scoped.currentApproved ??
+            props.workspace.currentTeachingPlan;
+          setPreparationTask(result.task);
+          setLessonPlanState(result.scoped);
+          setPlanState({
+            currentApproved,
+            currentInReview: result.scoped.activeInReview,
+            drafts: result.scoped.drafts,
+            history: result.scoped.history
+          });
+          setRevision(
+            result.scoped.activeInReview ?? currentApproved
+          );
+        } else if ("state" in result) {
+          setPreparationTask(null);
+          setLessonPlanState(null);
+          setPlanState(result.state);
+          setRevision(result.state.currentApproved);
+        }
       })
       .catch((caught: unknown) => {
         if (active) setError(errorMessage(caught));
@@ -75,7 +121,10 @@ export function TeachingPlanPage(props: {
     return () => {
       active = false;
     };
-  }, [props.workspace.currentTeachingPlan.revisionRef]);
+  }, [
+    props.workspace.currentTeachingPlan,
+    props.preparationTaskRef
+  ]);
 
   const selectedStrategyId =
     planState.currentInReview?.selectedStrategyId ??
@@ -123,12 +172,37 @@ export function TeachingPlanPage(props: {
           purpose: "teacher-copilot.approve-plan",
           idempotencyKey:
             `ui:teaching-plan-approval:${crypto.randomUUID()}`,
-          expectedInReviewRevisionRef: inReview.revisionRef
+          expectedInReviewRevisionRef: inReview.revisionRef,
+          ...(preparationTask
+            ? {
+                preparationTaskRef: preparationTask.taskRef,
+                expectedTaskVersion: preparationTask.version
+              }
+            : {})
         }
       );
-      const nextState = await loadTeachingPlanState();
-      setPlanState(nextState);
-      setRevision(nextState.currentApproved);
+      if (preparationTask) {
+        const [nextTask, scoped] = await Promise.all([
+          loadLessonPreparationTask(preparationTask.taskRef),
+          loadLessonTeachingPlans(preparationTask.lessonRef)
+        ]);
+        const currentApproved =
+          scoped.currentApproved ??
+          props.workspace.currentTeachingPlan;
+        setPreparationTask(nextTask);
+        setLessonPlanState(scoped);
+        setPlanState({
+          currentApproved,
+          currentInReview: scoped.activeInReview,
+          drafts: scoped.drafts,
+          history: scoped.history
+        });
+        setRevision(currentApproved);
+      } else {
+        const nextState = await loadTeachingPlanState();
+        setPlanState(nextState);
+        setRevision(nextState.currentApproved);
+      }
       await props.refreshWorkspace();
       setSuccess(
         `已创建并批准第 ${result.approvedRevision.revisionNumber} 版；原已批准版本保持不可变。`
@@ -137,6 +211,33 @@ export function TeachingPlanPage(props: {
       setError(errorMessage(caught));
     } finally {
       setApproving(false);
+    }
+  }
+
+  async function completePreparation() {
+    if (!preparationTask) return;
+    setCompleting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await transitionLessonPreparationTask(
+        preparationTask.taskRef,
+        "complete",
+        {
+          expectedVersion: preparationTask.version,
+          purpose: "lesson-preparation.complete",
+          idempotencyKey: `ui:lesson-preparation:complete:${crypto.randomUUID()}`
+        }
+      );
+      setPreparationTask(result.task);
+      await props.refreshWorkspace();
+      setSuccess(
+        "备课 Task 已由教师显式标记为完成；current approved TeachingPlan 保持不变。"
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setCompleting(false);
     }
   }
 
@@ -171,6 +272,59 @@ export function TeachingPlanPage(props: {
       ) : null}
       {success ? (
         <Alert type="success" showIcon title={success} />
+      ) : null}
+
+      {preparationTask ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="teaching-plan-preparation-task"
+        >
+          <Text className="section-kicker">
+            备课 Task · v{preparationTask.version}
+          </Text>
+          <Title level={3}>{preparationTask.lessonTitle}</Title>
+          <Paragraph>
+            Work 状态：<strong>{preparationTask.status}</strong>
+            {" · "}approved_plan_ref：
+            {preparationTask.approvedPlanRef ?? "无"}
+          </Paragraph>
+          <Space wrap>
+            <Button
+              onClick={() =>
+                props.navigatePreparation(
+                  preparationTask.taskRef,
+                  "/agent"
+                )
+              }
+            >
+              返回备课 Task
+            </Button>
+            <Button
+              onClick={() =>
+                props.navigatePreparation(
+                  preparationTask.taskRef,
+                  "/runs"
+                )
+              }
+            >
+              查看 Run
+            </Button>
+            {preparationTask.status === "ready_for_use" ? (
+              <Button
+                type="primary"
+                loading={completing}
+                onClick={completePreparation}
+                data-testid="complete-lesson-preparation"
+              >
+                完成备课
+              </Button>
+            ) : null}
+            {preparationTask.status === "completed" ? (
+              <Tag color="success">备课已完成</Tag>
+            ) : null}
+          </Space>
+        </Card>
       ) : null}
 
       <Card className="workspace-card" variant="borderless">
@@ -289,6 +443,12 @@ export function TeachingPlanPage(props: {
           <Text>
             草稿：{planState.drafts.length} 个
           </Text>
+          {lessonPlanState ? (
+            <Text>
+              superseded in-review：
+              {lessonPlanState.superseded.length} 个（保留历史，不删除）
+            </Text>
+          ) : null}
           {planState.history.map((item) => (
             <Button
               key={item.revisionRef}
@@ -310,6 +470,7 @@ function revisionStateLabel(state: string): string {
     draft: "建议草稿",
     proposal: "Proposal",
     in_review: "待审核",
+    superseded: "已被新版取代",
     approved: "已批准",
     published: "已发布（本 Gate 不创建）"
   }[state] ?? state;

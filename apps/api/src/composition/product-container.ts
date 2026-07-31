@@ -9,6 +9,9 @@ import {
   PostgresGate2TeacherCopilotService
 } from "./postgres-gate2-teacher-copilot-service.js";
 import {
+  PostgresLessonPreparationService
+} from "./postgres-lesson-preparation-service.js";
+import {
   LocalCopilotOutboxWorker
 } from "./local-copilot-outbox-worker.js";
 
@@ -33,7 +36,9 @@ export function createProductContainer(
       demoIdentityAudit:
         new PostgresDemoIdentityAuditService(appPool),
       teacherCopilot:
-        new PostgresGate2TeacherCopilotService(appPool)
+        new PostgresGate2TeacherCopilotService(appPool),
+      lessonPreparation:
+        new PostgresLessonPreparationService(appPool)
     },
     workers: {
       copilotOutbox

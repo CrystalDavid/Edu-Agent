@@ -108,6 +108,16 @@ export const TeacherTaskRequestSchema = z.object({
   courseRunRef: z.string().min(1),
   learningObjectiveRefs: z.array(z.string().min(1)).min(1),
   selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
+  curriculumUnitRef: z.string().min(1).optional(),
+  lessonRef: z.string().min(1).optional(),
+  preparationTaskRef: z.string().min(1).optional(),
+  expectedPreparationTaskVersion: z
+    .number()
+    .int()
+    .positive()
+    .optional(),
+  baselineTeachingPlanRef: z.string().min(1).optional(),
+  workingSetVersion: z.number().int().positive().optional(),
   createdAt: z.string().datetime(),
   requestVersion: z.literal(1)
 });
@@ -126,6 +136,7 @@ export const TeachingPlanRevisionViewSchema = z.object({
     "draft",
     "proposal",
     "in_review",
+    "superseded",
     "approved",
     "published"
   ]),
@@ -138,6 +149,8 @@ export const SuggestionSummarySchema = z.object({
   proposalArtifactRef: z.string().min(1),
   proposalRevisionRef: z.string().min(1),
   taskRef: z.string().min(1),
+  preparationTaskRef: z.string().min(1).optional(),
+  lessonRef: z.string().min(1).optional(),
   status: z.enum(["pending", "disposed"]),
   requestText: z.string().min(1),
   strategyTitles: z.array(z.string().min(1)).min(1),
@@ -191,7 +204,16 @@ export const CreateTeacherCopilotTaskRequestSchema = z.object({
   selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
   requestVersion: z.literal(1).default(1),
   purpose: z.string().min(1),
-  idempotencyKey: z.string().min(8)
+  idempotencyKey: z.string().min(8),
+  preparationTaskRef: z.string().min(1).optional(),
+  curriculumUnitRef: z.string().min(1).optional(),
+  lessonRef: z.string().min(1).optional(),
+  workingSetVersion: z.number().int().positive().optional(),
+  expectedPreparationTaskVersion: z
+    .number()
+    .int()
+    .positive()
+    .optional()
 });
 
 export const CreateTeacherCopilotTaskResultSchema = z.object({
@@ -207,7 +229,10 @@ export const CreateTeacherCopilotTaskResultSchema = z.object({
   draftRevision: TeachingPlanRevisionViewSchema,
   strategies: z.array(PedagogicalStrategySchema).length(2),
   diffsByStrategy: z.record(z.string(), TeachingPlanDiffSchema),
-  authorizationDecisionRef: z.string().min(1)
+  authorizationDecisionRef: z.string().min(1),
+  preparationTaskRef: z.string().min(1).optional(),
+  lessonRef: z.string().min(1).optional(),
+  authorizedContextPlanRef: z.string().min(1).optional()
 });
 
 export const SuggestionDispositionKindSchema = z.enum([
@@ -292,13 +317,19 @@ export const PendingProposalListSchema = z.object({
 export const ApproveTeachingPlanRequestSchema = z.object({
   purpose: z.literal("teacher-copilot.approve-plan"),
   idempotencyKey: z.string().min(8),
-  expectedInReviewRevisionRef: z.string().min(1)
+  expectedInReviewRevisionRef: z.string().min(1),
+  preparationTaskRef: z.string().min(1).optional(),
+  expectedTaskVersion: z.number().int().positive().optional()
 });
 
 export const ApproveTeachingPlanResultSchema = z.object({
   replayed: z.boolean(),
   approvedRevision: TeachingPlanRevisionViewSchema,
-  previousApprovedRevisionRef: z.string().min(1)
+  previousApprovedRevisionRef: z.string().min(1),
+  preparationTaskRef: z.string().min(1).optional(),
+  lessonRef: z.string().min(1).optional(),
+  preparationStatus: z.literal("ready_for_use").optional(),
+  preparationTaskVersion: z.number().int().positive().optional()
 });
 
 export const TeachingPlanStateViewSchema = z.object({
@@ -338,6 +369,7 @@ export const RunExplanationSchema = z.object({
   }),
   contextManifest: z.object({
     contextManifestRef: z.string().min(1),
+    authorizedContextPlanRef: z.string().min(1).optional(),
     evidenceRefs: z.array(z.string().min(1)),
     resourceRefs: z.array(z.string().min(1)),
     unknowns: z.array(z.string().min(1)),
@@ -394,7 +426,56 @@ export const RunExplanationSchema = z.object({
       purpose: z.string().min(1),
       occurredAt: z.string().datetime()
     })
-  )
+  ),
+  lessonPreparation: z
+    .object({
+      preparationTaskRef: z.string().min(1),
+      lessonRef: z.string().min(1),
+      lessonTitle: z.string().min(1),
+      workStatus: z.enum([
+        "planned",
+        "in_progress",
+        "awaiting_plan_review",
+        "ready_for_use",
+        "completed",
+        "cancelled"
+      ]),
+      workVersion: z.number().int().positive(),
+      workingSet: z.object({
+        taskRef: z.string().min(1),
+        version: z.number().int().positive(),
+        courseRunRef: z.string().min(1),
+        curriculumUnitRef: z.string().min(1),
+        lessonRef: z.string().min(1),
+        learningObjectiveRefs: z.array(z.string().min(1)),
+        evidenceRefs: z.array(z.string().min(1)),
+        baselineTeachingPlanRef: z.string().min(1).nullable(),
+        purpose: z.string().min(1),
+        requestedFieldMask: z.array(z.string().min(1)),
+        updatedAt: z.string().datetime()
+      }),
+      authorizedContextPlan: z
+        .object({
+          authorizedContextPlanRef: z.string().min(1),
+          workingSetVersion: z.number().int().positive(),
+          authorizedResourceRefs: z.array(z.string().min(1)),
+          authorizedEvidenceRefs: z.array(z.string().min(1)),
+          deniedResourceRefs: z.array(z.string().min(1)),
+          requestedFieldMask: z.array(z.string().min(1)),
+          contentHash: z.string().min(1)
+        })
+        .nullable(),
+      planStatus: z
+        .enum([
+          "draft",
+          "active_in_review",
+          "superseded",
+          "current_approved",
+          "historical_approved"
+        ])
+        .nullable()
+    })
+    .optional()
 });
 
 export type TeachingPlan = z.infer<typeof TeachingPlanSchema>;

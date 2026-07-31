@@ -1,24 +1,48 @@
 import {
   apiRoutes,
+  ApproveTeachingPlanRequestSchema,
   ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
+  AuthorizedContextPlanSchema,
+  CourseRunListSchema,
+  CreateLessonPreparationTaskRequestSchema,
+  CurriculumUnitListSchema,
+  CreateTeacherCopilotTaskRequestSchema,
   CreateTeacherCopilotTaskResultSchema,
+  LessonListSchema,
+  LessonPreparationSummarySchema,
+  LessonPreparationTaskActionRequestSchema,
+  LessonPreparationTaskDetailSchema,
+  LessonPreparationTaskListSchema,
+  LessonPreparationTaskResultSchema,
+  LessonTeachingPlanStateSchema,
   PendingProposalListSchema,
   ProposalReviewDetailSchema,
   RunExplanationSchema,
+  SuggestionDispositionRequestSchema,
   SuggestionDispositionResultSchema,
+  TaskResourceSelectionRequestSchema,
+  TaskWorkingSetResultSchema,
   TeacherWorkspaceSchema,
   TeachingPlanRevisionViewSchema,
   type ApiHealth,
+  type AuthorizedContextPlan,
   type ApproveTeachingPlanRequest,
   type ApproveTeachingPlanResult,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
+  type CreateLessonPreparationTaskRequest,
+  type LessonPreparationSummary,
+  type LessonPreparationTaskActionRequest,
+  type LessonPreparationTaskDetail,
+  type LessonTeachingPlanState,
   type PendingProposalList,
   type ProposalReviewDetail,
   type RunExplanation,
   type SuggestionDispositionRequest,
   type SuggestionDispositionResult,
+  type TaskResourceSelectionRequest,
+  type TaskWorkingSet,
   type TeacherWorkspace
 } from "@edu-agent/contracts";
 
@@ -153,9 +177,136 @@ export function loadWorkspace(): Promise<TeacherWorkspace> {
   );
 }
 
+export function loadCourseRuns() {
+  return request(
+    "课程列表",
+    apiRoutes.teacher.courseRuns,
+    CourseRunListSchema
+  );
+}
+
+export function loadCurriculumUnits(courseRunRef: string) {
+  return request(
+    "课程单元",
+    apiRoutes.teacher.courseRunUnits(courseRunRef),
+    CurriculumUnitListSchema
+  );
+}
+
+export function loadLessons(unitRef: string) {
+  return request(
+    "课时列表",
+    apiRoutes.teacher.unitLessons(unitRef),
+    LessonListSchema
+  );
+}
+
+export function loadLessonPreparationSummary(): Promise<LessonPreparationSummary> {
+  return request(
+    "备课概览",
+    apiRoutes.teacher.lessonPreparationSummary,
+    LessonPreparationSummarySchema
+  );
+}
+
+export function loadLessonPreparationTasks() {
+  return request(
+    "备课任务",
+    apiRoutes.teacher.preparationTasks,
+    LessonPreparationTaskListSchema
+  );
+}
+
+export function loadLessonPreparationTask(
+  taskRef: string
+): Promise<LessonPreparationTaskDetail> {
+  return request(
+    "备课任务详情",
+    apiRoutes.teacher.preparationTask(taskRef),
+    LessonPreparationTaskDetailSchema
+  );
+}
+
+export function createLessonPreparationTask(
+  input: CreateLessonPreparationTaskRequest
+) {
+  CreateLessonPreparationTaskRequestSchema.parse(input);
+  return request(
+    "创建备课任务",
+    apiRoutes.teacher.preparationTasks,
+    LessonPreparationTaskResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function transitionLessonPreparationTask(
+  taskRef: string,
+  action: "start" | "reopen" | "complete" | "cancel",
+  input: LessonPreparationTaskActionRequest
+) {
+  LessonPreparationTaskActionRequestSchema.parse(input);
+  const path = {
+    start: apiRoutes.teacher.preparationTaskStart(taskRef),
+    reopen: apiRoutes.teacher.preparationTaskReopen(taskRef),
+    complete:
+      apiRoutes.teacher.preparationTaskComplete(taskRef),
+    cancel: apiRoutes.teacher.preparationTaskCancel(taskRef)
+  }[action];
+  return request(
+    `备课任务：${action}`,
+    path,
+    LessonPreparationTaskResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function updateTaskResourceSelection(
+  taskRef: string,
+  operation: "add" | "remove",
+  input: TaskResourceSelectionRequest
+): Promise<{ replayed: boolean; workingSet: TaskWorkingSet }> {
+  TaskResourceSelectionRequestSchema.parse(input);
+  return request(
+    "备课上下文选择",
+    apiRoutes.teacher.taskResourceSelections(taskRef),
+    TaskWorkingSetResultSchema,
+    {
+      method: operation === "add" ? "POST" : "DELETE",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function loadLessonTeachingPlans(
+  lessonRef: string
+): Promise<LessonTeachingPlanState> {
+  return request(
+    "课时教学计划",
+    apiRoutes.teacher.lessonTeachingPlans(lessonRef),
+    LessonTeachingPlanStateSchema
+  );
+}
+
+export function loadTaskAuthorizedContextPlan(
+  taskRef: string
+): Promise<AuthorizedContextPlan> {
+  return request(
+    "已授权上下文",
+    apiRoutes.teacher.taskAuthorizedContextPlan(taskRef),
+    AuthorizedContextPlanSchema
+  );
+}
+
 export function createTeacherCopilotTask(
   input: CreateTeacherCopilotTaskRequest
 ): Promise<CreateTeacherCopilotTaskResult> {
+  CreateTeacherCopilotTaskRequestSchema.parse(input);
   return request(
     "教师助手任务",
     apiRoutes.demo.createTeacherCopilotTask,
@@ -171,6 +322,7 @@ export function disposeSuggestion(
   proposalRevisionRef: string,
   input: SuggestionDispositionRequest
 ): Promise<SuggestionDispositionResult> {
+  SuggestionDispositionRequestSchema.parse(input);
   return request(
     "建议处置",
     apiRoutes.demo.suggestionDisposition(proposalRevisionRef),
@@ -204,6 +356,7 @@ export function approveTeachingPlan(
   revisionRef: string,
   input: ApproveTeachingPlanRequest
 ): Promise<ApproveTeachingPlanResult> {
+  ApproveTeachingPlanRequestSchema.parse(input);
   return request(
     "批准教学计划",
     apiRoutes.demo.approveTeachingPlan(revisionRef),

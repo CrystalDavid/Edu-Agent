@@ -12,8 +12,17 @@ import {
 const gate24Events = {
   work: [
     "TeacherCopilotTaskCompleted",
+    "TeacherCopilotTaskRunCompleted",
     "SuggestionDisposed",
-    "TeachingPlanApproved"
+    "TeachingPlanApproved",
+    "LessonPreparationTaskCreated",
+    "LessonPreparationStarted",
+    "LessonPreparationReopened",
+    "TeachingPlanReviewCreated",
+    "LessonPreparationReviewContinued",
+    "LessonPreparationReadyForUse",
+    "LessonPreparationCompleted",
+    "LessonPreparationCancelled"
   ],
   runtime: ["AgentRunCompleted"],
   capability: ["MockModelExecutionCompleted"],

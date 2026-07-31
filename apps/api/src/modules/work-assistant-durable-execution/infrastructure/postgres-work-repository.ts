@@ -103,10 +103,12 @@ export class PostgresWorkRepository {
     await client.query(
       `INSERT INTO work.task_run (
          task_run_ref,
-         task_ref,
-         attempt,
-         status,
-         actor_ref,
+       task_ref,
+       attempt,
+       status,
+       request_payload,
+       request_version,
+       actor_ref,
          purpose,
          owner_module,
          idempotency_key,
@@ -114,13 +116,16 @@ export class PostgresWorkRepository {
          audit_ref,
          created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+         $1, $2, $3, $4, $5, $6, $7, $8,
+         $9, $10, $11, $12, $13
        )`,
       [
         bundle.taskRun.taskRunRef,
         bundle.taskRun.taskRef,
         bundle.taskRun.attempt,
         bundle.taskRun.status,
+        toPostgresJson(bundle.task.request ?? {}),
+        bundle.task.request?.requestVersion ?? 1,
         ...formalMetadataValues(bundle.taskRun.metadata)
       ]
     );

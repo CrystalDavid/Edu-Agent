@@ -1,4 +1,9 @@
-import type { TeacherWorkspace } from "@edu-agent/contracts";
+import { useEffect, useState } from "react";
+
+import type {
+  LessonPreparationSummary,
+  TeacherWorkspace
+} from "@edu-agent/contracts";
 
 import { Button } from "antd";
 
@@ -6,10 +11,9 @@ import {
   preparationGroupUpdates,
   schoolUpdates,
   students,
-  teacherTodos,
-  teachingFiles,
-  todayCourses
+  teachingFiles
 } from "../teacher-portal-data";
+import { loadLessonPreparationSummary } from "../api";
 import type { AppRoute } from "../route";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
 import {
@@ -22,9 +26,36 @@ import {
 export function OverviewPage(props: {
   workspace: TeacherWorkspace;
   navigate: (route: AppRoute) => void;
+  navigateLesson: (lessonRef: string) => void;
+  navigatePreparation: (
+    taskRef: string,
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+  ) => void;
   onAction: (message: string) => void;
 }) {
-  const pending = teacherTodos.filter((todo) => todo.status !== "已完成").slice(0, 5);
+  const [preparation, setPreparation] =
+    useState<LessonPreparationSummary | null>(null);
+  const [preparationError, setPreparationError] =
+    useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadLessonPreparationSummary()
+      .then((result) => {
+        if (active) setPreparation(result);
+      })
+      .catch((caught) => {
+        if (active) {
+          setPreparationError(
+            caught instanceof Error
+              ? caught.message
+              : "备课概览加载失败"
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const followUps = students.filter((student) => student.followUp);
   return (
     <div className="portal-page overview-page" data-testid="overview-page">
@@ -41,26 +72,36 @@ export function OverviewPage(props: {
       <div className="overview-grid overview-grid--top">
         <ModuleCard
           title="今天需要做什么"
-          description="3 节课 · 5 项待处理工作"
+          description={
+            preparation
+              ? `${preparation.incompleteTasks.length} 项未完成 · ${preparation.awaitingPlanReview.length} 项待审核 · ${preparation.readyForUse.length} 项已准备待完成`
+              : "正在读取真实备课状态"
+          }
           className="today-focus-card"
           testId="today-work"
-          action={<button type="button" className="text-action" onClick={() => props.navigate("/schedule")}>查看完整日程</button>}
+          action={<button type="button" className="text-action" onClick={() => props.navigate("/teaching")}>打开教学页面</button>}
         >
+          {preparationError ? (
+            <p role="alert">{preparationError}</p>
+          ) : null}
           <div className="today-work-list">
-            {pending.map((todo) => (
-              <article key={todo.id}>
-                <time>{todo.due.replace("今天 ", "")}</time>
-                <span className="work-kind">{todo.kind}</span>
+            {preparation?.incompleteTasks.slice(0, 5).map((task) => (
+              <article key={task.taskRef}>
+                <time>{task.dueAt ? new Date(task.dueAt).toLocaleDateString("zh-CN") : "未设截止"}</time>
+                <span className="work-kind">备课</span>
                 <div>
-                  <strong>{todo.title}</strong>
-                  <small>{todo.context}</small>
+                  <strong>{task.lessonTitle}</strong>
+                  <small>{task.title} · v{task.version}</small>
                 </div>
-                <StatusPill tone={todo.priority === "重要" ? "warning" : "neutral"}>{todo.status}</StatusPill>
-                <button type="button" onClick={() => todo.kind === "学生" ? props.navigate("/students") : todo.kind === "课件" ? props.navigate("/files") : props.navigate("/schedule")}>
-                  处理
+                <StatusPill tone={task.status === "awaiting_plan_review" ? "warning" : "neutral"}>{preparationStatusLabel(task.status)}</StatusPill>
+                <button type="button" onClick={() => props.navigatePreparation(task.taskRef, task.status === "awaiting_plan_review" || task.status === "ready_for_use" ? "/teaching-plan" : "/agent")}>
+                  {task.status === "awaiting_plan_review" ? "继续审核" : "继续备课"}
                 </button>
               </article>
             ))}
+            {preparation?.incompleteTasks.length === 0 ? (
+              <p>当前没有未完成的备课任务。</p>
+            ) : null}
           </div>
         </ModuleCard>
 
@@ -90,30 +131,32 @@ export function OverviewPage(props: {
 
       <ModuleCard
         title="今日课程"
-        description="按时间排列，优先显示尚未准备完成的内容"
+        description="来自正式数据源的课程、单元与课时"
         action={<button type="button" className="text-action" onClick={() => props.navigate("/teaching")}>查看全部教学内容</button>}
         testId="today-courses"
       >
         <div className="today-course-grid">
-          {todayCourses.map((course, index) => (
-            <article key={course.id} className={index === 0 ? "is-next" : ""}>
+          {preparation?.recentLessons.map((lesson, index) => (
+            <article key={lesson.lessonRef} className={index === 0 ? "is-next" : ""}>
               <header>
-                <time>{course.time}</time>
-                {index === 0 ? <StatusPill tone="blue">下一节</StatusPill> : null}
+                <time>{lesson.plannedAt ? new Date(lesson.plannedAt).toLocaleString("zh-CN") : "待安排"}</time>
+                {index === 0 ? <StatusPill tone="blue">最近</StatusPill> : null}
               </header>
-              <strong>{course.className} · {course.subject}</strong>
-              <h3>{course.topic}</h3>
-              <span>{course.room}</span>
+              <strong>八年级 3 班 · 数学</strong>
+              <h3>{lesson.title}</h3>
+              <span>{lesson.durationMinutes} 分钟</span>
               <div className="course-status-row">
-                <small>{course.preparation}</small>
-                <small>{course.slides}</small>
-                <small>{course.homework}</small>
+                <small>{preparationStatusLabel(lesson.preparationState)}</small>
+                <small>{lesson.learningObjectives.length} 个教学目标</small>
+                <small>{lesson.currentApprovedPlanRef ? "已有 approved 计划" : "暂无 approved 计划"}</small>
               </div>
               <footer>
-                <Button type={index === 0 ? "primary" : "default"} onClick={() => props.navigate("/teaching")}>打开课程</Button>
-                <button type="button" className="text-action" onClick={() => index === 0 ? props.navigate("/agent") : props.navigate("/teaching")}>
-                  {index === 0 ? "继续备课" : "查看计划"}
-                </button>
+                <Button type={index === 0 ? "primary" : "default"} onClick={() => props.navigateLesson(lesson.lessonRef)}>打开课时</Button>
+                {lesson.activePreparationTaskRef ? (
+                  <button type="button" className="text-action" onClick={() => props.navigatePreparation(lesson.activePreparationTaskRef!, "/agent")}>
+                    继续备课
+                  </button>
+                ) : null}
               </footer>
             </article>
           ))}
@@ -172,4 +215,16 @@ export function OverviewPage(props: {
       </ModuleCard>
     </div>
   );
+}
+
+function preparationStatusLabel(status: string): string {
+  return {
+    not_started: "未开始",
+    planned: "已计划",
+    in_progress: "备课中",
+    awaiting_plan_review: "待审核",
+    ready_for_use: "已准备，待完成",
+    completed: "已准备",
+    cancelled: "已取消"
+  }[status] ?? status;
 }
