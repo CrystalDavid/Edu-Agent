@@ -131,6 +131,13 @@ interface VolcengineArkProviderDependencies {
   clock?: () => number;
 }
 
+type ArkChatCompletionCreateParams =
+  ChatCompletionCreateParamsNonStreaming & {
+    thinking: {
+      type: "disabled";
+    };
+  };
+
 export class VolcengineArkProvider implements ModelProvider {
   readonly descriptor: CapabilityDescriptor = {
     capabilityRef: "capability:model:volcengine-ark",
@@ -193,7 +200,7 @@ export class VolcengineArkProvider implements ModelProvider {
     const request = ModelRequestSchemaV2.parse(rawRequest);
     const startedAt = this.clock();
     try {
-      const body: ChatCompletionCreateParamsNonStreaming = {
+      const body: ArkChatCompletionCreateParams = {
         model: this.config.modelId,
         messages: request.messages.map(
           (message): ChatCompletionMessageParam => ({
@@ -203,6 +210,13 @@ export class VolcengineArkProvider implements ModelProvider {
         ),
         stream: false,
         max_tokens: request.maxOutputTokens,
+        // Ark's Seed 2.1 models enable deep thinking by default. The teacher
+        // copilot expects a bounded, schema-validated response, so explicitly
+        // disable it for the production invocation path. Capability probes stay
+        // unmodified so they continue to measure the provider's raw features.
+        thinking: {
+          type: "disabled"
+        },
         ...(request.responseFormat === "json_schema"
           ? {
               response_format: {

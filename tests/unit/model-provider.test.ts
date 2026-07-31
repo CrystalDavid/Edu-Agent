@@ -215,7 +215,10 @@ describe("VolcengineArkProvider OpenAI-compatible transport", () => {
     expect(fake.requests[0]?.body).toMatchObject({
       model: "synthetic-ark-model",
       stream: false,
-      max_tokens: 512
+      max_tokens: 512,
+      thinking: {
+        type: "disabled"
+      }
     });
   });
 
