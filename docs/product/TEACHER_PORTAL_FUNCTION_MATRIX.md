@@ -11,7 +11,7 @@
 | 教学 / 作业 | “调整下一课”仍可进入既有 Copilot | 作业列表、提交率、筛选、错题与学生表 | 合成分析结果 | 作业 CRUD/发布未实现 | — |
 | 教学 / 测试 | — | 测试列表、指标、知识点与题目分析 | 合成分析结果 | 测试 CRUD/发布未实现 | — |
 | 学生 | — | 班级概览、学生详情、优先列表、筛选 | 合成证据解释 | 学生写入和长期模型未实现 | — |
-| 文件 | PostgreSQL FileAsset/FileVersion/Binding；LocalObjectStore 字节；上传、列表、搜索、分类、排序、下载、图片/PDF/文本预览、详情、新版本、版本历史、软删除/恢复、Lesson 关联 | 页面筛选和当前选择为临时视图状态 | Office 文件只显示安全摘要与下载，不做完整浏览器渲染 | 在线新建、分享、协作、云同步明确禁用；正式成果删除被拒绝 | — |
+| 文件 | PostgreSQL FileAsset/FileVersion/Binding；LocalObjectStore 字节；上传、列表、搜索、分类、排序、下载、图片/PDF/文本预览、详情、新版本、版本历史、软删除/恢复，以及所选 Lesson、备课 Task、current approved TeachingPlan Revision 关联 | 页面筛选和当前选择为临时视图状态 | Office 文件只显示安全摘要与下载，不做完整浏览器渲染 | 在线新建、分享、协作、云同步明确禁用；正式成果删除被拒绝 | — |
 | Agent 一级页 `/agent` | 进入“创建教学任务”可转到真实 Copilot | 开放对话、关键词回复、上下文、收藏、重命名和删除 | 固定 Mock 回复 | 外部模型和长期会话未实现 | — |
 | Agent / 备课 Task `/agent/tasks/:taskRef` | 读取真实 Task/context；创建 durable ModelExecution；显示 queued/running/validating/retry/terminal 状态；可取消、人工 retry、刷新恢复；配置 Ark 时经服务端真实调用 | 默认 local/test 使用确定性 Mock；Ark 配置不完整时明确回退 | 核心上下文锁定、Provider availability 和合成数据边界 | 已关闭 Task 修改上下文；真实学生/Secret/连接信息被策略拒绝 | — |
 | Copilot / Proposal | Lesson/Task-scoped TaskRun、ModelExecution、1–3 条经校验策略、Proposal、diff、Evidence、Disposition、直接 URL 和刷新恢复 | Mock 模式下建议内容是确定性合成模板 | 已处置 Proposal 和历史 Evidence 只读 | 同一 Proposal 冲突处置、无效 Provider 输出和越权 Evidence 被拒绝 | — |

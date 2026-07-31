@@ -67,7 +67,7 @@ approved TeachingPlan / Lesson
 
 ### `artifact.artifact_file_binding`
 
-目标类型限定为 `lesson`、`preparation_task`、`teaching_plan_artifact`、`teaching_plan_revision`。正式 DOCX 同时绑定具体 approved Revision、TeachingPlan Artifact、Lesson 和关联 Task；参考资料按教师选择绑定 Lesson/Task。
+目标类型限定为 `lesson`、`preparation_task`、`teaching_plan_artifact`、`teaching_plan_revision`。正式 DOCX 同时绑定具体 approved Revision、TeachingPlan Artifact、Lesson 和关联 Task；文件页参考资料可按所选课时显式绑定 Lesson、关联 Task 与 current approved TeachingPlan Revision。
 
 不建立跨 Schema 外键；Composition Root 在写入前通过 owning Repository 验证 refs 和 tenant，Artifact 只保存外部 ref。
 
@@ -168,7 +168,7 @@ Gate 2.6A 以前数据库没有文件表，无需数据回填。若历史磁盘�
 
 自动化覆盖 ObjectStore 路径安全、流式 hash/大小、MIME、上传下载、版本、幂等、软删除/恢复、引用保护、补偿、orphan cleanup、tenant 隔离、Lesson/Task/TeachingPlan 绑定、approved DOCX 导出、重复导出、新 approved Revision 新版本、服务重启恢复和 E2E 目录隔离。
 
-Playwright 验证导出、文件页出现、下载、Lesson 关联、版本历史、参考资料上传、刷新恢复与删除保护；PostgreSQL 测试用新 Product Container 读取同一目录和数据库以验证服务重启恢复。所有既有 Gate 测试继续离线运行。
+Playwright 验证导出、文件页出现、下载、Lesson/Task/TeachingPlan Revision 关联、版本历史、参考资料上传、刷新恢复与删除保护；PostgreSQL 测试用新 Product Container 读取同一目录和数据库以验证服务重启恢复。所有既有 Gate 测试继续离线运行。
 
 ## 14. 实际实现摘要
 

@@ -183,20 +183,33 @@ export function FileManager(props: { onAction: (action: string) => void }) {
     }
   }
 
-  async function bindLesson() {
-    if (!selected || !lessonRef) return;
+  async function bindTarget(
+    targetType: "lesson" | "preparation_task" | "teaching_plan_revision"
+  ) {
+    const lesson = lessons.find((item) => item.lessonRef === lessonRef);
+    const targetRef = targetType === "lesson"
+      ? lesson?.lessonRef
+      : targetType === "preparation_task"
+        ? lesson?.activePreparationTaskRef
+        : lesson?.currentApprovedPlanRef;
+    if (!selected || !targetRef) return;
     setBusy(true);
     setError(null);
     try {
       const result = await addFileBinding(selected.assetRef, {
-        targetType: "lesson",
-        targetRef: lessonRef,
+        targetType,
+        targetRef,
         relation: "reference",
         expectedAssetVersion: selected.version,
         purpose: "file.binding.add",
         idempotencyKey: `ui:file:binding:${crypto.randomUUID()}`
       });
-      props.onAction(result.deduplicated ? "该课时关联已存在" : "已关联课时");
+      const label = targetType === "lesson"
+        ? "课时"
+        : targetType === "preparation_task"
+          ? "备课任务"
+          : "当前已批准教学计划";
+      props.onAction(result.deduplicated ? `该${label}关联已存在` : `已关联${label}`);
       await refresh(selected.assetRef);
     } catch (caught) {
       setError(message(caught));
@@ -251,6 +264,7 @@ export function FileManager(props: { onAction: (action: string) => void }) {
     ])),
     [items]
   );
+  const bindingLesson = lessons.find((lesson) => lesson.lessonRef === lessonRef);
 
   return (
     <div className="file-manager" data-testid="file-manager">
@@ -332,7 +346,17 @@ export function FileManager(props: { onAction: (action: string) => void }) {
                 <Button onClick={() => void download(selected)} disabled={selected.status === "deleted"}>下载</Button>
                 <Button onClick={() => versionInputRef.current?.click()} disabled={selected.status === "deleted"}>创建新版本</Button>
                 <input ref={versionInputRef} data-testid="file-version-input" hidden type="file" accept={selected.currentVersion.extension} onChange={(event) => { const file = event.target.files?.[0]; if (file) void addVersion(file); }} />
-                <Button onClick={() => void bindLesson()} disabled={!lessonRef || selected.status === "deleted"}>关联课时</Button>
+                <Button onClick={() => void bindTarget("lesson")} disabled={!bindingLesson || selected.status === "deleted"}>关联课时</Button>
+                <Button
+                  onClick={() => void bindTarget("preparation_task")}
+                  disabled={!bindingLesson?.activePreparationTaskRef || selected.status === "deleted"}
+                  title={bindingLesson?.activePreparationTaskRef ? undefined : "所选课时暂无关联备课任务"}
+                >关联任务</Button>
+                <Button
+                  onClick={() => void bindTarget("teaching_plan_revision")}
+                  disabled={!bindingLesson?.currentApprovedPlanRef || selected.status === "deleted"}
+                  title={bindingLesson?.currentApprovedPlanRef ? undefined : "所选课时暂无 current approved TeachingPlan"}
+                >关联教学计划</Button>
                 {selected.status === "active" ? (
                   <Button danger disabled={selected.deletionProtected} title={selected.deletionProtected ? "正式教学成果引用的文件不可删除" : undefined} onClick={() => void lifecycle("deleted")}>删除</Button>
                 ) : (

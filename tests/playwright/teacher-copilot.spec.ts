@@ -326,6 +326,24 @@ test("file manager uploads, restores and versions a real local file", async ({
   await manager.getByLabel("文件生命周期筛选").click();
   await page.locator(".ant-select-item-option").filter({ hasText: /^有效$/ }).click();
   await expect(fileButton).toBeVisible({ timeout: 20_000 });
+  await fileButton.click();
+  await manager.getByLabel("上传关联课时").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^一次函数的应用$/ }).click();
+  const taskBindingResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/bindings") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: "关联任务" }).click();
+  expect((await taskBindingResponse).status()).toBe(201);
+  await manager.getByLabel("上传关联课时").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^斜率与图像变化$/ }).click();
+  const planBindingResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/bindings") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: "关联教学计划" }).click();
+  expect((await planBindingResponse).status()).toBe(201);
+  await expect(manager.getByTestId("file-detail")).toContainText("preparation_task");
+  await expect(manager.getByTestId("file-detail")).toContainText("teaching_plan_revision");
+  await expect(manager.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })).toBeDisabled();
   await manager.getByRole("button", { name: "列表视图" }).click();
   await expect(manager.locator(".file-result-list")).toBeVisible();
   await page.screenshot({

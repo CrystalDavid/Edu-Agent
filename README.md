@@ -21,7 +21,7 @@
 - 模型调用在数据库事务外由租约 Worker 执行；预算、ModelDataManifest、幂等、有限重试和一次受控修复均 fail closed；
 - 默认 `MockModelProvider` 不联网；Fake Ark、32 项合成评测集和默认关闭的 Live Integration 分离验证；
 - Artifact-owned `FileAsset`、不可变 `FileVersion` 和文件关联持久化到 PostgreSQL；Capability-owned `LocalObjectStore` 使用服务端生成 object key、流式 SHA-256、大小/MIME/签名校验和失败补偿；
-- 文件页提供真实上传、搜索、分类、排序、下载、版本历史、软删除/恢复和 Lesson 关联；被正式 TeachingPlan Revision 引用的成果禁止删除；
+- 文件页提供真实上传、搜索、分类、排序、下载、版本历史、软删除/恢复，以及所选 Lesson、备课 Task、current approved TeachingPlan Revision 关联；被正式 TeachingPlan Revision 引用的成果禁止删除；
 - 明确的 current approved TeachingPlan Revision 可导出 DOCX，并作为正式 FileAsset 绑定 Lesson、备课 Task 与 TeachingPlan；新 approved Revision 导出形成同一文件的新版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
