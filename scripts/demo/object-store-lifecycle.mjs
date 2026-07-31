@@ -1,4 +1,4 @@
-import { rm, stat } from "node:fs/promises";
+import { rm, rmdir, stat } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 
 import { normalizeE2eRunId } from "../postgres/database-lifecycle.mjs";
@@ -18,9 +18,7 @@ export async function removeE2eObjectStore(root) {
   await rm(resolved, { recursive: true, force: true });
   const runDirectory = resolve(resolved, "..");
   assertWithin(runDirectory, e2eRoot);
-  await rm(runDirectory, { recursive: false, force: true }).catch(
-    () => undefined
-  );
+  await rmdir(runDirectory).catch(() => undefined);
 }
 
 export async function objectStoreDirectoryExists(root) {

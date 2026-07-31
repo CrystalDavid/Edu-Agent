@@ -98,12 +98,19 @@ describe("PostgreSQL lifecycle isolation", () => {
     expect(isolatedRunner).toContain("e2eVolumeName");
     expect(isolatedRunner).toContain("e2eObjectStoreRoot");
     expect(isolatedRunner).toContain("removeE2eObjectStore");
+    expect(isolatedRunner).toContain("E2E_CONTROL_PORT");
     expect(isolatedRunner).toContain('"--volumes"');
     expect(isolatedRunner).not.toContain("db:clean");
 
     const e2eServer = source("scripts/demo/run-e2e-demo.mjs");
     expect(e2eServer).toContain("E2E_RUN_ID");
     expect(e2eServer).toContain("LOCAL_OBJECT_STORE_ROOT");
+    expect(e2eServer).toContain('"127.0.0.1"');
+    expect(e2eServer).toContain('"x-e2e-run-id"');
+    expect(e2eServer).toContain('"/__e2e/restart-api"');
+    expect(source("apps/api/src/app.ts")).not.toContain(
+      "/__e2e/restart-api"
+    );
     expect(e2eServer).not.toContain("db:clean");
     expect(e2eServer).not.toContain(
       "developmentVolumeName"
@@ -111,15 +118,25 @@ describe("PostgreSQL lifecycle isolation", () => {
   });
 
   it("assigns each E2E run a disposable object-store root outside development uploads", () => {
+    const runId = `lifecycle-${process.pid}-${Date.now()}`;
     const probe = runNode([
       "--input-type=module",
       "--eval",
       [
-        "import { e2eObjectStoreRoot } from",
+        "import { existsSync } from 'node:fs';",
+        "import { mkdir, writeFile } from 'node:fs/promises';",
+        "import { resolve } from 'node:path';",
+        "import { e2eObjectStoreRoot, removeE2eObjectStore } from",
         "'./scripts/demo/object-store-lifecycle.mjs';",
+        `const runId = '${runId}';`,
+        "const disposable = e2eObjectStoreRoot(runId);",
+        "await mkdir(disposable, { recursive: true });",
+        "await writeFile(resolve(disposable, 'proof.txt'), 'synthetic');",
+        "await removeE2eObjectStore(disposable);",
         "console.log(JSON.stringify({",
         "first: e2eObjectStoreRoot('first-run'),",
-        "second: e2eObjectStoreRoot('second-run')",
+        "second: e2eObjectStoreRoot('second-run'),",
+        "runDirectoryRemoved: !existsSync(resolve(disposable, '..'))",
         "}));"
       ].join(" ")
     ]);
@@ -130,6 +147,7 @@ describe("PostgreSQL lifecycle isolation", () => {
     expect(roots.first).toContain("uploads");
     expect(roots.first).not.toBe(roots.second);
     expect(roots.first).not.toContain(".demo\\uploads\\objects");
+    expect(roots.runDirectoryRemoved).toBe(true);
   });
 
   it("routes PostgreSQL integration tests away from development data", () => {

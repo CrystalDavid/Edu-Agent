@@ -914,6 +914,29 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     animations: "disabled"
   });
 
+  const controlPort = process.env.E2E_CONTROL_PORT;
+  const e2eRunId = process.env.E2E_RUN_ID;
+  expect(controlPort).toBeTruthy();
+  expect(e2eRunId).toBeTruthy();
+  const restartResponse = await request.post(
+    `http://127.0.0.1:${controlPort}/__e2e/restart-api`,
+    { headers: { "x-e2e-run-id": e2eRunId! } }
+  );
+  expect(restartResponse.status()).toBe(200);
+  expect(await restartResponse.json()).toMatchObject({ restarted: true });
+  await page.reload();
+  await expect(exportedFile).toBeVisible({ timeout: 20_000 });
+  await exportedFile.click();
+  await expect(page.getByTestId("file-version-history")).toContainText("v2");
+  await expect(page.getByTestId("file-detail")).toContainText(
+    "teaching_plan_revision"
+  );
+  await page.screenshot({
+    path: `${screenshotRoot}/21-gate2-5b-restart-recovery.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
   await page.goto("/teaching");
   await page.getByTestId("lesson-3").click();
   await expect(page.getByTestId("lesson-related-files")).toContainText(

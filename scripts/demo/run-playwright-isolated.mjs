@@ -65,6 +65,7 @@ const runId = createE2eRunId();
 const databasePort = await allocatePort();
 const apiPort = await allocatePort();
 const webPort = await allocatePort();
+const controlPort = await allocatePort();
 const arkFakeMode = process.argv.includes("--ark-fake");
 const fakeArkPort = arkFakeMode
   ? await allocatePort()
@@ -75,6 +76,7 @@ const databaseEnvironment = createE2eDatabaseEnvironment(
 );
 databaseEnvironment.E2E_API_PORT = String(apiPort);
 databaseEnvironment.E2E_WEB_PORT = String(webPort);
+databaseEnvironment.E2E_CONTROL_PORT = String(controlPort);
 databaseEnvironment.E2E_MODEL_MODE = arkFakeMode
   ? "ark-fake"
   : "mock";
