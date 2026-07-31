@@ -1,6 +1,6 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。当前分支完成 **Gate 2.5 — 最小可恢复备课闭环**：在普通教师端 UI v1 的视觉框架内，把真实 `CourseRun → CurriculumUnit → Lesson`、备课 Task、运行上下文、Proposal 审阅、TeachingPlan 批准和显式完成接入 PostgreSQL。
+面向学校的教育智能体平台工程仓库。当前分支完成 **Gate 2.6A — 火山方舟单一生产模型 Provider**：在 Gate 2.5 可恢复备课闭环上增加事务外、可取消、可重试、可验证的 `VolcengineArkProvider`，同时保持 Mock 为默认本地与测试路径。
 
 ## 当前真实能力
 
@@ -16,7 +16,10 @@
 - 接受/修改、批准和完成是三个独立命令；拒绝/稍后处理不改变 current approved；
 - Task、Disposition、active review、批准和完成具备 expected version、结构化冲突与幂等语义；
 - 本地应用级 Outbox Worker，使用租约、重试和幂等 Consumer Effect，不声称 exactly-once；
-- 确定性 `MockModelProvider`，无外部模型调用和费用；
+- `VolcengineArkProvider` 使用 API workspace 内的 OpenAI-compatible Node SDK；模型 ID 只来自服务端配置，Web bundle 无 SDK/Key；
+- `ModelExecution` 持久化 queued/running/validating/succeeded、失败、超时、取消、Token、延迟、估算费用和安全 Provider 关联；
+- 模型调用在数据库事务外由租约 Worker 执行；预算、ModelDataManifest、幂等、有限重试和一次受控修复均 fail closed；
+- 默认 `MockModelProvider` 不联网；Fake Ark、32 项合成评测集和默认关闭的 Live Integration 分离验证；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
 普通教师端的概览备课区、教学课程/课时、Task-scoped Agent、Teaching Plan 和 Runs 已接入真实闭环；日程、作业、测试、学生、文件、通用 Agent 对话和设置仍主要是高保真 Mock。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
@@ -32,7 +35,7 @@ corepack pnpm demo:doctor
 corepack pnpm demo:dev
 ```
 
-打开 `http://localhost:5173/`。本地演示使用合成学校与教师身份、合成教育数据和 Mock 模型；它不是正式登录或 SSO。完整说明见 [LOCAL_DEMO.md](docs/demo/LOCAL_DEMO.md)。
+打开 `http://localhost:5173/`。本地演示只使用合成身份和教育数据；默认 Mock，不联网。用户可在被忽略的 `.env.local` 中显式选择 Ark，配置仍只存在于服务端。它不是正式登录或 SSO。完整说明见 [LOCAL_DEMO.md](docs/demo/LOCAL_DEMO.md)。
 
 ## 验证命令
 
@@ -42,20 +45,24 @@ corepack pnpm test
 corepack pnpm test:architecture
 corepack pnpm test:e2e
 corepack pnpm test:migrations
+corepack pnpm test:secrets
 corepack pnpm test:node-smoke
 corepack pnpm test:postgres
 corepack pnpm test:playwright
+corepack pnpm test:playwright:ark-fake
 corepack pnpm build
 corepack pnpm demo:doctor
 ```
 
 - `pnpm test` 不启动 Docker。
+- 普通测试和两条 Playwright 链都显式禁用 live model；Fake Ark 只监听本机。
+- `pnpm test:model:live` 与 `pnpm model:probe:live` 默认关闭，只有显式 live flags 和完整 Ark 配置时才联网。
 - `pnpm test:postgres` 和 `pnpm test:playwright` 每次创建独立的临时 Compose Project/Volume，结束后清理，并核验开发 Volume、`infra/docker/.env.local` 和本地上传目录未变化。
 - 长期开发数据库使用 Compose Project `edu-agent-dev` 和 Volume `edu-agent-dev-postgres-data`。
 - 删除长期开发 Volume 必须显式设置 `ALLOW_DESTRUCTIVE_DB_RESET=1`；未设置时命令会在调用 Docker 前拒绝执行。
 
 ## 明确边界
 
-当前不包含真实学校数据、正式登录/SSO、DeepSeek、CloudBase、Netlify、ObjectStore、文件上传、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、作业/考试闭环、学生长期模型、多 Agent 或 v0.4。
+当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、ObjectStore、文件上传、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、作业/考试闭环、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
 
-Gate 2.5 的领域裁决、状态机、API、Migration、同步/异步边界和验收流程见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。Gate 2.4 基线见 [GATE_2_4_COPILOT_CORRECTNESS.md](docs/product/GATE_2_4_COPILOT_CORRECTNESS.md)。
+Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md](docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)。Gate 2.5 业务语义见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。
