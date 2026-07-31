@@ -72,7 +72,8 @@ const databaseEnvironment = Object.fromEntries(
     "POSTGRES_VOLUME_NAME",
     "E2E_RUN_ID",
     "E2E_API_PORT",
-    "E2E_WEB_PORT"
+    "E2E_WEB_PORT",
+    "LOCAL_OBJECT_STORE_ROOT"
   ].map((name) => [name, requiredEnvironment(name)])
 );
 
