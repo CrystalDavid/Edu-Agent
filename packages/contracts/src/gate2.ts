@@ -64,14 +64,18 @@ export const TeachingPlanDiffSchema = z.object({
 export const PedagogicalStrategySchema = z.object({
   strategyId: z.string().min(1),
   title: z.string().min(1),
+  summary: z.string().min(1).optional(),
   rationale: z.string().min(1),
   evidenceRefs: z.array(z.string().min(1)).min(1),
   knownGaps: z.array(z.string().min(1)).min(1),
   applicability: z.string().min(1),
   unsuitableConditions: z.array(z.string().min(1)).min(1),
   suggestedMoves: z.array(z.string().min(1)).min(1),
+  teachingMoves: z.array(z.string().min(1)).min(1).optional(),
+  proposedPlanChanges: TeachingPlanSchema.optional(),
   followUpEvidence: z.array(z.string().min(1)).min(1),
-  confidenceExplanation: z.string().min(1)
+  confidenceExplanation: z.string().min(1),
+  uncertaintyNote: z.string().min(1).optional()
 });
 
 export const EvidenceObservationViewSchema = z.object({
@@ -227,7 +231,10 @@ export const CreateTeacherCopilotTaskResultSchema = z.object({
   proposalRevisionRef: z.string().min(1),
   teachingPlanArtifactRef: z.string().min(1),
   draftRevision: TeachingPlanRevisionViewSchema,
-  strategies: z.array(PedagogicalStrategySchema).length(2),
+  strategies: z
+    .array(PedagogicalStrategySchema)
+    .min(1)
+    .max(3),
   diffsByStrategy: z.record(z.string(), TeachingPlanDiffSchema),
   authorizationDecisionRef: z.string().min(1),
   preparationTaskRef: z.string().min(1).optional(),
@@ -297,7 +304,10 @@ export const ProposalReviewDetailSchema = z.object({
   teachingPlanArtifactRef: z.string().min(1),
   authorizationDecisionRef: z.string().min(1),
   request: TeacherTaskRequestSchema,
-  strategies: z.array(PedagogicalStrategySchema).length(2),
+  strategies: z
+    .array(PedagogicalStrategySchema)
+    .min(1)
+    .max(3),
   diffsByStrategy: z.record(z.string(), TeachingPlanDiffSchema),
   evidence: z.object({
     observations: z.array(EvidenceObservationViewSchema),
@@ -355,7 +365,7 @@ export const RunExplanationSchema = z.object({
   agentRun: z.object({
     agentRunRef: z.string().min(1),
     status: z.string().min(1),
-    provider: z.literal("mock"),
+    provider: z.enum(["mock", "volcengine-ark"]),
     modelProfile: z.string().min(1)
   }),
   contract: z.object({
@@ -386,11 +396,25 @@ export const RunExplanationSchema = z.object({
   }),
   modelExecution: z.object({
     executionRef: z.string().min(1),
-    provider: z.literal("mock"),
+    provider: z.enum(["mock", "volcengine-ark"]),
+    modelDisplayName: z.string().min(1),
+    status: z.string().min(1),
     promptBundleRef: z.string().min(1),
-    externalNetworkUsed: z.literal(false),
+    promptBundleVersion: z.number().int().positive(),
+    contextManifestRef: z.string().min(1).nullable(),
+    externalNetworkUsed: z.boolean(),
+    attemptCount: z.number().int().nonnegative(),
+    maxAttempts: z.number().int().positive(),
+    inputTokens: z.number().int().nonnegative().nullable(),
+    outputTokens: z.number().int().nonnegative().nullable(),
+    totalTokens: z.number().int().nonnegative().nullable(),
+    latencyMs: z.number().int().nonnegative().nullable(),
+    estimatedCost: z.number().nonnegative().nullable(),
+    finishReason: z.string().min(1).nullable(),
+    safeErrorCategory: z.string().min(1).nullable(),
+    providerRequestIdMasked: z.string().min(1).nullable(),
     usageLabel: z.string().min(1),
-    costLabel: z.literal("¥0.00（Mock）")
+    costLabel: z.string().min(1)
   }),
   artifactRevisions: z.array(
     z.object({

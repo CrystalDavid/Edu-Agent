@@ -1,9 +1,13 @@
 import {
   ModelRequestSchema,
+  ModelRequestSchemaV2,
   ModelResponseSchema,
+  ModelResultSchema,
   PedagogicalStrategySchema,
+  StructuredTeachingSuggestionOutputSchema,
   type PedagogicalStrategy,
   type ModelRequest,
+  type ModelRequestV2,
   type ModelResponse
 } from "@edu-agent/contracts";
 
@@ -11,10 +15,10 @@ import type {
   CapabilityDescriptor,
   ExecutionContract,
   GovernanceProfile,
-  ModelProvider
+  LegacyModelProvider
 } from "../domain/capability.js";
 
-export class MockModelProvider implements ModelProvider {
+export class MockModelProvider implements LegacyModelProvider {
   readonly descriptor: CapabilityDescriptor = {
     capabilityRef: "capability:model:mock",
     name: "MockModelProvider",
@@ -53,6 +57,124 @@ export class MockModelProvider implements ModelProvider {
         inputUnits: JSON.stringify(request.input).length,
         outputUnits: String(request.input["body"] ?? "").length
       }
+    });
+  }
+
+  async invoke(
+    rawRequest: ModelRequestV2,
+    options?: { signal?: AbortSignal }
+  ) {
+    const request = ModelRequestSchemaV2.parse(rawRequest);
+    if (options?.signal?.aborted) {
+      return ModelResultSchema.parse({
+        status: "failed",
+        category: "REQUEST_CANCELLED",
+        retryable: false,
+        safeMessage: "模型调用已取消。"
+      });
+    }
+    const evidenceRefs = [...request.scope.evidenceRefs];
+    const objectiveRefs = [
+      ...request.scope.learningObjectiveRefs
+    ];
+    const output = StructuredTeachingSuggestionOutputSchema.parse({
+      schemaVersion: "teacher-copilot-suggestions@1",
+      suggestions: [
+        {
+          strategyId: "strategy:multiple-representations",
+          title: "多重表征：从方向、变化率到图像陡峭程度",
+          summary:
+            "用同截距图像、单位变化率和个人解释检查连接斜率概念。",
+          rationale:
+            "现有合成证据同时显示图像判断与解释缺口，先隔离截距变量能减少无关干扰。",
+          evidenceRefs,
+          knownGaps: ["缺少独立迁移任务证据"],
+          applicability:
+            "适用于需要同时处理图像判断和概念解释困难的合成班级。",
+          unsuitableConditions: [
+            "学生尚未理解坐标系和函数图像基本读法"
+          ],
+          teachingMoves: [
+            "比较三条同截距、不同斜率的直线",
+            "把图像变化与单位变化率配对",
+            "用个人解释检查理解"
+          ],
+          proposedPlanChanges: {
+            objective: "解释斜率与一次函数图像变化的关系",
+            lessonFocus: "斜率、方向和图像陡峭程度",
+            openingActivity: "比较同截距的三条合成直线",
+            teacherQuestions: [
+              "横坐标增加 1 时，纵坐标怎样变化？",
+              "截距改变会改变斜率吗？"
+            ],
+            studentActivity:
+              "完成图像、表格和语言描述的配对并独立解释",
+            supportStrategy:
+              "提供单位变化率句式支架，不提供答案",
+            independentCheck:
+              "解释一条新直线的方向和陡峭程度",
+            followUp: "收集解释并标记仍未知的迁移表现",
+            evidenceRefs
+          },
+          followUpEvidence: ["收集每位学生的一句解释"],
+          uncertaintyNote:
+            "当前只有合成观察与候选主张，迁移效果仍未知。",
+          courseRunRef: request.scope.courseRunRef,
+          lessonRef: request.scope.lessonRef,
+          learningObjectiveRefs: objectiveRefs
+        },
+        {
+          strategyId: "strategy:worked-example-contrast",
+          title: "对比样例：辨析计算正确与解释充分",
+          summary:
+            "对比结论相同但解释质量不同的样例，突出证据句。",
+          rationale:
+            "合成证据显示程序性判断与概念解释质量不一致。",
+          evidenceRefs,
+          knownGaps: ["缺少不同难度任务上的稳定性证据"],
+          applicability:
+            "适用于多数学生已能判断斜率但理由含混的合成情境。",
+          unsuitableConditions: ["学生仍不能识别图像上升与下降方向"],
+          teachingMoves: [
+            "并排呈现两个解释质量不同的样例",
+            "圈出真正支持结论的证据句",
+            "改写较弱解释"
+          ],
+          proposedPlanChanges: {
+            objective: "用单位变化率证据解释图像变化",
+            lessonFocus: "计算正确与解释充分的区别",
+            openingActivity: "比较两个结论相同的合成样例",
+            teacherQuestions: [
+              "哪句话真正支持这个结论？",
+              "截距在这里是不是相关证据？"
+            ],
+            studentActivity:
+              "标注证据句并改写较弱解释",
+            supportStrategy:
+              "提供解释质量检查表，不提供标准答案",
+            independentCheck: "对新图像给出证据充分的解释",
+            followUp: "记录学生是否能排除截距干扰",
+            evidenceRefs
+          },
+          followUpEvidence: ["收集一题无坐标数值的解释"],
+          uncertaintyNote:
+            "样本有限，教师仍需结合课堂观察决定是否采用。",
+          courseRunRef: request.scope.courseRunRef,
+          lessonRef: request.scope.lessonRef,
+          learningObjectiveRefs: objectiveRefs
+        }
+      ]
+    });
+    const outputText = JSON.stringify(output);
+    return ModelResultSchema.parse({
+      status: "succeeded",
+      provider: "mock",
+      modelId: "deterministic-fixture",
+      outputText,
+      inputTokens: JSON.stringify(request).length,
+      outputTokens: outputText.length,
+      latencyMs: 0,
+      finishReason: "stop"
     });
   }
 
