@@ -738,29 +738,38 @@ export class PostgresModelExecutionRepository {
     const value = input.capabilities;
     await client.query(
       `INSERT INTO capability.provider_capability_snapshot (
-         snapshot_ref, provider, model_id_hash,
-         supports_text, supports_image_url,
-         supports_json_object, supports_json_schema,
-         supports_function_calling, supports_streaming,
+         snapshot_ref, provider, model_id_hash, live,
+         supports_text, supports_image_url, image_url_status,
+         supports_json_object, json_object_status,
+         supports_json_schema, json_schema_status,
+         supports_function_calling, function_calling_status,
+         supports_streaming, streaming_status,
          reports_usage, reports_request_id,
          reported_model_matches, checked_at,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         $10, $11, $12, $13,
-         $14, $15, $16, $17, $18, $19, $20
+         $10, $11, $12, $13, $14, $15, $16, $17,
+         $18, $19,
+         $20, $21, $22, $23, $24, $25, $26
        )`,
       [
         input.snapshotRef,
         value.provider,
         value.modelIdHash,
+        value.live,
         value.supportsText,
         value.supportsImageUrl,
+        value.imageUrlStatus,
         value.supportsJsonObject,
+        value.jsonObjectStatus,
         value.supportsJsonSchema,
+        value.jsonSchemaStatus,
         value.supportsFunctionCalling,
+        value.functionCallingStatus,
         value.supportsStreaming,
+        value.streamingStatus,
         value.reportsUsage,
         value.reportsRequestId,
         value.reportedModelMatches,
@@ -781,21 +790,29 @@ export class PostgresModelExecutionRepository {
     const result = await executor.query<{
       provider: "volcengine-ark";
       model_id_hash: string;
+      live: boolean;
       supports_text: boolean;
       supports_image_url: boolean;
+      image_url_status: ProviderCapabilities["imageUrlStatus"];
       supports_json_object: boolean;
+      json_object_status: ProviderCapabilities["jsonObjectStatus"];
       supports_json_schema: boolean;
+      json_schema_status: ProviderCapabilities["jsonSchemaStatus"];
       supports_function_calling: boolean;
+      function_calling_status: ProviderCapabilities["functionCallingStatus"];
       supports_streaming: boolean;
+      streaming_status: ProviderCapabilities["streamingStatus"];
       reports_usage: boolean;
       reports_request_id: boolean;
       reported_model_matches: boolean;
       checked_at: Date;
     }>(
-      `SELECT provider, model_id_hash, supports_text,
-              supports_image_url, supports_json_object,
-              supports_json_schema, supports_function_calling,
-              supports_streaming, reports_usage,
+      `SELECT provider, model_id_hash, live, supports_text,
+              supports_image_url, image_url_status,
+              supports_json_object, json_object_status,
+              supports_json_schema, json_schema_status,
+              supports_function_calling, function_calling_status,
+              supports_streaming, streaming_status, reports_usage,
               reports_request_id, reported_model_matches,
               checked_at
          FROM capability.provider_capability_snapshot
@@ -808,13 +825,20 @@ export class PostgresModelExecutionRepository {
       ? {
           provider: row.provider,
           modelIdHash: row.model_id_hash,
+          live: row.live,
           supportsText: row.supports_text,
           supportsImageUrl: row.supports_image_url,
+          imageUrlStatus: row.image_url_status,
           supportsJsonObject: row.supports_json_object,
+          jsonObjectStatus: row.json_object_status,
           supportsJsonSchema: row.supports_json_schema,
+          jsonSchemaStatus: row.json_schema_status,
           supportsFunctionCalling:
             row.supports_function_calling,
+          functionCallingStatus:
+            row.function_calling_status,
           supportsStreaming: row.supports_streaming,
+          streamingStatus: row.streaming_status,
           reportsUsage: row.reports_usage,
           reportsRequestId: row.reports_request_id,
           reportedModelMatches: row.reported_model_matches,

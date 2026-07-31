@@ -95,6 +95,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/capability-integration/infrastructure/migrations/0004_gate2_6a_model_execution_lifecycle.sql"
   },
   {
+    owner: "capability",
+    relativePath:
+      "apps/api/src/modules/capability-integration/infrastructure/migrations/0005_gate2_6a_live_capability_acceptance.sql"
+  },
+  {
     owner: "artifact",
     relativePath:
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0001_artifact.sql"

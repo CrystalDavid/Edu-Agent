@@ -16,6 +16,13 @@ const booleanFromEnvironment = z
   .default("false")
   .transform((value) => value === "true");
 
+const strictLiveArkBaseUrl =
+  "https://ark.cn-beijing.volces.com/api/v3";
+const strictLiveArkModelId =
+  "doubao-seed-2-1-turbo-260628";
+const strictLiveArkModelDisplayName =
+  "Doubao-Seed-2.1-turbo-260628";
+
 const RawModelEnvironmentSchema = z.object({
   APP_ENV: z
     .enum(["local", "demo", "test", "production"])
@@ -32,6 +39,7 @@ const RawModelEnvironmentSchema = z.object({
     .literal("chat_completions")
     .default("chat_completions"),
   ENABLE_LIVE_MODEL_TESTS: booleanFromEnvironment,
+  ARK_LIVE_STRICT: booleanFromEnvironment,
   MODEL_REQUEST_TIMEOUT_MS: positiveInteger(120_000),
   MODEL_MAX_OUTPUT_TOKENS: positiveInteger(8_192),
   MODEL_MAX_RETRIES: positiveInteger(2),
@@ -79,6 +87,7 @@ export interface ModelProviderSettings {
   budget: ModelBudgetConfig;
   debugContent: boolean;
   liveTestsEnabled: boolean;
+  liveStrict: boolean;
   availability: ProviderAvailability;
 }
 
@@ -153,6 +162,41 @@ export function readModelProviderSettings(
   }
 
   const arkConfigured = missing.length === 0;
+  if (raw.ARK_LIVE_STRICT) {
+    if (!raw.ENABLE_LIVE_MODEL_TESTS) {
+      throw new Error(
+        "ARK_LIVE_STRICT requires ENABLE_LIVE_MODEL_TESTS=true."
+      );
+    }
+    if (raw.MODEL_PROVIDER_MODE !== "ark") {
+      throw new Error(
+        "ARK_LIVE_STRICT requires MODEL_PROVIDER_MODE=ark."
+      );
+    }
+    if (!arkConfigured) {
+      throw new Error(
+        `Strict Ark live configuration is incomplete: ${missing.join(", ")}. Mock fallback is forbidden.`
+      );
+    }
+    if (normalizedBaseUrl !== strictLiveArkBaseUrl) {
+      throw new Error(
+        "ARK_LIVE_STRICT forbids Fake or alternate Ark base URLs."
+      );
+    }
+    if (raw.ARK_MODEL_ID !== strictLiveArkModelId) {
+      throw new Error(
+        "ARK_LIVE_STRICT requires the approved Ark model ID."
+      );
+    }
+    if (
+      raw.ARK_MODEL_DISPLAY_NAME !==
+      strictLiveArkModelDisplayName
+    ) {
+      throw new Error(
+        "ARK_LIVE_STRICT requires the approved Ark model display name."
+      );
+    }
+  }
   if (
     appEnvironment === "production" &&
     raw.MODEL_PROVIDER_MODE === "ark" &&
@@ -225,6 +269,7 @@ export function readModelProviderSettings(
     },
     debugContent: raw.MODEL_DEBUG_CONTENT,
     liveTestsEnabled: raw.ENABLE_LIVE_MODEL_TESTS,
+    liveStrict: raw.ARK_LIVE_STRICT,
     availability
   };
 }

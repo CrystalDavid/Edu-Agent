@@ -164,22 +164,30 @@ export const providerCapabilitySnapshotTable =
     snapshotRef: text("snapshot_ref").primaryKey(),
     provider: text("provider").notNull(),
     modelIdHash: text("model_id_hash").notNull(),
+    live: boolean("live").notNull(),
     supportsText: boolean("supports_text").notNull(),
     supportsImageUrl: boolean(
       "supports_image_url"
     ).notNull(),
+    imageUrlStatus: text("image_url_status").notNull(),
     supportsJsonObject: boolean(
       "supports_json_object"
     ).notNull(),
+    jsonObjectStatus: text("json_object_status").notNull(),
     supportsJsonSchema: boolean(
       "supports_json_schema"
     ).notNull(),
+    jsonSchemaStatus: text("json_schema_status").notNull(),
     supportsFunctionCalling: boolean(
       "supports_function_calling"
+    ).notNull(),
+    functionCallingStatus: text(
+      "function_calling_status"
     ).notNull(),
     supportsStreaming: boolean(
       "supports_streaming"
     ).notNull(),
+    streamingStatus: text("streaming_status").notNull(),
     reportsUsage: boolean("reports_usage").notNull(),
     reportsRequestId: boolean(
       "reports_request_id"

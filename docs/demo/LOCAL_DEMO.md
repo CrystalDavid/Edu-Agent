@@ -154,14 +154,14 @@ corepack pnpm test:playwright:ark-fake
 corepack pnpm test:playwright:ark-fake
 ```
 
-真实测试默认跳过。只有明确接受一次合成真实调用时，临时将 `ENABLE_LIVE_MODEL_TESTS=true`，运行：
+真实测试默认跳过。只有明确接受一次合成真实调用时，才临时设置 `ENABLE_LIVE_MODEL_TESTS=true`、`MODEL_PROVIDER_MODE=ark` 和 `ARK_LIVE_STRICT=true`，运行：
 
 ```powershell
 corepack pnpm model:probe:live
 corepack pnpm test:model:live
 ```
 
-完成后恢复 `ENABLE_LIVE_MODEL_TESTS=false`。Live 失败可能来自账户、余额、配额、网络或服务状态，不得通过降低 Schema/Evidence/Policy 校验来规避。
+完成后恢复 `ENABLE_LIVE_MODEL_TESTS=false` 与 `ARK_LIVE_STRICT=false`。Live 失败可能来自账户、模型开通状态、余额、配额、网络或服务状态，不得通过 Mock fallback 或降低 Schema/Evidence/Policy 校验来规避。
 
 ## 常见故障
 
@@ -207,3 +207,16 @@ corepack pnpm demo:doctor
 - 学生长期模型、多 Agent、v0.4；
 - 自动发布或外部承诺。
 - 图片产品流程、streaming 产品化、Function Calling、OCR 或 Provider 托管会话。
+
+## 严格 Ark 实机验收
+
+普通本地演示仍默认使用 Mock。只有执行 Gate 2.6A 实机验收时，才在当前进程显式设置：
+
+```text
+MODEL_PROVIDER_MODE=ark
+ENABLE_LIVE_MODEL_TESTS=true
+ARK_LIVE_STRICT=true
+MODEL_DEBUG_CONTENT=false
+```
+
+随后运行 `corepack pnpm model:probe:live`。严格模式不允许 Mock 或 Fake Ark fallback，也不允许把 skipped 计为通过。API Key 只放在根目录 `.env.local`，不得作为命令参数或控制台输出。脱敏逐次报告位于 `.demo/live-model-reports/`；可提交状态见 `docs/verification/GATE_2_6A_LIVE_ACCEPTANCE.md`。

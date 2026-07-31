@@ -223,13 +223,14 @@ function completion(
   const serialized = JSON.stringify(body["messages"] ?? []);
   const responseContent =
     content ??
-    (serialized.includes("中文文本能力")
-      ? "中文文本能力正常"
+    (serialized.includes("language") &&
+    serialized.includes("zh-CN")
+      ? '{"status":"ok","language":"zh-CN"}'
       : serialized.includes("JSON Object Probe") ||
           serialized.includes("JSON Schema Probe")
         ? '{"ok":true}'
         : serialized.includes("Image URL Probe")
-          ? '{"description":"公开合成测试图片"}'
+          ? '{"description":"公开合成测试图片","confirmedElements":["合成场景"],"uncertainty":"仅确认可见元素"}'
           : JSON.stringify(validSuggestion(body)));
   return {
     id: "chatcmpl_fake_request_1234567890",

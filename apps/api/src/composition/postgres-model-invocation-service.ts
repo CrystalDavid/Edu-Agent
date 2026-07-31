@@ -48,7 +48,8 @@ import {
   validateModelOutput
 } from "../modules/capability-integration/application/model-output-validation.js";
 import {
-  ProviderCapabilityProbe
+  ProviderCapabilityProbe,
+  type ProviderCapabilityProbeResult
 } from "../modules/capability-integration/application/provider-capability-probe.js";
 import {
   LocalSyntheticModelDebugSink,
@@ -252,14 +253,33 @@ export class PostgresModelInvocationService {
   }
 
   async runCapabilityProbe(): Promise<ProviderCapabilities> {
+    return (
+      await this.runCapabilityProbeDetailed({ live: false })
+    ).capabilities;
+  }
+
+  async runCapabilityProbeDetailed(input: {
+    live: boolean;
+  }): Promise<ProviderCapabilityProbeResult> {
+    if (input.live && !this.settings.liveStrict) {
+      throw new DomainConflictError(
+        "ARK_LIVE_STRICT_REQUIRED",
+        "A live capability snapshot requires strict Ark Live mode; Mock and Fake snapshots cannot be marked live."
+      );
+    }
     if (!(this.provider instanceof VolcengineArkProvider)) {
       throw new DomainConflictError(
         "ARK_PROVIDER_NOT_CONFIGURED",
         "Volcengine Ark must be configured before running the live capability probe."
       );
     }
-    const capabilities =
-      await new ProviderCapabilityProbe(this.provider).run();
+    const result =
+      await new ProviderCapabilityProbe(
+        this.provider,
+        this.clock,
+        { live: input.live }
+      ).runDetailed();
+    const capabilities = result.capabilities;
     const now = this.clock().toISOString();
     const writeContext = systemWriteContext(
       CAPABILITY_PROBE_PURPOSE,
@@ -309,7 +329,7 @@ export class PostgresModelInvocationService {
         receipt
       ]);
       await client.query("COMMIT");
-      return capabilities;
+      return result;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

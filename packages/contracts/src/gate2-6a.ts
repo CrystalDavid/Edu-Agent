@@ -156,15 +156,28 @@ export const ProviderAvailabilitySchema = z.object({
   safeReason: z.string().min(1).nullable()
 });
 
+export const ProviderCapabilitySupportStatusSchema = z.enum([
+  "supported",
+  "unsupported",
+  "partially_supported",
+  "not_tested"
+]);
+
 export const ProviderCapabilitiesSchema = z.object({
   provider: z.literal("volcengine-ark"),
   modelIdHash: z.string().min(16),
+  live: z.boolean(),
   supportsText: z.boolean(),
   supportsImageUrl: z.boolean(),
+  imageUrlStatus: ProviderCapabilitySupportStatusSchema,
   supportsJsonObject: z.boolean(),
+  jsonObjectStatus: ProviderCapabilitySupportStatusSchema,
   supportsJsonSchema: z.boolean(),
+  jsonSchemaStatus: ProviderCapabilitySupportStatusSchema,
   supportsFunctionCalling: z.boolean(),
+  functionCallingStatus: ProviderCapabilitySupportStatusSchema,
   supportsStreaming: z.boolean(),
+  streamingStatus: ProviderCapabilitySupportStatusSchema,
   reportsUsage: z.boolean(),
   reportsRequestId: z.boolean(),
   reportedModelMatches: z.boolean(),
@@ -312,6 +325,9 @@ export type ProviderAvailability = z.infer<
 >;
 export type ProviderCapabilities = z.infer<
   typeof ProviderCapabilitiesSchema
+>;
+export type ProviderCapabilitySupportStatus = z.infer<
+  typeof ProviderCapabilitySupportStatusSchema
 >;
 export type CreateModelInvocationRequest = z.infer<
   typeof CreateModelInvocationRequestSchema

@@ -115,6 +115,69 @@ describe("Gate 2.6A provider configuration", () => {
       })
     ).toThrow(/MODEL_DEBUG_CONTENT/u);
   });
+
+  it("requires a complete Ark-only configuration in strict Live mode", () => {
+    expect(() =>
+      readModelProviderSettings({
+        APP_ENV: "local",
+        MODEL_PROVIDER_MODE: "ark",
+        ARK_LIVE_STRICT: "true"
+      })
+    ).toThrow(/ENABLE_LIVE_MODEL_TESTS/u);
+    expect(() =>
+      readModelProviderSettings({
+        APP_ENV: "local",
+        MODEL_PROVIDER_MODE: "mock",
+        ENABLE_LIVE_MODEL_TESTS: "true",
+        ARK_LIVE_STRICT: "true"
+      })
+    ).toThrow(/MODEL_PROVIDER_MODE=ark/u);
+    expect(() =>
+      readModelProviderSettings({
+        APP_ENV: "local",
+        MODEL_PROVIDER_MODE: "ark",
+        ENABLE_LIVE_MODEL_TESTS: "true",
+        ARK_LIVE_STRICT: "true",
+        ARK_BASE_URL:
+          "https://ark.cn-beijing.volces.com/api/v3",
+        ARK_API_KEY: "synthetic-test-credential",
+        ARK_MODEL_ID: "doubao-seed-2-1-turbo-260628",
+        ARK_MODEL_DISPLAY_NAME:
+          "Doubao-Seed-2.1-turbo-260628"
+      })
+    ).not.toThrow();
+    const strict = readModelProviderSettings({
+      APP_ENV: "local",
+      MODEL_PROVIDER_MODE: "ark",
+      ENABLE_LIVE_MODEL_TESTS: "true",
+      ARK_LIVE_STRICT: "true",
+      ARK_BASE_URL:
+        "https://ark.cn-beijing.volces.com/api/v3",
+      ARK_API_KEY: "synthetic-test-credential",
+      ARK_MODEL_ID: "doubao-seed-2-1-turbo-260628",
+      ARK_MODEL_DISPLAY_NAME:
+        "Doubao-Seed-2.1-turbo-260628"
+    });
+    expect(strict).toMatchObject({
+      activeProvider: "volcengine-ark",
+      liveTestsEnabled: true,
+      liveStrict: true
+    });
+    expect(strict.availability.fallbackToMock).toBe(false);
+    expect(() =>
+      readModelProviderSettings({
+        APP_ENV: "local",
+        MODEL_PROVIDER_MODE: "ark",
+        ENABLE_LIVE_MODEL_TESTS: "true",
+        ARK_LIVE_STRICT: "true",
+        ARK_BASE_URL: "http://127.0.0.1:39123/api/v3",
+        ARK_API_KEY: "synthetic-test-credential",
+        ARK_MODEL_ID: "doubao-seed-2-1-turbo-260628",
+        ARK_MODEL_DISPLAY_NAME:
+          "Doubao-Seed-2.1-turbo-260628"
+      })
+    ).toThrow(/forbids Fake/u);
+  });
 });
 
 describe("VolcengineArkProvider OpenAI-compatible transport", () => {
@@ -225,12 +288,18 @@ describe("VolcengineArkProvider OpenAI-compatible transport", () => {
     ).run();
     expect(summary).toMatchObject({
       provider: "volcengine-ark",
+      live: false,
       supportsText: true,
       supportsImageUrl: true,
+      imageUrlStatus: "supported",
       supportsJsonObject: true,
+      jsonObjectStatus: "supported",
       supportsJsonSchema: true,
+      jsonSchemaStatus: "supported",
       supportsFunctionCalling: true,
+      functionCallingStatus: "supported",
       supportsStreaming: true,
+      streamingStatus: "supported",
       reportsUsage: true,
       reportsRequestId: true,
       reportedModelMatches: true,

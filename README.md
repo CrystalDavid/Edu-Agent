@@ -56,7 +56,7 @@ corepack pnpm demo:doctor
 
 - `pnpm test` 不启动 Docker。
 - 普通测试和两条 Playwright 链都显式禁用 live model；Fake Ark 只监听本机。
-- `pnpm test:model:live` 与 `pnpm model:probe:live` 默认关闭，只有显式 live flags 和完整 Ark 配置时才联网。
+- `pnpm test:model:live` 与 `pnpm model:probe:live` 默认关闭，只有显式 strict live flags 和完整 Ark 配置时才联网；严格模式禁止 Mock/Fake fallback。
 - `pnpm test:postgres` 和 `pnpm test:playwright` 每次创建独立的临时 Compose Project/Volume，结束后清理，并核验开发 Volume、`infra/docker/.env.local` 和本地上传目录未变化。
 - 长期开发数据库使用 Compose Project `edu-agent-dev` 和 Volume `edu-agent-dev-postgres-data`。
 - 删除长期开发 Volume 必须显式设置 `ALLOW_DESTRUCTIVE_DB_RESET=1`；未设置时命令会在调用 Docker 前拒绝执行。

@@ -642,6 +642,14 @@ describe("Gate 2.6A durable ModelExecution", () => {
       const probed =
         await firstProduct.services.modelInvocations.runCapabilityProbe();
       expect(probed.supportsText).toBe(true);
+      expect(probed).toMatchObject({
+        live: false,
+        imageUrlStatus: "supported",
+        jsonObjectStatus: "supported",
+        jsonSchemaStatus: "supported",
+        functionCallingStatus: "supported",
+        streamingStatus: "supported"
+      });
       expect(
         await firstProduct.services.modelInvocations.getCapabilities()
       ).toEqual(probed);

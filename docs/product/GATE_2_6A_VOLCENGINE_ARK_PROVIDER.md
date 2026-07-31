@@ -301,7 +301,7 @@ Secret scan 检查 tracked/unignored 文件中的：
 corepack pnpm model:probe:live
 ```
 
-只有 `ENABLE_LIVE_MODEL_TESTS=true` 且 `MODEL_PROVIDER_MODE=ark` 才执行。Probe 不写业务表，只保存安全 capability snapshot 与 Governance Audit。
+只有 `ENABLE_LIVE_MODEL_TESTS=true`、`MODEL_PROVIDER_MODE=ark` 且 `ARK_LIVE_STRICT=true` 才执行。Probe 不写业务表，只保存安全 capability snapshot 与 Governance Audit。
 
 摘要字段：
 
@@ -356,6 +356,7 @@ corepack pnpm test:model:live
 ```text
 ENABLE_LIVE_MODEL_TESTS=true
 MODEL_PROVIDER_MODE=ark
+ARK_LIVE_STRICT=true
 ```
 
 并具有完整服务端配置时才真实调用。Live Test：
@@ -385,9 +386,10 @@ Web 只使用共享 `apiRoutes`，不散落手写产品 URL。
 
 ## 18. Migration 与 Schema Ownership
 
-Gate 2.6A 后总 Migration 数为 29：
+Gate 2.6A Live Acceptance 前向修复后总 Migration 数为 30：
 
 - Capability `0004`：扩展原 `model_execution`；增加 execution event、budget decision、provider capability snapshot；
+- Capability `0005`：为 capability snapshot 增加 `live` 标记与逐项能力状态；
 - Governance `0003`：immutable `model_data_manifest`；
 - Work `0006`：TaskRun lifecycle 时间；
 - Runtime `0006`：AgentRun lifecycle 时间。
@@ -427,3 +429,11 @@ Runs 的技术折叠区显示 Provider、展示名、执行状态、PromptBundle
 8. 如需真实探测，显式开启 live flags，分别运行 capability probe 与 live test；
 9. 关闭 live flags；
 10. 确认开发 Volume、`.env.local` 和本地上传目录未被测试改变。
+
+## 严格 Live Acceptance
+
+最终实机验收必须额外设置 `ARK_LIVE_STRICT=true`。严格模式要求 `MODEL_PROVIDER_MODE=ark` 与 `ENABLE_LIVE_MODEL_TESTS=true`，Ark 配置必须完整，且 `activeProvider` 必须为 `volcengine-ark`；任何缺项都直接失败，不允许 local/demo 回退 Mock。
+
+`corepack pnpm model:probe:live` 在严格模式下写入带 `live=true` 的能力快照，并把 JSON Object、JSON Schema、Function Calling、图片 URL 与 streaming 分别记录为 `supported`、`unsupported`、`partially_supported` 或 `not_tested`。逐次安全报告写入 Git ignored 的 `.demo/live-model-reports/`，只包含 Token、延迟、脱敏 Request ID、能力状态和安全错误类别。
+
+可提交的最终验收状态记录在 `docs/verification/GATE_2_6A_LIVE_ACCEPTANCE.md`。真实推理与产品所有者控制台用量确认缺一不可；在此之前状态必须保持 `PENDING`。
