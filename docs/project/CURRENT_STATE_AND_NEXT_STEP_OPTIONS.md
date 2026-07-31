@@ -875,6 +875,8 @@ Gate 2.5B 应保持窄范围：TeachingPlan 导出/教学成果的文件真值�
 | 权限与审计 | tenant/actor 校验；写入和下载均记录 AuthorizationDecision/Audit；正式成果删除被拒绝；相同幂等键异 payload 返回 409 |
 | 测试隔离 | PostgreSQL 和 Playwright 使用独立 E2E Volume；Playwright 文件写入 `.demo/e2e/<run-id>/uploads` 并精确清理，不触碰开发文件目录 |
 
+Gate 2.5B 的默认 Playwright 还会在同一隔离数据库与 ObjectStore 上真实停止并重启 API/Worker，再恢复同一 DOCX FileAsset、v2 和四类正式 bindings。测试控制器只监听 `127.0.0.1`、要求当前 `E2E_RUN_ID`，且没有进入产品 API Composition Root。
+
 ### 19.2 数据库与 Migration
 
 Artifact Migration `0006_gate2_5b_file_artifacts.sql` 新增：
@@ -886,7 +888,9 @@ Artifact Migration `0006_gate2_5b_file_artifacts.sql` 新增：
 - `artifact.teaching_plan_file_export`；
 - FileVersion immutable Trigger、tenant/list/history/target/export indexes。
 
-总 Migration 为 31。Migration 从空 Volume 按七 Schema owner 执行，带 checksum；不改写 Gate 2.6A 既有数据，不保存 API Key 或绝对物理路径。
+Artifact 前向修复 `0007_gate2_5b_shared_object_keys.sql` 移除 `file_version.object_key` 的唯一约束并建立普通索引，使同一 tenant 的相同 SHA-256/大小内容可以被多个不可变 FileVersion 安全复用；不改写已登记的 0006。
+
+总 Migration 为 32。Migration 从空 Volume 按七 Schema owner 执行，带 checksum；不改写 Gate 2.6A 既有数据，不保存 API Key 或绝对物理路径。
 
 ### 19.3 仍未实现
 

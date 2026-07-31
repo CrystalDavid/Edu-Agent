@@ -22,6 +22,8 @@
 - 默认 `MockModelProvider` 不联网；Fake Ark、32 项合成评测集和默认关闭的 Live Integration 分离验证；
 - Artifact-owned `FileAsset`、不可变 `FileVersion` 和文件关联持久化到 PostgreSQL；Capability-owned `LocalObjectStore` 使用服务端生成 object key、流式 SHA-256、大小/MIME/签名校验和失败补偿；
 - 文件页提供真实上传、搜索、分类、排序、下载、版本历史、软删除/恢复，以及所选 Lesson、备课 Task、current approved TeachingPlan Revision 关联；被正式 TeachingPlan Revision 引用的成果禁止删除；
+- DOCX/PPTX/XLSX 上传会校验实际 OOXML 容器，并在服务端本地提取有界文本摘要；不会把文件内容发送给模型；
+- 同一 tenant 的重复内容按 SHA-256 与大小复用物理对象，但保留各自 FileAsset/FileVersion 与审计语义；
 - 明确的 current approved TeachingPlan Revision 可导出 DOCX，并作为正式 FileAsset 绑定 Lesson、备课 Task 与 TeachingPlan；新 approved Revision 导出形成同一文件的新版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
@@ -62,6 +64,7 @@ corepack pnpm demo:doctor
 - `pnpm test:model:live` 与 `pnpm model:probe:live` 默认关闭，只有显式 strict live flags 和完整 Ark 配置时才联网；严格模式禁止 Mock/Fake fallback。
 - `pnpm test:postgres` 和 `pnpm test:playwright` 每次创建独立的临时 Compose Project/Volume，结束后清理，并核验开发 Volume、`infra/docker/.env.local` 和本地上传目录未变化。
 - Playwright 还使用 `.demo/e2e/<run-id>/uploads` 临时 ObjectStore；结束后只删除该已核验目录，不触碰 `.demo/uploads/objects` 开发文件。
+- Gate 2.5B Playwright 会在同一隔离数据库与 ObjectStore 上真实重启一次 API/Worker，并验证文件、版本和 bindings 恢复；重启控制器只监听本机且不进入产品路由。
 - 长期开发数据库使用 Compose Project `edu-agent-dev` 和 Volume `edu-agent-dev-postgres-data`。
 - 删除长期开发 Volume 必须显式设置 `ALLOW_DESTRUCTIVE_DB_RESET=1`；未设置时命令会在调用 Docker 前拒绝执行。
 

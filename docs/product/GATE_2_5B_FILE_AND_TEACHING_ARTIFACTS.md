@@ -77,9 +77,10 @@ approved TeachingPlan / Lesson
 
 1. 校验授权、文件名、扩展名、MIME、声明大小与上限。
 2. `LocalObjectStore.put` 流式写入同根目录临时文件，同时计算 SHA-256 和实际大小。
-3. `fsync` 后以随机/内容寻址 object key 原子 rename；用户文件名不进入路径。
-4. 开启数据库事务，写 AuthorizationDecision、FileAsset/FileVersion/Binding、Outbox、Audit 和幂等结果。
-5. 数据库提交失败时删除刚写入且无数据库引用的对象；补偿失败会写入 Git ignored 的安全 orphan 标记，并由显式 cleanup 扫描处理。
+3. `fsync` 后以包含随机 UUID 与内容 hash 的 object key 原子 rename；用户文件名不进入路径。
+4. 同一 tenant 已存在相同 SHA-256 与大小且对象仍可读时，新 FileVersion 复用原 object key，并删除刚写入的重复物理对象；FileAsset/FileVersion 业务记录仍保持各自独立。
+5. 开启数据库事务，写 AuthorizationDecision、FileAsset/FileVersion/Binding、Outbox、Audit 和幂等结果。
+6. 数据库提交失败时删除刚写入且无数据库引用的对象；补偿失败会写入 Git ignored 的安全 orphan 标记，并由显式 cleanup 扫描处理。
 
 对象写入失败时不会创建数据库记录。数据库已成功提交后不进行物理删除，因此不会出现已提交 FileVersion 指向被补偿删除对象的情况。
 
@@ -92,7 +93,8 @@ approved TeachingPlan / Lesson
 ## 6. 文件安全策略
 
 - 支持 PDF、PNG/JPEG/GIF/WebP、Markdown、TXT、DOCX、PPTX、XLSX。
-- 扩展名与 MIME 必须匹配 allowlist；Office Open XML 使用明确 MIME。
+- 扩展名与 MIME 必须匹配 allowlist；Office Open XML 使用明确 MIME，并必须包含与扩展名匹配的 OOXML 结构；任意 ZIP 改名后会 fail closed。
+- DOCX/PPTX/XLSX 只在服务端本地有限解压指定 XML entry，提取有长度上限的文本摘要；不调用模型、不执行宏，也不完整渲染 Office。
 - 默认最大文件大小 25 MiB，可由 `FILE_MAX_UPLOAD_BYTES` 在服务端配置。
 - 拒绝空文件、NUL、路径分隔符、`..`、控制字符和过长文件名。
 - object key 只允许服务端生成的安全段；所有解析后路径必须仍位于配置根目录内。
@@ -168,17 +170,18 @@ Gate 2.6A 以前数据库没有文件表，无需数据回填。若历史磁盘�
 
 自动化覆盖 ObjectStore 路径安全、流式 hash/大小、MIME、上传下载、版本、幂等、软删除/恢复、引用保护、补偿、orphan cleanup、tenant 隔离、Lesson/Task/TeachingPlan 绑定、approved DOCX 导出、重复导出、新 approved Revision 新版本、服务重启恢复和 E2E 目录隔离。
 
-Playwright 验证导出、文件页出现、下载、Lesson/Task/TeachingPlan Revision 关联、版本历史、参考资料上传、刷新恢复与删除保护；PostgreSQL 测试用新 Product Container 读取同一目录和数据库以验证服务重启恢复。所有既有 Gate 测试继续离线运行。
+Playwright 验证导出、文件页出现、下载、Lesson/Task/TeachingPlan Revision 关联、版本历史、参考资料上传、刷新恢复与删除保护，并通过只监听 `127.0.0.1`、校验本次 `E2E_RUN_ID` 的测试控制器真实重启 API/Worker 后再次恢复同一文件、v2 和 bindings；该控制器不属于产品 API。PostgreSQL 测试另用新 Product Container 读取同一目录和数据库验证恢复。所有既有 Gate 测试继续离线运行。
 
-## 14. 实际实现摘要
+## 13. 实际实现摘要
 
-- Migration：`artifact/0006_gate2_5b_file_artifacts.sql`，新增五张 Artifact-owned 表、不可变 FileVersion Trigger 和查询索引；空 Volume、checksum、owner 与 Gate 2.6A 前向兼容由既有 bootstrap 保证。
+- Migration：`artifact/0006_gate2_5b_file_artifacts.sql` 新增五张 Artifact-owned 表、不可变 FileVersion Trigger 和查询索引；`0007_gate2_5b_shared_object_keys.sql` 以前向修复移除 object key 唯一约束、改用普通索引，使同 tenant 重复内容可共享物理对象而不改写 0006。空 Volume、checksum、owner 与 Gate 2.6A 前向兼容由既有 bootstrap 保证。
 - API：共享 Contracts 集中定义 `/api/v1/teacher/files`、版本内容、生命周期、Binding 和明确 Revision DOCX 导出路径；二进制上传以 `x-edu-file-metadata` 的 base64url Zod DTO + raw stream 传输，避免将整个文件读入 JSON。
+- Office 摘要：DOCX/PPTX/XLSX 通过有 entry 数量、单 entry 字节数和摘要长度上限的本地 OOXML 提取器生成摘要；结构不匹配的重命名 ZIP 被拒绝。
 - DOCX：`teacher-approved-lesson-plan-docx@1`，Letter 页面、Microsoft YaHei CJK override、固定表格、页脚页码和 Revision 追踪；单元测试检查 OOXML，验收样例逐页渲染检查。
 - 补偿：对象先写入、事务后提交；事务失败立即删除对象，删除失败写 `.orphans` 安全标记；受控 cleanup 只移除无数据库引用且超过宽限期的对象。
 - Worker：业务事实同步提交；文件相关 Outbox 由现有租约/幂等 Consumer Effect Worker 记录消费结果，不负责决定文件业务状态。
 - 当前非目标保持不变：不把上传内容或图片交给模型，不实现 OCR、云存储、分享、多人协作、在线 Office 或 PPT 视觉生成。
 
-## 13. 非目标
+## 14. 非目标
 
 本 Gate 不实现图片/PDF 内容理解、OCR、多模态上下文、上传文件进入 Ark、云 ObjectStore、文件分享与多人协作、在线 Office 编辑、完整 PPT 设计、作业/考试/学生闭环、日历、云部署、第二模型或多供应商。
