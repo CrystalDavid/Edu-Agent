@@ -2774,6 +2774,30 @@ textarea:focus-visible,
 
 .file-manager__preview .file-preview {
   border: 0;
+  overflow: hidden;
+}
+
+.file-manager__preview .file-preview > p,
+.file-manager__preview .file-preview li,
+.file-manager__preview .file-preview code {
+  overflow-wrap: anywhere;
+}
+
+.file-manager__preview .file-preview ol,
+.file-manager__preview .file-preview ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.file-manager__preview .file-preview .text-action {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.file-manager__preview .file-secondary-actions {
+  padding: 0;
 }
 
 .file-secondary-actions {

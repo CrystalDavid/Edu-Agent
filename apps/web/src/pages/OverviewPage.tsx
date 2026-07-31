@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type {
+  FileAssetSummary,
   LessonPreparationSummary,
   TeacherWorkspace
 } from "@edu-agent/contracts";
@@ -10,10 +11,9 @@ import { Button } from "antd";
 import {
   preparationGroupUpdates,
   schoolUpdates,
-  students,
-  teachingFiles
+  students
 } from "../teacher-portal-data";
-import { loadLessonPreparationSummary } from "../api";
+import { loadFiles, loadLessonPreparationSummary } from "../api";
 import type { AppRoute } from "../route";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
 import {
@@ -37,6 +37,7 @@ export function OverviewPage(props: {
     useState<LessonPreparationSummary | null>(null);
   const [preparationError, setPreparationError] =
     useState<string | null>(null);
+  const [recentFiles, setRecentFiles] = useState<FileAssetSummary[]>([]);
   useEffect(() => {
     let active = true;
     void loadLessonPreparationSummary()
@@ -55,6 +56,11 @@ export function OverviewPage(props: {
     return () => {
       active = false;
     };
+  }, []);
+  useEffect(() => {
+    void loadFiles({ status: "active", sort: "newest" })
+      .then((result) => setRecentFiles(result.items.slice(0, 6)))
+      .catch(() => undefined);
   }, []);
   const followUps = students.filter((student) => student.followUp);
   return (
@@ -204,13 +210,14 @@ export function OverviewPage(props: {
         action={<button type="button" className="text-action" onClick={() => props.navigate("/files")}>打开文件库</button>}
       >
         <div className="recent-files-grid">
-          {teachingFiles.slice(0, 6).map((file) => (
-            <button type="button" key={file.id} onClick={() => props.navigate("/files")}>
-              <span className="file-card-icon"><WorkspaceIcon name={file.fileType === "PPT" ? "slides" : "document"} /></span>
-              <span><strong>{file.name}</strong><small>{file.fileType} · {file.modifiedAt}</small></span>
-              <StatusPill tone={file.status === "待审核" ? "warning" : "neutral"}>{file.status}</StatusPill>
+          {recentFiles.map((file) => (
+            <button type="button" key={file.assetRef} onClick={() => props.navigate("/files")}>
+              <span className="file-card-icon"><WorkspaceIcon name={file.currentVersion.extension === ".pptx" ? "slides" : "document"} /></span>
+              <span><strong>{file.displayName}</strong><small>{file.currentVersion.extension.slice(1).toUpperCase()} · v{file.currentVersion.versionNumber}</small></span>
+              <StatusPill tone={file.source === "teaching_plan_export" ? "success" : "neutral"}>{file.source === "teaching_plan_export" ? "正式成果" : "参考资料"}</StatusPill>
             </button>
           ))}
+          {recentFiles.length === 0 ? <p>暂无真实教学文件。</p> : null}
         </div>
       </ModuleCard>
     </div>

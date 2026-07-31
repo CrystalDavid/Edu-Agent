@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import type {
+  FileAssetSummary,
   LessonPreparationTaskDetail,
   LessonTeachingPlanState,
   TeacherWorkspace
@@ -18,10 +19,13 @@ import {
 import {
   ApiError,
   approveTeachingPlan,
+  downloadFile,
+  exportTeachingPlanDocx,
   loadLessonPreparationTask,
   loadLessonTeachingPlans,
   loadTeachingPlanRevision,
   loadTeachingPlanState,
+  loadFiles,
   transitionLessonPreparationTask,
   type RecoverableCopilotTask
 } from "../api";
@@ -66,6 +70,8 @@ export function TeachingPlanPage(props: {
   const [lessonPlanState, setLessonPlanState] =
     useState<LessonTeachingPlanState | null>(null);
   const [completing, setCompleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportedFiles, setExportedFiles] = useState<FileAssetSummary[]>([]);
 
   useEffect(() => {
     setRevision(props.workspace.currentTeachingPlan);
@@ -88,7 +94,7 @@ export function TeachingPlanPage(props: {
           state
         }));
     void loading
-      .then((result) => {
+      .then(async (result) => {
         if (!active) return;
         if (result.task && result.scoped) {
           const currentApproved =
@@ -105,6 +111,13 @@ export function TeachingPlanPage(props: {
           setRevision(
             result.scoped.activeInReview ?? currentApproved
           );
+          const exported = await loadFiles({
+            status: "active",
+            sort: "newest",
+            targetType: "teaching_plan_revision",
+            targetRef: currentApproved.revisionRef
+          });
+          if (active) setExportedFiles(exported.items);
         } else if ("state" in result) {
           setPreparationTask(null);
           setLessonPlanState(null);
@@ -241,6 +254,56 @@ export function TeachingPlanPage(props: {
     }
   }
 
+  async function exportCurrentApproved() {
+    if (!preparationTask) return;
+    setExporting(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const approved = planState.currentApproved;
+      const result = await exportTeachingPlanDocx(
+        approved.revisionRef,
+        {
+          lessonRef: preparationTask.lessonRef,
+          preparationTaskRef: preparationTask.taskRef,
+          expectedRevisionNumber: approved.revisionNumber,
+          purpose: "teaching-plan.export-docx",
+          idempotencyKey: `ui:teaching-plan:docx:${crypto.randomUUID()}`
+        }
+      );
+      const listed = await loadFiles({
+        status: "active",
+        sort: "newest",
+        targetType: "teaching_plan_revision",
+        targetRef: approved.revisionRef
+      });
+      setExportedFiles(listed.items);
+      setSuccess(
+        result.deduplicated
+          ? "该 approved Revision 已有相同正式 DOCX，已复用。"
+          : "已创建正式教案 DOCX，并关联 Lesson、Task 与 TeachingPlan。"
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function downloadExport(file: FileAssetSummary) {
+    try {
+      const blob = await downloadFile(file.assetRef);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.currentVersion.originalFileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -323,6 +386,39 @@ export function TeachingPlanPage(props: {
             {preparationTask.status === "completed" ? (
               <Tag color="success">备课已完成</Tag>
             ) : null}
+          </Space>
+        </Card>
+      ) : null}
+
+      {preparationTask ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="teaching-plan-file-exports"
+        >
+          <Text className="section-kicker">TEACHING ARTIFACT</Text>
+          <Title level={3}>已批准教案文件</Title>
+          <Paragraph>
+            导出只绑定当前明确的 approved Revision；历史版本保持不可变。
+          </Paragraph>
+          <Space wrap>
+            <Button
+              type="primary"
+              loading={exporting}
+              onClick={exportCurrentApproved}
+              data-testid="export-approved-plan-docx"
+            >
+              导出教案 DOCX
+            </Button>
+            {exportedFiles.map((file) => (
+              <Button
+                key={file.assetRef}
+                onClick={() => void downloadExport(file)}
+                data-testid="download-teaching-plan-docx"
+              >
+                下载 {file.currentVersion.originalFileName}（v{file.currentVersion.versionNumber}）
+              </Button>
+            ))}
           </Space>
         </Card>
       ) : null}
