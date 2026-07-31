@@ -53,3 +53,14 @@ export class DomainConflictError extends Error {
     this.name = "DomainConflictError";
   }
 }
+
+export class InvalidFileError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: 400 | 413 = 400
+  ) {
+    super(message);
+    this.name = "InvalidFileError";
+  }
+}

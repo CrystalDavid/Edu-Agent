@@ -125,6 +125,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0005_gate2_5_lesson_plan_scope.sql"
   },
   {
+    owner: "artifact",
+    relativePath:
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0006_gate2_5b_file_artifacts.sql"
+  },
+  {
     owner: "education",
     relativePath:
       "apps/api/src/modules/education-domain/infrastructure/migrations/0001_education.sql"

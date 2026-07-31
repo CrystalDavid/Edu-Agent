@@ -503,6 +503,9 @@ export const RunExplanationSchema = z.object({
 });
 
 export type TeachingPlan = z.infer<typeof TeachingPlanSchema>;
+export type TeachingPlanRevisionView = z.infer<
+  typeof TeachingPlanRevisionViewSchema
+>;
 export type TeacherTaskRequest = z.infer<
   typeof TeacherTaskRequestSchema
 >;

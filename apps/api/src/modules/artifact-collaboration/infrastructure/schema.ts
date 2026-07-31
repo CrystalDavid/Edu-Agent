@@ -1,4 +1,5 @@
 import {
+  bigint,
   integer,
   jsonb,
   pgSchema,
@@ -103,3 +104,90 @@ export const teachingPlanScopeEventTable =
     eventPayload: jsonb("event_payload").notNull(),
     ...formalWriteColumns()
   });
+
+export const fileAssetTable = artifactSchema.table("file_asset", {
+  assetRef: text("asset_ref").primaryKey(),
+  tenantRef: text("tenant_ref").notNull(),
+  displayName: text("display_name").notNull(),
+  category: text("category").notNull(),
+  source: text("source").notNull(),
+  lifecycleStatus: text("lifecycle_status").notNull(),
+  currentVersionRef: text("current_version_ref"),
+  version: integer("version").notNull(),
+  createdBy: text("created_by").notNull(),
+  deletedAt: timestamp("deleted_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "string"
+  }).notNull(),
+  ...formalWriteColumns()
+});
+
+export const fileVersionTable = artifactSchema.table("file_version", {
+  versionRef: text("version_ref").primaryKey(),
+  assetRef: text("asset_ref").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  originalFileName: text("original_file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  extension: text("extension").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  sha256: text("sha256").notNull(),
+  objectKey: text("object_key").notNull(),
+  contentSummary: text("content_summary"),
+  createdBy: text("created_by").notNull(),
+  ...formalWriteColumns()
+});
+
+export const artifactFileBindingTable = artifactSchema.table(
+  "artifact_file_binding",
+  {
+    bindingRef: text("binding_ref").primaryKey(),
+    assetRef: text("asset_ref").notNull(),
+    versionRef: text("version_ref").notNull(),
+    targetType: text("target_type").notNull(),
+    targetRef: text("target_ref").notNull(),
+    relationKind: text("relation_kind").notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const fileOperationIdempotencyTable = artifactSchema.table(
+  "file_operation_idempotency",
+  {
+    idempotencyRef: text("idempotency_ref").primaryKey(),
+    rootKey: text("root_key").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    status: text("status").notNull(),
+    result: jsonb("result"),
+    completedAt: timestamp("completed_at", {
+      withTimezone: true,
+      mode: "string"
+    }),
+    ...formalWriteColumns()
+  }
+);
+
+export const teachingPlanFileExportTable = artifactSchema.table(
+  "teaching_plan_file_export",
+  {
+    exportRef: text("export_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    teachingPlanArtifactRef: text(
+      "teaching_plan_artifact_ref"
+    ).notNull(),
+    teachingPlanRevisionRef: text(
+      "teaching_plan_revision_ref"
+    ).notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    preparationTaskRef: text("preparation_task_ref"),
+    assetRef: text("asset_ref").notNull(),
+    versionRef: text("version_ref").notNull(),
+    exportFormat: text("export_format").notNull(),
+    templateVersion: text("template_version").notNull(),
+    contentHash: text("content_hash").notNull(),
+    ...formalWriteColumns()
+  }
+);

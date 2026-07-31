@@ -18,6 +18,24 @@ const teacherModelInvocationRoute = (
     modelExecutionRef
   )}`;
 
+const teacherFileRoute = (assetRef: string): string =>
+  `/api/v1/teacher/files/${encodeRouteSegment(assetRef)}`;
+
+const teacherFileVersionRoute = (
+  assetRef: string,
+  versionRef: string
+): string =>
+  `${teacherFileRoute(assetRef)}/versions/${encodeRouteSegment(
+    versionRef
+  )}`;
+
+const teacherTeachingPlanRevisionRoute = (
+  revisionRef: string
+): string =>
+  `/api/v1/teacher/teaching-plan/revisions/${encodeRouteSegment(
+    revisionRef
+  )}`;
+
 export const apiRoutes = {
   health: "/api/health",
   teacher: {
@@ -106,7 +124,41 @@ export const apiRoutes = {
     modelInvocationRetryPattern:
       "/api/v1/teacher/model-invocations/:modelExecutionRef/retry",
     modelInvocationRetry: (modelExecutionRef: string): string =>
-      `${teacherModelInvocationRoute(modelExecutionRef)}/retry`
+      `${teacherModelInvocationRoute(modelExecutionRef)}/retry`,
+    files: "/api/v1/teacher/files",
+    filePattern: "/api/v1/teacher/files/:assetRef",
+    file: teacherFileRoute,
+    fileVersionsPattern:
+      "/api/v1/teacher/files/:assetRef/versions",
+    fileVersions: (assetRef: string): string =>
+      `${teacherFileRoute(assetRef)}/versions`,
+    fileVersionContentPattern:
+      "/api/v1/teacher/files/:assetRef/versions/:versionRef/content",
+    fileVersionContent: (
+      assetRef: string,
+      versionRef: string
+    ): string =>
+      `${teacherFileVersionRoute(assetRef, versionRef)}/content`,
+    fileCurrentContentPattern:
+      "/api/v1/teacher/files/:assetRef/content",
+    fileCurrentContent: (assetRef: string): string =>
+      `${teacherFileRoute(assetRef)}/content`,
+    fileDeletePattern:
+      "/api/v1/teacher/files/:assetRef/delete",
+    fileDelete: (assetRef: string): string =>
+      `${teacherFileRoute(assetRef)}/delete`,
+    fileRestorePattern:
+      "/api/v1/teacher/files/:assetRef/restore",
+    fileRestore: (assetRef: string): string =>
+      `${teacherFileRoute(assetRef)}/restore`,
+    fileBindingsPattern:
+      "/api/v1/teacher/files/:assetRef/bindings",
+    fileBindings: (assetRef: string): string =>
+      `${teacherFileRoute(assetRef)}/bindings`,
+    teachingPlanDocxExportPattern:
+      "/api/v1/teacher/teaching-plan/revisions/:revisionRef/exports/docx",
+    teachingPlanDocxExport: (revisionRef: string): string =>
+      `${teacherTeachingPlanRevisionRoute(revisionRef)}/exports/docx`
   },
   demo: {
     bootstrap: "/api/v1/demo/workspace",
