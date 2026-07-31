@@ -474,6 +474,29 @@ export class PostgresFileArtifactRepository {
     return result.rows[0]?.protected === true;
   }
 
+  async findReusableObjectKey(
+    executor: SqlExecutor,
+    input: {
+      tenantRef: string;
+      sha256: string;
+      sizeBytes: number;
+    }
+  ): Promise<string | null> {
+    const result = await executor.query<{ object_key: string }>(
+      `SELECT version.object_key
+         FROM artifact.file_version AS version
+         JOIN artifact.file_asset AS asset
+           ON asset.asset_ref = version.asset_ref
+        WHERE asset.tenant_ref = $1
+          AND version.sha256 = $2
+          AND version.size_bytes = $3
+        ORDER BY version.created_at, version.version_ref
+        LIMIT 1`,
+      [input.tenantRef, input.sha256, input.sizeBytes]
+    );
+    return result.rows[0]?.object_key ?? null;
+  }
+
   async listAssets(
     executor: SqlExecutor,
     tenantRef: string,

@@ -154,10 +154,14 @@ export function contentSummary(input: {
   originalFileName: string;
   extension: string;
   sizeBytes: number;
+  extractedText?: string;
 }): string {
   const format = input.extension.slice(1).toUpperCase();
   const kib = Math.max(1, Math.round(input.sizeBytes / 1024));
-  return `${format} · ${kib} KiB · ${categoryLabel(input.category)} · ${input.originalFileName}`;
+  const metadata = `${format} · ${kib} KiB · ${categoryLabel(input.category)} · ${input.originalFileName}`;
+  return input.extractedText
+    ? `${metadata} · 摘要：${input.extractedText}`
+    : metadata;
 }
 
 export function previewKindForExtension(

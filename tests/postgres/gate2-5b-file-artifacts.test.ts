@@ -97,6 +97,27 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
     expect(replay.body.replayed).toBe(true);
     expect(await tableCount(adminPool, "artifact.file_asset")).toBe(1);
     expect(await tableCount(adminPool, "artifact.file_version")).toBe(1);
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toHaveLength(1);
+
+    const duplicateContent = await request(app)
+      .post(apiRoutes.teacher.files)
+      .set(demoHeaders)
+      .set("content-type", "text/markdown")
+      .set("x-edu-file-metadata", metadataHeader({
+        ...metadata,
+        originalFileName: "一次函数参考副本.md",
+        idempotencyKey: `gate25b:duplicate-content:${randomUUID()}`,
+        bindings: []
+      }))
+      .send(original)
+      .expect(201);
+    expect(duplicateContent.body.asset.assetRef).not.toBe(assetRef);
+    expect(duplicateContent.body.asset.currentVersion.sha256).toBe(
+      created.body.asset.currentVersion.sha256
+    );
+    expect(await tableCount(adminPool, "artifact.file_asset")).toBe(2);
+    expect(await tableCount(adminPool, "artifact.file_version")).toBe(2);
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toHaveLength(1);
 
     await request(app)
       .post(apiRoutes.teacher.files)
@@ -106,6 +127,7 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
       .send(original)
       .expect(409)
       .expect(({ body }) => expect(body.code).toBe("IDEMPOTENCY_CONFLICT"));
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toHaveLength(1);
 
     const downloaded = await request(app)
       .get(apiRoutes.teacher.fileCurrentContent(assetRef))
@@ -137,6 +159,23 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
     expect(version.body.asset.bindings).toEqual([
       expect.objectContaining({ targetType: "lesson", targetRef: gate25DemoRefs.lessonRefs.slopeAndGraph })
     ]);
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toHaveLength(2);
+
+    await request(app)
+      .post(apiRoutes.teacher.fileVersions(assetRef))
+      .set(demoHeaders)
+      .set("content-type", "text/markdown")
+      .set("x-edu-file-metadata", metadataHeader({
+        originalFileName: "一次函数参考-conflict.md",
+        mimeType: "text/markdown",
+        expectedAssetVersion: created.body.asset.version,
+        purpose: "file.version.create",
+        idempotencyKey: `gate25b:version-conflict:${randomUUID()}`
+      }))
+      .send(Buffer.from("# 应被补偿的冲突内容", "utf8"))
+      .expect(409)
+      .expect(({ body }) => expect(body.code).toBe("FILE_ASSET_VERSION_CONFLICT"));
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toHaveLength(2);
 
     const restarted = createProductContainer(postgresEnvironment, {
       objectStoreSettings: { rootDirectory: objectRoot, maxUploadBytes: 1024 * 1024 },
@@ -259,6 +298,36 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
       .expect(({ body }) => expect(body.code).toBe("FILE_REFERENCED_BY_FORMAL_ARTIFACT"));
   });
 
+  it("extracts a bounded Office summary before persisting an uploaded DOCX", async () => {
+    const docx = new JSZip();
+    docx.file("[Content_Types].xml", "<Types />");
+    docx.file(
+      "word/document.xml",
+      "<w:document><w:body><w:p><w:r><w:t>合成斜率课堂参考</w:t></w:r></w:p></w:body></w:document>"
+    );
+    const content = await docx.generateAsync({ type: "nodebuffer" });
+    const created = await request(app)
+      .post(apiRoutes.teacher.files)
+      .set(demoHeaders)
+      .set(
+        "content-type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      )
+      .set("x-edu-file-metadata", metadataHeader({
+        originalFileName: "合成参考.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        category: "reference",
+        purpose: "file.upload",
+        idempotencyKey: `gate25b:office-summary:${randomUUID()}`,
+        bindings: []
+      }))
+      .send(content)
+      .expect(201);
+    expect(created.body.asset.currentVersion.contentSummary).toContain(
+      "合成斜率课堂参考"
+    );
+  });
+
   it("fails closed on unsupported MIME, traversal-like names and cross-tenant access", async () => {
     const unsafe = {
       originalFileName: "../secret.pdf",
@@ -276,6 +345,29 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
       .send(Buffer.from("%PDF-1.7\n"))
       .expect(400)
       .expect(({ body }) => expect(body.code).toBe("INVALID_FILE_METADATA"));
+
+    const renamedZip = new JSZip();
+    renamedZip.file("notes.txt", "not an Office document");
+    const renamedZipContent = await renamedZip.generateAsync({ type: "nodebuffer" });
+    await request(app)
+      .post(apiRoutes.teacher.files)
+      .set(demoHeaders)
+      .set(
+        "content-type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      )
+      .set("x-edu-file-metadata", metadataHeader({
+        originalFileName: "renamed-archive.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        category: "reference",
+        purpose: "file.upload",
+        idempotencyKey: `gate25b:unsafe-office:${randomUUID()}`,
+        bindings: []
+      }))
+      .send(renamedZipContent)
+      .expect(400)
+      .expect(({ body }) => expect(body.code).toBe("INVALID_OFFICE_CONTAINER"));
+    expect(await product.infrastructure.objectStore.listObjectKeys()).toEqual([]);
 
     await request(app)
       .get(apiRoutes.teacher.files)

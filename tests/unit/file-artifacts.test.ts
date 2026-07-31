@@ -8,6 +8,9 @@ import JSZip from "jszip";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  extractOfficeContentSummary
+} from "../../apps/api/src/modules/artifact-collaboration/application/office-content-summary.js";
+import {
   renderApprovedTeachingPlanDocx
 } from "../../apps/api/src/modules/artifact-collaboration/application/teaching-plan-docx-renderer.js";
 import {
@@ -159,6 +162,62 @@ describe("Gate 2.5B approved TeachingPlan DOCX", () => {
       evidence: [], knownGaps: [], generatedAt: "2026-08-01T00:00:00.000Z"
     };
     await expect(renderApprovedTeachingPlanDocx(invalid)).rejects.toThrow("approved");
+  });
+});
+
+describe("Gate 2.5B Office summary extraction", () => {
+  it("extracts bounded local summaries from DOCX, PPTX and XLSX OOXML", async () => {
+    const docx = new JSZip();
+    docx.file("[Content_Types].xml", "<Types />");
+    docx.file(
+      "word/document.xml",
+      "<w:document><w:body><w:p><w:r><w:t>一次函数教学重点</w:t></w:r></w:p></w:body></w:document>"
+    );
+    await expect(
+      extractOfficeContentSummary({
+        extension: ".docx",
+        content: await docx.generateAsync({ type: "nodebuffer" })
+      })
+    ).resolves.toContain("一次函数教学重点");
+
+    const pptx = new JSZip();
+    pptx.file("[Content_Types].xml", "<Types />");
+    pptx.file("ppt/presentation.xml", "<p:presentation />");
+    pptx.file(
+      "ppt/slides/slide1.xml",
+      "<p:sld><a:t>斜率正负与图像方向</a:t></p:sld>"
+    );
+    await expect(
+      extractOfficeContentSummary({
+        extension: ".pptx",
+        content: await pptx.generateAsync({ type: "nodebuffer" })
+      })
+    ).resolves.toContain("斜率正负与图像方向");
+
+    const xlsx = new JSZip();
+    xlsx.file("[Content_Types].xml", "<Types />");
+    xlsx.file("xl/workbook.xml", "<workbook />");
+    xlsx.file(
+      "xl/sharedStrings.xml",
+      "<sst><si><t>合成课堂观察</t></si></sst>"
+    );
+    await expect(
+      extractOfficeContentSummary({
+        extension: ".xlsx",
+        content: await xlsx.generateAsync({ type: "nodebuffer" })
+      })
+    ).resolves.toContain("合成课堂观察");
+  });
+
+  it("rejects renamed ZIP archives that are not the declared Office format", async () => {
+    const archive = new JSZip();
+    archive.file("notes.txt", "not an Office document");
+    await expect(
+      extractOfficeContentSummary({
+        extension: ".docx",
+        content: await archive.generateAsync({ type: "nodebuffer" })
+      })
+    ).rejects.toThrow("OOXML");
   });
 });
 

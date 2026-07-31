@@ -31,6 +31,9 @@ import {
   TEACHING_PLAN_DOCX_TEMPLATE_VERSION
 } from "../modules/artifact-collaboration/application/teaching-plan-docx-renderer.js";
 import {
+  extractOfficeContentSummary
+} from "../modules/artifact-collaboration/application/office-content-summary.js";
+import {
   assertFileSignature,
   contentSummary,
   validateFileMetadata
@@ -170,8 +173,18 @@ export class PostgresFileArtifactService {
     const metadata = FileUploadMetadataSchema.parse(input.metadata);
     const validated = this.validateMetadata(metadata);
     const stored = await this.store(input.content, input.expectedSizeBytes);
+    let extractedText: string | undefined;
+    let effectiveStored = stored;
     try {
       this.assertSignature(validated.extension, stored.firstBytesHex);
+      extractedText = await this.extractOfficeSummary(
+        validated.extension,
+        stored.objectKey
+      );
+      effectiveStored = await this.reuseStoredObject(
+        input.tenantRef,
+        stored
+      );
     } catch (error) {
       await this.compensate(stored.objectKey, "file-signature-rejected");
       throw error;
@@ -230,14 +243,15 @@ export class PostgresFileArtifactService {
           originalFileName: validated.originalFileName,
           mimeType: validated.mimeType,
           extension: validated.extension,
-          sizeBytes: stored.sizeBytes,
-          sha256: stored.sha256,
-          objectKey: stored.objectKey,
+          sizeBytes: effectiveStored.sizeBytes,
+          sha256: effectiveStored.sha256,
+          objectKey: effectiveStored.objectKey,
           contentSummary: contentSummary({
             category: metadata.category,
             originalFileName: validated.originalFileName,
             extension: validated.extension,
-            sizeBytes: stored.sizeBytes
+            sizeBytes: effectiveStored.sizeBytes,
+            ...(extractedText ? { extractedText } : {})
           }),
           createdBy: input.actorRef
         },
@@ -250,7 +264,7 @@ export class PostgresFileArtifactService {
       await this.files.completeIdempotency(client, { rootKey, result, completedAt: now });
       await this.governance.saveAudits(client, receipts);
       await client.query("COMMIT");
-      await this.objectStore.clearOrphanMarker(stored.objectKey);
+      await this.objectStore.clearOrphanMarker(effectiveStored.objectKey);
       return FileMutationResultSchema.parse({
         replayed: false,
         deduplicated: false,
@@ -281,8 +295,18 @@ export class PostgresFileArtifactService {
       input.assetRef
     );
     const stored = await this.store(input.content, input.expectedSizeBytes);
+    let extractedText: string | undefined;
+    let effectiveStored = stored;
     try {
       this.assertSignature(validated.extension, stored.firstBytesHex);
+      extractedText = await this.extractOfficeSummary(
+        validated.extension,
+        stored.objectKey
+      );
+      effectiveStored = await this.reuseStoredObject(
+        input.tenantRef,
+        stored
+      );
     } catch (error) {
       await this.compensate(stored.objectKey, "file-signature-rejected");
       throw error;
@@ -325,10 +349,16 @@ export class PostgresFileArtifactService {
           originalFileName: validated.originalFileName,
           mimeType: validated.mimeType,
           extension: validated.extension,
-          sizeBytes: stored.sizeBytes,
-          sha256: stored.sha256,
-          objectKey: stored.objectKey,
-          contentSummary: contentSummary({ category: existingAsset.category, originalFileName: validated.originalFileName, extension: validated.extension, sizeBytes: stored.sizeBytes }),
+          sizeBytes: effectiveStored.sizeBytes,
+          sha256: effectiveStored.sha256,
+          objectKey: effectiveStored.objectKey,
+          contentSummary: contentSummary({
+            category: existingAsset.category,
+            originalFileName: validated.originalFileName,
+            extension: validated.extension,
+            sizeBytes: effectiveStored.sizeBytes,
+            ...(extractedText ? { extractedText } : {})
+          }),
           createdBy: input.actorRef
         },
         eventName: "FileVersionCreated",
@@ -339,6 +369,7 @@ export class PostgresFileArtifactService {
       await this.files.completeIdempotency(client, { rootKey, result: { assetRef: input.assetRef, deduplicated: created.deduplicated }, completedAt: now });
       await this.governance.saveAudits(client, receipts);
       await client.query("COMMIT");
+      await this.objectStore.clearOrphanMarker(effectiveStored.objectKey);
       if (created.deduplicated) await this.objectStore.delete(stored.objectKey);
       return FileMutationResultSchema.parse({
         replayed: false,
@@ -896,6 +927,59 @@ export class PostgresFileArtifactService {
       "../modules/capability-integration/infrastructure/local-object-store.js"
     );
     return this.store(readableFromBuffer(content), content.byteLength);
+  }
+
+  private async extractOfficeSummary(
+    extension: string,
+    objectKey: string
+  ): Promise<string | undefined> {
+    if (!(extension === ".docx" || extension === ".pptx" || extension === ".xlsx")) {
+      return undefined;
+    }
+    try {
+      const stream = await this.objectStore.get(objectKey);
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for await (const chunk of stream) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buffer.byteLength;
+        if (total > this.objectStoreSettings.maxUploadBytes) {
+          throw new Error("Stored Office object exceeds the configured limit.");
+        }
+        chunks.push(buffer);
+      }
+      return await extractOfficeContentSummary({
+        extension,
+        content: Buffer.concat(chunks)
+      });
+    } catch {
+      throw new InvalidFileError(
+        "INVALID_OFFICE_CONTAINER",
+        "Office 文件结构无效，无法安全提取摘要。"
+      );
+    }
+  }
+
+  private async reuseStoredObject(
+    tenantRef: string,
+    stored: Awaited<ReturnType<PostgresFileArtifactService["store"]>>
+  ) {
+    const reusableObjectKey = await this.files.findReusableObjectKey(
+      this.pool,
+      {
+        tenantRef,
+        sha256: stored.sha256,
+        sizeBytes: stored.sizeBytes
+      }
+    );
+    if (
+      !reusableObjectKey ||
+      !(await this.objectStore.exists(reusableObjectKey))
+    ) {
+      return stored;
+    }
+    await this.objectStore.delete(stored.objectKey);
+    return { ...stored, objectKey: reusableObjectKey };
   }
 
   private exportVersion(input: {
