@@ -104,7 +104,7 @@ function hash(value: unknown): string {
     .digest("hex");
 }
 
-function buildDiff(
+export function buildDiff(
   baseline: TeachingPlan,
   proposed: TeachingPlan,
   input: {
@@ -1267,6 +1267,9 @@ export class PostgresGate2TeacherCopilotService {
         input.request.disposition === "accepted_with_changes"
       ) {
         const strategyPlan =
+          proposal.strategyPlans[
+            selectedStrategy.strategyId
+          ] ??
           strategyTeachingPlans[selectedStrategy.strategyId];
         if (!strategyPlan) {
           throw new Error("Selected strategy TeachingPlan is missing.");

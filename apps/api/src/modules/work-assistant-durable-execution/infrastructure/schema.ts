@@ -35,6 +35,14 @@ export const taskRunTable = workSchema.table("task_run", {
   status: text("status").notNull(),
   requestPayload: jsonb("request_payload").notNull(),
   requestVersion: integer("request_version").notNull(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "string"
+  }).notNull(),
+  completedAt: timestamp("completed_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
   ...formalWriteColumns()
 });
 

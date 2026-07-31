@@ -82,6 +82,20 @@ export class PostgresRuntimeRepository {
       ]
     );
     await client.query(
+      `UPDATE runtime.agent_run
+          SET updated_at = $2::timestamptz,
+              completed_at = CASE
+                WHEN status = 'completed'
+                  THEN $2::timestamptz
+                ELSE NULL
+              END
+        WHERE agent_run_ref = $1`,
+      [
+        bundle.agentRun.agentRunRef,
+        bundle.agentRun.metadata.createdAt
+      ]
+    );
+    await client.query(
       `INSERT INTO runtime.run_manifest (
          manifest_ref,
          agent_run_ref,
@@ -159,5 +173,40 @@ export class PostgresRuntimeRepository {
         metadata: bundle.outbox.metadata
       })
     ];
+  }
+
+  async updateAgentRunStatus(
+    client: PostgresClient,
+    input: {
+      agentRunRef: string;
+      status:
+        | "queued"
+        | "running"
+        | "validating"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      output?: Record<string, unknown>;
+      updatedAt: string;
+    }
+  ): Promise<void> {
+    await client.query(
+      `UPDATE runtime.agent_run
+          SET status = $2,
+              output = COALESCE($3, output),
+              updated_at = $4::timestamptz,
+              completed_at = CASE
+                WHEN $2 IN ('completed', 'failed', 'cancelled')
+                  THEN $4::timestamptz
+                ELSE NULL
+              END
+        WHERE agent_run_ref = $1`,
+      [
+        input.agentRunRef,
+        input.status,
+        input.output ? toPostgresJson(input.output) : null,
+        input.updatedAt
+      ]
+    );
   }
 }

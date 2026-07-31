@@ -13,6 +13,13 @@ import {
   readPostgresEnvironment
 } from "./platform/postgres/config.js";
 
+const rootEnvironmentPath = fileURLToPath(
+  new URL("../../../.env.local", import.meta.url)
+);
+if (existsSync(rootEnvironmentPath)) {
+  loadEnvFile(rootEnvironmentPath);
+}
+
 const port = Number(process.env.PORT ?? 3001);
 const localOrDemo =
   process.env.APP_ENV === "local" ||

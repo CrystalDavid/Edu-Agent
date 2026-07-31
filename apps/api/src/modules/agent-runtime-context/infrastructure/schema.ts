@@ -19,6 +19,14 @@ export const agentRunTable = runtimeSchema.table("agent_run", {
   modelProfile: text("model_profile").notNull(),
   toolName: text("tool_name").notNull(),
   output: jsonb("output").notNull(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "string"
+  }).notNull(),
+  completedAt: timestamp("completed_at", {
+    withTimezone: true,
+    mode: "string"
+  }),
   ...formalWriteColumns()
 });
 

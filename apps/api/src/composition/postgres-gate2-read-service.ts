@@ -28,6 +28,9 @@ import {
   PostgresGate2CapabilityRepository
 } from "../modules/capability-integration/infrastructure/postgres-gate2-capability-repository.js";
 import {
+  maskProviderRequestId
+} from "../modules/capability-integration/application/safe-model-logging.js";
+import {
   PostgresGate25EducationRepository
 } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
 import {
@@ -593,13 +596,41 @@ export class PostgresGate2ReadService {
       modelExecution: {
         executionRef: modelExecution.executionRef,
         provider: modelExecution.provider,
+        modelDisplayName: modelExecution.modelDisplayName,
+        status: modelExecution.status,
         promptBundleRef: modelExecution.promptBundleRef,
+        promptBundleVersion:
+          modelExecution.promptBundleVersion,
+        contextManifestRef:
+          modelExecution.contextManifestRef,
         externalNetworkUsed:
           modelExecution.externalNetworkUsed,
+        attemptCount: modelExecution.attemptCount,
+        maxAttempts: modelExecution.maxAttempts,
+        inputTokens: modelExecution.inputTokens,
+        outputTokens: modelExecution.outputTokens,
+        totalTokens: modelExecution.totalTokens,
+        latencyMs: modelExecution.latencyMs,
+        estimatedCost: modelExecution.estimatedCost,
+        finishReason: modelExecution.finishReason,
+        safeErrorCategory:
+          modelExecution.safeErrorCategory,
+        providerRequestIdMasked: maskProviderRequestId(
+          modelExecution.providerRequestId
+        ),
         usageLabel:
-          `${modelExecution.usage.inputUnits} 输入单元 / ` +
-          `${modelExecution.usage.outputUnits} 输出单元（确定性 Mock）`,
-        costLabel: "¥0.00（Mock）"
+          modelExecution.inputTokens !== null ||
+          modelExecution.outputTokens !== null
+            ? `${modelExecution.inputTokens ?? "未报告"} 输入 Token / ` +
+              `${modelExecution.outputTokens ?? "未报告"} 输出 Token`
+            : `${modelExecution.usage.inputUnits} 输入单元 / ` +
+              `${modelExecution.usage.outputUnits} 输出单元（确定性 Mock）`,
+        costLabel:
+          modelExecution.estimatedCost === null
+            ? modelExecution.provider === "mock"
+              ? "¥0.00（Mock）"
+              : "价格未配置"
+            : `¥${modelExecution.estimatedCost.toFixed(6)}（配置估算）`
       },
       artifactRevisions,
       disposition: work.disposition

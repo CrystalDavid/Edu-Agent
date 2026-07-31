@@ -115,6 +115,7 @@ export class PostgresGate2ArtifactRepository {
       sourceAgentRunRef: string;
       strategies: readonly PedagogicalStrategy[];
       diffsByStrategy: Record<string, TeachingPlanDiff>;
+      strategyPlans?: Record<string, TeachingPlan>;
       teachingPlanArtifactRef: string;
       parentTeachingPlanRevisionRef: string;
       draftRevisionRef: string;
@@ -155,7 +156,8 @@ export class PostgresGate2ArtifactRepository {
           title: input.proposalTitle,
           body: JSON.stringify({
             strategies: input.strategies,
-            diffsByStrategy: input.diffsByStrategy
+            diffsByStrategy: input.diffsByStrategy,
+            strategyPlans: input.strategyPlans ?? {}
           }),
           sourceAgentRunRef: input.sourceAgentRunRef,
           revisionState: "proposal",
@@ -165,9 +167,10 @@ export class PostgresGate2ArtifactRepository {
           ),
           structuredContent: {
             strategies: input.strategies,
-            diffsByStrategy: input.diffsByStrategy
+            diffsByStrategy: input.diffsByStrategy,
+            strategyPlans: input.strategyPlans ?? {}
           },
-          changeReason: "Mock Teacher Copilot 生成的可审查教学建议",
+          changeReason: "Teacher Copilot 生成的可审查教学建议",
           evidenceRefs: input.strategies.flatMap(
             (strategy) => strategy.evidenceRefs
           ),
@@ -826,6 +829,7 @@ export class PostgresGate2ArtifactRepository {
         revisionNumber: number;
         strategies: PedagogicalStrategy[];
         diffsByStrategy: Record<string, TeachingPlanDiff>;
+        strategyPlans: Record<string, TeachingPlan>;
       }
     | undefined
   > {
@@ -834,6 +838,7 @@ export class PostgresGate2ArtifactRepository {
       structured_content: {
         strategies: unknown;
         diffsByStrategy: Record<string, unknown>;
+        strategyPlans?: Record<string, unknown>;
       };
     }>(
       `SELECT revision_number, structured_content
@@ -848,7 +853,8 @@ export class PostgresGate2ArtifactRepository {
       return undefined;
     }
     const strategies = PedagogicalStrategySchema.array()
-      .length(2)
+      .min(1)
+      .max(3)
       .parse(content.strategies);
     const diffsByStrategy = Object.fromEntries(
       Object.entries(content.diffsByStrategy).map(([key, value]) => [
@@ -856,10 +862,19 @@ export class PostgresGate2ArtifactRepository {
         TeachingPlanDiffSchema.parse(value)
       ])
     );
+    const strategyPlans = Object.fromEntries(
+      Object.entries(content.strategyPlans ?? {}).map(
+        ([key, value]) => [
+          key,
+          TeachingPlanSchema.parse(value)
+        ]
+      )
+    );
     return {
       revisionNumber: result.rows[0]!.revision_number,
       strategies,
-      diffsByStrategy
+      diffsByStrategy,
+      strategyPlans
     };
   }
 
