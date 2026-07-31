@@ -857,3 +857,47 @@ Gate 2.5 真实范围：
 - 继续扩模型能力而没有文件真值会形成新的演示孤岛。
 
 Gate 2.5B 应保持窄范围：TeachingPlan 导出/教学成果的文件真值、LocalObjectStore、版本/校验和/权限/孤儿清理；不同时实现多模态、OCR、第二模型或云存储。Gate 2.6B 之后再基于已授权文件资产决定图片输入是否产品化。
+
+## 19. Gate 2.5B 实施后的当前状态（权威更新）
+
+### 19.1 已实现
+
+| 能力 | 当前事实 |
+|---|---|
+| 文件业务真值 | Artifact-owned FileAsset、immutable FileVersion、ArtifactFileBinding、文件命令幂等和 TeachingPlan export record |
+| 字节存储 | Capability `ObjectStore` Port + `LocalObjectStore`；随机内部 key、流式写读、SHA-256、fsync/atomic rename、大小与路径保护 |
+| 安全校验 | PDF、图片、Markdown/TXT、DOCX/PPTX/XLSX allowlist；文件名、扩展名、MIME、magic prefix、空文件与 25 MiB 默认上限 fail closed |
+| 文件操作 | 类型化 API 和真实文件页支持上传、列表、搜索、分类、排序、详情、下载、新版本、版本历史、软删除/恢复和 Lesson 关联 |
+| 教学成果 | 只有明确 current approved TeachingPlan Revision 可导出 `teacher-approved-lesson-plan-docx@1`；创建正式 FileAsset/FileVersion，并绑定 Lesson、Task、TeachingPlan Artifact/Revision |
+| 版本语义 | FileVersion 不可原地更新/删除；相同 Revision 重复导出复用结果；新 approved Revision 导出在同一教案 FileAsset 形成新版本 |
+| 页面联动 | 概览最近文件、Lesson 关联文件、TeachingPlan 导出/下载和文件页历史均读取 PostgreSQL + LocalObjectStore |
+| 补偿与清理 | object-first/database-second；事务失败删除未引用对象，补偿失败写安全 orphan marker；cleanup 只删除无数据库引用且过宽限期对象 |
+| 权限与审计 | tenant/actor 校验；写入和下载均记录 AuthorizationDecision/Audit；正式成果删除被拒绝；相同幂等键异 payload 返回 409 |
+| 测试隔离 | PostgreSQL 和 Playwright 使用独立 E2E Volume；Playwright 文件写入 `.demo/e2e/<run-id>/uploads` 并精确清理，不触碰开发文件目录 |
+
+### 19.2 数据库与 Migration
+
+Artifact Migration `0006_gate2_5b_file_artifacts.sql` 新增：
+
+- `artifact.file_asset`；
+- `artifact.file_version`；
+- `artifact.artifact_file_binding`；
+- `artifact.file_operation_idempotency`；
+- `artifact.teaching_plan_file_export`；
+- FileVersion immutable Trigger、tenant/list/history/target/export indexes。
+
+总 Migration 为 31。Migration 从空 Volume 按七 Schema owner 执行，带 checksum；不改写 Gate 2.6A 既有数据，不保存 API Key 或绝对物理路径。
+
+### 19.3 仍未实现
+
+- 上传图片/PDF/Office 内容进入 Volcengine Ark；
+- OCR、图片理解、多模态 ContextManifest；
+- 病毒扫描、内容净化和学校级保留策略；
+- 云 ObjectStore、备份恢复、分享、多人协作和外链；
+- 浏览器完整渲染 Office、在线编辑、完整 PPT 视觉生成；
+- 正式身份/SSO、真实学校数据、云部署；
+- 日程、通用 Todo、作业/考试和学生长期模型。
+
+### 19.4 下一阶段判断
+
+完成 Gate 2.5B 人工验收后，可以讨论 **Gate 2.6B — 多模态文件理解**，但建议仍保持单一 Provider、单一合成图片/PDF 试点和明确授权的 FileVersion 输入。进入前必须先产品裁决：允许发送的 MIME/数据类别、内容净化与恶意文档边界、保留策略、费用上限，以及教师是否必须逐次选择文件。若这些裁决尚未完成，应先做文件安全加固而不是扩大模型输入面。

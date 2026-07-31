@@ -86,7 +86,7 @@ approved TeachingPlan / Lesson
 ### 删除与恢复
 
 - 教师删除是 soft delete；下载和普通列表默认隐藏 deleted Asset。
-- 被 TeachingPlan Revision 正式引用的文件仍可软删除，但不可物理清除；恢复只恢复 Asset 状态。
+- 被 TeachingPlan Artifact/Revision 正式引用的成果文件禁止教师软删除或物理清除；普通上传文件可软删除并恢复。
 - 本 Gate 不提供教师物理 purge。Orphan cleanup 只清理没有数据库引用、超过安全宽限期的对象。
 
 ## 6. 文件安全策略
@@ -168,7 +168,16 @@ Gate 2.6A 以前数据库没有文件表，无需数据回填。若历史磁盘�
 
 自动化覆盖 ObjectStore 路径安全、流式 hash/大小、MIME、上传下载、版本、幂等、软删除/恢复、引用保护、补偿、orphan cleanup、tenant 隔离、Lesson/Task/TeachingPlan 绑定、approved DOCX 导出、重复导出、新 approved Revision 新版本、服务重启恢复和 E2E 目录隔离。
 
-Playwright 验证导出、文件页出现、下载、Lesson 关联、版本历史、参考资料上传、重启恢复与删除保护；所有既有 Gate 测试继续离线运行。
+Playwright 验证导出、文件页出现、下载、Lesson 关联、版本历史、参考资料上传、刷新恢复与删除保护；PostgreSQL 测试用新 Product Container 读取同一目录和数据库以验证服务重启恢复。所有既有 Gate 测试继续离线运行。
+
+## 14. 实际实现摘要
+
+- Migration：`artifact/0006_gate2_5b_file_artifacts.sql`，新增五张 Artifact-owned 表、不可变 FileVersion Trigger 和查询索引；空 Volume、checksum、owner 与 Gate 2.6A 前向兼容由既有 bootstrap 保证。
+- API：共享 Contracts 集中定义 `/api/v1/teacher/files`、版本内容、生命周期、Binding 和明确 Revision DOCX 导出路径；二进制上传以 `x-edu-file-metadata` 的 base64url Zod DTO + raw stream 传输，避免将整个文件读入 JSON。
+- DOCX：`teacher-approved-lesson-plan-docx@1`，Letter 页面、Microsoft YaHei CJK override、固定表格、页脚页码和 Revision 追踪；单元测试检查 OOXML，验收样例逐页渲染检查。
+- 补偿：对象先写入、事务后提交；事务失败立即删除对象，删除失败写 `.orphans` 安全标记；受控 cleanup 只移除无数据库引用且超过宽限期的对象。
+- Worker：业务事实同步提交；文件相关 Outbox 由现有租约/幂等 Consumer Effect Worker 记录消费结果，不负责决定文件业务状态。
+- 当前非目标保持不变：不把上传内容或图片交给模型，不实现 OCR、云存储、分享、多人协作、在线 Office 或 PPT 视觉生成。
 
 ## 13. 非目标
 
