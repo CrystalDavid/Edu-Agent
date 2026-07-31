@@ -1,5 +1,6 @@
-import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -17,15 +18,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
-    exclude: [
-      "tests/postgres/**/*.test.ts",
-      "tests/live/**/*.test.ts"
-    ],
-    testTimeout: 20_000,
-    hookTimeout: 20_000,
-    coverage: {
-      reporter: ["text", "json-summary"]
+    include: ["tests/live/**/*.test.ts"],
+    testTimeout: 180_000,
+    hookTimeout: 180_000,
+    sequence: {
+      concurrent: false
     }
   }
 });

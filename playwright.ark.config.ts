@@ -6,18 +6,19 @@ const webOrigin = `http://127.0.0.1:${
 
 export default defineConfig({
   testDir: "./tests/playwright",
-  testIgnore: "teacher-model-provider.spec.ts",
-  outputDir: "./test-results/playwright",
+  testMatch: "teacher-model-provider.spec.ts",
+  outputDir: "./test-results/playwright-ark",
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
   workers: 1,
+  timeout: 120_000,
   reporter: [
     ["list"],
     [
       "html",
       {
-        outputFolder: "playwright-report",
+        outputFolder: "playwright-report-ark",
         open: "never"
       }
     ]
@@ -26,17 +27,16 @@ export default defineConfig({
     baseURL: webOrigin,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "off",
+    video: "retain-on-failure",
     viewport: {
-      width: 1536,
-      height: 960
+      width: 1440,
+      height: 900
     }
   },
   webServer: {
     command: "node scripts/demo/run-e2e-demo.mjs",
     url: `${webOrigin}/api/health`,
-    reuseExistingServer:
-      process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",
+    reuseExistingServer: false,
     timeout: 120_000,
     gracefulShutdown: {
       signal: "SIGTERM",
@@ -45,7 +45,7 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "edge-desktop",
+      name: "edge-desktop-ark-fake",
       use: {
         ...devices["Desktop Chrome"],
         channel: "msedge"

@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
-    "dev": "vite"
+    "dev": "vite",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@edu-agent/contracts": "workspace:*",

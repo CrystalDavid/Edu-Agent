@@ -659,17 +659,21 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   const createResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith(
-        apiRoutes.demo.createTeacherCopilotTask
+        apiRoutes.teacher.modelInvocations
       ) &&
       response.request().method() === "POST"
   );
   await page.getByTestId("generate-copilot").click();
   const createdResponse = await createResponse;
-  expect(createdResponse.status()).toBe(201);
+  expect(createdResponse.status()).toBe(202);
   const created = await createdResponse.json();
-  expect(created.preparationTaskRef).toBeTruthy();
-  expect(created.authorizedContextPlanRef).toBeTruthy();
-  await expect(page).toHaveURL(/\/copilot\/proposals\//);
+  expect(created.execution.taskRef).toBeTruthy();
+  expect(
+    created.execution.authorizedContextPlanRef
+  ).toBeTruthy();
+  await expect(page).toHaveURL(/\/copilot\/proposals\//, {
+    timeout: 20_000
+  });
   await expect(
     page.getByRole("heading", { name: "比较教学策略" })
   ).toBeVisible({ timeout: 20_000 });
@@ -678,7 +682,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   page.on("request", (webRequest) => {
     if (
       new URL(webRequest.url()).pathname ===
-        apiRoutes.demo.createTeacherCopilotTask &&
+        apiRoutes.teacher.modelInvocations &&
       webRequest.method() === "POST"
     ) {
       duplicateGenerationCalls += 1;
@@ -751,7 +755,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   expect(
     summary.incompleteTasks.some(
       (task: { taskRef: string }) =>
-        task.taskRef === created.preparationTaskRef
+        task.taskRef === created.execution.taskRef
     )
   ).toBe(false);
 
@@ -835,6 +839,41 @@ test("startup failure remains precise and safe", async ({ page }) => {
   await expect(page.getByText("示例启动服务不可用")).toBeVisible();
   await expect(page.getByRole("button", { name: /重\s*试/ })).toBeVisible();
   await expect(page.getByText("查看本地启动指南")).toBeVisible();
+});
+
+test("an incomplete Ark configuration falls back to the local demo assistant without exposing configuration", async ({
+  page
+}) => {
+  const monitor = monitorPage(page);
+  await page.route(
+    `**${apiRoutes.teacher.modelProviderAvailability}`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          requestedMode: "ark",
+          activeProvider: "mock",
+          configured: false,
+          available: true,
+          fallbackToMock: true,
+          modelDisplayName: "Deterministic MockModelProvider",
+          apiMode: "chat_completions",
+          liveTestsEnabled: false,
+          safeReason:
+            "火山方舟配置不完整，已使用本地演示助手。"
+        })
+      });
+    }
+  );
+  await page.goto("/copilot");
+  await expect(
+    page.getByTestId("model-provider-availability")
+  ).toContainText("火山方舟配置不完整");
+  await expect(page.locator("body")).not.toContainText(
+    "ARK_API_KEY"
+  );
+  await assertCleanMonitor(monitor);
 });
 
 function monitorPage(page: Page) {
