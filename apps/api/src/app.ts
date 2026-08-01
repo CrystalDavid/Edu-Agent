@@ -4,6 +4,7 @@ import express, {
   type Request,
   type Response
 } from "express";
+import { pipeline } from "node:stream/promises";
 import {
   apiRoutes,
   ApproveTeachingPlanRequestSchema,
@@ -14,6 +15,12 @@ import {
   IngressEnvelopeSchema,
   LessonPreparationTaskActionRequestSchema,
   RetryModelInvocationRequestSchema,
+  FileAssetListQuerySchema,
+  FileBindingRequestSchema,
+  FileLifecycleRequestSchema,
+  FileUploadMetadataSchema,
+  FileVersionUploadMetadataSchema,
+  TeachingPlanDocxExportRequestSchema,
   SuggestionDispositionRequestSchema,
   TaskResourceSelectionRequestSchema,
   type ActingContext,
@@ -36,6 +43,7 @@ import {
   AuthorizationDeniedError,
   DomainConflictError,
   IdempotencyConflictError,
+  InvalidFileError,
   NotFoundError
 } from "./platform/errors.js";
 
@@ -70,6 +78,37 @@ function routeParameter(
   value: string | string[] | undefined
 ): string {
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
+}
+
+function fileMetadataHeader(request: Request): unknown {
+  const encoded = request.header("x-edu-file-metadata");
+  if (!encoded || encoded.length > 12_000) {
+    throw new InvalidFileError(
+      "FILE_METADATA_REQUIRED",
+      "x-edu-file-metadata header is required."
+    );
+  }
+  try {
+    return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch {
+    throw new InvalidFileError(
+      "FILE_METADATA_INVALID",
+      "x-edu-file-metadata must be base64url-encoded JSON."
+    );
+  }
+}
+
+function expectedContentLength(request: Request): number | undefined {
+  const raw = request.header("content-length");
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new InvalidFileError(
+      "INVALID_CONTENT_LENGTH",
+      "Content-Length must be a positive integer."
+    );
+  }
+  return value;
 }
 
 function contextsFromHeaders(
@@ -199,6 +238,7 @@ export function createApp(
 
   if (product) {
     const preparation = product.services.lessonPreparation;
+    const files = product.services.files;
     const modelInvocations =
       product.services.modelInvocations;
     const withProductContext = async (request: Request) =>
@@ -207,6 +247,196 @@ export function createApp(
         product,
         demoIdentity
       );
+
+    app.get(
+      apiRoutes.teacher.files,
+      markRoute("product.teacher.files.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await files.list({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              query: FileAssetListQuerySchema.parse(request.query)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.files,
+      markRoute("product.teacher.files.upload"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const contentLength = expectedContentLength(request);
+          const result = await files.upload({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            metadata: FileUploadMetadataSchema.parse(fileMetadataHeader(request)),
+            content: request,
+            ...(contentLength === undefined
+              ? {}
+              : { expectedSizeBytes: contentLength })
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.filePattern,
+      markRoute("product.teacher.files.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await files.get({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assetRef: routeParameter(request.params["assetRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.fileVersionsPattern,
+      markRoute("product.teacher.files.version-create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const contentLength = expectedContentLength(request);
+          const result = await files.createVersion({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assetRef: routeParameter(request.params["assetRef"]),
+            metadata: FileVersionUploadMetadataSchema.parse(fileMetadataHeader(request)),
+            content: request,
+            ...(contentLength === undefined
+              ? {}
+              : { expectedSizeBytes: contentLength })
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    const sendFileContent = async (
+      request: Request,
+      response: Response,
+      next: NextFunction,
+      versionRef?: string
+    ) => {
+      try {
+        const contexts = await withProductContext(request);
+        const content = await files.getContent({
+          tenantRef: contexts.tenant.tenantRef,
+          actorRef: contexts.acting.actorRef,
+          assetRef: routeParameter(request.params["assetRef"]),
+          ...(versionRef ? { versionRef } : {})
+        });
+        response.setHeader("content-type", content.version.mimeType);
+        response.setHeader("content-length", String(content.version.sizeBytes));
+        response.setHeader("cache-control", "private, no-store");
+        response.setHeader("x-content-type-options", "nosniff");
+        response.setHeader(
+          "content-disposition",
+          `attachment; filename="download${content.version.extension}"; filename*=UTF-8''${encodeURIComponent(content.version.originalFileName)}`
+        );
+        await pipeline(content.stream, response);
+      } catch (error) {
+        next(error);
+      }
+    };
+
+    app.get(
+      apiRoutes.teacher.fileCurrentContentPattern,
+      markRoute("product.teacher.files.content-current"),
+      (request, response, next) => sendFileContent(request, response, next)
+    );
+    app.get(
+      apiRoutes.teacher.fileVersionContentPattern,
+      markRoute("product.teacher.files.content-version"),
+      (request, response, next) =>
+        sendFileContent(
+          request,
+          response,
+          next,
+          routeParameter(request.params["versionRef"])
+        )
+    );
+
+    for (const nextStatus of ["deleted", "active"] as const) {
+      app.post(
+        nextStatus === "deleted"
+          ? apiRoutes.teacher.fileDeletePattern
+          : apiRoutes.teacher.fileRestorePattern,
+        markRoute(`product.teacher.files.${nextStatus === "deleted" ? "delete" : "restore"}`),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            const result = await files.changeLifecycle({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assetRef: routeParameter(request.params["assetRef"]),
+              request: FileLifecycleRequestSchema.parse(request.body),
+              nextStatus
+            });
+            response.status(result.replayed ? 200 : 201).json(result);
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.post(
+      apiRoutes.teacher.fileBindingsPattern,
+      markRoute("product.teacher.files.binding-add"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await files.addBinding({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assetRef: routeParameter(request.params["assetRef"]),
+            request: FileBindingRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.teachingPlanDocxExportPattern,
+      markRoute("product.teacher.teaching-plan.export-docx"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await files.exportApprovedTeachingPlan({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            revisionRef: routeParameter(request.params["revisionRef"]),
+            request: TeachingPlanDocxExportRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.modelProviderAvailability,
@@ -1160,6 +1390,15 @@ export function createApp(
         (response.locals as RouteResponseLocals).safeErrorCode =
           error.code;
         response.status(409).json({
+          code: error.code,
+          message: error.message
+        });
+        return;
+      }
+      if (error instanceof InvalidFileError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
+        response.status(error.status).json({
           code: error.code,
           message: error.message
         });

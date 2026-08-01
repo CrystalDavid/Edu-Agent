@@ -91,6 +91,16 @@ class StringSchema extends Schema {
     ]);
   }
 
+  regex(pattern) {
+    return new StringSchema([
+      ...this.checks,
+      (value, path) => {
+        pattern.lastIndex = 0;
+        if (!pattern.test(value)) fail(path, `Expected string to match ${pattern}`);
+      }
+    ]);
+  }
+
   datetime() {
     return new StringSchema([
       ...this.checks,

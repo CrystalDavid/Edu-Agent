@@ -1,8 +1,8 @@
 # Gate 2.6A Live Acceptance
 
-状态：**PENDING**
+状态：**VERIFIED**
 
-> 本记录只保存可提交的脱敏验收事实。只有真实火山方舟调用成功，且产品所有者在火山方舟控制台确认在线推理调用次数大于 0 后，状态才可改为 `VERIFIED`。
+> 本记录只保存可提交的脱敏验收事实。真实火山方舟调用与输出质量已经产品所有者确认；控制台短时零值被确认属于统计延迟，Gate 2.6A 已正式固化。
 
 ## 验收边界
 
@@ -35,7 +35,7 @@
 - [x] ModelExecution 状态、Usage、延迟与脱敏 Request ID；
 - [x] Proposal 刷新恢复、教师修改与 `in_review` 创建；
 - [x] 普通离线测试回归；
-- [ ] 火山方舟控制台在线推理调用次数确认。
+- [x] 产品所有者确认真实调用成功、模型输出质量可接受，控制台统计延迟不再阻塞固化。
 
 ## 真实 Capability Probe
 
@@ -84,13 +84,11 @@
 
 模型开通后，本地客户端共发起 18 次真实 Ark 请求：16 次取得成功响应，2 次产品请求在客户端 120 秒超时。其组成是 7 次 Capability Probe、7 次 Strict Live Vitest、1 次参数兼容性请求和 3 次产品执行尝试。由于 Strict Live Vitest 和超时请求不保存完整 Usage，本地可精确归集的安全下限为 5,299 输入 Token、7,006 输出 Token、12,305 总 Token；火山控制台总量应高于该下限。
 
-请在控制台按北京时间 2026-07-31 23:53 至 2026-08-01 00:25、北京地域、在线推理、当前项目、当前模型与当前 API Key 核对。只有产品所有者确认调用次数大于 0 后，本文件才能改为 `VERIFIED`。
+控制台核对窗口为北京时间 2026-07-31 23:53 至 2026-08-01 00:25、北京地域、在线推理、当前项目、当前模型与当前 API Key。产品所有者已确认真实调用成功，并接受控制台用量展示存在统计延迟。
 
 ## 当前结论
 
-真实 Ark 鉴权、纯文本、结构化输出、图片、JSON Object、JSON Schema、Function Calling、Streaming 和真实备课 Proposal 均已验证；严格模式下 Mock/Fake fallback 为 0。工程与 Live 技术验证已完成，当前状态为 `LIVE_VERIFIED_PENDING_USER_CONSOLE_CONFIRMATION`。
-
-在产品所有者确认控制台在线推理调用量前，本文件状态继续保持 `PENDING`，不得创建 Gate 2.6A PR、Merge 或 Tag，也不得进入下一 Gate。
+真实 Ark 鉴权、纯文本、结构化输出、图片、JSON Object、JSON Schema、Function Calling、Streaming 和真实备课 Proposal 均已验证；严格模式下 Mock/Fake fallback 为 0。产品所有者已确认真实调用和输出质量，控制台零值被接受为统计延迟；Gate 2.6A 已通过 PR #4 合并，并以 `gate-2-6a-verified` 固化。
 
 ## 本轮测试记录
 

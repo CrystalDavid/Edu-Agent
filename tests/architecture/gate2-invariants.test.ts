@@ -334,6 +334,41 @@ describe("Gate 2 architecture invariants", () => {
     );
   });
 
+  it("keeps Gate 2.5B file truth in Artifact and binary storage behind the Capability port", () => {
+    const contracts = source("packages/contracts/src/gate2-5b.ts");
+    const migration = source(
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0006_gate2_5b_file_artifacts.sql"
+    );
+    const productContainer = source(
+      "apps/api/src/composition/product-container.ts"
+    );
+    const objectStore = source(
+      "apps/api/src/modules/capability-integration/domain/object-store.ts"
+    );
+    const localAdapter = source(
+      "apps/api/src/modules/capability-integration/infrastructure/local-object-store.ts"
+    );
+    const fileService = source(
+      "apps/api/src/composition/postgres-file-artifact-service.ts"
+    );
+
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS artifact.file_asset");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS artifact.file_version");
+    expect(migration).toContain("artifact_file_binding");
+    expect(migration).toContain("file_version_immutable");
+    expect(migration).not.toContain("CREATE SCHEMA");
+    expect(contracts).not.toContain("FileManager");
+    expect(objectStore).toContain("export interface ObjectStore");
+    expect(localAdapter).toContain("randomUUID");
+    expect(localAdapter).toContain("assertWithinRoot");
+    expect(productContainer).toContain("PostgresFileArtifactService");
+    expect(productContainer).toContain("LocalObjectStore");
+    expect(productContainer).not.toContain("FileManager");
+    expect(fileService).toContain("TEACHING_PLAN_DOCX_TEMPLATE_VERSION");
+    expect(fileService).toContain("TEACHING_PLAN_EXPORT_REQUIRES_APPROVED_REVISION");
+    expect(fileService).not.toContain("MockModelProvider");
+  });
+
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(

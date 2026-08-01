@@ -11,6 +11,11 @@ import {
   runCompose,
   snapshotProtectedLocalState
 } from "../postgres/database-lifecycle.mjs";
+import {
+  e2eObjectStoreRoot,
+  objectStoreDirectoryExists,
+  removeE2eObjectStore
+} from "./object-store-lifecycle.mjs";
 
 async function allocatePort() {
   return await new Promise((resolve, reject) => {
@@ -60,6 +65,7 @@ const runId = createE2eRunId();
 const databasePort = await allocatePort();
 const apiPort = await allocatePort();
 const webPort = await allocatePort();
+const controlPort = await allocatePort();
 const arkFakeMode = process.argv.includes("--ark-fake");
 const fakeArkPort = arkFakeMode
   ? await allocatePort()
@@ -70,6 +76,7 @@ const databaseEnvironment = createE2eDatabaseEnvironment(
 );
 databaseEnvironment.E2E_API_PORT = String(apiPort);
 databaseEnvironment.E2E_WEB_PORT = String(webPort);
+databaseEnvironment.E2E_CONTROL_PORT = String(controlPort);
 databaseEnvironment.E2E_MODEL_MODE = arkFakeMode
   ? "ark-fake"
   : "mock";
@@ -78,6 +85,8 @@ if (fakeArkPort !== undefined) {
     String(fakeArkPort);
 }
 const volumeName = e2eVolumeName(runId);
+const objectStoreRoot = e2eObjectStoreRoot(runId);
+databaseEnvironment.LOCAL_OBJECT_STORE_ROOT = objectStoreRoot;
 const protectedStateBefore = snapshotProtectedLocalState();
 
 if (inspectVolumeIdentity(volumeName)) {
@@ -97,6 +106,7 @@ try {
     "--volumes",
     "--remove-orphans"
   );
+  await removeE2eObjectStore(objectStoreRoot);
 }
 
 const protectedStateAfter = snapshotProtectedLocalState();
@@ -109,8 +119,11 @@ if (!isDeepStrictEqual(protectedStateAfter, protectedStateBefore)) {
 if (inspectVolumeIdentity(volumeName)) {
   throw new Error(`E2E volume ${volumeName} was not cleaned up.`);
 }
+if (await objectStoreDirectoryExists(objectStoreRoot)) {
+  throw new Error(`E2E object-store root ${objectStoreRoot} was not cleaned up.`);
+}
 
 process.stdout.write(
-  `E2E database ${volumeName} was isolated and removed; development state is unchanged.\n`
+  `E2E database ${volumeName} and object store were isolated and removed; development state is unchanged.\n`
 );
 process.exit(result?.status ?? 1);

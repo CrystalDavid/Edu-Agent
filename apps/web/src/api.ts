@@ -12,6 +12,14 @@ import {
   CurriculumUnitListSchema,
   CreateTeacherCopilotTaskRequestSchema,
   CreateTeacherCopilotTaskResultSchema,
+  FileAssetDetailSchema,
+  FileAssetListQuerySchema,
+  FileAssetListSchema,
+  FileBindingRequestSchema,
+  FileLifecycleRequestSchema,
+  FileMutationResultSchema,
+  FileUploadMetadataSchema,
+  FileVersionUploadMetadataSchema,
   LessonListSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
@@ -33,6 +41,8 @@ import {
   TaskWorkingSetResultSchema,
   TeacherWorkspaceSchema,
   TeachingPlanRevisionViewSchema,
+  TeachingPlanDocxExportRequestSchema,
+  TeachingPlanDocxExportResultSchema,
   type ApiHealth,
   type AuthorizedContextPlan,
   type ApproveTeachingPlanRequest,
@@ -43,6 +53,12 @@ import {
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
   type CreateLessonPreparationTaskRequest,
+  type FileAssetDetail,
+  type FileAssetListQuery,
+  type FileBindingRequest,
+  type FileLifecycleRequest,
+  type FileUploadMetadata,
+  type FileVersionUploadMetadata,
   type LessonPreparationSummary,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
@@ -59,7 +75,8 @@ import {
   type SuggestionDispositionResult,
   type TaskResourceSelectionRequest,
   type TaskWorkingSet,
-  type TeacherWorkspace
+  type TeacherWorkspace,
+  type TeachingPlanDocxExportRequest
 } from "@edu-agent/contracts";
 
 import {
@@ -179,6 +196,44 @@ async function request<T>(
     );
   }
   return parsed.data;
+}
+
+function encodedFileMetadata(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+}
+
+async function downloadRequest(path: string): Promise<Blob> {
+  const requestUrl = resolveApiUrl(
+    path,
+    import.meta.env.VITE_API_BASE_URL,
+    window.location.origin
+  );
+  const response = await fetch(requestUrl, {
+    headers: {
+      "x-demo-tenant": demoHeaders["x-demo-tenant"],
+      "x-demo-actor": demoHeaders["x-demo-actor"]
+    }
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      code?: string;
+      message?: string;
+    };
+    throw new ApiError(
+      response.status,
+      payload.code ?? "FILE_DOWNLOAD_FAILED",
+      payload.message ?? "文件下载失败。",
+      "文件下载",
+      requestUrl
+    );
+  }
+  return response.blob();
 }
 
 export function checkApiHealth(): Promise<ApiHealth> {
@@ -533,4 +588,119 @@ export function loadTeachingPlanRevision(
 export async function loadTeacherWorkbench(): Promise<TeacherWorkspace> {
   await checkApiHealth();
   return loadWorkspace();
+}
+
+export function loadFiles(query: FileAssetListQuery) {
+  const parsed = FileAssetListQuerySchema.parse(query);
+  const search = new URLSearchParams();
+  search.set("status", parsed.status);
+  search.set("sort", parsed.sort);
+  if (parsed.query) search.set("query", parsed.query);
+  if (parsed.category) search.set("category", parsed.category);
+  if (parsed.targetType) search.set("targetType", parsed.targetType);
+  if (parsed.targetRef) search.set("targetRef", parsed.targetRef);
+  return request(
+    "文件列表",
+    `${apiRoutes.teacher.files}?${search.toString()}`,
+    FileAssetListSchema
+  );
+}
+
+export function loadFile(assetRef: string): Promise<FileAssetDetail> {
+  return request(
+    "文件详情",
+    apiRoutes.teacher.file(assetRef),
+    FileAssetDetailSchema
+  );
+}
+
+export function uploadFile(file: File, metadata: FileUploadMetadata) {
+  FileUploadMetadataSchema.parse(metadata);
+  return request(
+    "上传文件",
+    apiRoutes.teacher.files,
+    FileMutationResultSchema,
+    {
+      method: "POST",
+      headers: {
+        "content-type": metadata.mimeType,
+        "x-edu-file-metadata": encodedFileMetadata(metadata)
+      },
+      body: file
+    }
+  );
+}
+
+export function createFileVersion(
+  assetRef: string,
+  file: File,
+  metadata: FileVersionUploadMetadata
+) {
+  FileVersionUploadMetadataSchema.parse(metadata);
+  return request(
+    "创建文件版本",
+    apiRoutes.teacher.fileVersions(assetRef),
+    FileMutationResultSchema,
+    {
+      method: "POST",
+      headers: {
+        "content-type": metadata.mimeType,
+        "x-edu-file-metadata": encodedFileMetadata(metadata)
+      },
+      body: file
+    }
+  );
+}
+
+export function addFileBinding(
+  assetRef: string,
+  input: FileBindingRequest
+) {
+  FileBindingRequestSchema.parse(input);
+  return request(
+    "关联文件",
+    apiRoutes.teacher.fileBindings(assetRef),
+    FileMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function changeFileLifecycle(
+  assetRef: string,
+  nextStatus: "active" | "deleted",
+  input: FileLifecycleRequest
+) {
+  FileLifecycleRequestSchema.parse(input);
+  return request(
+    nextStatus === "deleted" ? "删除文件" : "恢复文件",
+    nextStatus === "deleted"
+      ? apiRoutes.teacher.fileDelete(assetRef)
+      : apiRoutes.teacher.fileRestore(assetRef),
+    FileMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function exportTeachingPlanDocx(
+  revisionRef: string,
+  input: TeachingPlanDocxExportRequest
+) {
+  TeachingPlanDocxExportRequestSchema.parse(input);
+  return request(
+    "导出已批准教案",
+    apiRoutes.teacher.teachingPlanDocxExport(revisionRef),
+    TeachingPlanDocxExportResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function downloadFile(
+  assetRef: string,
+  versionRef?: string
+): Promise<Blob> {
+  return downloadRequest(
+    versionRef
+      ? apiRoutes.teacher.fileVersionContent(assetRef, versionRef)
+      : apiRoutes.teacher.fileCurrentContent(assetRef)
+  );
 }

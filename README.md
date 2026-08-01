@@ -1,6 +1,6 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。当前分支完成 **Gate 2.6A — 火山方舟单一生产模型 Provider**：在 Gate 2.5 可恢复备课闭环上增加事务外、可取消、可重试、可验证的 `VolcengineArkProvider`，同时保持 Mock 为默认本地与测试路径。
+面向学校的教育智能体平台工程仓库。当前分支建设 **Gate 2.5B — 文件与教学成果闭环**：在已验证的 Gate 2.6A Provider 和 Gate 2.5 可恢复备课闭环上，增加真实文件版本、Lesson/Task/TeachingPlan 关联与 approved TeachingPlan DOCX 导出。
 
 ## 当前真实能力
 
@@ -20,9 +20,14 @@
 - `ModelExecution` 持久化 queued/running/validating/succeeded、失败、超时、取消、Token、延迟、估算费用和安全 Provider 关联；
 - 模型调用在数据库事务外由租约 Worker 执行；预算、ModelDataManifest、幂等、有限重试和一次受控修复均 fail closed；
 - 默认 `MockModelProvider` 不联网；Fake Ark、32 项合成评测集和默认关闭的 Live Integration 分离验证；
+- Artifact-owned `FileAsset`、不可变 `FileVersion` 和文件关联持久化到 PostgreSQL；Capability-owned `LocalObjectStore` 使用服务端生成 object key、流式 SHA-256、大小/MIME/签名校验和失败补偿；
+- 文件页提供真实上传、搜索、分类、排序、下载、版本历史、软删除/恢复，以及所选 Lesson、备课 Task、current approved TeachingPlan Revision 关联；被正式 TeachingPlan Revision 引用的成果禁止删除；
+- DOCX/PPTX/XLSX 上传会校验实际 OOXML 容器，并在服务端本地提取有界文本摘要；不会把文件内容发送给模型；
+- 同一 tenant 的重复内容按 SHA-256 与大小复用物理对象，但保留各自 FileAsset/FileVersion 与审计语义；
+- 明确的 current approved TeachingPlan Revision 可导出 DOCX，并作为正式 FileAsset 绑定 Lesson、备课 Task 与 TeachingPlan；新 approved Revision 导出形成同一文件的新版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
-普通教师端的概览备课区、教学课程/课时、Task-scoped Agent、Teaching Plan 和 Runs 已接入真实闭环；日程、作业、测试、学生、文件、通用 Agent 对话和设置仍主要是高保真 Mock。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
+普通教师端的概览备课区、教学课程/课时、Task-scoped Agent、Teaching Plan、Runs，以及文件/教学成果链路已接入真实闭环；日程、作业、测试、学生、通用 Agent 对话和设置仍主要是高保真 Mock。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
 
 ## 本地启动
 
@@ -58,11 +63,14 @@ corepack pnpm demo:doctor
 - 普通测试和两条 Playwright 链都显式禁用 live model；Fake Ark 只监听本机。
 - `pnpm test:model:live` 与 `pnpm model:probe:live` 默认关闭，只有显式 strict live flags 和完整 Ark 配置时才联网；严格模式禁止 Mock/Fake fallback。
 - `pnpm test:postgres` 和 `pnpm test:playwright` 每次创建独立的临时 Compose Project/Volume，结束后清理，并核验开发 Volume、`infra/docker/.env.local` 和本地上传目录未变化。
+- Playwright 还使用 `.demo/e2e/<run-id>/uploads` 临时 ObjectStore；结束后只删除该已核验目录，不触碰 `.demo/uploads/objects` 开发文件。
+- Gate 2.5B Playwright 会在同一隔离数据库与 ObjectStore 上真实重启一次 API/Worker，并验证文件、版本和 bindings 恢复；重启控制器只监听本机且不进入产品路由。
 - 长期开发数据库使用 Compose Project `edu-agent-dev` 和 Volume `edu-agent-dev-postgres-data`。
 - 删除长期开发 Volume 必须显式设置 `ALLOW_DESTRUCTIVE_DB_RESET=1`；未设置时命令会在调用 Docker 前拒绝执行。
 
 ## 明确边界
 
-当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、ObjectStore、文件上传、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、作业/考试闭环、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
+当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、作业/考试闭环、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
 
 Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md](docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)。Gate 2.5 业务语义见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。
+Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。

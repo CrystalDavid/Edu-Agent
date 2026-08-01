@@ -29,7 +29,8 @@ corepack pnpm demo:dev
 4. 幂等 Seed 合成数据；
 5. 显式以 `APP_ENV=local`、`DEMO_AUTH_BYPASS=true` 启动演示 API；
 6. 启动共用 Outbox Worker；模型执行先提交 queued 事实，再在事务外调用 Mock 或 Ark；
-7. 等待 API 和 Web 通过启动检查。
+7. 使用 `.demo/uploads/objects` 作为 Git ignored 的开发 LocalObjectStore（可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖）；
+8. 等待 API 和 Web 通过启动检查。
 
 打开：
 
@@ -99,6 +100,26 @@ MODEL_DEBUG_CONTENT=false
 11. 在同一已完成 Task 创建第二 Proposal 并拒绝；确认 current approved 和 completed 状态不变；
 12. 执行 `corepack pnpm demo:down` 后重新 `corepack pnpm demo:dev`，确认上述状态仍存在。
 
+### Gate 2.5B 文件与教学成果
+
+1. 在 Teaching Plan 页选择当前明确的 approved Revision，点击“导出教案 DOCX”；
+2. 确认文件页出现“斜率与图像变化 教案”，来源为“已批准 TeachingPlan 导出”；
+3. 下载 DOCX，检查课程、单元、课时、目标、重点/难点、教学流程、Evidence 摘要、已知缺口、反思占位、Revision 和“AI 辅助生成、教师已批准”说明；
+4. 在文件页选择一个 Lesson，上传一份不含隐私的 PDF、图片、Markdown/TXT 或 Office 参考文件；
+5. 创建新版本，确认版本历史保留旧版本并可分别下载；
+6. 回到 Lesson，确认参考文件和正式 DOCX 都出现在关联教学文件中；
+7. 正式 DOCX 的删除按钮应明确禁用；普通上传文件可软删除并恢复；
+8. 停止并重启 Demo，确认文件元数据、对象内容、版本和关联仍存在。
+
+本地文件设置（均为非敏感服务端配置）：
+
+```text
+LOCAL_OBJECT_STORE_ROOT=.demo/uploads/objects
+FILE_MAX_UPLOAD_BYTES=26214400
+```
+
+物理路径不使用用户文件名。默认上限为 25 MiB；允许 PDF、PNG/JPEG/GIF/WebP、Markdown、TXT、DOCX、PPTX 和 XLSX。HTML、脚本与可执行文件会 fail closed。
+
 Gate 2.5 不实现 `published`。接受建议、进入审核、批准计划和完成备课是不同语义；任何操作都不表示课堂已经实施，也不会创建 `ObservedPedagogicalMove` 或 `InstructionalDecision`。已完成 Task 若要形成新的 in-review 计划，必须先由教师显式 reopen。
 
 ## 数据库生命周期
@@ -137,6 +158,8 @@ corepack pnpm test:playwright:ark-fake
 - 开发 Volume identity；
 - `infra/docker/.env.local` 内容；
 - `.demo/uploads` 本地目录。
+
+Playwright 的文件字节写入独立的 `.demo/e2e/<run-id>/uploads`，测试结束后只清理该精确目录；临时目录残留或开发上传目录变化都会使测试失败。
 
 任一受保护状态变化或临时 Volume 未清理都会使测试失败。
 
@@ -202,7 +225,7 @@ corepack pnpm demo:doctor
 - 正式登录、SSO 或真实身份数据；
 - 第二模型、DeepSeek、多供应商或模型选择器；
 - CloudBase、Netlify、CVM；
-- 文件上传、LocalObjectStore、二进制文件；
+- 云 ObjectStore、文件分享/协作、在线 Office 编辑、上传内容进入模型；
 - Todo/Calendar、完整课程资源树和课程 CRUD、作业/考试业务闭环；
 - 学生长期模型、多 Agent、v0.4；
 - 自动发布或外部承诺。

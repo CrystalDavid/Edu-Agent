@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   CourseRunView,
   CurriculumUnitView,
+  FileAssetSummary,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
   LessonView
@@ -25,6 +26,7 @@ import {
   loadLessonPreparationTasks,
   loadLessons,
   loadLessonTeachingPlans,
+  loadFiles,
   transitionLessonPreparationTask
 } from "../api";
 import {
@@ -129,6 +131,7 @@ function RealCourseWorkspace(props: {
   >(null);
   const [planState, setPlanState] =
     useState<LessonTeachingPlanState | null>(null);
+  const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,9 +239,20 @@ function RealCourseWorkspace(props: {
       return;
     }
     let active = true;
-    void loadLessonTeachingPlans(selectedLessonRef)
-      .then((result) => {
-        if (active) setPlanState(result);
+    void Promise.all([
+      loadLessonTeachingPlans(selectedLessonRef),
+      loadFiles({
+        status: "active",
+        sort: "newest",
+        targetType: "lesson",
+        targetRef: selectedLessonRef
+      })
+    ])
+      .then(([result, files]) => {
+        if (active) {
+          setPlanState(result);
+          setLessonFiles(files.items);
+        }
       })
       .catch((caught) => {
         if (active) setError(errorMessage(caught));
@@ -458,6 +472,25 @@ function RealCourseWorkspace(props: {
                       </Paragraph>
                     )}
                   </section>
+                  <section data-testid="lesson-related-files">
+                    <Title level={4}>关联教学文件</Title>
+                    {lessonFiles.length > 0 ? (
+                      <Space orientation="vertical" size="small">
+                        {lessonFiles.map((file) => (
+                          <Button
+                            key={file.assetRef}
+                            onClick={() => props.navigate("/files")}
+                          >
+                            {file.displayName} · v{file.currentVersion.versionNumber}
+                          </Button>
+                        ))}
+                      </Space>
+                    ) : (
+                      <Paragraph type="secondary">
+                        尚无参考文件或已批准教案导出。
+                      </Paragraph>
+                    )}
+                  </section>
                   <Space wrap>
                     <Button
                       type="primary"
@@ -495,14 +528,14 @@ function RealCourseWorkspace(props: {
                     <Button
                       onClick={() => props.navigate("/files")}
                     >
-                      只读教学材料
+                      打开文件
                     </Button>
                   </Space>
                   <Alert
                     type="info"
                     showIcon
-                    title="文件区域仍是只读演示"
-                    description="本 Gate 不创建、上传或修改二进制文件，也不会把 Mock 文件状态当成 TeachingPlan 状态。"
+                    title="文件与 TeachingPlan 状态保持独立"
+                    description="参考文件和正式 DOCX 由 Artifact/File 服务持久化；只有 approved Revision 才能导出正式教学成果。"
                   />
                 </>
               ) : (

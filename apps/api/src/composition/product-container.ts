@@ -32,12 +32,27 @@ import type {
 import {
   PostgresModelInvocationService
 } from "./postgres-model-invocation-service.js";
+import {
+  PostgresFileArtifactService
+} from "./postgres-file-artifact-service.js";
+import type {
+  ObjectStore
+} from "../modules/capability-integration/domain/object-store.js";
+import {
+  LocalObjectStore
+} from "../modules/capability-integration/infrastructure/local-object-store.js";
+import {
+  readObjectStoreSettings,
+  type ObjectStoreSettings
+} from "../modules/capability-integration/infrastructure/object-store-config.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
   options: {
     modelSettings?: ModelProviderSettings;
     modelProvider?: ModelProvider;
+    objectStoreSettings?: ObjectStoreSettings;
+    objectStore?: ObjectStore;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -62,6 +77,11 @@ export function createProductContainer(
       modelProvider,
       modelSettings
     );
+  const objectStoreSettings =
+    options.objectStoreSettings ?? readObjectStoreSettings();
+  const objectStore =
+    options.objectStore ??
+    new LocalObjectStore(objectStoreSettings.rootDirectory);
   const copilotOutbox = new LocalCopilotOutboxWorker(
     workerPool,
     undefined,
@@ -79,7 +99,16 @@ export function createProductContainer(
         new PostgresGate2TeacherCopilotService(appPool),
       modelInvocations,
       lessonPreparation:
-        new PostgresLessonPreparationService(appPool)
+        new PostgresLessonPreparationService(appPool),
+      files: new PostgresFileArtifactService(
+        appPool,
+        objectStore,
+        objectStoreSettings
+      )
+    },
+    infrastructure: {
+      objectStore,
+      objectStoreSettings
     },
     workers: {
       copilotOutbox

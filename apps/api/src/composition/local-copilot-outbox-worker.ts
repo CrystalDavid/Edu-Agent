@@ -33,7 +33,13 @@ const gate24Events = {
     "PedagogicalSuggestionProposed",
     "TeachingPlanDraftProposed",
     "TeachingPlanSubmittedForReview",
-    "TeachingPlanApproved"
+    "TeachingPlanApproved",
+    "FileAssetCreated",
+    "FileVersionCreated",
+    "FileBindingCreated",
+    "FileAssetSoftDeleted",
+    "FileAssetRestored",
+    "TeachingPlanDocxExported"
   ]
 } as const satisfies Partial<
   Record<OutboxOwner, readonly string[]>

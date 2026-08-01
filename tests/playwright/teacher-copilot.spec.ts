@@ -283,22 +283,67 @@ test("student workspace moves evidence behind teacher-facing interpretation", as
   await assertCleanMonitor(monitor);
 });
 
-test("file manager filters, sorts and previews local demo files", async ({
+test("file manager uploads, restores and versions a real local file", async ({
   page
 }) => {
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/files");
   const manager = page.getByTestId("file-manager");
-  await manager.getByRole("button", { name: /^课件/ }).click();
-  const fileButton = manager.locator(".file-results").getByRole("button", {
-    name: /一次函数：斜率与图像/
+  await manager.getByTestId("file-upload-input").setInputFiles({
+    name: "斜率课堂观察.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 合成参考资料\n仅用于 Gate 2.5B E2E。", "utf8")
   });
-  await expect(fileButton).toBeVisible();
-  await manager.getByLabel("文件排序").click();
-  await page.locator(".ant-select-item-option").filter({ hasText: /^名称$/ }).click();
+  const fileButton = manager.locator(".file-results").getByRole("button", {
+    name: /斜率课堂观察/
+  });
+  await expect(fileButton).toBeVisible({ timeout: 20_000 });
   await fileButton.click();
-  await expect(manager.getByTestId("file-preview")).toContainText("第 6 页 / 18 页");
+  await expect(manager.getByTestId("file-detail")).toContainText("教师上传");
+  await manager.getByTestId("file-version-input").setInputFiles({
+    name: "斜率课堂观察-v2.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 合成参考资料\n第二个不可变版本。", "utf8")
+  });
+  await expect(manager.getByTestId("file-version-history")).toContainText("v2", {
+    timeout: 20_000
+  });
+  const deletedResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/delete") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ }).click();
+  expect((await deletedResponse).status()).toBe(201);
+  await manager.getByLabel("文件生命周期筛选").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^已删除$/ }).click();
+  await expect(fileButton).toBeVisible({ timeout: 20_000 });
+  await fileButton.click();
+  const restoredResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/restore") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: /恢\s*复/ }).click();
+  expect((await restoredResponse).status()).toBe(201);
+  await manager.getByLabel("文件生命周期筛选").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^有效$/ }).click();
+  await expect(fileButton).toBeVisible({ timeout: 20_000 });
+  await fileButton.click();
+  await manager.getByLabel("上传关联课时").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^一次函数的应用$/ }).click();
+  const taskBindingResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/bindings") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: "关联任务" }).click();
+  expect((await taskBindingResponse).status()).toBe(201);
+  await manager.getByLabel("上传关联课时").click();
+  await page.locator(".ant-select-item-option").filter({ hasText: /^斜率与图像变化$/ }).click();
+  const planBindingResponse = page.waitForResponse(
+    (response) => response.url().endsWith("/bindings") && response.request().method() === "POST"
+  );
+  await manager.getByTestId("file-detail").getByRole("button", { name: "关联教学计划" }).click();
+  expect((await planBindingResponse).status()).toBe(201);
+  await expect(manager.getByTestId("file-detail")).toContainText("preparation_task");
+  await expect(manager.getByTestId("file-detail")).toContainText("teaching_plan_revision");
+  await expect(manager.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })).toBeDisabled();
   await manager.getByRole("button", { name: "列表视图" }).click();
   await expect(manager.locator(".file-result-list")).toBeVisible();
   await page.screenshot({
@@ -306,7 +351,6 @@ test("file manager filters, sorts and previews local demo files", async ({
     fullPage: true,
     animations: "disabled"
   });
-  await manager.getByRole("button", { name: "恢复初始数据" }).click();
   await assertNoInternalTerms(page);
   await assertCleanMonitor(monitor);
 });
@@ -641,6 +685,22 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   );
   expect(initialPlansResponse.status()).toBe(200);
   const initialPlans = await initialPlansResponse.json();
+  const initialExportResponse = await request.post(
+    apiRoutes.teacher.teachingPlanDocxExport(
+      initialPlans.currentApproved.revisionRef
+    ),
+    {
+      headers,
+      data: {
+        lessonRef: "lesson:slope-and-graph-change",
+        expectedRevisionNumber:
+          initialPlans.currentApproved.revisionNumber,
+        purpose: "teaching-plan.export-docx",
+        idempotencyKey: `playwright:initial-export:${crypto.randomUUID()}`
+      }
+    }
+  );
+  expect(initialExportResponse.status()).toBe(201);
 
   await page.getByTestId("start-lesson-preparation").click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
@@ -739,6 +799,17 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   );
   expect(afterApproval.activeInReview).toBeNull();
 
+  const exportResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/exports/docx") &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("export-approved-plan-docx").click();
+  expect((await exportResponse).status()).toBe(201);
+  await expect(
+    page.getByTestId("teaching-plan-file-exports")
+  ).toContainText("已批准教案文件");
+
   await page.getByTestId("complete-lesson-preparation").click();
   await expect(
     page.getByTestId("teaching-plan-preparation-task")
@@ -817,6 +888,59 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   );
   await expect(page.getByTestId("lesson-detail")).toContainText(
     "一次函数的应用"
+  );
+
+  await page.goto("/files");
+  const exportedFile = page
+    .getByTestId("real-file-list")
+    .getByRole("button", { name: /斜率与图像变化 教案/ });
+  await expect(exportedFile).toBeVisible({ timeout: 20_000 });
+  await exportedFile.click();
+  await expect(page.getByTestId("file-version-history")).toContainText("v2");
+  await expect(page.getByTestId("file-version-history")).toContainText("v1");
+  await expect(
+    page.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })
+  ).toBeDisabled();
+  await expect(
+    page.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })
+  ).toHaveAttribute("title", "正式教学成果引用的文件不可删除");
+  const download = page.waitForEvent("download");
+  await page.getByTestId("file-detail").getByRole("button", { name: /下\s*载/ }).click();
+  const downloaded = await download;
+  expect(downloaded.suggestedFilename()).toMatch(/\.docx$/u);
+  await page.screenshot({
+    path: `${screenshotRoot}/20-gate2-5b-file-and-docx.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  const controlPort = process.env.E2E_CONTROL_PORT;
+  const e2eRunId = process.env.E2E_RUN_ID;
+  expect(controlPort).toBeTruthy();
+  expect(e2eRunId).toBeTruthy();
+  const restartResponse = await request.post(
+    `http://127.0.0.1:${controlPort}/__e2e/restart-api`,
+    { headers: { "x-e2e-run-id": e2eRunId! } }
+  );
+  expect(restartResponse.status()).toBe(200);
+  expect(await restartResponse.json()).toMatchObject({ restarted: true });
+  await page.reload();
+  await expect(exportedFile).toBeVisible({ timeout: 20_000 });
+  await exportedFile.click();
+  await expect(page.getByTestId("file-version-history")).toContainText("v2");
+  await expect(page.getByTestId("file-detail")).toContainText(
+    "teaching_plan_revision"
+  );
+  await page.screenshot({
+    path: `${screenshotRoot}/21-gate2-5b-restart-recovery.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  await page.goto("/teaching");
+  await page.getByTestId("lesson-3").click();
+  await expect(page.getByTestId("lesson-related-files")).toContainText(
+    "斜率与图像变化 教案"
   );
   await assertCleanMonitor(monitor);
 });
