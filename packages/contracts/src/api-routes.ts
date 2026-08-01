@@ -36,6 +36,19 @@ const teacherTeachingPlanRevisionRoute = (
     revisionRef
   )}`;
 
+const teacherAssignmentRoute = (assignmentRef: string): string =>
+  `/api/v1/teacher/assignments/${encodeRouteSegment(assignmentRef)}`;
+
+const teacherSubmissionRoute = (submissionRef: string): string =>
+  `/api/v1/teacher/submissions/${encodeRouteSegment(submissionRef)}`;
+
+const teacherGradeDecisionRoute = (
+  gradeDecisionRef: string
+): string =>
+  `/api/v1/teacher/grade-decisions/${encodeRouteSegment(
+    gradeDecisionRef
+  )}`;
+
 export const apiRoutes = {
   health: "/api/health",
   teacher: {
@@ -158,7 +171,81 @@ export const apiRoutes = {
     teachingPlanDocxExportPattern:
       "/api/v1/teacher/teaching-plan/revisions/:revisionRef/exports/docx",
     teachingPlanDocxExport: (revisionRef: string): string =>
-      `${teacherTeachingPlanRevisionRoute(revisionRef)}/exports/docx`
+      `${teacherTeachingPlanRevisionRoute(revisionRef)}/exports/docx`,
+    assignments: "/api/v1/teacher/assignments",
+    assignmentPattern: "/api/v1/teacher/assignments/:assignmentRef",
+    assignment: teacherAssignmentRoute,
+    assignmentVersionsPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/versions",
+    assignmentVersions: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/versions`,
+    assignmentPublishPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/publish",
+    assignmentPublish: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/publish`,
+    assignmentClosePattern:
+      "/api/v1/teacher/assignments/:assignmentRef/close",
+    assignmentClose: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/close`,
+    assignmentArchivePattern:
+      "/api/v1/teacher/assignments/:assignmentRef/archive",
+    assignmentArchive: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/archive`,
+    assignmentSyntheticSubmissionsPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/synthetic-submissions",
+    assignmentSyntheticSubmissions: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/synthetic-submissions`,
+    assignmentSubmissionsPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/submissions",
+    assignmentSubmissions: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/submissions`,
+    assignmentGradingQueuePattern:
+      "/api/v1/teacher/assignments/:assignmentRef/grading-queue",
+    assignmentGradingQueue: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/grading-queue`,
+    assignmentAnalyticsPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/analytics",
+    assignmentAnalytics: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/analytics`,
+    assignmentEvidencePattern:
+      "/api/v1/teacher/assignments/:assignmentRef/evidence",
+    assignmentEvidence: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/evidence`,
+    assignmentAdjustmentPattern:
+      "/api/v1/teacher/assignments/:assignmentRef/adjust-next-lesson",
+    assignmentAdjustment: (assignmentRef: string): string =>
+      `${teacherAssignmentRoute(assignmentRef)}/adjust-next-lesson`,
+    submissionPattern: "/api/v1/teacher/submissions/:submissionRef",
+    submission: teacherSubmissionRoute,
+    submissionGradeDraftPattern:
+      "/api/v1/teacher/submissions/:submissionRef/grade-draft",
+    submissionGradeDraft: (submissionRef: string): string =>
+      `${teacherSubmissionRoute(submissionRef)}/grade-draft`,
+    gradeDecisionConfirmPattern:
+      "/api/v1/teacher/grade-decisions/:gradeDecisionRef/confirm",
+    gradeDecisionConfirm: (gradeDecisionRef: string): string =>
+      `${teacherGradeDecisionRoute(gradeDecisionRef)}/confirm`,
+    gradeDecisionReopenPattern:
+      "/api/v1/teacher/grade-decisions/:gradeDecisionRef/reopen",
+    gradeDecisionReopen: (gradeDecisionRef: string): string =>
+      `${teacherGradeDecisionRoute(gradeDecisionRef)}/reopen`,
+    gradeDecisionHistoryPattern:
+      "/api/v1/teacher/submissions/:submissionRef/grade-history",
+    gradeDecisionHistory: (submissionRef: string): string =>
+      `${teacherSubmissionRoute(submissionRef)}/grade-history`,
+    courseRunEnrollmentsPattern:
+      "/api/v1/teacher/course-runs/:courseRunRef/enrollments",
+    courseRunEnrollments: (courseRunRef: string): string =>
+      `/api/v1/teacher/course-runs/${encodeRouteSegment(
+        courseRunRef
+      )}/enrollments`,
+    learnerEvidencePattern:
+      "/api/v1/teacher/course-runs/:courseRunRef/learners/:learnerRef/evidence",
+    learnerEvidence: (courseRunRef: string, learnerRef: string): string =>
+      `/api/v1/teacher/course-runs/${encodeRouteSegment(
+        courseRunRef
+      )}/learners/${encodeRouteSegment(learnerRef)}/evidence`,
+    assignmentOverview: "/api/v1/teacher/assignment-overview"
   },
   demo: {
     bootstrap: "/api/v1/demo/workspace",

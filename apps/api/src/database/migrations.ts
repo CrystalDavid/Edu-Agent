@@ -45,6 +45,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0006_gate2_6a_task_run_lifecycle.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0007_gate2_7_assignment_work_context.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"
@@ -135,6 +140,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0007_gate2_5b_shared_object_keys.sql"
   },
   {
+    owner: "artifact",
+    relativePath:
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0008_gate2_7_assignment_file_bindings.sql"
+  },
+  {
     owner: "education",
     relativePath:
       "apps/api/src/modules/education-domain/infrastructure/migrations/0001_education.sql"
@@ -153,6 +163,11 @@ export const moduleMigrations = [
     owner: "education",
     relativePath:
       "apps/api/src/modules/education-domain/infrastructure/migrations/0004_gate2_5_curriculum_and_lessons.sql"
+  },
+  {
+    owner: "education",
+    relativePath:
+      "apps/api/src/modules/education-domain/infrastructure/migrations/0005_gate2_7_assignment_learning_evidence.sql"
   },
   {
     owner: "personalization",

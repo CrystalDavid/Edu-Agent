@@ -225,10 +225,8 @@ test("teaching workspace supports course files, homework and assessment analysis
   });
 
   await page.getByRole("tab", { name: /作业/ }).click();
-  await expect(page.getByTestId("homework-dashboard")).toBeVisible();
-  await page.getByTestId("homework-list").getByRole("button", { name: /一次函数图像判断/ }).click();
-  await expect(page.getByTestId("homework-dashboard")).toContainText("100%");
-  await expect(page.getByRole("columnheader", { name: "主要情况" })).toBeVisible();
+  await expect(page.getByTestId("assignment-workspace")).toBeVisible();
+  await expect(page.getByTestId("create-assignment")).toBeVisible();
   await page.screenshot({
     path: `${screenshotRoot}/08-homework-analysis.png`,
     fullPage: true,
@@ -254,26 +252,25 @@ test("teaching workspace supports course files, homework and assessment analysis
   await assertCleanMonitor(monitor);
 });
 
-test("student workspace moves evidence behind teacher-facing interpretation", async ({
+test("student workspace reads anonymous enrollments and recent confirmed evidence", async ({
   page
 }) => {
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/students");
-  await expect(page.getByTestId("class-overview")).toBeVisible();
-  await expect(page.getByText("只呈现当前证据支持的变化")).toBeVisible();
+  await expect(page.getByTestId("real-student-list")).toBeVisible();
+  await expect(page.getByText("不按 0 分处理", { exact: false })).toBeVisible();
   await page.screenshot({
     path: `${screenshotRoot}/10-students-class-overview.png`,
     fullPage: true,
     animations: "disabled"
   });
 
-  const priorityList = page.getByTestId("student-priority-list");
-  await priorityList.getByRole("button", { name: /学生 02/ }).click();
-  await expect(page.getByTestId("student-detail")).toContainText("学生 02");
-  await expect(page.getByText("教学建议草稿，需要教师判断和修改")).toBeVisible();
-  await page.getByRole("button", { name: "查看分析依据" }).click();
-  await expect(page.getByText("不适用条件")).toBeVisible();
+  const learnerList = page.getByTestId("real-student-list");
+  await learnerList.getByRole("button", { name: /匿名学习者 02/ }).click();
+  await expect(page.getByTestId("learner-evidence-detail")).toContainText("匿名学习者 02");
+  await expect(page.getByText("近期、可追溯、非长期结论")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("低能力学生");
   await page.screenshot({
     path: `${screenshotRoot}/11-student-detail.png`,
     fullPage: true,
@@ -455,7 +452,7 @@ test("all new routes and legacy redirects remain reachable", async ({
     page.getByRole("heading", { name: "教学", exact: true })
   ).toBeVisible();
   await page.goto("/assignments");
-  await expect(page.getByTestId("homework-dashboard")).toBeVisible();
+  await expect(page.getByTestId("assignment-workspace")).toBeVisible();
   await page.goto("/");
   await expect(page).toHaveURL(/\/overview$/);
   await page.goto("/unknown-teacher-route");

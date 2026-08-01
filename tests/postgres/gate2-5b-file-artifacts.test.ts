@@ -53,6 +53,86 @@ function metadataHeader(value: unknown): string {
 }
 
 describe("Gate 2.5B file and teaching artifact persistence", () => {
+  it("binds a teacher upload to both an Assignment and its immutable content version", async () => {
+    await product.services.seed.seed({ includeGate25: true, includeGate27: true });
+    const assignment = await request(app)
+      .post(apiRoutes.teacher.assignments)
+      .set(demoHeaders)
+      .send({
+        courseRunRef: gate2DemoRefs.courseRunRef,
+        curriculumUnitRef: gate25DemoRefs.unitRef,
+        lessonRef: gate25DemoRefs.lessonRefs.slopeAndGraph,
+        title: "带参考附件的合成作业",
+        instructions: "附件只用于教师当前本地演示。",
+        dueAt: null,
+        items: [
+          {
+            sequence: 1,
+            itemType: "short_answer",
+            prompt: "说明斜率正负与图像变化方向。",
+            maxScore: 5,
+            options: [],
+            answerKey: { referenceAnswer: "斜率为正时上升，为负时下降。" },
+            gradingCriteria: "教师确认解释完整性。",
+            objectiveRef: gate2DemoRefs.objectiveRef
+          }
+        ],
+        purpose: "assignment.create",
+        idempotencyKey: `gate27:file-assignment:${randomUUID()}`
+      })
+      .expect(201);
+    const uploaded = await request(app)
+      .post(apiRoutes.teacher.files)
+      .set(demoHeaders)
+      .set("content-type", "text/plain")
+      .set("x-edu-file-metadata", metadataHeader({
+        originalFileName: "作业参考说明.txt",
+        mimeType: "text/plain",
+        category: "assessment",
+        purpose: "file.upload",
+        idempotencyKey: `gate27:file-upload:${randomUUID()}`,
+        bindings: []
+      }))
+      .send(Buffer.from("完全合成的作业参考资料", "utf8"))
+      .expect(201);
+    const assignmentBinding = await request(app)
+      .post(apiRoutes.teacher.fileBindings(uploaded.body.asset.assetRef))
+      .set(demoHeaders)
+      .send({
+        targetType: "assignment",
+        targetRef: assignment.body.assignment.assignmentRef,
+        relation: "attachment",
+        expectedAssetVersion: uploaded.body.asset.version,
+        purpose: "file.binding.add",
+        idempotencyKey: `gate27:file-bind-assignment:${randomUUID()}`
+      })
+      .expect(201);
+    const versionBinding = await request(app)
+      .post(apiRoutes.teacher.fileBindings(uploaded.body.asset.assetRef))
+      .set(demoHeaders)
+      .send({
+        targetType: "assignment_version",
+        targetRef: assignment.body.assignment.currentVersion.assignmentVersionRef,
+        relation: "attachment",
+        expectedAssetVersion: assignmentBinding.body.asset.version,
+        purpose: "file.binding.add",
+        idempotencyKey: `gate27:file-bind-assignment-version:${randomUUID()}`
+      })
+      .expect(201);
+    expect(versionBinding.body.asset.bindings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetType: "assignment",
+          targetRef: assignment.body.assignment.assignmentRef
+        }),
+        expect.objectContaining({
+          targetType: "assignment_version",
+          targetRef: assignment.body.assignment.currentVersion.assignmentVersionRef
+        })
+      ])
+    );
+  });
+
   it("uploads, downloads, binds, versions, deduplicates and survives service reads", async () => {
     const original = Buffer.from("# 合成参考资料\n只用于本地测试。", "utf8");
     const key = `gate25b:upload:${randomUUID()}`;

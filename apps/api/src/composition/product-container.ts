@@ -45,6 +45,9 @@ import {
   readObjectStoreSettings,
   type ObjectStoreSettings
 } from "../modules/capability-integration/infrastructure/object-store-config.js";
+import {
+  PostgresAssignmentLearningService
+} from "./postgres-assignment-learning-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -100,6 +103,8 @@ export function createProductContainer(
       modelInvocations,
       lessonPreparation:
         new PostgresLessonPreparationService(appPool),
+      assignments:
+        new PostgresAssignmentLearningService(appPool),
       files: new PostgresFileArtifactService(
         appPool,
         objectStore,

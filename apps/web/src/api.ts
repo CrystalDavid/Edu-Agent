@@ -1,12 +1,22 @@
 import {
   apiRoutes,
+  AdjustmentTaskResultSchema,
+  AssignmentActionRequestSchema,
+  AssignmentAnalyticsSchema,
+  AssignmentDetailSchema,
+  AssignmentListSchema,
+  AssignmentResultSchema,
   ApproveTeachingPlanRequestSchema,
   ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
   AuthorizedContextPlanSchema,
+  ConfirmGradeRequestSchema,
+  CourseRunEnrollmentListSchema,
   CancelModelInvocationRequestSchema,
   CourseRunListSchema,
   CreateLessonPreparationTaskRequestSchema,
+  CreateAdjustmentTaskRequestSchema,
+  CreateAssignmentRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateModelInvocationResultSchema,
   CurriculumUnitListSchema,
@@ -20,6 +30,10 @@ import {
   FileMutationResultSchema,
   FileUploadMetadataSchema,
   FileVersionUploadMetadataSchema,
+  GradeDecisionHistorySchema,
+  GradeDecisionResultSchema,
+  GradingQueueSchema,
+  LearnerRecentEvidenceSchema,
   LessonListSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
@@ -35,19 +49,33 @@ import {
   ProviderAvailabilitySchema,
   ProviderCapabilitiesSchema,
   RetryModelInvocationRequestSchema,
+  ReopenGradeRequestSchema,
+  SaveGradeDraftRequestSchema,
   SuggestionDispositionRequestSchema,
   SuggestionDispositionResultSchema,
   TaskResourceSelectionRequestSchema,
   TaskWorkingSetResultSchema,
+  SubmissionDetailSchema,
+  SubmissionListSchema,
+  SyntheticSubmissionImportRequestSchema,
+  SyntheticSubmissionImportResultSchema,
+  TeacherAssignmentOverviewSchema,
   TeacherWorkspaceSchema,
   TeachingPlanRevisionViewSchema,
   TeachingPlanDocxExportRequestSchema,
   TeachingPlanDocxExportResultSchema,
+  UpdateAssignmentDraftRequestSchema,
   type ApiHealth,
+  type AssignmentActionRequest,
+  type AssignmentAnalytics,
+  type AssignmentDetail,
   type AuthorizedContextPlan,
   type ApproveTeachingPlanRequest,
   type ApproveTeachingPlanResult,
   type CancelModelInvocationRequest,
+  type ConfirmGradeRequest,
+  type CreateAdjustmentTaskRequest,
+  type CreateAssignmentRequest,
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
   type CreateTeacherCopilotTaskRequest,
@@ -59,6 +87,8 @@ import {
   type FileLifecycleRequest,
   type FileUploadMetadata,
   type FileVersionUploadMetadata,
+  type ReopenGradeRequest,
+  type SaveGradeDraftRequest,
   type LessonPreparationSummary,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
@@ -76,7 +106,9 @@ import {
   type TaskResourceSelectionRequest,
   type TaskWorkingSet,
   type TeacherWorkspace,
-  type TeachingPlanDocxExportRequest
+  type TeachingPlanDocxExportRequest,
+  type SyntheticSubmissionImportRequest,
+  type UpdateAssignmentDraftRequest
 } from "@edu-agent/contracts";
 
 import {
@@ -702,5 +734,204 @@ export function downloadFile(
     versionRef
       ? apiRoutes.teacher.fileVersionContent(assetRef, versionRef)
       : apiRoutes.teacher.fileCurrentContent(assetRef)
+  );
+}
+
+export function loadAssignments(lessonRef?: string) {
+  const search = new URLSearchParams();
+  if (lessonRef) search.set("lessonRef", lessonRef);
+  return request(
+    "作业列表",
+    `${apiRoutes.teacher.assignments}${
+      search.size > 0 ? `?${search.toString()}` : ""
+    }`,
+    AssignmentListSchema
+  );
+}
+
+export function loadAssignment(
+  assignmentRef: string
+): Promise<AssignmentDetail> {
+  return request(
+    "作业详情",
+    apiRoutes.teacher.assignment(assignmentRef),
+    AssignmentDetailSchema
+  );
+}
+
+export function createAssignment(input: CreateAssignmentRequest) {
+  CreateAssignmentRequestSchema.parse(input);
+  return request(
+    "创建作业",
+    apiRoutes.teacher.assignments,
+    AssignmentResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateAssignmentDraft(
+  assignmentRef: string,
+  input: UpdateAssignmentDraftRequest
+) {
+  UpdateAssignmentDraftRequestSchema.parse(input);
+  return request(
+    "更新作业草稿",
+    apiRoutes.teacher.assignment(assignmentRef),
+    AssignmentResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function transitionAssignment(
+  assignmentRef: string,
+  action: "publish" | "close" | "archive",
+  input: AssignmentActionRequest
+) {
+  AssignmentActionRequestSchema.parse(input);
+  const path =
+    action === "publish"
+      ? apiRoutes.teacher.assignmentPublish(assignmentRef)
+      : action === "close"
+        ? apiRoutes.teacher.assignmentClose(assignmentRef)
+        : apiRoutes.teacher.assignmentArchive(assignmentRef);
+  return request(
+    "作业状态更新",
+    path,
+    AssignmentResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function importSyntheticSubmissions(
+  assignmentRef: string,
+  input: SyntheticSubmissionImportRequest
+) {
+  SyntheticSubmissionImportRequestSchema.parse(input);
+  return request(
+    "载入合成提交",
+    apiRoutes.teacher.assignmentSyntheticSubmissions(assignmentRef),
+    SyntheticSubmissionImportResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadAssignmentSubmissions(assignmentRef: string) {
+  return request(
+    "作业提交",
+    apiRoutes.teacher.assignmentSubmissions(assignmentRef),
+    SubmissionListSchema
+  );
+}
+
+export function loadSubmission(submissionRef: string) {
+  return request(
+    "提交详情",
+    apiRoutes.teacher.submission(submissionRef),
+    SubmissionDetailSchema
+  );
+}
+
+export function loadGradingQueue(assignmentRef: string) {
+  return request(
+    "批改队列",
+    apiRoutes.teacher.assignmentGradingQueue(assignmentRef),
+    GradingQueueSchema
+  );
+}
+
+export function saveGradeDraft(
+  submissionRef: string,
+  input: SaveGradeDraftRequest
+) {
+  SaveGradeDraftRequestSchema.parse(input);
+  return request(
+    "保存批改草稿",
+    apiRoutes.teacher.submissionGradeDraft(submissionRef),
+    GradeDecisionResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function confirmGrade(
+  gradeDecisionRef: string,
+  input: ConfirmGradeRequest
+) {
+  ConfirmGradeRequestSchema.parse(input);
+  return request(
+    "确认批改",
+    apiRoutes.teacher.gradeDecisionConfirm(gradeDecisionRef),
+    GradeDecisionResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function reopenGrade(
+  gradeDecisionRef: string,
+  input: ReopenGradeRequest
+) {
+  ReopenGradeRequestSchema.parse(input);
+  return request(
+    "重新打开批改",
+    apiRoutes.teacher.gradeDecisionReopen(gradeDecisionRef),
+    GradeDecisionResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadGradeHistory(submissionRef: string) {
+  return request(
+    "批改历史",
+    apiRoutes.teacher.gradeDecisionHistory(submissionRef),
+    GradeDecisionHistorySchema
+  );
+}
+
+export function loadAssignmentAnalytics(
+  assignmentRef: string
+): Promise<AssignmentAnalytics> {
+  return request(
+    "作业学习证据分析",
+    apiRoutes.teacher.assignmentAnalytics(assignmentRef),
+    AssignmentAnalyticsSchema
+  );
+}
+
+export function loadCourseRunEnrollments(courseRunRef: string) {
+  return request(
+    "课程学习者",
+    apiRoutes.teacher.courseRunEnrollments(courseRunRef),
+    CourseRunEnrollmentListSchema
+  );
+}
+
+export function loadLearnerEvidence(
+  courseRunRef: string,
+  learnerRef: string
+) {
+  return request(
+    "学习者近期 Evidence",
+    apiRoutes.teacher.learnerEvidence(courseRunRef, learnerRef),
+    LearnerRecentEvidenceSchema
+  );
+}
+
+export function createAdjustmentTask(
+  assignmentRef: string,
+  input: CreateAdjustmentTaskRequest
+) {
+  CreateAdjustmentTaskRequestSchema.parse(input);
+  return request(
+    "创建调整下一课任务",
+    apiRoutes.teacher.assignmentAdjustment(assignmentRef),
+    AdjustmentTaskResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadAssignmentOverview() {
+  return request(
+    "作业工作概览",
+    apiRoutes.teacher.assignmentOverview,
+    TeacherAssignmentOverviewSchema
   );
 }

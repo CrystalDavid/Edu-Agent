@@ -754,6 +754,14 @@ export function CopilotPage(props: {
                   .baselineTeachingPlanRef ?? "无"}
               </dd>
             </div>
+            {preparationTask.workingSet.sourceAssignmentRef ? (
+              <div>
+                <dt>作业 Evidence 来源</dt>
+                <dd>
+                  {preparationTask.workingSet.sourceAssignmentRef} · 来源课时 {preparationTask.workingSet.sourceLessonRef} · 题目 {preparationTask.workingSet.sourceAssignmentItemRefs?.join("，") || "无"}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           <Text strong>本次允许使用的 Evidence</Text>
           <Space wrap>

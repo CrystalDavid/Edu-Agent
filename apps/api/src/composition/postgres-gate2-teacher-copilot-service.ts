@@ -398,11 +398,14 @@ export class PostgresGate2TeacherCopilotService {
         ...educationContext.claims.map((item) => item.claimRef)
       ];
       const availableEvidence = new Set(availableEvidenceRefs);
+      const authorizedObjectiveRefs = new Set(
+        preparationTask
+          ? preparationTask.workingSet.learningObjectiveRefs
+          : [educationContext.objective.objectiveRef]
+      );
       if (
         input.request.learningObjectiveRefs.some(
-          (reference) =>
-            reference !==
-            educationContext.objective.objectiveRef
+          (reference) => !authorizedObjectiveRefs.has(reference)
         )
       ) {
         throw new NotFoundError(
@@ -685,7 +688,14 @@ export class PostgresGate2TeacherCopilotService {
                     preparationTask.workingSet
                       .baselineTeachingPlanRef
                   ]
-                : [])
+                : []),
+              ...(preparationTask.workingSet.sourceLessonRef
+                ? [preparationTask.workingSet.sourceLessonRef]
+                : []),
+              ...(preparationTask.workingSet.sourceAssignmentRef
+                ? [preparationTask.workingSet.sourceAssignmentRef]
+                : []),
+              ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
             ],
             authorizedEvidenceRefs: evidenceRefs,
             deniedResourceRefs: [],
@@ -704,7 +714,10 @@ export class PostgresGate2TeacherCopilotService {
                 ...preparationTask.workingSet
                   .learningObjectiveRefs,
                 preparationTask.workingSet
-                  .baselineTeachingPlanRef
+                  .baselineTeachingPlanRef,
+                preparationTask.workingSet.sourceLessonRef,
+                preparationTask.workingSet.sourceAssignmentRef,
+                ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
               ],
               evidenceRefs,
               requestedFieldMask:

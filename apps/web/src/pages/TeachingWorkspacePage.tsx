@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  AssignmentSummary,
   CourseRunView,
   CurriculumUnitView,
   FileAssetSummary,
@@ -22,6 +23,7 @@ import {
 
 import {
   createLessonPreparationTask,
+  loadAssignments,
   loadCourseRuns,
   loadCurriculumUnits,
   loadLessonPreparationTasks,
@@ -31,9 +33,9 @@ import {
   transitionLessonPreparationTask
 } from "../api";
 import {
-  ExamWorkspace,
-  HomeworkWorkspace
+  ExamWorkspace
 } from "../components/portal/TeachingComponents";
+import { AssignmentWorkspace } from "./AssignmentWorkspace";
 import { PageHeader } from "../components/portal/PortalPrimitives";
 import { lessonPreparationStatusLabel } from "../presentation";
 
@@ -58,7 +60,7 @@ export function TeachingWorkspacePage(props: {
   );
   const handleReadOnlyAction = (action: string) => {
     props.onAction(
-      `${action}：此区域是明确标注的只读演示，本 Gate 不写入文件、作业或考试数据。`
+      `${action}：考试区域是明确标注的只读演示，本 Gate 不写入考试数据。`
     );
   };
 
@@ -69,7 +71,7 @@ export function TeachingWorkspacePage(props: {
     >
       <PageHeader
         title="教学"
-        subtitle="课程、课时与备课状态来自 PostgreSQL；作业和考试仍为只读演示"
+        subtitle="课程、作业、批改、学习 Evidence 与备课状态来自 PostgreSQL；考试仍为只读演示"
       />
       <div
         className="teaching-tabs"
@@ -78,7 +80,7 @@ export function TeachingWorkspacePage(props: {
       >
         {([
           ["course", "课程", "真实单元、课时、目标与备课任务"],
-          ["homework", "作业", "只读演示"],
+          ["homework", "作业", "真实创建、发布、批改与分析"],
           ["exam", "考试", "只读演示"]
         ] as const).map(([value, label, description]) => (
           <button
@@ -98,6 +100,7 @@ export function TeachingWorkspacePage(props: {
         <RealCourseWorkspace
           navigateFiles={props.navigateFiles}
           navigatePreparation={props.navigatePreparation}
+          onOpenAssignments={() => setTab("homework")}
           onAction={props.onAction}
           {...(props.initialLessonRef !== undefined
             ? { initialLessonRef: props.initialLessonRef }
@@ -105,7 +108,13 @@ export function TeachingWorkspacePage(props: {
         />
       ) : null}
       {tab === "homework" ? (
-        <HomeworkWorkspace onAction={handleReadOnlyAction} />
+        <AssignmentWorkspace
+          navigatePreparation={props.navigatePreparation}
+          onAction={props.onAction}
+          {...(props.initialLessonRef !== undefined
+            ? { initialLessonRef: props.initialLessonRef }
+            : {})}
+        />
       ) : null}
       {tab === "exam" ? (
         <ExamWorkspace onAction={handleReadOnlyAction} />
@@ -124,6 +133,7 @@ function RealCourseWorkspace(props: {
     lessonRef?: string;
   }) => void;
   onAction: (message: string) => void;
+  onOpenAssignments: () => void;
   initialLessonRef?: string | null;
 }) {
   const [courses, setCourses] = useState<CourseRunView[]>([]);
@@ -141,6 +151,7 @@ function RealCourseWorkspace(props: {
   const [planState, setPlanState] =
     useState<LessonTeachingPlanState | null>(null);
   const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
+  const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,12 +266,14 @@ function RealCourseWorkspace(props: {
         sort: "newest",
         targetType: "lesson",
         targetRef: selectedLessonRef
-      })
+      }),
+      loadAssignments(selectedLessonRef)
     ])
-      .then(([result, files]) => {
+      .then(([result, files, assignments]) => {
         if (active) {
           setPlanState(result);
           setLessonFiles(files.items);
+          setLessonAssignments(assignments.items);
         }
       })
       .catch((caught) => {
@@ -568,6 +581,30 @@ function RealCourseWorkspace(props: {
                         尚无参考文件或已批准教案导出。
                       </Paragraph>
                     )}
+                  </section>
+                  <section data-testid="lesson-related-assignments">
+                    <Title level={4}>关联作业与学习 Evidence</Title>
+                    {lessonAssignments.length > 0 ? (
+                      <Space orientation="vertical" size="small">
+                        {lessonAssignments.map((assignment) => (
+                          <Button
+                            key={assignment.assignmentRef}
+                            onClick={props.onOpenAssignments}
+                          >
+                            {assignment.title} · {assignment.status} · {assignment.submittedCount}/{assignment.enrolledCount} 已交
+                          </Button>
+                        ))}
+                      </Space>
+                    ) : (
+                      <Paragraph type="secondary">
+                        当前课时尚无作业；可进入作业工作台创建草稿并显式发布。
+                      </Paragraph>
+                    )}
+                    <div>
+                      <Button onClick={props.onOpenAssignments} data-testid="open-lesson-assignments">
+                        {lessonAssignments.length > 0 ? "查看作业、批改与共性错误" : "为本课时创建作业"}
+                      </Button>
+                    </div>
                   </section>
                   <Space wrap>
                     {!activeTask ||

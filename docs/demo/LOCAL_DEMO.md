@@ -2,9 +2,9 @@
 
 ## 演示边界
 
-本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、教学目标、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
+本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
 
-普通教师端七个一级页面中，概览的备课区、教学的课程/课时区、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；日程、作业、测试、学生、文件、通用 Agent 对话和设置仍主要是高保真 Mock。不要把视觉完整度解释为业务上线。
+普通教师端七个一级页面中，概览的备课/作业区、教学的课程/课时/作业区、学生近期 Evidence、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；日程、考试、通用 Agent 对话和设置仍主要是高保真 Mock。不要把视觉完整度解释为学校生产上线。
 
 ## 前置条件
 
@@ -122,6 +122,18 @@ MODEL_DEBUG_CONTENT=false
 7. 概览中的学生、备课组和学校动态明确标注只读演示；“制作课件”和协作写操作禁用且没有假成功 toast；
 8. Runs 在 active ModelExecution 时自动刷新到 terminal，并同时显示教师可读状态与审计 code。
 
+### Gate 2.7 作业、学习 Evidence 与调整下一课
+
+1. 打开“教学 → 作业”，选择“斜率与图像变化”，创建包含单选、数值和简答的作业草稿；编辑题目后保存会创建不可变内容版本；
+2. 显式发布作业并刷新，确认状态仍为 `published`；发布后不能原地覆盖内容；
+3. 点击“载入匿名合成提交”，确认 12 名 learner 中 10 名已交、2 名显示“未交”，未交分数为 `—` 而不是 0；
+4. 选择一份提交，先“保存批改草稿”，确认尚无正式 Evidence；再点击“教师确认批改”，确认出现逐题、Objective 和共性错误分析；
+5. 在“学生”页查看同一匿名 learner 的近期 Submission 与已确认 Evidence；页面只给出动态、中性事项，不显示长期能力标签；
+6. 回到作业页选择一组共性错误，点击“调整下一课”；确认进入下一课 `lesson_preparation` Task，TaskWorkingSet 显示来源 Assignment/题目和本次 selected Evidence；
+7. 输入调整要求并生成 Proposal；刷新后恢复同一 Proposal，不重复生成；修改后接受形成 `in_review`，再由教师单独批准为下一课 current approved TeachingPlan；
+8. 执行 `demo:down` 后重新 `demo:dev`，确认 Assignment、Attempt、GradeDecision、Evidence、TaskWorkingSet、Proposal 和 TeachingPlan 仍可读取；
+9. 文件页可把教师上传参考资料关联到 Assignment 或明确 AssignmentVersion；模型不会自动读取这些附件。
+
 本地文件设置（均为非敏感服务端配置）：
 
 ```text
@@ -237,7 +249,7 @@ corepack pnpm demo:doctor
 - 第二模型、DeepSeek、多供应商或模型选择器；
 - CloudBase、Netlify、CVM；
 - 云 ObjectStore、文件分享/协作、在线 Office 编辑、上传内容进入模型；
-- Todo/Calendar、完整课程资源树和课程 CRUD、作业/考试业务闭环；
+- Todo/Calendar、完整课程资源树和课程 CRUD、完整题库/考试业务闭环；
 - 学生长期模型、多 Agent、v0.4；
 - 自动发布或外部承诺。
 - 图片产品流程、streaming 产品化、Function Calling、OCR 或 Provider 托管会话。

@@ -109,6 +109,9 @@ export interface LessonPreparationPromptInput {
     version: number;
     purpose: string;
     requestedFieldMask: readonly string[];
+    sourceLessonRef?: string | null;
+    sourceAssignmentRef?: string | null;
+    sourceAssignmentItemRefs?: readonly string[];
   };
 }
 

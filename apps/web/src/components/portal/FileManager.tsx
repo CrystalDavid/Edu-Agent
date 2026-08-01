@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AssignmentDetail,
+  AssignmentSummary,
   FileAssetDetail,
   FileAssetSummary,
   FileCategory,
@@ -16,6 +18,8 @@ import {
   downloadFile,
   loadCourseRuns,
   loadCurriculumUnits,
+  loadAssignment,
+  loadAssignments,
   loadFile,
   loadFiles,
   loadLessons,
@@ -45,6 +49,8 @@ export function FileManager(props: {
   const [items, setItems] = useState<FileAssetSummary[]>([]);
   const [selected, setSelected] = useState<FileAssetDetail | null>(null);
   const [lessons, setLessons] = useState<LessonView[]>([]);
+  const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
+  const [assignment, setAssignment] = useState<AssignmentDetail | null>(null);
   const [lessonRef, setLessonRef] = useState<string | undefined>();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<FileCategory | "all">("all");
@@ -156,6 +162,36 @@ export function FileManager(props: {
   }, [props.initialLessonRef, lessons]);
 
   useEffect(() => {
+    if (!lessonRef) {
+      setLessonAssignments([]);
+      setAssignment(null);
+      return;
+    }
+    let active = true;
+    void loadAssignments(lessonRef)
+      .then(async (result) => {
+        if (!active) return;
+        setLessonAssignments(result.items);
+        const selectedAssignment = result.items[0];
+        setAssignment(
+          selectedAssignment
+            ? await loadAssignment(selectedAssignment.assignmentRef)
+            : null
+        );
+      })
+      .catch((caught) => {
+        if (active) {
+          setLessonAssignments([]);
+          setAssignment(null);
+          setError(`作业关联上下文加载失败：${message(caught)}`);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [lessonRef]);
+
+  useEffect(() => {
     let active = true;
     let objectUrl: string | null = null;
     setPreviewUrl(null);
@@ -250,14 +286,23 @@ export function FileManager(props: {
   }
 
   async function bindTarget(
-    targetType: "lesson" | "preparation_task" | "teaching_plan_revision"
+    targetType:
+      | "lesson"
+      | "preparation_task"
+      | "teaching_plan_revision"
+      | "assignment"
+      | "assignment_version"
   ) {
     const lesson = lessons.find((item) => item.lessonRef === lessonRef);
     const targetRef = targetType === "lesson"
       ? lesson?.lessonRef
       : targetType === "preparation_task"
         ? lesson?.activePreparationTaskRef
-        : lesson?.currentApprovedPlanRef;
+        : targetType === "teaching_plan_revision"
+          ? lesson?.currentApprovedPlanRef
+          : targetType === "assignment"
+            ? assignment?.assignmentRef
+            : assignment?.currentVersion.assignmentVersionRef;
     if (!selected || !targetRef) return;
     setBusy(true);
     setError(null);
@@ -274,7 +319,11 @@ export function FileManager(props: {
         ? "课时"
         : targetType === "preparation_task"
           ? "备课任务"
-          : "当前已批准教学计划";
+          : targetType === "teaching_plan_revision"
+            ? "当前已批准教学计划"
+            : targetType === "assignment"
+              ? "作业"
+              : "作业内容版本";
       props.onAction(result.deduplicated ? `该${label}关联已存在` : `已关联${label}`);
       await refresh(selected.assetRef);
     } catch (caught) {
@@ -361,6 +410,22 @@ export function FileManager(props: {
           binding.targetRef === bindingLesson.currentApprovedPlanRef
       )
   );
+  const assignmentAlreadyBound = Boolean(
+    assignment &&
+      selected?.bindings.some(
+        (binding) =>
+          binding.targetType === "assignment" &&
+          binding.targetRef === assignment.assignmentRef
+      )
+  );
+  const assignmentVersionAlreadyBound = Boolean(
+    assignment &&
+      selected?.bindings.some(
+        (binding) =>
+          binding.targetType === "assignment_version" &&
+          binding.targetRef === assignment.currentVersion.assignmentVersionRef
+      )
+  );
   const exportManaged = selected?.source === "teaching_plan_export";
 
   return (
@@ -369,6 +434,21 @@ export function FileManager(props: {
       <header className="file-manager__toolbar">
         <Input prefix={<WorkspaceIcon name="search" />} placeholder="搜索真实文件名" value={query} onChange={(event) => setQuery(event.target.value)} allowClear />
         <Select aria-label="上传关联课时" value={lessonRef} onChange={setLessonRef} disabled={busy || lessons.length === 0} placeholder={lessons.length === 0 ? "课时不可用" : "选择关联课时"} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: lesson.title }))} />
+        <Select<string>
+          aria-label="文件关联作业"
+          value={assignment?.assignmentRef ?? null}
+          onChange={(assignmentRef: string) => {
+            void loadAssignment(assignmentRef)
+              .then(setAssignment)
+              .catch((caught) => setError(`作业关联上下文加载失败：${message(caught)}`));
+          }}
+          disabled={busy || lessonAssignments.length === 0}
+          placeholder={lessonAssignments.length === 0 ? "当前课时暂无作业" : "选择关联作业"}
+          options={lessonAssignments.map((item) => ({
+            value: item.assignmentRef,
+            label: `${item.title} · ${item.status}`
+          }))}
+        />
         <Button loading={busy} disabled={busy || lessons.length === 0} title={lessons.length === 0 ? "课时上下文未加载，暂不能上传并绑定" : undefined} icon={<WorkspaceIcon name="upload" />} onClick={() => uploadRef.current?.click()}>上传</Button>
         <input ref={uploadRef} data-testid="file-upload-input" hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.md,.txt,.docx,.pptx,.xlsx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
         <Button disabled title="本 Gate 不实现在线新建 Office 文件">新建（未实现）</Button>
@@ -462,6 +542,16 @@ export function FileManager(props: {
                   disabled={busy || exportManaged || !bindingLesson?.currentApprovedPlanRef || selected.status === "deleted" || planAlreadyBound}
                   title={exportManaged ? "正式教案关联由导出流程维护" : bindingLesson?.currentApprovedPlanRef ? undefined : "所选课时暂无 current approved TeachingPlan"}
                 >{planAlreadyBound ? "已关联教学计划" : "关联教学计划"}</Button>
+                <Button
+                  onClick={() => void bindTarget("assignment")}
+                  disabled={busy || exportManaged || !assignment || selected.status === "deleted" || assignmentAlreadyBound}
+                  title={exportManaged ? "正式教案关联由导出流程维护" : assignment ? undefined : "所选课时暂无作业"}
+                >{assignmentAlreadyBound ? "已关联作业" : "关联作业"}</Button>
+                <Button
+                  onClick={() => void bindTarget("assignment_version")}
+                  disabled={busy || exportManaged || !assignment || selected.status === "deleted" || assignmentVersionAlreadyBound}
+                  title={exportManaged ? "正式教案关联由导出流程维护" : assignment ? "绑定当前不可变作业内容版本" : "所选课时暂无作业"}
+                >{assignmentVersionAlreadyBound ? "已关联作业版本" : "关联作业版本"}</Button>
                 {selected.status === "active" ? (
                   <Button danger disabled={busy || selected.deletionProtected} title={selected.deletionProtected ? "正式教学成果引用的文件不可删除" : undefined} onClick={() => void lifecycle("deleted")}>删除</Button>
                 ) : (
@@ -481,7 +571,7 @@ export function FileManager(props: {
               <h3>关联</h3>
               {selected.bindings.length > 0 ? (
                 <ul>{selected.bindings.map((binding) => <li key={binding.bindingRef}>{bindingLabel(binding.targetType)} · {binding.relation === "export" ? "正式导出" : "参考关联"} · {binding.targetRef}</li>)}</ul>
-              ) : <p>尚未关联 Lesson、Task 或 TeachingPlan。</p>}
+              ) : <p>尚未关联 Lesson、Task、TeachingPlan 或 Assignment。</p>}
             </div>
           ) : <div className="file-no-results">选择一个文件查看详情。</div>}
         </section>
@@ -519,7 +609,9 @@ function bindingLabel(targetType: string): string {
     lesson: "课时（lesson）",
     preparation_task: "备课任务（preparation_task）",
     teaching_plan_revision: "TeachingPlan Revision（teaching_plan_revision）",
-    teaching_plan_artifact: "TeachingPlan Artifact（teaching_plan_artifact）"
+    teaching_plan_artifact: "TeachingPlan Artifact（teaching_plan_artifact）",
+    assignment: "作业（assignment）",
+    assignment_version: "作业内容版本（assignment_version）"
   }[targetType] ?? targetType;
 }
 

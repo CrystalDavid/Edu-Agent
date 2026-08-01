@@ -7,9 +7,12 @@ import express, {
 import { pipeline } from "node:stream/promises";
 import {
   apiRoutes,
+  AssignmentActionRequestSchema,
   ApproveTeachingPlanRequestSchema,
   CancelModelInvocationRequestSchema,
   CreateLessonPreparationTaskRequestSchema,
+  CreateAssignmentRequestSchema,
+  CreateAdjustmentTaskRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
@@ -20,9 +23,14 @@ import {
   FileLifecycleRequestSchema,
   FileUploadMetadataSchema,
   FileVersionUploadMetadataSchema,
+  ConfirmGradeRequestSchema,
+  ReopenGradeRequestSchema,
+  SaveGradeDraftRequestSchema,
+  SyntheticSubmissionImportRequestSchema,
   TeachingPlanDocxExportRequestSchema,
   SuggestionDispositionRequestSchema,
   TaskResourceSelectionRequestSchema,
+  UpdateAssignmentDraftRequestSchema,
   type ActingContext,
   type TenantContext
 } from "@edu-agent/contracts";
@@ -238,6 +246,7 @@ export function createApp(
 
   if (product) {
     const preparation = product.services.lessonPreparation;
+    const assignments = product.services.assignments;
     const files = product.services.files;
     const modelInvocations =
       product.services.modelInvocations;
@@ -957,6 +966,455 @@ export function createApp(
               lessonRef: routeParameter(
                 request.params["lessonRef"]
               )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignments,
+      markRoute("product.teacher.assignments.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const lessonQuery = request.query["lessonRef"];
+          response.json(
+            await assignments.listAssignments({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              ...(typeof lessonQuery === "string" && lessonQuery
+                ? { lessonRef: lessonQuery }
+                : {})
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.assignments,
+      markRoute("product.teacher.assignments.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.createAssignment({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateAssignmentRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentPattern,
+      markRoute("product.teacher.assignments.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getAssignment({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentVersionsPattern,
+      markRoute("product.teacher.assignments.versions"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const detail = await assignments.getAssignment({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assignmentRef: routeParameter(
+              request.params["assignmentRef"]
+            )
+          });
+          response.json({ items: detail.versionHistory });
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.assignmentPattern,
+      markRoute("product.teacher.assignments.update-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.updateDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assignmentRef: routeParameter(
+              request.params["assignmentRef"]
+            ),
+            request: UpdateAssignmentDraftRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    const assignmentActions = [
+      {
+        path: apiRoutes.teacher.assignmentPublishPattern,
+        action: "publish" as const
+      },
+      {
+        path: apiRoutes.teacher.assignmentClosePattern,
+        action: "close" as const
+      },
+      {
+        path: apiRoutes.teacher.assignmentArchivePattern,
+        action: "archive" as const
+      }
+    ];
+    for (const actionRoute of assignmentActions) {
+      app.post(
+        actionRoute.path,
+        markRoute(
+          `product.teacher.assignments.${actionRoute.action}`
+        ),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            const result = await assignments.transitionAssignment({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              ),
+              action: actionRoute.action,
+              request: AssignmentActionRequestSchema.parse(request.body)
+            });
+            response.status(result.replayed ? 200 : 201).json(result);
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.post(
+      apiRoutes.teacher.assignmentSyntheticSubmissionsPattern,
+      markRoute("product.teacher.assignments.synthetic-submissions"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.importSyntheticSubmissions({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            assignmentRef: routeParameter(
+              request.params["assignmentRef"]
+            ),
+            request: SyntheticSubmissionImportRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentSubmissionsPattern,
+      markRoute("product.teacher.assignments.submissions"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.listSubmissions({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentGradingQueuePattern,
+      markRoute("product.teacher.assignments.grading-queue"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getGradingQueue({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.submissionPattern,
+      markRoute("product.teacher.submissions.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getSubmission({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              submissionRef: routeParameter(
+                request.params["submissionRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.submissionGradeDraftPattern,
+      markRoute("product.teacher.grading.save-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.saveGradeDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            submissionRef: routeParameter(
+              request.params["submissionRef"]
+            ),
+            request: SaveGradeDraftRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.gradeDecisionConfirmPattern,
+      markRoute("product.teacher.grading.confirm"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.confirmGrade({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            gradeDecisionRef: routeParameter(
+              request.params["gradeDecisionRef"]
+            ),
+            request: ConfirmGradeRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.gradeDecisionReopenPattern,
+      markRoute("product.teacher.grading.reopen"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await assignments.reopenGrade({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            gradeDecisionRef: routeParameter(
+              request.params["gradeDecisionRef"]
+            ),
+            request: ReopenGradeRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.gradeDecisionHistoryPattern,
+      markRoute("product.teacher.grading.history"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getGradeHistory({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              submissionRef: routeParameter(
+                request.params["submissionRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentAnalyticsPattern,
+      markRoute("product.teacher.assignments.analytics"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getAnalytics({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentEvidencePattern,
+      markRoute("product.teacher.assignments.evidence"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.listAssignmentEvidence({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              assignmentRef: routeParameter(
+                request.params["assignmentRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.courseRunEnrollmentsPattern,
+      markRoute("product.teacher.course-runs.enrollments"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.listEnrollments({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              courseRunRef: routeParameter(
+                request.params["courseRunRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.learnerEvidencePattern,
+      markRoute("product.teacher.learners.evidence"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getLearnerEvidence({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              courseRunRef: routeParameter(
+                request.params["courseRunRef"]
+              ),
+              learnerRef: routeParameter(
+                request.params["learnerRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.assignmentAdjustmentPattern,
+      markRoute("product.teacher.assignments.adjust-next-lesson"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const parsed = CreateAdjustmentTaskRequestSchema.parse(
+            request.body
+          );
+          const routeAssignmentRef = routeParameter(
+            request.params["assignmentRef"]
+          );
+          if (parsed.assignmentRef !== routeAssignmentRef) {
+            throw new DomainConflictError(
+              "ASSIGNMENT_ROUTE_PAYLOAD_CONFLICT",
+              "路由与请求中的 Assignment 不一致。"
+            );
+          }
+          const result = await assignments.createAdjustmentTask({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: parsed
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.assignmentOverview,
+      markRoute("product.teacher.assignments.overview"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await assignments.getOverview({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
             })
           );
         } catch (error) {

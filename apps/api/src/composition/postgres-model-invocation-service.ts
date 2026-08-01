@@ -509,7 +509,14 @@ export class PostgresModelInvocationService {
             preparationTask.lessonRef,
             ...preparationTask.workingSet
               .learningObjectiveRefs,
-            baseline.revisionRef
+            baseline.revisionRef,
+            ...(preparationTask.workingSet.sourceLessonRef
+              ? [preparationTask.workingSet.sourceLessonRef]
+              : []),
+            ...(preparationTask.workingSet.sourceAssignmentRef
+              ? [preparationTask.workingSet.sourceAssignmentRef]
+              : []),
+            ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
           ],
           authorizedEvidenceRefs: evidenceRefs,
           deniedResourceRefs: [],
@@ -526,7 +533,14 @@ export class PostgresModelInvocationService {
               preparationTask.lessonRef,
               ...preparationTask.workingSet
                 .learningObjectiveRefs,
-              baseline.revisionRef
+              baseline.revisionRef,
+              ...(preparationTask.workingSet.sourceLessonRef
+                ? [preparationTask.workingSet.sourceLessonRef]
+                : []),
+              ...(preparationTask.workingSet.sourceAssignmentRef
+                ? [preparationTask.workingSet.sourceAssignmentRef]
+                : []),
+              ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
             ],
             evidenceRefs,
             requestedFieldMask:
@@ -1750,7 +1764,13 @@ export class PostgresModelInvocationService {
           version: authorizedContextPlan.workingSetVersion,
           purpose: preparationTask.workingSet.purpose,
           requestedFieldMask:
-            authorizedContextPlan.requestedFieldMask
+            authorizedContextPlan.requestedFieldMask,
+          sourceLessonRef:
+            preparationTask.workingSet.sourceLessonRef ?? null,
+          sourceAssignmentRef:
+            preparationTask.workingSet.sourceAssignmentRef ?? null,
+          sourceAssignmentItemRefs:
+            preparationTask.workingSet.sourceAssignmentItemRefs ?? []
         }
       }),
       baseline: {

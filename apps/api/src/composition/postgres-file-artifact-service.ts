@@ -52,6 +52,9 @@ import {
   PostgresGate25EducationRepository
 } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
 import {
+  PostgresGate27EducationRepository
+} from "../modules/education-domain/infrastructure/postgres-gate2-7-education-repository.js";
+import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
@@ -97,6 +100,7 @@ export class PostgresFileArtifactService {
     private readonly governance = new PostgresGovernanceRepository(),
     private readonly files = new PostgresFileArtifactRepository(),
     private readonly education = new PostgresGate25EducationRepository(),
+    private readonly assignments = new PostgresGate27EducationRepository(),
     private readonly educationEvidence = new PostgresEducationRepository(),
     private readonly work = new PostgresGate25WorkRepository(),
     private readonly artifacts = new PostgresGate2ArtifactRepository()
@@ -860,6 +864,34 @@ export class PostgresFileArtifactService {
     if (binding.targetType === "preparation_task") {
       if (!(await this.work.getPreparationTask(executor, tenantRef, binding.targetRef))) {
         throw new NotFoundError("文件关联的备课 Task 不存在。");
+      }
+      return;
+    }
+    if (binding.targetType === "assignment") {
+      if (
+        !(await this.assignments.getAssignment(
+          executor,
+          tenantRef,
+          binding.targetRef
+        ))
+      ) {
+        throw new NotFoundError(
+          "文件关联的 Assignment 不存在或不属于当前 tenant。"
+        );
+      }
+      return;
+    }
+    if (binding.targetType === "assignment_version") {
+      if (
+        !(await this.assignments.getAssignmentByVersion(
+          executor,
+          tenantRef,
+          binding.targetRef
+        ))
+      ) {
+        throw new NotFoundError(
+          "文件关联的 AssignmentVersion 不存在或不属于当前 tenant。"
+        );
       }
       return;
     }
