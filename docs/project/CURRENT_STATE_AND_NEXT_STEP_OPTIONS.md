@@ -2,7 +2,7 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.5 实施复核：2026-07-31。第 17 节是当前权威状态；前述调查和候选方案保留为决策历史。
+> Gate 2.7 实施复核：2026-08-01。第 21 节是当前权威状态；前述调查和候选方案保留为决策历史。
 > 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
 
 ## 1. 执行结论
@@ -936,3 +936,50 @@ Artifact 前向修复 `0007_gate2_5b_shared_object_keys.sql` 移除 `file_versio
 5. Agent 只能基于教师明确选择并重新授权的 Assignment/Submission Evidence 生成建议，不自动修改成绩、学生事实或 TeachingPlan。
 
 Gate 2.7 明确推迟：长期学生画像、自动个性化发布、题库/考试完整系统、家长/学生端、通用日程、真实学校数据、图片/PDF 多模态、云部署与第二供应商。开始前仍需产品所有者决定评分是否只支持教师录入、是否需要学生提交入口，以及首轮 Evidence 的最小可见范围。
+
+## 21. Gate 2.7 作业、学习 Evidence 与教学调整（权威更新）
+
+### 21.1 当前真实完成度
+
+Gate 2.7 采用教师端、匿名合成数据的窄闭环，没有建立学生端或长期 learner 状态：
+
+| 能力 | 当前事实 |
+|---|---|
+| 课程名单 | Education-owned `CourseRunEnrollment`；当前演示 CourseRun 有 12 名匿名 synthetic learner |
+| 作业 | `Assignment` 是生命周期真值；`draft → published → closed → archived`；draft 每次保存创建 immutable AssignmentVersion/Item，发布后不能原地覆盖 |
+| 提交 | `Submission` 关联 learner 与 Assignment；复用既有 `education.attempt`，登记为 SubmissionAttempt 后基础 Attempt、`SubmissionAttemptDetails` 和 `ItemResponse` 均受数据库不可变约束；未交是 absence，不是 0 分 |
+| 批改 | TeacherGradeDecision 区分 draft/confirmed/superseded；保存草稿不产生 Evidence，教师确认后才产生；reopen 与修订保留历史 |
+| Evidence | 每条 current observation 可追溯 AssignmentVersion、Item、Attempt、Response 和 confirmed GradeDecision；修订生成新观察并 supersede 旧观察 |
+| 统计 | 已交/未交、平均/中位数、逐题/Objective 表现和共性错误从事实实时重算，不新建 Dashboard 真值或 LearnerStateEstimate |
+| 页面 | 作业、学生、教学 Lesson 和概览读取同一 PostgreSQL 真值；旧 homework/student 数组不再进入正式产品路由 |
+| 调整下一课 | 教师选择 current confirmed Evidence 后复用 `work.task` 创建下一 Lesson 的 lesson_preparation；TaskWorkingSet 保存来源 Assignment/Item 和 selected Evidence |
+| Agent 边界 | 每次 Run 重新创建 AuthorizedContextPlan/ContextManifest；未选择 Evidence 不进入上下文；模型只能生成 Proposal，不能发布作业、确认成绩或批准计划 |
+| 文件 | Artifact binding 增加 Assignment 和明确 AssignmentVersion；文件内容不会自动进入模型 |
+
+### 21.2 数据库增量
+
+- Education `0005_gate2_7_assignment_learning_evidence.sql`：Enrollment、Assignment/version/item/objective link、Submission extension、ItemResponse、GradeDecision/item grade、Evidence source、唯一索引与 immutable triggers；
+- Work `0007_gate2_7_assignment_work_context.sql`：Assignment grading Task details，以及 TaskWorkingSet current/revision 的 source Lesson/Assignment/Item refs；
+- Artifact `0008_gate2_7_assignment_file_bindings.sql`：扩展既有 binding 类型，不创建新文件聚合；
+- 总 Migration 为 35；全部仍按七 Schema owner、checksum 和前向执行，不重写历史 Migration。
+
+### 21.3 已验证语义
+
+- 相同幂等键同 payload 重放、异 payload fail closed；Assignment 与 GradeDecision expected-version 冲突返回结构化 409；
+- 并发保存同一批改草稿只能一个成功；同一 Attempt 同时最多一个 draft、一个 current confirmed；
+- 批改二次确认会 supersede 同一 Attempt 的旧 confirmed，而不是依赖直接父链；Evidence 历史继续可追溯；
+- 12 名 enrollment、10 份 synthetic submission、2 个未交；未交 `score = null`；
+- selected Evidence 创建 Task 后，TaskWorkingSet、AuthorizedContextPlan 与 ContextManifest 只含本次选择；服务重启后仍从 PostgreSQL 恢复；
+- Playwright 完成创建、发布、刷新、导入、批改草稿、确认、学生 Evidence、共性错误、调整 Task、Proposal 恢复、in-review 和独立批准。
+
+### 21.4 仍未实现
+
+- 学生自行提交、学生端/家长端、正式名单和 SSO；
+- 已发布 Assignment 的内容修订发布流程（当前严格禁止原地修改；可新建作业）；
+- 完整题库、考试、随机组卷、附件内容理解、OCR 与图片作业；
+- 自动发布评分/反馈、长期 LearnerStateEstimate、跨作业长期能力标签；
+- 通知、日程、通用 Todo、云部署与生产消息运维。
+
+### 21.5 下一阶段建议：Gate 2.8 教师工作台
+
+建议 Gate 2.8 只建立 Work-owned 的教师日程/待办最小闭环：`TeacherTodo`/`CalendarEvent` 或在既有 Task 上增加明确工作投影，支持作业截止、批改任务、备课 Task 与人工事件的统一读取、状态驱动提醒和待办转日程。不要把 Assignment、PreparationTask 或文件复制成第二套真值，也不要同时建设学生端、考试或自动化 Agent。开始前需要产品所有者裁决：哪些系统事实自动投影到工作台、哪些由教师手工创建，以及关闭/延期是否回写源业务对象。
