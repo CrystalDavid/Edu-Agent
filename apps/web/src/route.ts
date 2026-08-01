@@ -28,10 +28,19 @@ interface ParsedRoute {
   proposalRevisionRef: string | null;
   preparationTaskRef: string | null;
   lessonRef: string | null;
+  fileAssetRef: string | null;
+  fileLessonRef: string | null;
   canonicalPath: string;
 }
 
-function parseRoute(pathname: string): ParsedRoute {
+export function parseAppRoute(
+  pathname: string,
+  search = ""
+): ParsedRoute {
+  const emptyFileContext = {
+    fileAssetRef: null,
+    fileLessonRef: null
+  };
   const proposalMatch = pathname.match(
     /^\/copilot\/proposals\/([^/]+)$/
   );
@@ -42,6 +51,7 @@ function parseRoute(pathname: string): ParsedRoute {
         proposalRevisionRef: decodeURIComponent(proposalMatch[1]),
         preparationTaskRef: null,
         lessonRef: null,
+        ...emptyFileContext,
         canonicalPath: pathname
       };
     } catch {
@@ -50,6 +60,7 @@ function parseRoute(pathname: string): ParsedRoute {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef: null,
+        ...emptyFileContext,
         canonicalPath: defaultRoute
       };
     }
@@ -66,6 +77,7 @@ function parseRoute(pathname: string): ParsedRoute {
           preparationMatch[2]
         ),
         lessonRef: null,
+        ...emptyFileContext,
         canonicalPath: pathname
       };
     } catch {
@@ -74,6 +86,7 @@ function parseRoute(pathname: string): ParsedRoute {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef: null,
+        ...emptyFileContext,
         canonicalPath: defaultRoute
       };
     }
@@ -88,6 +101,7 @@ function parseRoute(pathname: string): ParsedRoute {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef: decodeURIComponent(lessonMatch[1]),
+        ...emptyFileContext,
         canonicalPath: pathname
       };
     } catch {
@@ -96,6 +110,7 @@ function parseRoute(pathname: string): ParsedRoute {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef: null,
+        ...emptyFileContext,
         canonicalPath: defaultRoute
       };
     }
@@ -103,11 +118,15 @@ function parseRoute(pathname: string): ParsedRoute {
   const route = appRoutes.includes(pathname as AppRoute)
     ? (pathname as AppRoute)
     : defaultRoute;
+  const fileParameters =
+    route === "/files" ? new URLSearchParams(search) : null;
   return {
     route,
     proposalRevisionRef: null,
     preparationTaskRef: null,
     lessonRef: null,
+    fileAssetRef: fileParameters?.get("asset") || null,
+    fileLessonRef: fileParameters?.get("lesson") || null,
     canonicalPath:
       pathname === "/" || pathname !== route ? defaultRoute : route
   };
@@ -119,25 +138,37 @@ export function useAppRoute(): {
   proposalRevisionRef: string | null;
   preparationTaskRef: string | null;
   lessonRef: string | null;
+  fileAssetRef: string | null;
+  fileLessonRef: string | null;
   navigateProposal: (proposalRevisionRef: string) => void;
   navigateLesson: (lessonRef: string) => void;
+  navigateFiles: (context?: {
+    assetRef?: string;
+    lessonRef?: string;
+  }) => void;
   navigatePreparation: (
     preparationTaskRef: string,
     destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
   ) => void;
 } {
   const [location, setLocation] = useState<ParsedRoute>(() =>
-    parseRoute(window.location.pathname)
+    parseAppRoute(window.location.pathname, window.location.search)
   );
 
   useEffect(() => {
-    const initial = parseRoute(window.location.pathname);
+    const initial = parseAppRoute(
+      window.location.pathname,
+      window.location.search
+    );
     if (window.location.pathname !== initial.canonicalPath) {
       window.history.replaceState({}, "", initial.canonicalPath);
       setLocation(initial);
     }
     const onPopState = () => {
-      const next = parseRoute(window.location.pathname);
+      const next = parseAppRoute(
+        window.location.pathname,
+        window.location.search
+      );
       if (window.location.pathname !== next.canonicalPath) {
         window.history.replaceState({}, "", next.canonicalPath);
       }
@@ -152,12 +183,16 @@ export function useAppRoute(): {
     proposalRevisionRef: location.proposalRevisionRef,
     preparationTaskRef: location.preparationTaskRef,
     lessonRef: location.lessonRef,
+    fileAssetRef: location.fileAssetRef,
+    fileLessonRef: location.fileLessonRef,
     navigate(nextRoute) {
       if (
         nextRoute === location.route &&
         location.proposalRevisionRef === null &&
         location.preparationTaskRef === null &&
-        location.lessonRef === null
+        location.lessonRef === null &&
+        location.fileAssetRef === null &&
+        location.fileLessonRef === null
       ) {
         return;
       }
@@ -167,6 +202,8 @@ export function useAppRoute(): {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef: null,
+        fileAssetRef: null,
+        fileLessonRef: null,
         canonicalPath: nextRoute
       });
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -188,6 +225,8 @@ export function useAppRoute(): {
         proposalRevisionRef,
         preparationTaskRef: null,
         lessonRef: null,
+        fileAssetRef: null,
+        fileLessonRef: null,
         canonicalPath: path
       });
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -202,7 +241,26 @@ export function useAppRoute(): {
         proposalRevisionRef: null,
         preparationTaskRef: null,
         lessonRef,
+        fileAssetRef: null,
+        fileLessonRef: null,
         canonicalPath: path
+      });
+      window.scrollTo({ top: 0, behavior: "instant" });
+    },
+    navigateFiles(context = {}) {
+      const search = new URLSearchParams();
+      if (context.assetRef) search.set("asset", context.assetRef);
+      if (context.lessonRef) search.set("lesson", context.lessonRef);
+      const path = `/files${search.size > 0 ? `?${search.toString()}` : ""}`;
+      window.history.pushState({}, "", path);
+      setLocation({
+        route: "/files",
+        proposalRevisionRef: null,
+        preparationTaskRef: null,
+        lessonRef: null,
+        fileAssetRef: context.assetRef ?? null,
+        fileLessonRef: context.lessonRef ?? null,
+        canonicalPath: "/files"
       });
       window.scrollTo({ top: 0, behavior: "instant" });
     },
@@ -219,6 +277,8 @@ export function useAppRoute(): {
         proposalRevisionRef: null,
         preparationTaskRef,
         lessonRef: null,
+        fileAssetRef: null,
+        fileLessonRef: null,
         canonicalPath: path
       });
       window.scrollTo({ top: 0, behavior: "instant" });

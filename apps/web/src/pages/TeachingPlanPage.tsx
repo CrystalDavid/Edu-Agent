@@ -34,6 +34,10 @@ import {
   TeachingPlanView
 } from "../components/TeachingPlanView";
 import { applyDiffToPlan } from "../teaching-plan";
+import {
+  lessonPreparationStatusLabel,
+  teachingPlanStateLabel
+} from "../presentation";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -46,6 +50,11 @@ export function TeachingPlanPage(props: {
     taskRef: string,
     destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
   ) => void;
+  navigateLesson: (lessonRef: string) => void;
+  navigateFiles: (context?: {
+    assetRef?: string;
+    lessonRef?: string;
+  }) => void;
 }) {
   const [planState, setPlanState] = useState({
     currentApproved: props.workspace.currentTeachingPlan,
@@ -172,6 +181,32 @@ export function TeachingPlanPage(props: {
     }
   }
 
+  async function reloadPreparationTruth() {
+    if (!preparationTask) return;
+    const [nextTask, scoped] = await Promise.all([
+      loadLessonPreparationTask(preparationTask.taskRef),
+      loadLessonTeachingPlans(preparationTask.lessonRef)
+    ]);
+    const currentApproved =
+      scoped.currentApproved ?? props.workspace.currentTeachingPlan;
+    const exported = await loadFiles({
+      status: "active",
+      sort: "newest",
+      targetType: "teaching_plan_revision",
+      targetRef: currentApproved.revisionRef
+    });
+    setPreparationTask(nextTask);
+    setLessonPlanState(scoped);
+    setPlanState({
+      currentApproved,
+      currentInReview: scoped.activeInReview,
+      drafts: scoped.drafts,
+      history: scoped.history
+    });
+    setRevision(scoped.activeInReview ?? currentApproved);
+    setExportedFiles(exported.items);
+  }
+
   async function approveCurrentInReview() {
     const inReview = planState.currentInReview;
     if (!inReview) return;
@@ -195,22 +230,8 @@ export function TeachingPlanPage(props: {
         }
       );
       if (preparationTask) {
-        const [nextTask, scoped] = await Promise.all([
-          loadLessonPreparationTask(preparationTask.taskRef),
-          loadLessonTeachingPlans(preparationTask.lessonRef)
-        ]);
-        const currentApproved =
-          scoped.currentApproved ??
-          props.workspace.currentTeachingPlan;
-        setPreparationTask(nextTask);
-        setLessonPlanState(scoped);
-        setPlanState({
-          currentApproved,
-          currentInReview: scoped.activeInReview,
-          drafts: scoped.drafts,
-          history: scoped.history
-        });
-        setRevision(currentApproved);
+        await reloadPreparationTruth();
+        setRevision(result.approvedRevision);
       } else {
         const nextState = await loadTeachingPlanState();
         setPlanState(nextState);
@@ -221,7 +242,16 @@ export function TeachingPlanPage(props: {
         `已创建并批准第 ${result.approvedRevision.revisionNumber} 版；原已批准版本保持不可变。`
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          await reloadPreparationTruth();
+        } catch {
+          // The original structured conflict remains the most useful message.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取服务端当前版本。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setApproving(false);
     }
@@ -248,7 +278,16 @@ export function TeachingPlanPage(props: {
         "备课 Task 已由教师显式标记为完成；current approved TeachingPlan 保持不变。"
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          await reloadPreparationTruth();
+        } catch {
+          // Preserve the original conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取服务端当前版本。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setCompleting(false);
     }
@@ -304,6 +343,9 @@ export function TeachingPlanPage(props: {
     }
   }
 
+  const viewingActiveInReview =
+    planState.currentInReview?.revisionRef === revision.revisionRef;
+
   return (
     <div className="page-stack">
       <header className="page-header">
@@ -348,7 +390,11 @@ export function TeachingPlanPage(props: {
           </Text>
           <Title level={3}>{preparationTask.lessonTitle}</Title>
           <Paragraph>
-            Work 状态：<strong>{preparationTask.status}</strong>
+            Work 状态：
+            <strong>
+              {lessonPreparationStatusLabel(preparationTask.status)}
+            </strong>
+            <Text type="secondary">（{preparationTask.status}）</Text>
             {" · "}approved_plan_ref：
             {preparationTask.approvedPlanRef ?? "无"}
           </Paragraph>
@@ -372,6 +418,13 @@ export function TeachingPlanPage(props: {
               }
             >
               查看 Run
+            </Button>
+            <Button
+              onClick={() =>
+                props.navigateLesson(preparationTask.lessonRef)
+              }
+            >
+              返回课时
             </Button>
             {preparationTask.status === "ready_for_use" ? (
               <Button
@@ -411,13 +464,24 @@ export function TeachingPlanPage(props: {
               导出教案 DOCX
             </Button>
             {exportedFiles.map((file) => (
-              <Button
-                key={file.assetRef}
-                onClick={() => void downloadExport(file)}
-                data-testid="download-teaching-plan-docx"
-              >
-                下载 {file.currentVersion.originalFileName}（v{file.currentVersion.versionNumber}）
-              </Button>
+              <Space key={file.assetRef} wrap>
+                <Button
+                  onClick={() => void downloadExport(file)}
+                  data-testid="download-teaching-plan-docx"
+                >
+                  下载 {file.currentVersion.originalFileName}（v{file.currentVersion.versionNumber}）
+                </Button>
+                <Button
+                  onClick={() =>
+                    props.navigateFiles({
+                      assetRef: file.assetRef,
+                      lessonRef: preparationTask.lessonRef
+                    })
+                  }
+                >
+                  在文件页查看
+                </Button>
+              </Space>
             ))}
           </Space>
         </Card>
@@ -485,9 +549,15 @@ export function TeachingPlanPage(props: {
       planState.currentApproved.revisionRef ? (
         <Card className="workspace-card revision-return" variant="borderless">
           <div>
-            <Title level={4}>你正在查看历史版本</Title>
+            <Title level={4}>
+              {viewingActiveInReview
+                ? "你正在查看当前待审核版本"
+                : "你正在查看历史版本"}
+            </Title>
             <Paragraph>
-              历史版本保持不变；返回最近版本不会修改任何数据。
+              {viewingActiveInReview
+                ? "此版本尚未成为当前正式计划；只有单独批准后才会创建新的 approved Revision。"
+                : "历史版本保持不变；返回当前已批准版本不会修改任何数据。"}
             </Paragraph>
           </div>
           <Button
@@ -496,7 +566,7 @@ export function TeachingPlanPage(props: {
               setRevision(planState.currentApproved)
             }
           >
-            返回当前已批准版本
+            查看当前已批准版本
           </Button>
         </Card>
       ) : null}
@@ -562,14 +632,21 @@ export function TeachingPlanPage(props: {
 }
 
 function revisionStateLabel(state: string): string {
-  return {
-    draft: "建议草稿",
-    proposal: "Proposal",
-    in_review: "待审核",
-    superseded: "已被新版取代",
-    approved: "已批准",
-    published: "已发布（本 Gate 不创建）"
-  }[state] ?? state;
+  if (
+    [
+      "draft",
+      "proposal",
+      "in_review",
+      "superseded",
+      "approved",
+      "published"
+    ].includes(state)
+  ) {
+    return teachingPlanStateLabel(
+      state as Parameters<typeof teachingPlanStateLabel>[0]
+    );
+  }
+  return state;
 }
 
 function errorMessage(error: unknown): string {

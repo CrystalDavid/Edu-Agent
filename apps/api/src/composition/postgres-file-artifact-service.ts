@@ -294,6 +294,12 @@ export class PostgresFileArtifactService {
       input.tenantRef,
       input.assetRef
     );
+    if (existingAsset.source === "teaching_plan_export") {
+      throw new DomainConflictError(
+        "TEACHING_PLAN_EXPORT_VERSION_MANAGED",
+        "正式教案文件的版本只能由明确的 approved TeachingPlan Revision 导出创建。"
+      );
+    }
     const stored = await this.store(input.content, input.expectedSizeBytes);
     let extractedText: string | undefined;
     let effectiveStored = stored;
@@ -393,6 +399,16 @@ export class PostgresFileArtifactService {
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const request = FileBindingRequestSchema.parse(input.request);
+    const existingAsset = await this.requireAsset(
+      input.tenantRef,
+      input.assetRef
+    );
+    if (existingAsset.source === "teaching_plan_export") {
+      throw new DomainConflictError(
+        "TEACHING_PLAN_EXPORT_BINDING_MANAGED",
+        "正式教案文件的 Revision、Lesson 与 Task 关联只能由导出流程维护。"
+      );
+    }
     return this.metadataMutation({
       tenantRef: input.tenantRef,
       actorRef: input.actorRef,

@@ -112,7 +112,10 @@ export function App() {
     preparationTaskRef,
     navigatePreparation,
     lessonRef,
-    navigateLesson
+    navigateLesson,
+    fileAssetRef,
+    fileLessonRef,
+    navigateFiles
   } = useAppRoute();
   const [workspace, setWorkspace] = useState<TeacherWorkspace | null>(null);
   const [task, setTask] =
@@ -218,19 +221,25 @@ export function App() {
       <main className={`teacher-portal-main${route === "/agent" ? " teacher-portal-main--agent" : ""}`}>
         <Suspense fallback={<PageLoading />}>
           {route === "/" || route === "/overview" ? (
-            <OverviewPage workspace={workspace} navigate={navigate} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} onAction={showNotice} />
+            <OverviewPage workspace={workspace} navigate={navigate} navigateLesson={navigateLesson} navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} />
           ) : null}
           {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
           {route === "/teaching" || route === "/courses" ? (
-            <TeachingWorkspacePage navigate={navigate} navigatePreparation={navigatePreparation} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
           ) : null}
           {route === "/assignments" ? (
-            <TeachingWorkspacePage navigate={navigate} navigatePreparation={navigatePreparation} initialTab="homework" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} initialTab="homework" onAction={showNotice} />
           ) : null}
           {route === "/students" ? (
             <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
           ) : null}
-          {route === "/files" ? <TeacherFilesPage onAction={showNotice} /> : null}
+          {route === "/files" ? (
+            <TeacherFilesPage
+              onAction={showNotice}
+              initialAssetRef={fileAssetRef}
+              initialLessonRef={fileLessonRef}
+            />
+          ) : null}
           {route === "/agent" ? (
             preparationTaskRef ? (
               <CopilotPage
@@ -288,6 +297,8 @@ export function App() {
                 refreshWorkspace={refreshWorkspace}
                 preparationTaskRef={preparationTaskRef}
                 navigatePreparation={navigatePreparation}
+                navigateLesson={navigateLesson}
+                navigateFiles={navigateFiles}
               />
             </div>
           ) : null}

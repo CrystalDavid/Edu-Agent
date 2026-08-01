@@ -21,8 +21,20 @@ import {
   loadRunExplanation,
   type RecoverableCopilotTask
 } from "../api";
+import {
+  lessonPlanProjectionStatusLabel,
+  lessonPreparationStatusLabel,
+  modelExecutionStatusLabel
+} from "../presentation";
 
 const { Paragraph, Text, Title } = Typography;
+const activeModelStatuses = new Set([
+  "queued",
+  "running",
+  "validating",
+  "retryable_failed",
+  "cancel_requested"
+]);
 
 export function RunsPage(props: {
   workspace: TeacherWorkspace;
@@ -45,26 +57,37 @@ export function RunsPage(props: {
       return;
     }
     let active = true;
+    let timer: number | undefined;
+    let firstLoad = true;
     setLoading(true);
     setError(null);
-    void loadRunExplanation(latestTaskRef)
-      .then((result) => {
-        if (active) setExplanation(result);
-      })
-      .catch((caught: unknown) => {
-        if (active) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "加载运行解释失败"
-          );
+    const refresh = async () => {
+      try {
+        const result = await loadRunExplanation(latestTaskRef);
+        if (!active) return;
+        setExplanation(result);
+        setError(null);
+        if (activeModelStatuses.has(result.modelExecution.status)) {
+          timer = window.setTimeout(refresh, 750);
         }
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      } catch (caught) {
+        if (!active) return;
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "加载运行解释失败"
+        );
+      } finally {
+        if (active && firstLoad) {
+          firstLoad = false;
+          setLoading(false);
+        }
+      }
+    };
+    void refresh();
     return () => {
       active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [latestTaskRef]);
 
@@ -92,7 +115,7 @@ export function RunsPage(props: {
                   : "error"
             }
           >
-            模型执行 · {explanation.modelExecution.status}
+            模型执行 · {modelExecutionStatusLabel(explanation.modelExecution.status)}
           </Tag>
         ) : null}
       </header>
@@ -231,7 +254,7 @@ function TechnicalDetails({
                   {
                     key: "work-status",
                     label: "Work status",
-                    children: `${explanation.lessonPreparation.workStatus} · v${explanation.lessonPreparation.workVersion}`
+                    children: `${lessonPreparationStatusLabel(explanation.lessonPreparation.workStatus)}（${explanation.lessonPreparation.workStatus}） · v${explanation.lessonPreparation.workVersion}`
                   },
                   {
                     key: "working-set",
@@ -250,8 +273,11 @@ function TechnicalDetails({
                     key: "plan-status",
                     label: "Plan status",
                     children:
-                      explanation.lessonPreparation.planStatus ??
-                      "无"
+                      explanation.lessonPreparation.planStatus
+                        ? lessonPlanProjectionStatusLabel(
+                            explanation.lessonPreparation.planStatus
+                          )
+                        : "无"
                   }
                 ]}
               />
@@ -331,7 +357,7 @@ function TechnicalDetails({
                   {
                     key: "status",
                     label: "状态",
-                    children: explanation.modelExecution.status
+                    children: `${modelExecutionStatusLabel(explanation.modelExecution.status)}（${explanation.modelExecution.status}）`
                   },
                   {
                     key: "prompt-bundle",
