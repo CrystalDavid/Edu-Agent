@@ -336,18 +336,18 @@ describe("Gate 2 PostgreSQL Teacher Copilot slice", () => {
         expect(result.resultingRevision).toBeNull();
       }
       const forbidden = await adminPool.query<{
-        instructional_decision: string | null;
-        observed_pedagogical_move: string | null;
+        instructional_decision_count: string;
+        observed_pedagogical_move_count: string;
       }>(
         `SELECT
-           to_regclass('education.instructional_decision')::text
-             AS instructional_decision,
-           to_regclass('education.observed_pedagogical_move')::text
-             AS observed_pedagogical_move`
+           (SELECT count(*)::text FROM education.instructional_decision)
+             AS instructional_decision_count,
+           (SELECT count(*)::text FROM education.observed_pedagogical_move)
+             AS observed_pedagogical_move_count`
       );
       expect(forbidden.rows[0]).toEqual({
-        instructional_decision: null,
-        observed_pedagogical_move: null
+        instructional_decision_count: "0",
+        observed_pedagogical_move_count: "0"
       });
       const published = await appPool.query<{ count: string }>(
         `SELECT count(*)::text AS count
