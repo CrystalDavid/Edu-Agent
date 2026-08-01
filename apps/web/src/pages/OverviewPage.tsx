@@ -4,16 +4,23 @@ import type {
   FileAssetSummary,
   LessonPreparationSummary,
   TeacherAssignmentOverview,
+  TeacherWorkbenchOverview,
   TeacherWorkspace
 } from "@edu-agent/contracts";
 
-import { Button } from "antd";
+import { Button, Modal } from "antd";
 
 import {
   preparationGroupUpdates,
   schoolUpdates
 } from "../teacher-portal-data";
-import { loadAssignmentOverview, loadFiles, loadLessonPreparationSummary } from "../api";
+import {
+  createTeacherTodo,
+  loadAssignmentOverview,
+  loadFiles,
+  loadLessonPreparationSummary,
+  loadTeacherWorkbenchOverview
+} from "../api";
 import type { AppRoute } from "../route";
 import { lessonPreparationStatusLabel } from "../presentation";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
@@ -46,6 +53,12 @@ export function OverviewPage(props: {
   const [assignmentOverview, setAssignmentOverview] =
     useState<TeacherAssignmentOverview | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [workbench, setWorkbench] =
+    useState<TeacherWorkbenchOverview | null>(null);
+  const [workbenchError, setWorkbenchError] = useState<string | null>(null);
+  const [todoModalOpen, setTodoModalOpen] = useState(false);
+  const [todoTitle, setTodoTitle] = useState("");
+  const [todoDueAt, setTodoDueAt] = useState("");
   useEffect(() => {
     let active = true;
     void loadLessonPreparationSummary()
@@ -84,56 +97,90 @@ export function OverviewPage(props: {
         );
       });
   }, []);
+  const refreshWorkbench = () =>
+    loadTeacherWorkbenchOverview()
+      .then(setWorkbench)
+      .catch((caught) => {
+        setWorkbenchError(
+          caught instanceof Error ? caught.message : "教师工作台加载失败"
+        );
+      });
+  useEffect(() => {
+    void refreshWorkbench();
+  }, []);
+  const openDeepLink = (deepLink: string) => {
+    window.history.pushState({}, "", deepLink);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
   return (
     <div className="portal-page overview-page" data-testid="overview-page">
       <PageHeader
         title="概览"
         subtitle="上午好，林老师"
-        actions={
-          <Button type="primary" icon={<WorkspaceIcon name="agent" />} onClick={() => props.navigate("/agent")}>
-            问问 Agent
-          </Button>
-        }
+        actions={(
+          <>
+            <Button icon={<WorkspaceIcon name="plus" />} onClick={() => setTodoModalOpen(true)}>
+              新建待办
+            </Button>
+            <Button type="primary" icon={<WorkspaceIcon name="agent" />} onClick={() => props.navigate("/agent")}>
+              问问 Agent
+            </Button>
+          </>
+        )}
       />
 
       <div className="overview-grid overview-grid--top">
         <ModuleCard
           title="今天需要做什么"
-          description={
-            preparation
-              ? `${preparation.incompleteTasks.length} 项未完成 · ${preparation.awaitingPlanReview.length} 项待审核 · ${preparation.readyForUse.length} 项已准备待完成`
-              : "正在读取真实备课状态"
-          }
+          description={workbench
+            ? `${workbench.todayTodos.length} 项个人待办 · ${workbench.actionItems.length} 项业务提醒 · ${workbench.todayCalendar.length} 项今日日程`
+            : "正在读取 PostgreSQL 教师工作台"}
           className="today-focus-card"
           testId="today-work"
-          action={<button type="button" className="text-action" onClick={() => props.navigate("/teaching")}>打开教学页面</button>}
+          action={<button type="button" className="text-action" onClick={() => props.navigate("/schedule")}>打开日程与待办</button>}
         >
+          {workbenchError ? <p role="alert">{workbenchError}</p> : null}
           {preparationError ? (
             <p role="alert">{preparationError}</p>
           ) : null}
           <div className="today-work-list">
-            {preparation?.incompleteTasks.slice(0, 5).map((task) => (
-              <article key={task.taskRef}>
-                <time>{task.dueAt ? new Date(task.dueAt).toLocaleDateString("zh-CN") : "未设截止"}</time>
-                <span className="work-kind">备课</span>
+            {workbench?.todayTodos.slice(0, 3).map((todo) => (
+              <article key={todo.todoRef}>
+                <time>{todo.dueAt ? new Date(todo.dueAt).toLocaleDateString("zh-CN") : "未设截止"}</time>
+                <span className="work-kind">个人</span>
                 <div>
-                  <strong>{task.lessonTitle}</strong>
-                  <small>{task.title} · v{task.version}</small>
+                  <strong>{todo.pinned ? "📌 " : ""}{todo.title}</strong>
+                  <small>{todo.description || "教师个人待办"} · v{todo.version}</small>
                 </div>
-                <StatusPill tone={task.status === "awaiting_plan_review" ? "warning" : "neutral"}>{lessonPreparationStatusLabel(task.status)}</StatusPill>
-                <button type="button" onClick={() => props.navigatePreparation(task.taskRef, task.status === "awaiting_plan_review" || task.status === "ready_for_use" ? "/teaching-plan" : "/agent")}>
-                  {task.status === "awaiting_plan_review"
-                    ? "继续审核"
-                    : task.status === "ready_for_use"
-                      ? "查看并完成"
-                      : "继续备课"}
-                </button>
+                <StatusPill tone={todo.priority === "high" ? "warning" : "neutral"}>{todo.priority}</StatusPill>
+                <button type="button" onClick={() => props.navigate("/schedule")}>打开待办</button>
               </article>
             ))}
-            {preparation?.incompleteTasks.length === 0 ? (
-              <p>当前没有未完成的备课任务。</p>
-            ) : null}
+            {workbench?.actionItems.slice(0, 4).map((item) => (
+              <article key={item.projectionRef}>
+                <time>{item.dueAt ? new Date(item.dueAt).toLocaleDateString("zh-CN") : "需处理"}</time>
+                <span className="work-kind">{item.sourceModule}</span>
+                <div><strong>{item.title}</strong><small>{item.summary}</small></div>
+                <StatusPill tone={item.priority === "high" ? "warning" : "neutral"}>{item.displayStatus}</StatusPill>
+                <button type="button" onClick={() => openDeepLink(item.deepLink)}>{item.recommendedAction}</button>
+              </article>
+            ))}
+            {workbench && workbench.todayTodos.length === 0 && workbench.actionItems.length === 0 ? <p>今天没有待处理事项。</p> : null}
           </div>
+          {workbench && workbench.todayCalendar.length > 0 ? (
+            <div className="overview-calendar-strip">
+              <strong>今日日程</strong>
+              {workbench.todayCalendar.slice(0, 4).map((item) => (
+                <button
+                  type="button"
+                  key={item.sourceKind === "manual" ? item.event.eventRef : item.projection.projectionRef}
+                  onClick={() => item.deepLink ? openDeepLink(item.deepLink) : props.navigate("/schedule")}
+                >
+                  {item.sourceKind === "manual" ? item.event.title : item.projection.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </ModuleCard>
 
         <ModuleCard
@@ -254,6 +301,52 @@ export function OverviewPage(props: {
           {!fileError && recentFiles.length === 0 ? <p>暂无真实教学文件。</p> : null}
         </div>
       </ModuleCard>
+      <Modal
+        title="新建个人待办"
+        open={todoModalOpen}
+        okText="创建"
+        cancelText="取消"
+        okButtonProps={{ disabled: !todoTitle.trim() }}
+        onCancel={() => setTodoModalOpen(false)}
+        onOk={() => {
+          void createTeacherTodo({
+            title: todoTitle.trim(),
+            description: "从概览创建",
+            priority: "normal",
+            dueAt: todoDueAt ? new Date(todoDueAt).toISOString() : null,
+            purpose: "teacher-todo.create",
+            idempotencyKey: `overview-todo:${crypto.randomUUID()}`
+          }).then(() => {
+            setTodoTitle("");
+            setTodoDueAt("");
+            setTodoModalOpen(false);
+            return refreshWorkbench();
+          }).catch((caught) => {
+            setWorkbenchError(
+              caught instanceof Error ? caught.message : "待办创建失败"
+            );
+          });
+        }}
+      >
+        <div className="demo-form">
+          <label>
+            标题
+            <input
+              data-testid="overview-todo-title"
+              value={todoTitle}
+              onChange={(event) => setTodoTitle(event.target.value)}
+            />
+          </label>
+          <label>
+            截止时间
+            <input
+              type="datetime-local"
+              value={todoDueAt}
+              onChange={(event) => setTodoDueAt(event.target.value)}
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   );
 }

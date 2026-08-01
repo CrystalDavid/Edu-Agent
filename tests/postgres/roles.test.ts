@@ -226,6 +226,19 @@ describe("real PostgreSQL role isolation", () => {
     const claimed = await worker.claimOne();
     expect(claimed).toBeDefined();
 
+    const educationOutboxPrivileges = await workerPool.query<{
+      can_select: boolean;
+      can_update_status: boolean;
+    }>(
+      `SELECT
+         has_table_privilege(current_user, 'education.outbox_record', 'SELECT') AS can_select,
+         has_column_privilege(current_user, 'education.outbox_record', 'status', 'UPDATE') AS can_update_status`
+    );
+    expect(educationOutboxPrivileges.rows[0]).toEqual({
+      can_select: true,
+      can_update_status: true
+    });
+
     await expectPermissionDenied(
       workerPool.query(
         `INSERT INTO work.task (

@@ -1166,9 +1166,21 @@ textarea:focus-visible,
   min-height: 58px;
   margin-top: 6px;
   padding: 8px 12px;
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
   border-left: 3px solid var(--color-brand);
   border-radius: 10px;
   background: var(--color-brand-soft);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.calendar-event--source {
+  border-left-color: var(--color-warning);
+  background: var(--color-page);
 }
 
 .calendar-event strong {
@@ -1433,6 +1445,38 @@ textarea:focus-visible,
 }
 
 .todo-actions .workspace-icon {
+  width: 16px;
+}
+
+.todo-list article.source-work-item {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.source-work-item__actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.source-work-item__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+
+.source-work-item__marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+  place-items: center;
+}
+
+.source-work-item__marker .workspace-icon {
   width: 16px;
 }
 

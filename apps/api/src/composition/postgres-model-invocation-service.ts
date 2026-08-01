@@ -516,7 +516,11 @@ export class PostgresModelInvocationService {
             ...(preparationTask.workingSet.sourceAssignmentRef
               ? [preparationTask.workingSet.sourceAssignmentRef]
               : []),
-            ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
+            ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? []),
+            ...(preparationTask.workingSet.sourceTodoRef
+              ? [preparationTask.workingSet.sourceTodoRef]
+              : []),
+            ...(preparationTask.workingSet.sourceResourceRefs ?? [])
           ],
           authorizedEvidenceRefs: evidenceRefs,
           deniedResourceRefs: [],
@@ -540,7 +544,11 @@ export class PostgresModelInvocationService {
               ...(preparationTask.workingSet.sourceAssignmentRef
                 ? [preparationTask.workingSet.sourceAssignmentRef]
                 : []),
-              ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? [])
+              ...(preparationTask.workingSet.sourceAssignmentItemRefs ?? []),
+              ...(preparationTask.workingSet.sourceTodoRef
+                ? [preparationTask.workingSet.sourceTodoRef]
+                : []),
+              ...(preparationTask.workingSet.sourceResourceRefs ?? [])
             ],
             evidenceRefs,
             requestedFieldMask:

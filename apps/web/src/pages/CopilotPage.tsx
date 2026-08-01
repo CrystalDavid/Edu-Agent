@@ -10,6 +10,7 @@ import type {
   CreateTeacherCopilotTaskRequest,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
+  TeacherTodoView,
   TeacherWorkspace,
   TeachingPlan
 } from "@edu-agent/contracts";
@@ -40,6 +41,7 @@ import {
   loadModelProviderAvailability,
   loadPendingProposals,
   loadProposalDetail,
+  loadTeacherTodo,
   retryModelInvocation,
   updateTaskResourceSelection,
   type RecoverableCopilotTask
@@ -100,6 +102,7 @@ export function CopilotPage(props: {
   );
   const [preparationTask, setPreparationTask] =
     useState<LessonPreparationTaskDetail | null>(null);
+  const [sourceTodo, setSourceTodo] = useState<TeacherTodoView | null>(null);
   const [providerAvailability, setProviderAvailability] =
     useState<ProviderAvailability | null>(null);
   const [modelExecution, setModelExecution] =
@@ -240,6 +243,25 @@ export function CopilotPage(props: {
     props.preparationTaskRef,
     props.proposalRevisionRef
   ]);
+
+  useEffect(() => {
+    const sourceTodoRef = preparationTask?.workingSet.sourceTodoRef;
+    if (!sourceTodoRef) {
+      setSourceTodo(null);
+      return;
+    }
+    let active = true;
+    void loadTeacherTodo(sourceTodoRef)
+      .then((todo) => {
+        if (active) setSourceTodo(todo);
+      })
+      .catch(() => {
+        if (active) setSourceTodo(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [preparationTask?.workingSet.sourceTodoRef]);
 
   useEffect(() => {
     if (props.initialPrompt) {
@@ -759,6 +781,18 @@ export function CopilotPage(props: {
                 <dt>作业 Evidence 来源</dt>
                 <dd>
                   {preparationTask.workingSet.sourceAssignmentRef} · 来源课时 {preparationTask.workingSet.sourceLessonRef} · 题目 {preparationTask.workingSet.sourceAssignmentItemRefs?.join("，") || "无"}
+                </dd>
+              </div>
+            ) : null}
+            {preparationTask.workingSet.sourceTodoRef ? (
+              <div>
+                <dt>教师待办上下文</dt>
+                <dd>
+                  {sourceTodo?.title ?? preparationTask.workingSet.sourceTodoRef}
+                  {sourceTodo ? ` · ${sourceTodo.status} · ${sourceTodo.description || "无说明"}` : ""}
+                  {preparationTask.workingSet.sourceResourceRefs?.length
+                    ? ` · 明确关联资源 ${preparationTask.workingSet.sourceResourceRefs.join("，")}`
+                    : " · 无额外关联资源"}
                 </dd>
               </div>
             ) : null}

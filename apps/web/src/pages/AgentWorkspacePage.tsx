@@ -7,9 +7,7 @@ import {
   agentConversations,
   initialAgentContext,
   type AgentContextItem,
-  type AgentConversation,
-  teacherTodos,
-  type TeacherTodo
+  type AgentConversation
 } from "../teacher-portal-data";
 import {
   AgentChat,
@@ -45,12 +43,6 @@ export function AgentWorkspacePage(props: {
   );
 
   useEffect(() => {
-    const todoId = window.sessionStorage.getItem("agent-todo-context");
-    if (todoId) {
-      const todo = teacherTodos.find((item) => item.id === todoId);
-      if (todo) addTodoContext(todo);
-      window.sessionStorage.removeItem("agent-todo-context");
-    }
     const prefill = window.sessionStorage.getItem("agent-prefill");
     if (prefill) {
       startQuickTask(prefill);
@@ -116,16 +108,6 @@ export function AgentWorkspacePage(props: {
     };
     setConversations((items) => items.map((item) => item.id === next.id ? next : item));
   };
-  const addTodoContext = (todo: TeacherTodo) => {
-    const additions: AgentContextItem[] = [
-      { id: `context-${todo.id}`, kind: "待办", title: todo.title, reason: "你选择了这条待办" },
-      ...initialAgentContext
-    ];
-    setContext((items) => {
-      const byId = new Map([...items, ...additions].map((item) => [item.id, item]));
-      return [...byId.values()];
-    });
-  };
   const handleAction = (action: string) => {
     if (action === "创建教学任务") {
       window.sessionStorage.setItem(
@@ -166,7 +148,6 @@ export function AgentWorkspacePage(props: {
       </Button>
       <AgentContextPanel
         context={context}
-        onAddTodo={addTodoContext}
         onRemove={(id) => setContext((items) => items.filter((item) => item.id !== id))}
         onClear={() => setContext([])}
         onAction={handleAction}
@@ -180,7 +161,6 @@ export function AgentWorkspacePage(props: {
       >
         <AgentContextPanel
           context={context}
-          onAddTodo={addTodoContext}
           onRemove={(id) => setContext((items) => items.filter((item) => item.id !== id))}
           onClear={() => setContext([])}
           onAction={handleAction}

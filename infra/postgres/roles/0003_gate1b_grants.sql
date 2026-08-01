@@ -91,3 +91,15 @@ GRANT SELECT, INSERT ON work.outbox_consumer_effect TO edu_worker;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE
   ON ALL TABLES IN SCHEMA governance, education, personalization
   FROM edu_worker;
+
+-- Education emits teacher-work projection events. Re-grant only the
+-- lease columns after the broad ownership protection above.
+GRANT UPDATE (
+  status,
+  lease_owner,
+  lease_expires_at,
+  attempt_count,
+  last_error,
+  processed_at,
+  published_at
+) ON education.outbox_record TO edu_worker;

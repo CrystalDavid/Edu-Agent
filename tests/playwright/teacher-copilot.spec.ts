@@ -158,7 +158,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
   await assertCleanMonitor(monitor);
 });
 
-test("schedule distinguishes fixed events from movable todos", async ({
+test("schedule uses the real workbench and keeps day, week, and month on one data source", async ({
   page
 }) => {
   const monitor = monitorPage(page);
@@ -186,13 +186,8 @@ test("schedule distinguishes fixed events from movable todos", async ({
     animations: "disabled"
   });
 
-  const todo = page.getByTestId("todo-panel").locator("article").filter({
-    hasText: "完成一次函数课件"
-  });
-  await todo.getByRole("button", { name: "转成日程" }).click();
-  await expect(page.getByText("已将待办加入日程草稿")).toBeVisible();
-  await todo.getByRole("checkbox").click();
-  await expect(todo).toHaveCount(0);
+  await expect(page.getByTestId("todo-panel")).toContainText("业务提醒");
+  await expect(page.getByTestId("todo-panel")).not.toContainText("已将待办加入日程草稿");
   await assertNoInternalTerms(page);
   await assertCleanMonitor(monitor);
 });
@@ -352,7 +347,7 @@ test("file manager uploads, restores and versions a real local file", async ({
   await assertCleanMonitor(monitor);
 });
 
-test("Agent workspace manages conversations, tasks and explainable context", async ({
+test("demo Agent workspace does not import Mock Todo business state", async ({
   page
 }) => {
   const monitor = monitorPage(page);
@@ -374,16 +369,12 @@ test("Agent workspace manages conversations, tasks and explainable context", asy
   });
 
   const contextPanel = page.getByTestId("agent-context-panel");
-  await contextPanel.locator(".segmented-control").getByRole("button", { name: "待办" }).click();
-  await contextPanel.getByRole("button", { name: /完成一次函数课件/ }).click();
-  await contextPanel.locator(".segmented-control").getByRole("button", { name: "上下文" }).click();
-  await expect(contextPanel.getByText("完成一次函数课件")).toBeVisible();
+  await expect(contextPanel.locator(".segmented-control").getByRole("button", { name: "待办" })).toHaveCount(0);
+  await expect(contextPanel.getByText("完成一次函数课件")).toHaveCount(0);
   await page.screenshot({
     path: `${screenshotRoot}/15-agent-context.png`,
     animations: "disabled"
   });
-  await contextPanel.getByRole("button", { name: "移除 完成一次函数课件" }).click();
-  await expect(contextPanel.getByText("完成一次函数课件")).toHaveCount(0);
 
   await page.setViewportSize({ width: 1120, height: 800 });
   const drawerTrigger = page.getByRole("button", { name: "待办与上下文" });
@@ -912,9 +903,22 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
       exact: true
     })
   ).toBeVisible();
+  const workbenchResponse = await request.get(
+    `${apiRoutes.teacher.workbenchActionItems}?includeDeferred=false`,
+    { headers }
+  );
+  expect(workbenchResponse.status()).toBe(200);
+  const workbench = await workbenchResponse.json();
+  expect(workbench.items.some((item: {
+    sourceType: string;
+    sourceRef: string;
+  }) => item.sourceType === "lesson_preparation" &&
+    item.sourceRef === created.execution.taskRef)).toBe(false);
   await expect(
-    page.getByTestId("today-work")
-  ).not.toContainText("斜率与图像变化");
+    page.getByTestId("today-work").locator("article").filter({
+      hasText: "继续备课：斜率与图像变化"
+    })
+  ).toHaveCount(0);
   await page
     .getByTestId("today-courses")
     .locator("article")
