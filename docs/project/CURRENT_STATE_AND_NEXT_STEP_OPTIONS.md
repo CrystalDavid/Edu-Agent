@@ -2,7 +2,7 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.8 实施复核：2026-08-01。第 22 节是当前权威状态；前述调查和候选方案保留为决策历史。
+> Gate 2.9 实施复核：2026-08-01。第 23 节是当前权威状态；前述调查和候选方案保留为决策历史。
 > 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
 
 ## 1. 执行结论
@@ -988,7 +988,7 @@ Gate 2.7 采用教师端、匿名合成数据的窄闭环，没有建立学生�
 
 ### 22.1 当前真实完成度
 
-Gate 2.8 已在功能分支完成工程实现，等待人工验收：
+Gate 2.8 已通过人工验收，并以 merge commit `44a67ef0ffa519d0ef9c6c2b84e42ab9204561d0` 和 annotated tag `gate-2-8-verified` 固化：
 
 | 能力 | 当前真值与语义 |
 |---|---|
@@ -1030,4 +1030,49 @@ Migration 36（`0008_gate2_8_teacher_workbench.sql`）新增 Todo、resource lin
 
 当前仍不包含外部 Google/Outlook/学校日历、共享日历、复杂重复规则、定时自动 Agent、自动改截止时间、正式组织身份或学生端。Todo Agent handoff 复用 lesson preparation，因此生成 TeachingPlan Proposal 仍要求 Lesson 满足既有 approved baseline 约束。
 
-Gate 2.8 人工验收通过后，下一步不宜立刻扩成通用工作流平台。优先候选是 **Gate 2.9 教师评测与课堂实施反馈最小闭环**：从已批准计划/已完成备课显式记录课堂实施事实和课后反思，再把观察转为可追溯 Evidence。若产品优先级转向交付，应先建设正式身份、组织权限和部署运维基线，而不是增加更多教师端 Mock 页面。
+Gate 2.8 人工验收后，项目进入 **Gate 2.9 课堂实施、课后反思与教学改进闭环**：从已批准计划显式记录课堂实施事实和课后反思，再把教师确认观察与既有 Evidence 转为可追溯后续行动。
+
+## 23. Gate 2.9 课堂实施、课后反思与教学改进（权威更新）
+
+### 23.1 当前真实完成度
+
+Gate 2.9 已在功能分支完成工程实现，等待人工验收：
+
+| 能力 | 当前真值与语义 |
+|---|---|
+| 课堂实施 | Education-owned LessonDelivery 与 immutable DeliveryRevision；approved TeachingPlan 仅作为明确 baseline，不表示已实施 |
+| 实施确认 | 草稿由教师编辑，只有显式 confirm 才成为事实；confirmed revision 不可原地修改，amend 保留历史 |
+| 课堂观察 | Education-owned Observation Revision 支持班级、Objective、Assignment Item、匿名 learner 和教学活动范围；只有教师确认版本进入正式读取模型 |
+| 课后反思 | Artifact-owned LessonReflection/Revision；模型只能生成 draft，教师编辑并单独确认；不覆盖 TeachingPlan |
+| Agent 上下文 | TaskWorkingSet 保存 selected Delivery、Observation、Assignment Evidence 和 Reflection；每次 Run 重新授权并封存 ContextManifest |
+| 后续行动 | confirmed Reflection 可以显式创建 lesson preparation Task、Assignment draft 或 TeacherTodo，并保留来源 relation；不自动批量创建 |
+| 页面 | Lesson、Reflection Agent、学生、概览/工作台和 Copilot 读取同一 PostgreSQL 真值并支持刷新/重启恢复 |
+
+### 23.2 状态与边界
+
+- Delivery：draft → teacher-confirmed current；amend 创建新 draft，新确认后旧 current 进入历史；
+- Observation：draft → confirmed；supersede/amend 保留来源和历史；班级观察与 learner Evidence 不混淆；
+- Reflection：draft → current_confirmed；confirmed 不可原地编辑，模型执行只写 draft；
+- Proposal、accepted disposition、日历结束和模型输出都不能自动创建正式实施事实；
+- 确认 Reflection 不修改 approved TeachingPlan，不自动创建 Task、Assignment 或 Todo；
+- 不建立长期 LearnerStateEstimate 或根据一次观察形成能力标签。
+
+### 23.3 数据库与执行增量
+
+Gate 2.9 增加 Education、Artifact、Work、Capability 和 Governance 的 5 个前向 Migration，总数为 41。Delivery 场次、active Reflection 和 current confirmed Revision 由数据库唯一约束与应用锁共同保护；confirmed revisions 由 trigger/服务双重阻止原地覆盖。
+
+Reflection 模型调用继续复用 Gate 2.6A 的 queued/running/validating/terminal、租约 Worker、取消、retry、幂等和事务外执行。模型输出经过 Zod、Lesson、Delivery、Observation、Evidence 和授权校验，成功只创建或更新一个 draft。
+
+### 23.4 已验证语义
+
+- TeachingPlan 与实施事实严格分离，确认/修订课堂记录不修改 approved Revision；
+- 同一 Lesson 场次不会重复创建 Delivery，并发确认只有一个成功；
+- Observation 范围受 tenant、CourseRun、Delivery 和 learner 权限约束，修订不覆盖历史；
+- Reflection 生成只封存教师选择内容，相同请求复用执行，不重复创建草稿；
+- 后续备课 Task 的 TaskWorkingSet 保留 Reflection、Delivery、Observation 和 Evidence 来源；
+- 工作台投影可重建，Worker 重放与服务重启不重复创建 Reflection 或 follow-up；
+- Playwright 覆盖实施确认、观察确认、反思生成/刷新/确认、显式后续 Task、重启恢复和原计划不变。
+
+### 23.5 下一阶段建议：Gate 2.10 教师试点就绪
+
+不建议继续横向扩展更多教师业务。下一 Gate 应聚焦小范围试点所需的正式身份/组织与租户配置、部署和备份恢复、可观测性、数据保留/导出/删除策略、权限管理、错误支持流程、性能容量与试点运维手册。实时课堂采集、多模态分析、长期学生画像、家长/学生端和完整考试仍应推迟。
