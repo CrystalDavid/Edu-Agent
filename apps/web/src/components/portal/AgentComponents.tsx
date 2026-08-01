@@ -5,9 +5,7 @@ import { Button, Input, Select } from "antd";
 import {
   agentQuickTasks,
   type AgentContextItem,
-  type AgentConversation,
-  teacherTodos,
-  type TeacherTodo
+  type AgentConversation
 } from "../../teacher-portal-data";
 import { WorkspaceIcon } from "../WorkspaceIcon";
 import { StatusPill } from "./PortalPrimitives";
@@ -207,23 +205,18 @@ export function AgentChat(props: {
 
 export function AgentContextPanel(props: {
   context: AgentContextItem[];
-  onAddTodo: (todo: TeacherTodo) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
   onAction: (action: string) => void;
 }) {
-  const [section, setSection] = useState<"context" | "todos">("context");
-  const selectedIds = useMemo(() => new Set(props.context.map((item) => item.id)), [props.context]);
   return (
     <aside className="agent-context-panel" data-testid="agent-context-panel">
       <header>
         <div className="segmented-control">
-          <button type="button" className={section === "context" ? "is-active" : ""} onClick={() => setSection("context")}>上下文</button>
-          <button type="button" className={section === "todos" ? "is-active" : ""} onClick={() => setSection("todos")}>待办</button>
+          <button type="button" className="is-active">上下文</button>
         </div>
       </header>
-      {section === "context" ? (
-        <>
+      <>
           <div className="context-summary">
             <div><span>当前课程</span><strong>一次函数：斜率与图像</strong></div>
             <div><span>当前班级</span><strong>八年级 3 班</strong></div>
@@ -248,24 +241,7 @@ export function AgentContextPanel(props: {
             <summary>为什么使用这些数据？</summary>
             <p>课程和班级来自当前任务；教案是最近编辑且与课程匹配的文件；教学目标来自当前章节。你可以逐项移除。</p>
           </details>
-        </>
-      ) : (
-        <div className="context-todos">
-          <h2>今日待办</h2>
-          {teacherTodos.filter((todo) => todo.status !== "已完成").slice(0, 5).map((todo) => (
-            <button
-              type="button"
-              key={todo.id}
-              disabled={selectedIds.has(`context-${todo.id}`)}
-              onClick={() => props.onAddTodo(todo)}
-            >
-              <span><strong>{todo.title}</strong><small>{todo.due} · {todo.context}</small></span>
-              <WorkspaceIcon name="plus" />
-            </button>
-          ))}
-          <p>加入待办时会同时建议相关课程、最近教案和教学目标；每一项都可移除。</p>
-        </div>
-      )}
+      </>
     </aside>
   );
 }

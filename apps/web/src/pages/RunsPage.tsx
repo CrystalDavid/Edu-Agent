@@ -259,7 +259,7 @@ function TechnicalDetails({
                   {
                     key: "working-set",
                     label: "TaskWorkingSet",
-                    children: `v${explanation.lessonPreparation.workingSet.version} · ${explanation.lessonPreparation.workingSet.evidenceRefs.length} Evidence`
+                    children: `v${explanation.lessonPreparation.workingSet.version} · ${explanation.lessonPreparation.workingSet.evidenceRefs.length} Evidence${explanation.lessonPreparation.workingSet.sourceTodoRef ? ` · Todo ${explanation.lessonPreparation.workingSet.sourceTodoRef}` : ""}${explanation.lessonPreparation.workingSet.sourceResourceRefs?.length ? ` · ${explanation.lessonPreparation.workingSet.sourceResourceRefs.length} 个显式关联资源` : ""}`
                   },
                   {
                     key: "authorized-plan",

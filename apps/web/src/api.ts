@@ -6,6 +6,8 @@ import {
   AssignmentDetailSchema,
   AssignmentListSchema,
   AssignmentResultSchema,
+  CalendarEventActionRequestSchema,
+  CalendarEventMutationResultSchema,
   ApproveTeachingPlanRequestSchema,
   ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
@@ -14,6 +16,7 @@ import {
   CourseRunEnrollmentListSchema,
   CancelModelInvocationRequestSchema,
   CourseRunListSchema,
+  CreateCalendarEventRequestSchema,
   CreateLessonPreparationTaskRequestSchema,
   CreateAdjustmentTaskRequestSchema,
   CreateAssignmentRequestSchema,
@@ -22,6 +25,7 @@ import {
   CurriculumUnitListSchema,
   CreateTeacherCopilotTaskRequestSchema,
   CreateTeacherCopilotTaskResultSchema,
+  CreateTeacherTodoRequestSchema,
   FileAssetDetailSchema,
   FileAssetListQuerySchema,
   FileAssetListSchema,
@@ -41,6 +45,7 @@ import {
   LessonPreparationTaskListSchema,
   LessonPreparationTaskResultSchema,
   LessonTeachingPlanStateSchema,
+  LinkTeacherTodoResourceRequestSchema,
   ModelExecutionViewSchema,
   ModelUsageSummarySchema,
   PendingProposalListSchema,
@@ -51,6 +56,8 @@ import {
   RetryModelInvocationRequestSchema,
   ReopenGradeRequestSchema,
   SaveGradeDraftRequestSchema,
+  ScheduleTodoRequestSchema,
+  ScheduleTodoResultSchema,
   SuggestionDispositionRequestSchema,
   SuggestionDispositionResultSchema,
   TaskResourceSelectionRequestSchema,
@@ -60,11 +67,28 @@ import {
   SyntheticSubmissionImportRequestSchema,
   SyntheticSubmissionImportResultSchema,
   TeacherAssignmentOverviewSchema,
+  TeacherCalendarListQuerySchema,
+  TeacherCalendarListSchema,
+  TeacherTodoActionRequestSchema,
+  TeacherTodoListQuerySchema,
+  TeacherTodoListSchema,
+  TeacherTodoMutationResultSchema,
+  TeacherTodoPreferenceRequestSchema,
+  TeacherTodoViewSchema,
+  TeacherWorkbenchOverviewSchema,
+  TeacherWorkProjectionListSchema,
+  TeacherWorkProjectionViewSchema,
   TeacherWorkspaceSchema,
   TeachingPlanRevisionViewSchema,
   TeachingPlanDocxExportRequestSchema,
   TeachingPlanDocxExportResultSchema,
   UpdateAssignmentDraftRequestSchema,
+  TodoAgentHandoffRequestSchema,
+  TodoAgentHandoffResultSchema,
+  UpdateCalendarEventRequestSchema,
+  UpdateTeacherTodoRequestSchema,
+  WorkProjectionPreferenceRequestSchema,
+  WorkProjectionPreferenceResultSchema,
   type ApiHealth,
   type AssignmentActionRequest,
   type AssignmentAnalytics,
@@ -73,13 +97,16 @@ import {
   type ApproveTeachingPlanRequest,
   type ApproveTeachingPlanResult,
   type CancelModelInvocationRequest,
+  type CalendarEventActionRequest,
   type ConfirmGradeRequest,
   type CreateAdjustmentTaskRequest,
+  type CreateCalendarEventRequest,
   type CreateAssignmentRequest,
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
+  type CreateTeacherTodoRequest,
   type CreateLessonPreparationTaskRequest,
   type FileAssetDetail,
   type FileAssetListQuery,
@@ -87,8 +114,10 @@ import {
   type FileLifecycleRequest,
   type FileUploadMetadata,
   type FileVersionUploadMetadata,
+  type LinkTeacherTodoResourceRequest,
   type ReopenGradeRequest,
   type SaveGradeDraftRequest,
+  type ScheduleTodoRequest,
   type LessonPreparationSummary,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
@@ -105,9 +134,17 @@ import {
   type SuggestionDispositionResult,
   type TaskResourceSelectionRequest,
   type TaskWorkingSet,
+  type TeacherCalendarListQuery,
+  type TeacherTodoActionRequest,
+  type TeacherTodoListQuery,
+  type TeacherTodoPreferenceRequest,
   type TeacherWorkspace,
+  type TodoAgentHandoffRequest,
   type TeachingPlanDocxExportRequest,
   type SyntheticSubmissionImportRequest,
+  type UpdateCalendarEventRequest,
+  type UpdateTeacherTodoRequest,
+  type WorkProjectionPreferenceRequest,
   type UpdateAssignmentDraftRequest
 } from "@edu-agent/contracts";
 
@@ -933,5 +970,210 @@ export function loadAssignmentOverview() {
     "作业工作概览",
     apiRoutes.teacher.assignmentOverview,
     TeacherAssignmentOverviewSchema
+  );
+}
+
+export function loadTeacherTodos(
+  query: Partial<TeacherTodoListQuery> = {}
+) {
+  const parsed = TeacherTodoListQuerySchema.parse(query);
+  const search = new URLSearchParams({
+    status: parsed.status,
+    includeSnoozed: parsed.includeSnoozed
+  });
+  if (parsed.dueBefore) search.set("dueBefore", parsed.dueBefore);
+  return request(
+    "教师待办列表",
+    `${apiRoutes.teacher.todos}?${search.toString()}`,
+    TeacherTodoListSchema
+  );
+}
+
+export function loadTeacherTodo(todoRef: string) {
+  return request(
+    "教师待办详情",
+    apiRoutes.teacher.todo(todoRef),
+    TeacherTodoViewSchema
+  );
+}
+
+export function createTeacherTodo(input: CreateTeacherTodoRequest) {
+  CreateTeacherTodoRequestSchema.parse(input);
+  return request(
+    "创建教师待办",
+    apiRoutes.teacher.todos,
+    TeacherTodoMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateTeacherTodo(
+  todoRef: string,
+  input: UpdateTeacherTodoRequest
+) {
+  UpdateTeacherTodoRequestSchema.parse(input);
+  return request(
+    "更新教师待办",
+    apiRoutes.teacher.todo(todoRef),
+    TeacherTodoMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function transitionTeacherTodo(
+  todoRef: string,
+  action: "complete" | "reopen" | "cancel",
+  input: TeacherTodoActionRequest
+) {
+  TeacherTodoActionRequestSchema.parse(input);
+  const path = action === "complete"
+    ? apiRoutes.teacher.todoComplete(todoRef)
+    : action === "reopen"
+      ? apiRoutes.teacher.todoReopen(todoRef)
+      : apiRoutes.teacher.todoCancel(todoRef);
+  return request(
+    "更新教师待办状态",
+    path,
+    TeacherTodoMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateTeacherTodoPreference(
+  todoRef: string,
+  input: TeacherTodoPreferenceRequest
+) {
+  TeacherTodoPreferenceRequestSchema.parse(input);
+  return request(
+    "更新待办提醒",
+    apiRoutes.teacher.todoPreference(todoRef),
+    TeacherTodoMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function linkTeacherTodoResource(
+  todoRef: string,
+  input: LinkTeacherTodoResourceRequest
+) {
+  LinkTeacherTodoResourceRequestSchema.parse(input);
+  return request(
+    "关联待办资源",
+    apiRoutes.teacher.todoResources(todoRef),
+    TeacherTodoMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function scheduleTeacherTodo(
+  todoRef: string,
+  input: ScheduleTodoRequest
+) {
+  ScheduleTodoRequestSchema.parse(input);
+  return request(
+    "将待办安排到日历",
+    apiRoutes.teacher.todoSchedule(todoRef),
+    ScheduleTodoResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function handoffTeacherTodoToAgent(
+  todoRef: string,
+  input: TodoAgentHandoffRequest
+) {
+  TodoAgentHandoffRequestSchema.parse(input);
+  return request(
+    "在 Agent 中处理待办",
+    apiRoutes.teacher.todoAgentHandoff(todoRef),
+    TodoAgentHandoffResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadTeacherCalendar(query: TeacherCalendarListQuery) {
+  const parsed = TeacherCalendarListQuerySchema.parse(query);
+  const search = new URLSearchParams({
+    from: parsed.from,
+    to: parsed.to,
+    mode: parsed.mode,
+    timezone: parsed.timezone
+  });
+  return request(
+    "教师日历",
+    `${apiRoutes.teacher.calendarEvents}?${search.toString()}`,
+    TeacherCalendarListSchema
+  );
+}
+
+export function createCalendarEvent(input: CreateCalendarEventRequest) {
+  CreateCalendarEventRequestSchema.parse(input);
+  return request(
+    "创建日历事件",
+    apiRoutes.teacher.calendarEvents,
+    CalendarEventMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateCalendarEvent(
+  eventRef: string,
+  input: UpdateCalendarEventRequest
+) {
+  UpdateCalendarEventRequestSchema.parse(input);
+  return request(
+    "更新日历事件",
+    apiRoutes.teacher.calendarEvent(eventRef),
+    CalendarEventMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function transitionCalendarEvent(
+  eventRef: string,
+  action: "complete" | "cancel",
+  input: CalendarEventActionRequest
+) {
+  CalendarEventActionRequestSchema.parse(input);
+  return request(
+    "更新日历事件状态",
+    action === "complete"
+      ? apiRoutes.teacher.calendarEventComplete(eventRef)
+      : apiRoutes.teacher.calendarEventCancel(eventRef),
+    CalendarEventMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadTeacherWorkbenchOverview(timezone = "Asia/Shanghai") {
+  const search = new URLSearchParams({ timezone });
+  return request(
+    "教师统一工作台",
+    `${apiRoutes.teacher.workbenchOverview}?${search.toString()}`,
+    TeacherWorkbenchOverviewSchema
+  );
+}
+
+export function loadTeacherWorkActionItems(includeDeferred = false) {
+  const search = new URLSearchParams({
+    includeDeferred: String(includeDeferred)
+  });
+  return request(
+    "教师业务提醒",
+    `${apiRoutes.teacher.workbenchActionItems}?${search.toString()}`,
+    TeacherWorkProjectionListSchema
+  );
+}
+
+export function updateWorkProjectionPreference(
+  projectionRef: string,
+  input: WorkProjectionPreferenceRequest
+) {
+  WorkProjectionPreferenceRequestSchema.parse(input);
+  return request(
+    "更新业务提醒偏好",
+    apiRoutes.teacher.workbenchProjectionPreference(projectionRef),
+    WorkProjectionPreferenceResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
   );
 }
