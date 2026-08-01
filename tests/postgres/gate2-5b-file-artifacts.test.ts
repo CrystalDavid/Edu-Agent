@@ -296,6 +296,42 @@ describe("Gate 2.5B file and teaching artifact persistence", () => {
       })
       .expect(409)
       .expect(({ body }) => expect(body.code).toBe("FILE_REFERENCED_BY_FORMAL_ARTIFACT"));
+
+    await request(app)
+      .post(apiRoutes.teacher.fileVersions(exported.body.asset.assetRef))
+      .set(demoHeaders)
+      .set(
+        "content-type",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      )
+      .set("x-edu-file-metadata", metadataHeader({
+        originalFileName: "不应覆盖正式导出的教案.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        expectedAssetVersion: exported.body.asset.version,
+        purpose: "file.version.create",
+        idempotencyKey: `gate25c:managed-export-version:${randomUUID()}`
+      }))
+      .send(content.body)
+      .expect(409)
+      .expect(({ body }) =>
+        expect(body.code).toBe("TEACHING_PLAN_EXPORT_VERSION_MANAGED")
+      );
+
+    await request(app)
+      .post(apiRoutes.teacher.fileBindings(exported.body.asset.assetRef))
+      .set(demoHeaders)
+      .send({
+        targetType: "teaching_plan_revision",
+        targetRef: "artifact-revision:another-approved-plan",
+        relation: "reference",
+        expectedAssetVersion: exported.body.asset.version,
+        purpose: "file.binding.add",
+        idempotencyKey: `gate25c:managed-export-binding:${randomUUID()}`
+      })
+      .expect(409)
+      .expect(({ body }) =>
+        expect(body.code).toBe("TEACHING_PLAN_EXPORT_BINDING_MANAGED")
+      );
   });
 
   it("extracts a bounded Office summary before persisting an uploaded DOCX", async () => {

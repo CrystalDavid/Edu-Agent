@@ -41,6 +41,10 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
     "请生成一条用于验证超时恢复的合成备课建议。"
   );
   const taskRef = first.execution.taskRef as string;
+  await expect(page.getByTestId("generate-copilot")).toBeDisabled();
+  await expect(page.getByTestId("generation-disabled-reason")).toContainText(
+    "已有模型执行正在进行"
+  );
   await expect(
     page.getByTestId("model-execution-status")
   ).toContainText(/等待生成|正在生成|正在重试/u);
