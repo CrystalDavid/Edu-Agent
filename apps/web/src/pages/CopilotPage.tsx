@@ -796,6 +796,23 @@ export function CopilotPage(props: {
                 </dd>
               </div>
             ) : null}
+            {preparationTask.workingSet.sourceReflectionRef ? (
+              <div>
+                <dt>课后反思来源</dt>
+                <dd>
+                  {preparationTask.workingSet.sourceReflectionRef}
+                  {preparationTask.workingSet.sourceDeliveryRevisionRef
+                    ? ` · 实施 ${preparationTask.workingSet.sourceDeliveryRevisionRef}`
+                    : ""}
+                  {preparationTask.workingSet.sourceObservationRevisionRefs?.length
+                    ? ` · 教师确认观察 ${preparationTask.workingSet.sourceObservationRevisionRefs.join("，")}`
+                    : " · 未选择课堂观察"}
+                  {preparationTask.workingSet.evidenceRefs.length
+                    ? ` · Assignment Evidence ${preparationTask.workingSet.evidenceRefs.join("，")}`
+                    : " · 未选择 Assignment Evidence"}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           <Text strong>本次允许使用的 Evidence</Text>
           <Space wrap>

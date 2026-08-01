@@ -1,6 +1,7 @@
 import {
   apiRoutes,
   AdjustmentTaskResultSchema,
+  AmendLessonDeliveryRequestSchema,
   AssignmentActionRequestSchema,
   AssignmentAnalyticsSchema,
   AssignmentDetailSchema,
@@ -8,20 +9,31 @@ import {
   AssignmentResultSchema,
   CalendarEventActionRequestSchema,
   CalendarEventMutationResultSchema,
+  ClassroomObservationListQuerySchema,
+  ClassroomObservationListSchema,
+  ClassroomObservationDetailSchema,
+  ClassroomObservationMutationResultSchema,
   ApproveTeachingPlanRequestSchema,
   ApproveTeachingPlanResultSchema,
   ApiHealthSchema,
   AuthorizedContextPlanSchema,
   ConfirmGradeRequestSchema,
+  ConfirmClassroomObservationRequestSchema,
+  ConfirmLessonDeliveryRequestSchema,
+  ConfirmReflectionRequestSchema,
   CourseRunEnrollmentListSchema,
   CancelModelInvocationRequestSchema,
   CourseRunListSchema,
   CreateCalendarEventRequestSchema,
+  CreateClassroomObservationRequestSchema,
+  CreateLessonDeliveryRequestSchema,
   CreateLessonPreparationTaskRequestSchema,
   CreateAdjustmentTaskRequestSchema,
   CreateAssignmentRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateModelInvocationResultSchema,
+  CreateReflectionDraftRequestSchema,
+  CreateReflectionFollowUpRequestSchema,
   CurriculumUnitListSchema,
   CreateTeacherCopilotTaskRequestSchema,
   CreateTeacherCopilotTaskResultSchema,
@@ -36,9 +48,13 @@ import {
   FileVersionUploadMetadataSchema,
   GradeDecisionHistorySchema,
   GradeDecisionResultSchema,
+  GenerateReflectionRequestSchema,
   GradingQueueSchema,
   LearnerRecentEvidenceSchema,
   LessonListSchema,
+  LessonDeliveryDetailSchema,
+  LessonDeliveryMutationResultSchema,
+  LessonImplementationSummarySchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
   LessonPreparationTaskDetailSchema,
@@ -49,10 +65,15 @@ import {
   ModelExecutionViewSchema,
   ModelUsageSummarySchema,
   PendingProposalListSchema,
+  PendingReflectionQueueSchema,
   ProposalReviewDetailSchema,
   RunExplanationSchema,
   ProviderAvailabilitySchema,
   ProviderCapabilitiesSchema,
+  ReflectionDetailSchema,
+  ReflectionGenerationResultSchema,
+  ReflectionFollowUpResultSchema,
+  ReflectionMutationResultSchema,
   RetryModelInvocationRequestSchema,
   ReopenGradeRequestSchema,
   SaveGradeDraftRequestSchema,
@@ -60,6 +81,7 @@ import {
   ScheduleTodoResultSchema,
   SuggestionDispositionRequestSchema,
   SuggestionDispositionResultSchema,
+  SupersedeClassroomObservationRequestSchema,
   TaskResourceSelectionRequestSchema,
   TaskWorkingSetResultSchema,
   SubmissionDetailSchema,
@@ -83,6 +105,9 @@ import {
   TeachingPlanDocxExportRequestSchema,
   TeachingPlanDocxExportResultSchema,
   UpdateAssignmentDraftRequestSchema,
+  UpdateClassroomObservationDraftRequestSchema,
+  UpdateLessonDeliveryDraftRequestSchema,
+  UpdateReflectionDraftRequestSchema,
   TodoAgentHandoffRequestSchema,
   TodoAgentHandoffResultSchema,
   UpdateCalendarEventRequestSchema,
@@ -90,6 +115,7 @@ import {
   WorkProjectionPreferenceRequestSchema,
   WorkProjectionPreferenceResultSchema,
   type ApiHealth,
+  type AmendLessonDeliveryRequest,
   type AssignmentActionRequest,
   type AssignmentAnalytics,
   type AssignmentDetail,
@@ -98,12 +124,20 @@ import {
   type ApproveTeachingPlanResult,
   type CancelModelInvocationRequest,
   type CalendarEventActionRequest,
+  type ClassroomObservationListQuery,
+  type ConfirmClassroomObservationRequest,
+  type ConfirmLessonDeliveryRequest,
+  type ConfirmReflectionRequest,
   type ConfirmGradeRequest,
   type CreateAdjustmentTaskRequest,
   type CreateCalendarEventRequest,
+  type CreateClassroomObservationRequest,
+  type CreateLessonDeliveryRequest,
   type CreateAssignmentRequest,
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
+  type CreateReflectionDraftRequest,
+  type CreateReflectionFollowUpRequest,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
   type CreateTeacherTodoRequest,
@@ -114,6 +148,7 @@ import {
   type FileLifecycleRequest,
   type FileUploadMetadata,
   type FileVersionUploadMetadata,
+  type GenerateReflectionRequest,
   type LinkTeacherTodoResourceRequest,
   type ReopenGradeRequest,
   type SaveGradeDraftRequest,
@@ -132,6 +167,7 @@ import {
   type RetryModelInvocationRequest,
   type SuggestionDispositionRequest,
   type SuggestionDispositionResult,
+  type SupersedeClassroomObservationRequest,
   type TaskResourceSelectionRequest,
   type TaskWorkingSet,
   type TeacherCalendarListQuery,
@@ -143,6 +179,9 @@ import {
   type TeachingPlanDocxExportRequest,
   type SyntheticSubmissionImportRequest,
   type UpdateCalendarEventRequest,
+  type UpdateClassroomObservationDraftRequest,
+  type UpdateLessonDeliveryDraftRequest,
+  type UpdateReflectionDraftRequest,
   type UpdateTeacherTodoRequest,
   type WorkProjectionPreferenceRequest,
   type UpdateAssignmentDraftRequest
@@ -1175,5 +1214,221 @@ export function updateWorkProjectionPreference(
     apiRoutes.teacher.workbenchProjectionPreference(projectionRef),
     WorkProjectionPreferenceResultSchema,
     { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadLessonImplementationSummary(lessonRef: string) {
+  return request(
+    "课时实施与反思摘要",
+    apiRoutes.teacher.lessonImplementationSummary(lessonRef),
+    LessonImplementationSummarySchema
+  );
+}
+
+export function createLessonDelivery(input: CreateLessonDeliveryRequest) {
+  CreateLessonDeliveryRequestSchema.parse(input);
+  return request(
+    "创建课堂实施草稿",
+    apiRoutes.teacher.lessonDeliveries,
+    LessonDeliveryMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadLessonDelivery(deliveryRef: string) {
+  return request(
+    "课堂实施记录",
+    apiRoutes.teacher.lessonDelivery(deliveryRef),
+    LessonDeliveryDetailSchema
+  );
+}
+
+export function updateLessonDeliveryDraft(
+  deliveryRef: string,
+  input: UpdateLessonDeliveryDraftRequest
+) {
+  UpdateLessonDeliveryDraftRequestSchema.parse(input);
+  return request(
+    "更新课堂实施草稿",
+    apiRoutes.teacher.lessonDelivery(deliveryRef),
+    LessonDeliveryMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function confirmLessonDelivery(
+  deliveryRef: string,
+  input: ConfirmLessonDeliveryRequest
+) {
+  ConfirmLessonDeliveryRequestSchema.parse(input);
+  return request(
+    "确认课堂实施事实",
+    apiRoutes.teacher.lessonDeliveryConfirm(deliveryRef),
+    LessonDeliveryMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function amendLessonDelivery(
+  deliveryRef: string,
+  input: AmendLessonDeliveryRequest
+) {
+  AmendLessonDeliveryRequestSchema.parse(input);
+  return request(
+    "修订课堂实施记录",
+    apiRoutes.teacher.lessonDeliveryAmend(deliveryRef),
+    LessonDeliveryMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function createClassroomObservation(
+  input: CreateClassroomObservationRequest
+) {
+  CreateClassroomObservationRequestSchema.parse(input);
+  return request(
+    "创建课堂观察",
+    apiRoutes.teacher.classroomObservations,
+    ClassroomObservationMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadClassroomObservations(
+  input: ClassroomObservationListQuery
+) {
+  ClassroomObservationListQuerySchema.parse(input);
+  const search = new URLSearchParams({ lessonRef: input.lessonRef });
+  if (input.objectiveRef) search.set("objectiveRef", input.objectiveRef);
+  if (input.learnerRef) search.set("learnerRef", input.learnerRef);
+  return request(
+    "课堂观察列表",
+    `${apiRoutes.teacher.classroomObservations}?${search.toString()}`,
+    ClassroomObservationListSchema
+  );
+}
+
+export function loadClassroomObservation(observationRef: string) {
+  return request(
+    "课堂观察详情",
+    apiRoutes.teacher.classroomObservation(observationRef),
+    ClassroomObservationDetailSchema
+  );
+}
+
+export function updateClassroomObservationDraft(
+  observationRef: string,
+  input: UpdateClassroomObservationDraftRequest
+) {
+  UpdateClassroomObservationDraftRequestSchema.parse(input);
+  return request(
+    "更新课堂观察草稿",
+    apiRoutes.teacher.classroomObservation(observationRef),
+    ClassroomObservationMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function confirmClassroomObservation(
+  observationRef: string,
+  input: ConfirmClassroomObservationRequest
+) {
+  ConfirmClassroomObservationRequestSchema.parse(input);
+  return request(
+    "确认课堂观察",
+    apiRoutes.teacher.classroomObservationConfirm(observationRef),
+    ClassroomObservationMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function supersedeClassroomObservation(
+  observationRef: string,
+  input: SupersedeClassroomObservationRequest
+) {
+  SupersedeClassroomObservationRequestSchema.parse(input);
+  return request(
+    "修订课堂观察",
+    apiRoutes.teacher.classroomObservationSupersede(observationRef),
+    ClassroomObservationMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function createReflectionDraft(input: CreateReflectionDraftRequest) {
+  CreateReflectionDraftRequestSchema.parse(input);
+  return request(
+    "创建课后反思草稿",
+    apiRoutes.teacher.reflections,
+    ReflectionMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadReflection(reflectionRef: string) {
+  return request(
+    "课后反思",
+    apiRoutes.teacher.reflection(reflectionRef),
+    ReflectionDetailSchema
+  );
+}
+
+export function updateReflectionDraft(
+  reflectionRef: string,
+  input: UpdateReflectionDraftRequest
+) {
+  UpdateReflectionDraftRequestSchema.parse(input);
+  return request(
+    "更新课后反思草稿",
+    apiRoutes.teacher.reflection(reflectionRef),
+    ReflectionMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function generateReflection(
+  reflectionRef: string,
+  input: GenerateReflectionRequest
+) {
+  GenerateReflectionRequestSchema.parse(input);
+  return request(
+    "生成课后反思草稿",
+    apiRoutes.teacher.reflectionGenerate(reflectionRef),
+    ReflectionGenerationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function confirmReflection(
+  reflectionRef: string,
+  input: ConfirmReflectionRequest
+) {
+  ConfirmReflectionRequestSchema.parse(input);
+  return request(
+    "确认课后反思",
+    apiRoutes.teacher.reflectionConfirm(reflectionRef),
+    ReflectionMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function createReflectionFollowUp(
+  reflectionRef: string,
+  input: CreateReflectionFollowUpRequest
+) {
+  CreateReflectionFollowUpRequestSchema.parse(input);
+  return request(
+    "创建反思后续行动",
+    apiRoutes.teacher.reflectionFollowUps(reflectionRef),
+    ReflectionFollowUpResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadPendingReflections() {
+  return request(
+    "待完成课后反思",
+    apiRoutes.teacher.pendingReflections,
+    PendingReflectionQueueSchema
   );
 }

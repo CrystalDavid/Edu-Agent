@@ -27,6 +27,7 @@ interface ParsedRoute {
   route: AppRoute;
   proposalRevisionRef: string | null;
   preparationTaskRef: string | null;
+  reflectionRef: string | null;
   lessonRef: string | null;
   fileAssetRef: string | null;
   fileLessonRef: string | null;
@@ -41,15 +42,16 @@ export function parseAppRoute(
     fileAssetRef: null,
     fileLessonRef: null
   };
-  const proposalMatch = pathname.match(
-    /^\/copilot\/proposals\/([^/]+)$/
+  const reflectionMatch = pathname.match(
+    /^\/agent\/reflections\/([^/]+)$/
   );
-  if (proposalMatch?.[1]) {
+  if (reflectionMatch?.[1]) {
     try {
       return {
-        route: "/copilot",
-        proposalRevisionRef: decodeURIComponent(proposalMatch[1]),
+        route: "/agent",
+        proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: decodeURIComponent(reflectionMatch[1]),
         lessonRef: null,
         ...emptyFileContext,
         canonicalPath: pathname
@@ -59,6 +61,33 @@ export function parseAppRoute(
         route: defaultRoute,
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
+        lessonRef: null,
+        ...emptyFileContext,
+        canonicalPath: defaultRoute
+      };
+    }
+  }
+  const proposalMatch = pathname.match(
+    /^\/copilot\/proposals\/([^/]+)$/
+  );
+  if (proposalMatch?.[1]) {
+    try {
+      return {
+        route: "/copilot",
+        proposalRevisionRef: decodeURIComponent(proposalMatch[1]),
+        preparationTaskRef: null,
+        reflectionRef: null,
+        lessonRef: null,
+        ...emptyFileContext,
+        canonicalPath: pathname
+      };
+    } catch {
+      return {
+        route: defaultRoute,
+        proposalRevisionRef: null,
+        preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         ...emptyFileContext,
         canonicalPath: defaultRoute
@@ -76,6 +105,7 @@ export function parseAppRoute(
         preparationTaskRef: decodeURIComponent(
           preparationMatch[2]
         ),
+        reflectionRef: null,
         lessonRef: null,
         ...emptyFileContext,
         canonicalPath: pathname
@@ -85,6 +115,7 @@ export function parseAppRoute(
         route: defaultRoute,
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         ...emptyFileContext,
         canonicalPath: defaultRoute
@@ -100,6 +131,7 @@ export function parseAppRoute(
         route: "/teaching",
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: decodeURIComponent(lessonMatch[1]),
         ...emptyFileContext,
         canonicalPath: pathname
@@ -109,6 +141,7 @@ export function parseAppRoute(
         route: defaultRoute,
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         ...emptyFileContext,
         canonicalPath: defaultRoute
@@ -124,6 +157,7 @@ export function parseAppRoute(
     route,
     proposalRevisionRef: null,
     preparationTaskRef: null,
+    reflectionRef: null,
     lessonRef: null,
     fileAssetRef: fileParameters?.get("asset") || null,
     fileLessonRef: fileParameters?.get("lesson") || null,
@@ -137,11 +171,13 @@ export function useAppRoute(): {
   navigate: (route: AppRoute) => void;
   proposalRevisionRef: string | null;
   preparationTaskRef: string | null;
+  reflectionRef: string | null;
   lessonRef: string | null;
   fileAssetRef: string | null;
   fileLessonRef: string | null;
   navigateProposal: (proposalRevisionRef: string) => void;
   navigateLesson: (lessonRef: string) => void;
+  navigateReflection: (reflectionRef: string) => void;
   navigateFiles: (context?: {
     assetRef?: string;
     lessonRef?: string;
@@ -182,6 +218,7 @@ export function useAppRoute(): {
     route: location.route,
     proposalRevisionRef: location.proposalRevisionRef,
     preparationTaskRef: location.preparationTaskRef,
+    reflectionRef: location.reflectionRef,
     lessonRef: location.lessonRef,
     fileAssetRef: location.fileAssetRef,
     fileLessonRef: location.fileLessonRef,
@@ -190,6 +227,7 @@ export function useAppRoute(): {
         nextRoute === location.route &&
         location.proposalRevisionRef === null &&
         location.preparationTaskRef === null &&
+        location.reflectionRef === null &&
         location.lessonRef === null &&
         location.fileAssetRef === null &&
         location.fileLessonRef === null
@@ -201,6 +239,7 @@ export function useAppRoute(): {
         route: nextRoute,
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
@@ -224,6 +263,7 @@ export function useAppRoute(): {
         route: "/copilot",
         proposalRevisionRef,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
@@ -240,7 +280,23 @@ export function useAppRoute(): {
         route: "/teaching",
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef,
+        fileAssetRef: null,
+        fileLessonRef: null,
+        canonicalPath: path
+      });
+      window.scrollTo({ top: 0, behavior: "instant" });
+    },
+    navigateReflection(reflectionRef) {
+      const path = `/agent/reflections/${encodeURIComponent(reflectionRef)}`;
+      window.history.pushState({}, "", path);
+      setLocation({
+        route: "/agent",
+        proposalRevisionRef: null,
+        preparationTaskRef: null,
+        reflectionRef,
+        lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
         canonicalPath: path
@@ -257,6 +313,7 @@ export function useAppRoute(): {
         route: "/files",
         proposalRevisionRef: null,
         preparationTaskRef: null,
+        reflectionRef: null,
         lessonRef: null,
         fileAssetRef: context.assetRef ?? null,
         fileLessonRef: context.lessonRef ?? null,
@@ -276,6 +333,7 @@ export function useAppRoute(): {
         route: destination,
         proposalRevisionRef: null,
         preparationTaskRef,
+        reflectionRef: null,
         lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
