@@ -486,6 +486,17 @@ test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rej
   const firstRequest =
     "根据一次函数学习证据，比较明天课堂的两种调整策略";
   await taskInput.fill(firstRequest);
+  let delayFirstInvocationRead = true;
+  await page.route(/\/model-invocations\/[^/?]+(?:\?.*)?$/, async (route) => {
+    if (
+      delayFirstInvocationRead &&
+      route.request().method() === "GET"
+    ) {
+      delayFirstInvocationRead = false;
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+    await route.continue();
+  });
   const createResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith(
@@ -726,6 +737,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByTestId("generate-copilot").click();
   const createdResponse = await createResponse;
   expect(createdResponse.status()).toBe(202);
+  await expect(page.getByTestId("generate-copilot")).toBeDisabled();
   const created = await createdResponse.json();
   expect(created.execution.taskRef).toBeTruthy();
   expect(
@@ -781,6 +793,17 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByRole("button", { name: "查看教学计划" }).click();
   await expect(page).toHaveURL(/\/teaching-plan\/tasks\//);
   await expect(
+    page.getByRole("heading", { name: "你正在查看当前待审核版本" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "你正在查看历史版本" })
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: `${screenshotRoot}/22-gate2-5c-active-in-review.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+  await expect(
     page.getByTestId("teaching-plan-preparation-task")
   ).toContainText("awaiting_plan_review");
   await page.getByTestId("approve-teaching-plan").click();
@@ -798,6 +821,20 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     initialPlans.currentApproved.revisionRef
   );
   expect(afterApproval.activeInReview).toBeNull();
+
+  await page.getByRole("button", { name: "返回课时" }).click();
+  await expect(page).toHaveURL(
+    /\/teaching\/lessons\/lesson(?:%3A|:)slope-and-graph-change/
+  );
+  await expect(page.getByTestId("finish-ready-preparation")).toBeVisible();
+  await expect(page.getByTestId("start-lesson-preparation")).toHaveCount(0);
+  await page.screenshot({
+    path: `${screenshotRoot}/23-gate2-5c-ready-action.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+  await page.getByTestId("finish-ready-preparation").click();
+  await expect(page).toHaveURL(/\/teaching-plan\/tasks\//);
 
   const exportResponse = page.waitForResponse(
     (response) =>
@@ -832,6 +869,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
 
   await page.getByRole("button", { name: "返回备课 Task" }).click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
+  await expect(page.getByTestId("completed-task-review-only")).toBeVisible();
   await taskInput.fill(
     "创建第二条建议，用于验证拒绝不会改变已批准计划。"
   );
@@ -839,6 +877,9 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await expect(
     page.getByRole("heading", { name: "比较教学策略" })
   ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("accept-suggestion")).toBeDisabled();
+  await expect(page.getByTestId("edit-suggestion")).toBeDisabled();
+  await expect(page.getByTestId("reject-suggestion")).toBeEnabled();
   await page.getByTestId("reject-suggestion").click();
   await expect(page.getByText("已拒绝")).toBeVisible({
     timeout: 20_000
@@ -899,6 +940,19 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await expect(page.getByTestId("file-version-history")).toContainText("v2");
   await expect(page.getByTestId("file-version-history")).toContainText("v1");
   await expect(
+    page.getByTestId("file-detail").getByRole("button", {
+      name: "创建新版本"
+    })
+  ).toBeDisabled();
+  await expect(
+    page.getByTestId("file-detail").getByRole("button", {
+      name: "创建新版本"
+    })
+  ).toHaveAttribute(
+    "title",
+    "正式教案的新版本只能从新的 approved TeachingPlan Revision 导出"
+  );
+  await expect(
     page.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })
   ).toBeDisabled();
   await expect(
@@ -939,8 +993,43 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
 
   await page.goto("/teaching");
   await page.getByTestId("lesson-3").click();
+  await expect(page.getByTestId("lesson-detail")).toContainText("已完成");
+  await expect(
+    page.getByTestId("lesson-detail").getByRole("button", {
+      name: "查看已完成备课"
+    })
+  ).toBeVisible();
   await expect(page.getByTestId("lesson-related-files")).toContainText(
     "斜率与图像变化 教案"
+  );
+  await page
+    .getByTestId("lesson-related-files")
+    .getByRole("button", { name: /斜率与图像变化 教案/ })
+    .click();
+  await expect(page).toHaveURL(
+    /\/files\?asset=.*&lesson=lesson(?:%3A|:)slope-and-graph-change/
+  );
+  await expect(
+    page
+      .getByLabel("上传关联课时")
+      .locator("xpath=ancestor::*[contains(@class, 'ant-select')][1]")
+  ).toContainText("斜率与图像变化");
+  await page.screenshot({
+    path: `${screenshotRoot}/24-gate2-5c-file-context.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  await page.goto("/teaching");
+  await page.getByTestId("lesson-5").click();
+  await expect(page.getByTestId("lesson-detail")).toContainText("已计划");
+  await page.getByRole("button", { name: "取消备课" }).click();
+  await page.getByRole("button", { name: "确认取消" }).click();
+  await expect(page.getByTestId("lesson-detail")).toContainText("已取消");
+  await page.getByTestId("reopen-lesson-preparation").click();
+  await expect(page).toHaveURL(/\/agent\/tasks\//);
+  await expect(page.getByTestId("task-working-set")).toContainText(
+    "一次函数的应用"
   );
   await assertCleanMonitor(monitor);
 });

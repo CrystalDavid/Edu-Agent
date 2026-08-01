@@ -13,6 +13,7 @@ import {
   Button,
   Card,
   Empty,
+  Popconfirm,
   Space,
   Spin,
   Tag,
@@ -34,17 +35,20 @@ import {
   HomeworkWorkspace
 } from "../components/portal/TeachingComponents";
 import { PageHeader } from "../components/portal/PortalPrimitives";
-import type { AppRoute } from "../route";
+import { lessonPreparationStatusLabel } from "../presentation";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
 
 export function TeachingWorkspacePage(props: {
-  navigate: (route: AppRoute) => void;
   navigatePreparation: (
     taskRef: string,
     destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
   ) => void;
+  navigateFiles: (context?: {
+    assetRef?: string;
+    lessonRef?: string;
+  }) => void;
   initialLessonRef?: string | null;
   initialTab?: TeachingTab;
   onAction: (message: string) => void;
@@ -92,8 +96,9 @@ export function TeachingWorkspacePage(props: {
       </div>
       {tab === "course" ? (
         <RealCourseWorkspace
-          navigate={props.navigate}
+          navigateFiles={props.navigateFiles}
           navigatePreparation={props.navigatePreparation}
+          onAction={props.onAction}
           {...(props.initialLessonRef !== undefined
             ? { initialLessonRef: props.initialLessonRef }
             : {})}
@@ -110,11 +115,15 @@ export function TeachingWorkspacePage(props: {
 }
 
 function RealCourseWorkspace(props: {
-  navigate: (route: AppRoute) => void;
   navigatePreparation: (
     taskRef: string,
     destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
   ) => void;
+  navigateFiles: (context?: {
+    assetRef?: string;
+    lessonRef?: string;
+  }) => void;
+  onAction: (message: string) => void;
   initialLessonRef?: string | null;
 }) {
   const [courses, setCourses] = useState<CourseRunView[]>([]);
@@ -268,11 +277,7 @@ function RealCourseWorkspace(props: {
     setError(null);
     try {
       let task = activeTask;
-      if (
-        !task ||
-        task.status === "completed" ||
-        task.status === "cancelled"
-      ) {
+      if (!task) {
         const created = await createLessonPreparationTask({
           lessonRef: selectedLesson.lessonRef,
           dueAt: selectedLesson.plannedAt,
@@ -281,6 +286,14 @@ function RealCourseWorkspace(props: {
           idempotencyKey: `ui:lesson-preparation:create:${crypto.randomUUID()}`
         });
         task = created.task;
+      }
+      if (
+        !["planned", "in_progress"].includes(task.status)
+      ) {
+        setError(
+          `当前任务为“${lessonPreparationStatusLabel(task.status)}”，请按页面提供的审核、完成或重新打开操作继续。`
+        );
+        return;
       }
       if (task.status === "planned") {
         const started = await transitionLessonPreparationTask(
@@ -295,6 +308,36 @@ function RealCourseWorkspace(props: {
         task = started.task;
       }
       props.navigatePreparation(task.taskRef, "/agent");
+    } catch (caught) {
+      setError(errorMessage(caught));
+      await loadRoot();
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function createNewPreparation() {
+    if (!selectedLesson) return;
+    setActing(true);
+    setError(null);
+    try {
+      const created = await createLessonPreparationTask({
+        lessonRef: selectedLesson.lessonRef,
+        dueAt: selectedLesson.plannedAt,
+        priority: "normal",
+        purpose: "lesson-preparation.create",
+        idempotencyKey: `ui:lesson-preparation:create:${crypto.randomUUID()}`
+      });
+      const started = await transitionLessonPreparationTask(
+        created.task.taskRef,
+        "start",
+        {
+          expectedVersion: created.task.version,
+          purpose: "lesson-preparation.start",
+          idempotencyKey: `ui:lesson-preparation:start:${crypto.randomUUID()}`
+        }
+      );
+      props.navigatePreparation(started.task.taskRef, "/agent");
     } catch (caught) {
       setError(errorMessage(caught));
       await loadRoot();
@@ -320,6 +363,36 @@ function RealCourseWorkspace(props: {
       props.navigatePreparation(result.task.taskRef, "/agent");
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function cancelPreparation() {
+    if (!activeTask) return;
+    setActing(true);
+    setError(null);
+    try {
+      const result = await transitionLessonPreparationTask(
+        activeTask.taskRef,
+        "cancel",
+        {
+          expectedVersion: activeTask.version,
+          purpose: "lesson-preparation.cancel",
+          idempotencyKey: `ui:lesson-preparation:cancel:${crypto.randomUUID()}`
+        }
+      );
+      setTasks((current) =>
+        current.map((task) =>
+          task.taskRef === result.task.taskRef ? result.task : task
+        )
+      );
+      props.onAction(
+        "备课任务已取消；已批准教学计划、Proposal 和历史记录均未改变"
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+      await loadRoot();
     } finally {
       setActing(false);
     }
@@ -390,7 +463,7 @@ function RealCourseWorkspace(props: {
                       {lesson.sequence}. {lesson.title}
                     </strong>
                     <Tag>
-                      {preparationStatusLabel(
+                      {lessonPreparationStatusLabel(
                         lesson.preparationState
                       )}
                     </Tag>
@@ -413,7 +486,7 @@ function RealCourseWorkspace(props: {
                       {selectedLesson.durationMinutes} 分钟
                     </Tag>
                     <Tag color="processing">
-                      {preparationStatusLabel(
+                      {lessonPreparationStatusLabel(
                         activeTask?.status ??
                           selectedLesson.preparationState
                       )}
@@ -461,7 +534,7 @@ function RealCourseWorkspace(props: {
                     {activeTask ? (
                       <Paragraph>
                         {activeTask.title} ·{" "}
-                        {preparationStatusLabel(
+                        {lessonPreparationStatusLabel(
                           activeTask.status
                         )}{" "}
                         · v{activeTask.version}
@@ -479,7 +552,12 @@ function RealCourseWorkspace(props: {
                         {lessonFiles.map((file) => (
                           <Button
                             key={file.assetRef}
-                            onClick={() => props.navigate("/files")}
+                            onClick={() =>
+                              props.navigateFiles({
+                                assetRef: file.assetRef,
+                                lessonRef: selectedLesson.lessonRef
+                              })
+                            }
                           >
                             {file.displayName} · v{file.currentVersion.versionNumber}
                           </Button>
@@ -492,25 +570,82 @@ function RealCourseWorkspace(props: {
                     )}
                   </section>
                   <Space wrap>
-                    <Button
-                      type="primary"
-                      loading={acting}
-                      onClick={startOrContinue}
-                      data-testid="start-lesson-preparation"
-                    >
-                      {activeTask &&
-                      activeTask.status !== "completed" &&
-                      activeTask.status !== "cancelled"
-                        ? "继续备课"
-                        : "开始备课"}
-                    </Button>
+                    {!activeTask ||
+                    ["planned", "in_progress"].includes(
+                      activeTask.status
+                    ) ? (
+                      <Button
+                        type="primary"
+                        loading={acting}
+                        onClick={startOrContinue}
+                        data-testid="start-lesson-preparation"
+                      >
+                        {activeTask ? "继续备课" : "开始备课"}
+                      </Button>
+                    ) : null}
+                    {activeTask?.status === "awaiting_plan_review" ? (
+                      <Button
+                        type="primary"
+                        onClick={() =>
+                          props.navigatePreparation(
+                            activeTask.taskRef,
+                            "/teaching-plan"
+                          )
+                        }
+                        data-testid="continue-plan-review"
+                      >
+                        继续审核教学计划
+                      </Button>
+                    ) : null}
+                    {activeTask?.status === "ready_for_use" ? (
+                      <Button
+                        type="primary"
+                        onClick={() =>
+                          props.navigatePreparation(
+                            activeTask.taskRef,
+                            "/teaching-plan"
+                          )
+                        }
+                        data-testid="finish-ready-preparation"
+                      >
+                        查看计划并完成备课
+                      </Button>
+                    ) : null}
                     {activeTask?.status === "completed" ? (
+                      <Button
+                        type="primary"
+                        onClick={() =>
+                          props.navigatePreparation(
+                            activeTask.taskRef,
+                            "/teaching-plan"
+                          )
+                        }
+                      >
+                        查看已完成备课
+                      </Button>
+                    ) : null}
+                    {activeTask &&
+                    ["ready_for_use", "completed", "cancelled"].includes(
+                      activeTask.status
+                    ) ? (
                       <Button
                         loading={acting}
                         onClick={reopen}
                         data-testid="reopen-lesson-preparation"
                       >
-                        显式重新打开
+                        重新打开并修改
+                      </Button>
+                    ) : null}
+                    {activeTask &&
+                    ["completed", "cancelled"].includes(
+                      activeTask.status
+                    ) ? (
+                      <Button
+                        loading={acting}
+                        onClick={createNewPreparation}
+                        data-testid="create-new-lesson-preparation"
+                      >
+                        新建一轮备课
                       </Button>
                     ) : null}
                     {activeTask ? (
@@ -525,8 +660,31 @@ function RealCourseWorkspace(props: {
                         查看计划与历史
                       </Button>
                     ) : null}
+                    {activeTask &&
+                    [
+                      "planned",
+                      "in_progress",
+                      "awaiting_plan_review",
+                      "ready_for_use"
+                    ].includes(activeTask.status) ? (
+                      <Popconfirm
+                        title="确认取消这次备课？"
+                        description="只取消 Work 任务，不删除 Proposal、TeachingPlan 或文件历史。"
+                        okText="确认取消"
+                        cancelText="保留任务"
+                        onConfirm={() => void cancelPreparation()}
+                      >
+                        <Button danger disabled={acting}>
+                          取消备课
+                        </Button>
+                      </Popconfirm>
+                    ) : null}
                     <Button
-                      onClick={() => props.navigate("/files")}
+                      onClick={() =>
+                        props.navigateFiles({
+                          lessonRef: selectedLesson.lessonRef
+                        })
+                      }
                     >
                       打开文件
                     </Button>
@@ -547,18 +705,6 @@ function RealCourseWorkspace(props: {
       </div>
     </Spin>
   );
-}
-
-function preparationStatusLabel(status: string): string {
-  return {
-    not_started: "未开始",
-    planned: "已计划",
-    in_progress: "备课中",
-    awaiting_plan_review: "待审核",
-    ready_for_use: "已准备，待完成",
-    completed: "已准备",
-    cancelled: "已取消"
-  }[status] ?? status;
 }
 
 function errorMessage(error: unknown): string {

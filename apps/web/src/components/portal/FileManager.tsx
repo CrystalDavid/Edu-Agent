@@ -37,7 +37,11 @@ const categories: Array<{ value: FileCategory | "all"; label: string }> = [
   { value: "other", label: "其他" }
 ];
 
-export function FileManager(props: { onAction: (action: string) => void }) {
+export function FileManager(props: {
+  onAction: (action: string) => void;
+  initialAssetRef?: string | null;
+  initialLessonRef?: string | null;
+}) {
   const [items, setItems] = useState<FileAssetSummary[]>([]);
   const [selected, setSelected] = useState<FileAssetDetail | null>(null);
   const [lessons, setLessons] = useState<LessonView[]>([]);
@@ -54,13 +58,18 @@ export function FileManager(props: { onAction: (action: string) => void }) {
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const versionInputRef = useRef<HTMLInputElement>(null);
+  const pendingInitialAssetRef = useRef(props.initialAssetRef);
+  const previousInitialAssetRef = useRef(props.initialAssetRef);
 
-  async function refresh(preferredAssetRef?: string) {
+  async function refresh(
+    preferredAssetRef?: string,
+    requestedStatus = status
+  ) {
     setLoading(true);
     setError(null);
     try {
       const result = await loadFiles({
-        status,
+        status: requestedStatus,
         sort,
         ...(query.trim() ? { query: query.trim() } : {}),
         ...(category === "all" ? {} : { category })
@@ -72,6 +81,8 @@ export function FileManager(props: { onAction: (action: string) => void }) {
           : result.items[0]?.assetRef);
       setSelected(nextRef ? await loadFile(nextRef) : null);
     } catch (caught) {
+      setItems([]);
+      setSelected(null);
       setError(message(caught));
     } finally {
       setLoading(false);
@@ -79,9 +90,31 @@ export function FileManager(props: { onAction: (action: string) => void }) {
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void refresh(), 180);
+    const preferredAssetRef =
+      pendingInitialAssetRef.current ?? undefined;
+    const timer = window.setTimeout(
+      () => {
+        void refresh(preferredAssetRef).finally(() => {
+          if (pendingInitialAssetRef.current === preferredAssetRef) {
+            pendingInitialAssetRef.current = null;
+          }
+        });
+      },
+      180
+    );
     return () => window.clearTimeout(timer);
   }, [query, category, status, sort]);
+
+  useEffect(() => {
+    if (previousInitialAssetRef.current === props.initialAssetRef) return;
+    previousInitialAssetRef.current = props.initialAssetRef;
+    pendingInitialAssetRef.current = props.initialAssetRef;
+    if (!props.initialAssetRef) return;
+    setError(null);
+    void loadFile(props.initialAssetRef)
+      .then(setSelected)
+      .catch((caught) => setError(message(caught)));
+  }, [props.initialAssetRef]);
 
   useEffect(() => {
     void loadCourseRuns()
@@ -96,10 +129,31 @@ export function FileManager(props: { onAction: (action: string) => void }) {
       })
       .then((loaded) => {
         setLessons(loaded);
-        setLessonRef(loaded[0]?.lessonRef);
+        setLessonRef(
+          loaded.some(
+            (lesson) => lesson.lessonRef === props.initialLessonRef
+          )
+            ? props.initialLessonRef ?? undefined
+            : loaded[0]?.lessonRef
+        );
       })
-      .catch(() => undefined);
+      .catch((caught) => {
+        setLessons([]);
+        setLessonRef(undefined);
+        setError(`课时上下文加载失败：${message(caught)}`);
+      });
   }, []);
+
+  useEffect(() => {
+    if (
+      props.initialLessonRef &&
+      lessons.some(
+        (lesson) => lesson.lessonRef === props.initialLessonRef
+      )
+    ) {
+      setLessonRef(props.initialLessonRef);
+    }
+  }, [props.initialLessonRef, lessons]);
 
   useEffect(() => {
     let active = true;
@@ -135,6 +189,18 @@ export function FileManager(props: { onAction: (action: string) => void }) {
     } catch (caught) {
       setError(message(caught));
     }
+  }
+
+  async function handleMutationError(
+    caught: unknown,
+    assetRef?: string
+  ) {
+    if (caught instanceof ApiError && caught.status === 409 && assetRef) {
+      await refresh(assetRef);
+      setError(`${message(caught)}；页面已重新读取服务端文件版本。`);
+      return;
+    }
+    setError(message(caught));
   }
 
   async function upload(file: File) {
@@ -176,7 +242,7 @@ export function FileManager(props: { onAction: (action: string) => void }) {
       props.onAction(result.deduplicated ? "内容相同，已复用当前版本" : "已创建不可变新版本");
       await refresh(selected.assetRef);
     } catch (caught) {
-      setError(message(caught));
+      await handleMutationError(caught, selected.assetRef);
     } finally {
       setBusy(false);
       if (versionInputRef.current) versionInputRef.current.value = "";
@@ -212,7 +278,7 @@ export function FileManager(props: { onAction: (action: string) => void }) {
       props.onAction(result.deduplicated ? `该${label}关联已存在` : `已关联${label}`);
       await refresh(selected.assetRef);
     } catch (caught) {
-      setError(message(caught));
+      await handleMutationError(caught, selected.assetRef);
     } finally {
       setBusy(false);
     }
@@ -228,10 +294,16 @@ export function FileManager(props: { onAction: (action: string) => void }) {
         purpose: nextStatus === "deleted" ? "file.delete" : "file.restore",
         idempotencyKey: `ui:file:${nextStatus}:${crypto.randomUUID()}`
       });
-      props.onAction(nextStatus === "deleted" ? "文件已软删除" : "文件已恢复");
-      await refresh(result.asset.assetRef);
+      const nextFilter = nextStatus === "deleted" ? "deleted" : "active";
+      setStatus(nextFilter);
+      props.onAction(
+        nextStatus === "deleted"
+          ? "文件已软删除；绑定和版本历史仍保留，可在“已删除”中恢复"
+          : "文件已恢复；原绑定和版本历史保持不变"
+      );
+      await refresh(result.asset.assetRef, nextFilter);
     } catch (caught) {
-      setError(message(caught));
+      await handleMutationError(caught, selected.assetRef);
     } finally {
       setBusy(false);
     }
@@ -265,14 +337,39 @@ export function FileManager(props: { onAction: (action: string) => void }) {
     [items]
   );
   const bindingLesson = lessons.find((lesson) => lesson.lessonRef === lessonRef);
+  const lessonAlreadyBound = Boolean(
+    bindingLesson &&
+      selected?.bindings.some(
+        (binding) =>
+          binding.targetType === "lesson" &&
+          binding.targetRef === bindingLesson.lessonRef
+      )
+  );
+  const taskAlreadyBound = Boolean(
+    bindingLesson?.activePreparationTaskRef &&
+      selected?.bindings.some(
+        (binding) =>
+          binding.targetType === "preparation_task" &&
+          binding.targetRef === bindingLesson.activePreparationTaskRef
+      )
+  );
+  const planAlreadyBound = Boolean(
+    bindingLesson?.currentApprovedPlanRef &&
+      selected?.bindings.some(
+        (binding) =>
+          binding.targetType === "teaching_plan_revision" &&
+          binding.targetRef === bindingLesson.currentApprovedPlanRef
+      )
+  );
+  const exportManaged = selected?.source === "teaching_plan_export";
 
   return (
     <div className="file-manager" data-testid="file-manager">
       {error ? <Alert type="error" showIcon title={error} closable onClose={() => setError(null)} /> : null}
       <header className="file-manager__toolbar">
         <Input prefix={<WorkspaceIcon name="search" />} placeholder="搜索真实文件名" value={query} onChange={(event) => setQuery(event.target.value)} allowClear />
-        <Select aria-label="上传关联课时" value={lessonRef} onChange={setLessonRef} placeholder="选择关联课时" options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: lesson.title }))} />
-        <Button loading={busy} icon={<WorkspaceIcon name="upload" />} onClick={() => uploadRef.current?.click()}>上传</Button>
+        <Select aria-label="上传关联课时" value={lessonRef} onChange={setLessonRef} disabled={busy || lessons.length === 0} placeholder={lessons.length === 0 ? "课时不可用" : "选择关联课时"} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: lesson.title }))} />
+        <Button loading={busy} disabled={busy || lessons.length === 0} title={lessons.length === 0 ? "课时上下文未加载，暂不能上传并绑定" : undefined} icon={<WorkspaceIcon name="upload" />} onClick={() => uploadRef.current?.click()}>上传</Button>
         <input ref={uploadRef} data-testid="file-upload-input" hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.md,.txt,.docx,.pptx,.xlsx" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
         <Button disabled title="本 Gate 不实现在线新建 Office 文件">新建（未实现）</Button>
         <div className="view-switch" aria-label="文件视图">
@@ -330,6 +427,14 @@ export function FileManager(props: { onAction: (action: string) => void }) {
               <p>{selected.currentVersion.contentSummary}</p>
               <p>SHA-256：<code>{selected.currentVersion.sha256.slice(0, 16)}…</code></p>
               <p>来源：{selected.source === "upload" ? "教师上传" : "已批准 TeachingPlan 导出"}</p>
+              {selected.source === "teaching_plan_export" ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  title="正式教学成果"
+                  description="此 FileAsset 的每个版本只能由对应的 approved TeachingPlan Revision 导出；不能手工替换内容或改绑来源。"
+                />
+              ) : null}
               {selected.currentVersion.previewKind === "image" && previewUrl ? (
                 <img src={previewUrl} alt={selected.displayName} style={{ maxWidth: "100%", maxHeight: 360 }} />
               ) : null}
@@ -343,24 +448,24 @@ export function FileManager(props: { onAction: (action: string) => void }) {
                 <Alert type="info" showIcon title="Office 文件提供安全详情与下载" description="本 Gate 不在浏览器中完整渲染 DOCX、PPTX 或 XLSX。" />
               ) : null}
               <div className="file-secondary-actions">
-                <Button onClick={() => void download(selected)} disabled={selected.status === "deleted"}>下载</Button>
-                <Button onClick={() => versionInputRef.current?.click()} disabled={selected.status === "deleted"}>创建新版本</Button>
+                <Button onClick={() => void download(selected)} disabled={busy || selected.status === "deleted"}>下载</Button>
+                <Button onClick={() => versionInputRef.current?.click()} disabled={busy || selected.status === "deleted" || exportManaged} title={exportManaged ? "正式教案的新版本只能从新的 approved TeachingPlan Revision 导出" : undefined}>创建新版本</Button>
                 <input ref={versionInputRef} data-testid="file-version-input" hidden type="file" accept={selected.currentVersion.extension} onChange={(event) => { const file = event.target.files?.[0]; if (file) void addVersion(file); }} />
-                <Button onClick={() => void bindTarget("lesson")} disabled={!bindingLesson || selected.status === "deleted"}>关联课时</Button>
+                <Button onClick={() => void bindTarget("lesson")} disabled={busy || exportManaged || !bindingLesson || selected.status === "deleted" || lessonAlreadyBound} title={exportManaged ? "正式教案关联由导出流程维护" : undefined}>{lessonAlreadyBound ? "已关联课时" : "关联课时"}</Button>
                 <Button
                   onClick={() => void bindTarget("preparation_task")}
-                  disabled={!bindingLesson?.activePreparationTaskRef || selected.status === "deleted"}
-                  title={bindingLesson?.activePreparationTaskRef ? undefined : "所选课时暂无关联备课任务"}
-                >关联任务</Button>
+                  disabled={busy || exportManaged || !bindingLesson?.activePreparationTaskRef || selected.status === "deleted" || taskAlreadyBound}
+                  title={exportManaged ? "正式教案关联由导出流程维护" : bindingLesson?.activePreparationTaskRef ? undefined : "所选课时暂无关联备课任务"}
+                >{taskAlreadyBound ? "已关联任务" : "关联任务"}</Button>
                 <Button
                   onClick={() => void bindTarget("teaching_plan_revision")}
-                  disabled={!bindingLesson?.currentApprovedPlanRef || selected.status === "deleted"}
-                  title={bindingLesson?.currentApprovedPlanRef ? undefined : "所选课时暂无 current approved TeachingPlan"}
-                >关联教学计划</Button>
+                  disabled={busy || exportManaged || !bindingLesson?.currentApprovedPlanRef || selected.status === "deleted" || planAlreadyBound}
+                  title={exportManaged ? "正式教案关联由导出流程维护" : bindingLesson?.currentApprovedPlanRef ? undefined : "所选课时暂无 current approved TeachingPlan"}
+                >{planAlreadyBound ? "已关联教学计划" : "关联教学计划"}</Button>
                 {selected.status === "active" ? (
-                  <Button danger disabled={selected.deletionProtected} title={selected.deletionProtected ? "正式教学成果引用的文件不可删除" : undefined} onClick={() => void lifecycle("deleted")}>删除</Button>
+                  <Button danger disabled={busy || selected.deletionProtected} title={selected.deletionProtected ? "正式教学成果引用的文件不可删除" : undefined} onClick={() => void lifecycle("deleted")}>删除</Button>
                 ) : (
-                  <Button onClick={() => void lifecycle("active")}>恢复</Button>
+                  <Button disabled={busy} onClick={() => void lifecycle("active")}>恢复</Button>
                 )}
                 <Button disabled title="本 Gate 不实现文件分享">分享（未实现）</Button>
               </div>
@@ -368,13 +473,14 @@ export function FileManager(props: { onAction: (action: string) => void }) {
               <ol data-testid="file-version-history">
                 {selected.versions.map((version) => (
                   <li key={version.versionRef}>
-                    <button type="button" className="text-action" onClick={() => void download(selected, version)}>v{version.versionNumber} · {version.originalFileName} · {formatSize(version.sizeBytes)}</button>
+                    <button type="button" className="text-action" disabled={busy || selected.status === "deleted"} title={selected.status === "deleted" ? "恢复文件后才能下载历史版本" : undefined} onClick={() => void download(selected, version)}>v{version.versionNumber} · {version.originalFileName} · {formatSize(version.sizeBytes)}</button>
+                    <small>{version.contentSummary}</small>
                   </li>
                 ))}
               </ol>
               <h3>关联</h3>
               {selected.bindings.length > 0 ? (
-                <ul>{selected.bindings.map((binding) => <li key={binding.bindingRef}>{binding.targetType} · {binding.relation} · {binding.targetRef}</li>)}</ul>
+                <ul>{selected.bindings.map((binding) => <li key={binding.bindingRef}>{bindingLabel(binding.targetType)} · {binding.relation === "export" ? "正式导出" : "参考关联"} · {binding.targetRef}</li>)}</ul>
               ) : <p>尚未关联 Lesson、Task 或 TeachingPlan。</p>}
             </div>
           ) : <div className="file-no-results">选择一个文件查看详情。</div>}
@@ -406,6 +512,15 @@ function formatSize(bytes: number): string {
   return bytes < 1024 * 1024
     ? `${Math.max(1, Math.round(bytes / 1024))} KiB`
     : `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+function bindingLabel(targetType: string): string {
+  return {
+    lesson: "课时（lesson）",
+    preparation_task: "备课任务（preparation_task）",
+    teaching_plan_revision: "TeachingPlan Revision（teaching_plan_revision）",
+    teaching_plan_artifact: "TeachingPlan Artifact（teaching_plan_artifact）"
+  }[targetType] ?? targetType;
 }
 
 function categoryLabel(category: FileCategory): string {

@@ -6,6 +6,7 @@ import type {
   ModelExecutionStatus,
   ModelExecutionView,
   ProviderAvailability,
+  ProposalReviewDetail,
   CreateTeacherCopilotTaskRequest,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
@@ -48,7 +49,11 @@ import {
   planFieldLabels,
   TeachingPlanDiffView
 } from "../components/TeachingPlanView";
-import { cleanDisplayText } from "../presentation";
+import {
+  cleanDisplayText,
+  lessonPreparationStatusLabel,
+  modelExecutionStatusLabel
+} from "../presentation";
 import type { AppRoute } from "../route";
 import { applyDiffToPlan } from "../teaching-plan";
 
@@ -58,7 +63,7 @@ const { TextArea } = Input;
 export function CopilotPage(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
-  setTask: (task: RecoverableCopilotTask) => void;
+  setTask: (task: RecoverableCopilotTask | null) => void;
   refreshWorkspace: () => Promise<void>;
   navigate: (route: AppRoute) => void;
   proposalRevisionRef: string | null;
@@ -106,6 +111,31 @@ export function CopilotPage(props: {
       )
     );
   const [modelAction, setModelAction] = useState(false);
+
+  function applyProposalDetail(detail: ProposalReviewDetail) {
+    props.setTask(detail);
+    setTaskPrompt(detail.request.requestText);
+    setSelectedStrategyId(
+      detail.disposition?.selectedStrategyId ??
+        detail.strategies[0]?.strategyId ??
+        null
+    );
+    setTeacherEdits(
+      (detail.disposition?.teacherEdits ?? {}) as Partial<TeachingPlan>
+    );
+    setDisposition(
+      detail.disposition
+        ? {
+            replayed: true,
+            dispositionRef: detail.disposition.dispositionRef,
+            disposition: detail.disposition.disposition,
+            implementationObserved: false,
+            instructionalDecisionCreated: false,
+            resultingRevision: detail.inReviewRevision
+          }
+        : null
+    );
+  }
 
   useEffect(() => {
     let active = true;
@@ -176,6 +206,14 @@ export function CopilotPage(props: {
     let active = true;
     setRecovering(true);
     setError(null);
+    setPreparationTask(null);
+    props.setTask(null);
+    setSelectedStrategyId(null);
+    setDisposition(null);
+    if (!new URLSearchParams(window.location.search).has("modelExecution")) {
+      setModelExecution(null);
+      setModelExecutionRef(null);
+    }
     void loadLessonPreparationTask(props.preparationTaskRef)
       .then((result) => {
         if (!active) return;
@@ -234,39 +272,20 @@ export function CopilotPage(props: {
     let active = true;
     setRecovering(true);
     setError(null);
+    props.setTask(null);
+    setSelectedStrategyId(null);
+    setDisposition(null);
+    setModelExecution(null);
+    setModelExecutionRef(null);
     void loadProposalDetail(props.proposalRevisionRef)
-      .then((detail) => {
+      .then(async (detail) => {
         if (!active) return;
-        props.setTask(detail);
-        setTaskPrompt(detail.request.requestText);
-        setSelectedStrategyId(
-          detail.disposition?.selectedStrategyId ??
-            detail.strategies[0]?.strategyId ??
-            null
-        );
-        setTeacherEdits(
-          (detail.disposition?.teacherEdits ??
-            {}) as Partial<TeachingPlan>
-        );
-        setDisposition(
-          detail.disposition
-            ? {
-                replayed: true,
-                dispositionRef:
-                  detail.disposition.dispositionRef,
-                disposition: detail.disposition.disposition,
-                implementationObserved: false,
-                instructionalDecisionCreated: false,
-                resultingRevision: detail.inReviewRevision
-              }
-            : null
-        );
+        applyProposalDetail(detail);
         if (detail.request.preparationTaskRef) {
-          void loadLessonPreparationTask(
+          const loadedTask = await loadLessonPreparationTask(
             detail.request.preparationTaskRef
-          ).then((loadedTask) => {
-            if (active) setPreparationTask(loadedTask);
-          });
+          );
+          if (active) setPreparationTask(loadedTask);
         }
       })
       .catch((caught: unknown) => {
@@ -315,8 +334,35 @@ export function CopilotPage(props: {
     props.task !== null &&
     "status" in props.task &&
     props.task.status === "disposed";
+  const modelExecutionActive = Boolean(
+    modelExecution && !terminalModelStatuses.has(modelExecution.status)
+  );
+  const preparationRequiresReopen = Boolean(
+    preparationTask &&
+      ["ready_for_use", "cancelled"].includes(
+        preparationTask.status
+      )
+  );
+  const completedTaskReviewOnly =
+    preparationTask?.status === "completed";
+  const generationDisabled =
+    !taskPrompt.trim() ||
+    generating ||
+    recovering ||
+    disposing ||
+    modelAction ||
+    modelExecutionActive ||
+    preparationRequiresReopen;
+  const generationDisabledReason = preparationRequiresReopen
+    ? `当前备课任务为“${lessonPreparationStatusLabel(preparationTask!.status)}”；请先回到教学页显式重新打开或新建一轮备课。`
+    : modelExecutionActive
+      ? "已有模型执行正在进行；完成、取消或失败后才能再次提交。"
+      : recovering
+        ? "正在恢复服务端任务与 Proposal，请稍候。"
+        : null;
 
   async function generate() {
+    if (generationDisabled) return;
     setGenerating(true);
     setError(null);
     setDisposition(null);
@@ -386,7 +432,22 @@ export function CopilotPage(props: {
       await props.refreshWorkspace();
       props.navigateProposal(result.proposalRevisionRef);
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (
+        caught instanceof ApiError &&
+        caught.status === 409 &&
+        preparationTask
+      ) {
+        try {
+          setPreparationTask(
+            await loadLessonPreparationTask(preparationTask.taskRef)
+          );
+        } catch {
+          // Preserve the original structured conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取服务端任务版本。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setGenerating(false);
     }
@@ -415,7 +476,18 @@ export function CopilotPage(props: {
         )
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          setModelExecution(
+            await loadModelInvocation(modelExecution.modelExecutionRef)
+          );
+        } catch {
+          // Preserve the original structured conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取模型执行状态。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setModelAction(false);
     }
@@ -456,7 +528,18 @@ export function CopilotPage(props: {
         `${window.location.pathname}?${search.toString()}`
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          setModelExecution(
+            await loadModelInvocation(modelExecution.modelExecutionRef)
+          );
+        } catch {
+          // Preserve the original structured conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取模型执行状态。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setModelAction(false);
     }
@@ -495,10 +578,28 @@ export function CopilotPage(props: {
         loadProposalDetail(props.task.proposalRevisionRef),
         loadPendingProposals()
       ]);
-      props.setTask(detail);
+      applyProposalDetail(detail);
       setPendingProposals(pending.items);
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (
+        caught instanceof ApiError &&
+        caught.status === 409 &&
+        props.task
+      ) {
+        try {
+          const [detail, pending] = await Promise.all([
+            loadProposalDetail(props.task.proposalRevisionRef),
+            loadPendingProposals()
+          ]);
+          applyProposalDetail(detail);
+          setPendingProposals(pending.items);
+        } catch {
+          // Keep the original structured conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取服务端处置。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setDisposing(false);
     }
@@ -531,7 +632,18 @@ export function CopilotPage(props: {
         workingSet: result.workingSet
       });
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          setPreparationTask(
+            await loadLessonPreparationTask(preparationTask.taskRef)
+          );
+        } catch {
+          // Preserve the original structured conflict below.
+        }
+        setError(`${errorMessage(caught)}；页面已重新读取 TaskWorkingSet。`);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setRecovering(false);
     }
@@ -607,7 +719,8 @@ export function CopilotPage(props: {
               <Title level={3}>{preparationTask.title}</Title>
             </div>
             <Tag color="processing">
-              {preparationTask.status}
+              {lessonPreparationStatusLabel(preparationTask.status)}
+              <Text type="secondary">（{preparationTask.status}）</Text>
             </Tag>
           </div>
           <dl className="detail-list">
@@ -693,13 +806,33 @@ export function CopilotPage(props: {
         <Button
           type="primary"
           loading={generating}
-          disabled={!taskPrompt.trim()}
+          disabled={generationDisabled}
+          title={generationDisabledReason ?? undefined}
           onClick={generate}
           data-testid="generate-copilot"
         >
           {props.task ? "提交新的备课任务" : "生成备课建议"}
         </Button>
       </Card>
+
+      {generationDisabledReason ? (
+        <Alert
+          type="info"
+          showIcon
+          title="当前不能提交新的生成请求"
+          description={generationDisabledReason}
+          data-testid="generation-disabled-reason"
+        />
+      ) : null}
+      {completedTaskReviewOnly ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="已完成任务仅允许补充审阅"
+          description="可以生成新建议并选择拒绝或延后；如需接受修改并形成新的待审核计划，请先回到教学页显式重新打开任务或新建一轮备课。当前 completed 状态不会被模型静默改写。"
+          data-testid="completed-task-review-only"
+        />
+      ) : null}
 
       {providerAvailability ? (
         <Alert
@@ -740,7 +873,7 @@ export function CopilotPage(props: {
                   模型执行
                 </Text>
                 <Title level={3}>
-                  {modelStatusLabel(modelExecution.status)}
+                  {modelExecutionStatusLabel(modelExecution.status)}
                 </Title>
               </div>
               <Tag
@@ -884,6 +1017,7 @@ export function CopilotPage(props: {
                     strategy.strategyId === selectedStrategyId
                   }
                   onSelect={() => {
+                    if (disposing) return;
                     setSelectedStrategyId(strategy.strategyId);
                     setTeacherEdits({});
                     setDisposition(null);
@@ -932,6 +1066,14 @@ export function CopilotPage(props: {
                   <Button
                     type="primary"
                     loading={disposing}
+                    disabled={
+                      disposing || recovering || completedTaskReviewOnly
+                    }
+                    title={
+                      completedTaskReviewOnly
+                        ? "先显式重新打开任务，才能接受并形成新的待审核版本"
+                        : undefined
+                    }
                     onClick={() => submitDisposition("accepted")}
                     data-testid="accept-suggestion"
                   >
@@ -939,6 +1081,14 @@ export function CopilotPage(props: {
                   </Button>
                   <Button
                     onClick={() => setEditOpen(true)}
+                    disabled={
+                      disposing || recovering || completedTaskReviewOnly
+                    }
+                    title={
+                      completedTaskReviewOnly
+                        ? "先显式重新打开任务，才能修改并接受"
+                        : undefined
+                    }
                     data-testid="edit-suggestion"
                   >
                     修改字段
@@ -946,6 +1096,7 @@ export function CopilotPage(props: {
                   <Button
                     danger
                     loading={disposing}
+                    disabled={disposing || recovering}
                     onClick={() => submitDisposition("rejected")}
                     data-testid="reject-suggestion"
                   >
@@ -953,6 +1104,7 @@ export function CopilotPage(props: {
                   </Button>
                   <Button
                     loading={disposing}
+                    disabled={disposing || recovering}
                     onClick={() => submitDisposition("deferred")}
                     data-testid="defer-suggestion"
                   >
@@ -1024,6 +1176,8 @@ export function CopilotPage(props: {
             <Button
               type="primary"
               loading={generating}
+              disabled={generationDisabled}
+              title={generationDisabledReason ?? undefined}
               onClick={generate}
             >
               生成备课建议
@@ -1052,9 +1206,11 @@ export function CopilotPage(props: {
         okText="保存教师修改"
         cancelText="取消"
         okButtonProps={{
-          disabled: Object.keys(teacherEdits).length === 0,
+          disabled:
+            disposing || Object.keys(teacherEdits).length === 0,
           "data-testid": "save-teacher-edits"
         }}
+        confirmLoading={disposing}
         onOk={() => {
           setEditOpen(false);
           void submitDisposition("accepted_with_changes");
@@ -1429,7 +1585,7 @@ function CopilotContextPanel(props: {
                   <dt>ModelExecution</dt>
                   <dd>
                     {props.modelExecution
-                      ? `${props.modelExecution.modelExecutionRef} · ${modelStatusLabel(props.modelExecution.status)}`
+                      ? `${props.modelExecution.modelExecutionRef} · ${modelExecutionStatusLabel(props.modelExecution.status)}`
                       : "提交任务后创建"}
                   </dd>
                 </div>
@@ -1509,24 +1665,6 @@ function isRetryableTerminalStatus(
   return retryableTerminalStatuses.has(
     status as RetryableTerminalStatus
   );
-}
-
-function modelStatusLabel(
-  status: ModelExecutionStatus
-): string {
-  return {
-    queued: "等待生成",
-    running: "正在生成",
-    validating: "正在验证",
-    retryable_failed: "正在重试",
-    succeeded: "已完成",
-    cancel_requested: "正在取消",
-    cancelled: "已取消",
-    timed_out: "生成超时",
-    validation_failed: "验证失败",
-    permanently_failed: "暂时不可用",
-    budget_exceeded: "预算超限"
-  }[status];
 }
 
 function modelStatusDescription(

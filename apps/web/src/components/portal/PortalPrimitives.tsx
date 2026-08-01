@@ -53,9 +53,17 @@ export function QuickAction(props: {
   label: string;
   description?: string;
   onClick: () => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
-    <button type="button" className="portal-quick-action" onClick={props.onClick}>
+    <button
+      type="button"
+      className="portal-quick-action"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      title={props.disabled ? props.disabledReason : undefined}
+    >
       <span className="portal-quick-action__icon">
         <WorkspaceIcon name={props.icon} />
       </span>
@@ -63,7 +71,7 @@ export function QuickAction(props: {
         <strong>{props.label}</strong>
         {props.description ? <small>{props.description}</small> : null}
       </span>
-      <WorkspaceIcon name="arrowRight" />
+      {props.disabled ? <small>暂未开放</small> : <WorkspaceIcon name="arrowRight" />}
     </button>
   );
 }
