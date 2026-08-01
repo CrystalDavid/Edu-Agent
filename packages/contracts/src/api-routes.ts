@@ -58,6 +58,15 @@ const teacherCalendarEventRoute = (eventRef: string): string =>
 const teacherWorkProjectionRoute = (projectionRef: string): string =>
   `/api/v1/teacher/workbench/projections/${encodeRouteSegment(projectionRef)}`;
 
+const teacherLessonDeliveryRoute = (deliveryRef: string): string =>
+  `/api/v1/teacher/classroom/deliveries/${encodeRouteSegment(deliveryRef)}`;
+
+const teacherClassroomObservationRoute = (observationRef: string): string =>
+  `/api/v1/teacher/classroom/observations/${encodeRouteSegment(observationRef)}`;
+
+const teacherReflectionRoute = (reflectionRef: string): string =>
+  `/api/v1/teacher/reflections/${encodeRouteSegment(reflectionRef)}`;
+
 export const apiRoutes = {
   health: "/api/health",
   teacher: {
@@ -284,7 +293,34 @@ export const apiRoutes = {
     workbenchProjectionPattern: "/api/v1/teacher/workbench/projections/:projectionRef",
     workbenchProjection: teacherWorkProjectionRoute,
     workbenchProjectionPreferencePattern: "/api/v1/teacher/workbench/projections/:projectionRef/preference",
-    workbenchProjectionPreference: (projectionRef: string): string => `${teacherWorkProjectionRoute(projectionRef)}/preference`
+    workbenchProjectionPreference: (projectionRef: string): string => `${teacherWorkProjectionRoute(projectionRef)}/preference`,
+    lessonImplementationSummaryPattern: "/api/v1/teacher/lessons/:lessonRef/implementation-summary",
+    lessonImplementationSummary: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/implementation-summary`,
+    lessonDeliveries: "/api/v1/teacher/classroom/deliveries",
+    lessonDeliveryPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef",
+    lessonDelivery: teacherLessonDeliveryRoute,
+    lessonDeliveryConfirmPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef/confirm",
+    lessonDeliveryConfirm: (deliveryRef: string): string => `${teacherLessonDeliveryRoute(deliveryRef)}/confirm`,
+    lessonDeliveryAmendPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef/amend",
+    lessonDeliveryAmend: (deliveryRef: string): string => `${teacherLessonDeliveryRoute(deliveryRef)}/amend`,
+    classroomObservations: "/api/v1/teacher/classroom/observations",
+    classroomObservationPattern: "/api/v1/teacher/classroom/observations/:observationRef",
+    classroomObservation: teacherClassroomObservationRoute,
+    classroomObservationConfirmPattern: "/api/v1/teacher/classroom/observations/:observationRef/confirm",
+    classroomObservationConfirm: (observationRef: string): string => `${teacherClassroomObservationRoute(observationRef)}/confirm`,
+    classroomObservationSupersedePattern: "/api/v1/teacher/classroom/observations/:observationRef/supersede",
+    classroomObservationSupersede: (observationRef: string): string => `${teacherClassroomObservationRoute(observationRef)}/supersede`,
+    reflections: "/api/v1/teacher/reflections",
+    reflectionPattern: "/api/v1/teacher/reflections/:reflectionRef",
+    reflection: teacherReflectionRoute,
+    reflectionConfirmPattern: "/api/v1/teacher/reflections/:reflectionRef/confirm",
+    reflectionConfirm: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/confirm`,
+    reflectionGeneratePattern: "/api/v1/teacher/reflections/:reflectionRef/generate",
+    reflectionGenerate: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/generate`,
+    reflectionFollowUpsPattern: "/api/v1/teacher/reflections/:reflectionRef/follow-ups",
+    reflectionFollowUps: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/follow-ups`,
+    pendingReflections: "/api/v1/teacher/reflections/pending"
   },
   demo: {
     bootstrap: "/api/v1/demo/workspace",

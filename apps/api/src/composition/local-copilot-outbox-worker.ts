@@ -35,7 +35,9 @@ const gate24Events = {
     "CalendarEventUpdated",
     "CalendarEventCompleted",
     "CalendarEventCancelled",
-    "TeacherWorkPreferenceUpdated"
+    "TeacherWorkPreferenceUpdated",
+    "LessonReflectionTaskCreated",
+    "LessonReflectionFollowUpCreated"
   ],
   runtime: ["AgentRunCompleted"],
   capability: [
@@ -52,7 +54,11 @@ const gate24Events = {
     "FileBindingCreated",
     "FileAssetSoftDeleted",
     "FileAssetRestored",
-    "TeachingPlanDocxExported"
+    "TeachingPlanDocxExported",
+    "LessonReflectionDraftCreated",
+    "LessonReflectionDraftGenerated",
+    "LessonReflectionDraftEdited",
+    "LessonReflectionConfirmed"
   ],
   education: [
     "AssignmentDraftCreated",
@@ -61,7 +67,11 @@ const gate24Events = {
     "SyntheticSubmissionsImported",
     "TeacherGradeDraftSaved",
     "TeacherGradeDecisionConfirmed",
-    "TeacherGradeDecisionReopened"
+    "TeacherGradeDecisionReopened",
+    "LessonDeliveryDraftCreated",
+    "LessonDeliveryConfirmed",
+    "ClassroomObservationDraftCreated",
+    "ClassroomObservationConfirmed"
   ]
 } as const satisfies Partial<
   Record<OutboxOwner, readonly string[]>

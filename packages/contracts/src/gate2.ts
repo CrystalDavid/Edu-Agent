@@ -111,7 +111,7 @@ export const TeacherTaskRequestSchema = z.object({
   purpose: z.string().min(1),
   courseRunRef: z.string().min(1),
   learningObjectiveRefs: z.array(z.string().min(1)).min(1),
-  selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
+  selectedEvidenceRefs: z.array(z.string().min(1)),
   curriculumUnitRef: z.string().min(1).optional(),
   lessonRef: z.string().min(1).optional(),
   preparationTaskRef: z.string().min(1).optional(),
@@ -479,6 +479,9 @@ export const RunExplanationSchema = z.object({
         sourceAssignmentItemRefs: z.array(z.string().min(1)).optional(),
         sourceTodoRef: z.string().min(1).nullable().optional(),
         sourceResourceRefs: z.array(z.string().min(1)).optional(),
+        sourceReflectionRef: z.string().min(1).nullable().optional(),
+        sourceDeliveryRevisionRef: z.string().min(1).nullable().optional(),
+        sourceObservationRevisionRefs: z.array(z.string().min(1)).optional(),
         purpose: z.string().min(1),
         requestedFieldMask: z.array(z.string().min(1)),
         updatedAt: z.string().datetime()

@@ -4,6 +4,7 @@ import {
   CreateTeacherCopilotTaskRequestSchema,
   TeachingPlanSchema
 } from "./gate2.js";
+import { StructuredReflectionOutputSchema } from "./gate2-9.js";
 
 export const ModelProviderNameSchema = z.enum([
   "mock",
@@ -54,7 +55,7 @@ export const terminalModelExecutionStatuses = [
 export const PromptBundleDescriptorSchema = z.object({
   promptBundleRef: z.string().min(1),
   version: z.number().int().positive(),
-  useCase: z.literal("lesson_preparation"),
+  useCase: z.enum(["lesson_preparation", "lesson_reflection"]),
   inputFields: z.array(z.string().min(1)).min(1),
   outputSchemaVersion: z.string().min(1),
   safetyPolicyVersion: z.string().min(1),
@@ -96,9 +97,10 @@ export const ModelRequestSchemaV2 = z.object({
   agentRunRef: z.string().min(1),
   promptBundle: PromptBundleDescriptorSchema,
   contextManifestRef: z.string().min(1),
-  expectedOutputSchema: z.literal(
-    "teacher-copilot-suggestions@1"
-  ),
+  expectedOutputSchema: z.enum([
+    "teacher-copilot-suggestions@1",
+    "lesson-reflection@1"
+  ]),
   timeoutMs: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
   messages: z
@@ -118,7 +120,7 @@ export const ModelRequestSchemaV2 = z.object({
     courseRunRef: z.string().min(1),
     lessonRef: z.string().min(1),
     learningObjectiveRefs: z.array(z.string().min(1)).min(1),
-    evidenceRefs: z.array(z.string().min(1)).min(1)
+    evidenceRefs: z.array(z.string().min(1))
   })
 });
 
@@ -211,6 +213,11 @@ export const ModelExecutionViewSchema = z.object({
   safeErrorCategory: ModelFailureCategorySchema.nullable(),
   safeMessage: z.string().min(1).nullable(),
   outputSchemaVersion: z.string().min(1),
+  resultKind: z.enum([
+    "teaching_proposal",
+    "lesson_reflection_draft"
+  ]).default("teaching_proposal"),
+  resultRef: z.string().min(1).nullable().default(null),
   proposalRevisionRef: z.string().min(1).nullable(),
   retryOfModelExecutionRef: z.string().min(1).nullable(),
   queuedAt: z.string().datetime(),
@@ -279,7 +286,10 @@ export const ModelBudgetDecisionSchema = z.object({
 
 export const ModelDataManifestSchema = z.object({
   modelDataManifestRef: z.string().min(1),
-  purpose: z.literal("teacher-copilot.lesson-preparation"),
+  purpose: z.enum([
+    "teacher-copilot.lesson-preparation",
+    "teacher-copilot.lesson-reflection"
+  ]),
   tenantRef: z.literal("tenant:demo-school"),
   actorRef: z.literal("user:teacher-001"),
   taskRunRef: z.string().min(1),
@@ -318,6 +328,9 @@ export type StructuredTeachingSuggestion = z.infer<
 export type StructuredTeachingSuggestionOutput = z.infer<
   typeof StructuredTeachingSuggestionOutputSchema
 >;
+export type StructuredModelOutput =
+  | StructuredTeachingSuggestionOutput
+  | z.infer<typeof StructuredReflectionOutputSchema>;
 export type ModelRequestV2 = z.infer<typeof ModelRequestSchemaV2>;
 export type ModelResult = z.infer<typeof ModelResultSchema>;
 export type ProviderAvailability = z.infer<

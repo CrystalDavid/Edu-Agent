@@ -126,6 +126,51 @@ export const teacherSuggestionJsonSchema = {
   }
 } as const;
 
+export const lessonReflectionJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "schemaVersion",
+    "courseRunRef",
+    "lessonRef",
+    "teachingPlanRevisionRef",
+    "deliveryRevisionRef",
+    "observationRevisionRefs",
+    "evidenceRefs",
+    "teacherApprovalRequired",
+    "objectiveAttainment",
+    "plannedVsImplemented",
+    "effectiveMoves",
+    "ineffectiveMoves",
+    "observationSummary",
+    "evidenceAlignment",
+    "uncertainties",
+    "nextLessonSuggestions",
+    "assignmentSuggestions",
+    "teacherNotes"
+  ],
+  properties: {
+    schemaVersion: { type: "string", const: "lesson-reflection@1" },
+    courseRunRef: { type: "string" },
+    lessonRef: { type: "string" },
+    teachingPlanRevisionRef: { type: "string" },
+    deliveryRevisionRef: { type: "string" },
+    observationRevisionRefs: { type: "array", items: { type: "string" } },
+    evidenceRefs: { type: "array", items: { type: "string" } },
+    teacherApprovalRequired: { type: "boolean", const: true },
+    objectiveAttainment: { type: "string" },
+    plannedVsImplemented: { type: "string" },
+    effectiveMoves: { type: "array", items: { type: "string" } },
+    ineffectiveMoves: { type: "array", items: { type: "string" } },
+    observationSummary: { type: "array", items: { type: "string" } },
+    evidenceAlignment: { type: "array", items: { type: "string" } },
+    uncertainties: { type: "array", items: { type: "string" } },
+    nextLessonSuggestions: { type: "array", items: { type: "string" } },
+    assignmentSuggestions: { type: "array", items: { type: "string" } },
+    teacherNotes: { type: "string" }
+  }
+} as const;
+
 interface VolcengineArkProviderDependencies {
   client?: OpenAI;
   clock?: () => number;
@@ -222,9 +267,15 @@ export class VolcengineArkProvider implements ModelProvider {
               response_format: {
                 type: "json_schema" as const,
                 json_schema: {
-                  name: "teacher_copilot_suggestions",
+                  name:
+                    request.expectedOutputSchema === "lesson-reflection@1"
+                      ? "lesson_reflection"
+                      : "teacher_copilot_suggestions",
                   strict: true,
-                  schema: teacherSuggestionJsonSchema
+                  schema:
+                    request.expectedOutputSchema === "lesson-reflection@1"
+                      ? lessonReflectionJsonSchema
+                      : teacherSuggestionJsonSchema
                 }
               }
             }

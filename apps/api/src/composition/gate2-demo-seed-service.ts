@@ -81,14 +81,84 @@ export class Gate2DemoSeedService {
       return gate24;
     }
     const gate25 = await this.seedGate25();
+    const gate29Support = await this.seedGate29CurriculumSupport();
     const gate27 = options.includeGate27
       ? await this.seedGate27()
       : { replayed: true };
     return {
       ...gate24,
       replayed:
-        gate24.replayed && gate25.replayed && gate27.replayed
+        gate24.replayed && gate25.replayed && gate29Support.replayed && gate27.replayed
     };
+  }
+
+  private async seedGate29CurriculumSupport(): Promise<{ replayed: boolean }> {
+    const rootIdempotencyKey = "gate2-9:synthetic-next-lesson-context:v2";
+    const rootKey = [
+      gate2DemoRefs.tenantRef,
+      gate2DemoRefs.teacherRef,
+      "gate2-9.synthetic-curriculum.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const createdAt = "2026-09-18T08:07:00.000Z";
+    const decisionRef = "authorization-decision:gate2-9-curriculum-seed-v2";
+    const writeContext: WriteContext = {
+      actorRef: gate2DemoRefs.teacherRef,
+      purpose: "gate2-9.synthetic-curriculum.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: "idempotency:gate2-9-curriculum-seed-v2",
+        rootKey,
+        requestFingerprint: hash({ fixture: "gate2-9-coefficient-context@2" }),
+        metadata: createWriteMetadata(writeContext, "governance", "gate2-9-curriculum-seed-idempotency")
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: gate2DemoRefs.teacherRef,
+        tenantRef: gate2DemoRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "gate2-9.curriculum-support.seed",
+        resourceRef: gate25DemoRefs.lessonRefs.coefficientMethod,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["local-synthetic-demo-bootstrap"],
+        policyVersion: "policy:gate2-9-local-demo-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(writeContext, "governance", "gate2-9-curriculum-seed-authorization")
+        })
+      ];
+      receipts.push(await this.gate25Education.insertLessonEvidenceSeed(client, {
+        lessonRef: gate25DemoRefs.lessonRefs.coefficientMethod,
+        evidenceRef: gate2DemoRefs.observationRefs[0],
+        evidenceKind: "observation",
+        metadata: createWriteMetadata(writeContext, "education", "gate2-9-coefficient-evidence-link")
+      }));
+      const result = { replayed: false };
+      await this.governance.completeIdempotency(client, { rootKey, result, completedAt: createdAt });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async seedGate24(): Promise<{

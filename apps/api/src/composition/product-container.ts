@@ -51,6 +51,9 @@ import {
 import {
   PostgresTeacherWorkbenchService
 } from "./postgres-teacher-workbench-service.js";
+import {
+  PostgresClassroomReflectionService
+} from "./postgres-classroom-reflection-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -93,6 +96,13 @@ export function createProductContainer(
     appPool,
     lessonPreparation
   );
+  const assignments = new PostgresAssignmentLearningService(appPool);
+  const classroomReflection = new PostgresClassroomReflectionService(
+    appPool,
+    lessonPreparation,
+    assignments,
+    teacherWorkbench
+  );
   const copilotOutbox = new LocalCopilotOutboxWorker(
     workerPool,
     undefined,
@@ -114,9 +124,9 @@ export function createProductContainer(
         new PostgresGate2TeacherCopilotService(appPool),
       modelInvocations,
       lessonPreparation,
-      assignments:
-        new PostgresAssignmentLearningService(appPool),
+      assignments,
       teacherWorkbench,
+      classroomReflection,
       files: new PostgresFileArtifactService(
         appPool,
         objectStore,

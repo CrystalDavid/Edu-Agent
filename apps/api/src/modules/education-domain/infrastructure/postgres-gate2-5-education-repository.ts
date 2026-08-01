@@ -26,6 +26,36 @@ export interface LessonEducationContext {
 }
 
 export class PostgresGate25EducationRepository {
+  async insertLessonEvidenceSeed(
+    client: PostgresClient,
+    input: {
+      lessonRef: string;
+      evidenceRef: string;
+      evidenceKind: "observation" | "claim";
+      metadata: EducationMetadata;
+    }
+  ): Promise<FormalWriteReceipt> {
+    await client.query(
+      `INSERT INTO education.lesson_evidence_link (
+         lesson_ref, evidence_ref, evidence_kind, is_current,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, created_at
+       ) VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (lesson_ref, evidence_ref) DO NOTHING`,
+      [
+        input.lessonRef,
+        input.evidenceRef,
+        input.evidenceKind,
+        ...formalMetadataValues(input.metadata)
+      ]
+    );
+    return createReceipt({
+      writeRef: `${input.lessonRef}|${input.evidenceRef}`,
+      recordType: "LessonEvidenceLink",
+      metadata: input.metadata
+    });
+  }
+
   async insertCurriculumSeed(
     client: PostgresClient,
     input: {

@@ -15,6 +15,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0003_gate2_6a_model_data_manifest.sql"
   },
   {
+    owner: "governance",
+    relativePath:
+      "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0004_gate2_9_reflection_model_data.sql"
+  },
+  {
     owner: "work",
     relativePath:
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0001_work.sql"
@@ -53,6 +58,11 @@ export const moduleMigrations = [
     owner: "work",
     relativePath:
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0008_gate2_8_teacher_workbench.sql"
+  },
+  {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0009_gate2_9_reflection_workflow.sql"
   },
   {
     owner: "runtime",
@@ -110,6 +120,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/capability-integration/infrastructure/migrations/0005_gate2_6a_live_capability_acceptance.sql"
   },
   {
+    owner: "capability",
+    relativePath:
+      "apps/api/src/modules/capability-integration/infrastructure/migrations/0006_gate2_9_model_result_kind.sql"
+  },
+  {
     owner: "artifact",
     relativePath:
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0001_artifact.sql"
@@ -150,6 +165,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0008_gate2_7_assignment_file_bindings.sql"
   },
   {
+    owner: "artifact",
+    relativePath:
+      "apps/api/src/modules/artifact-collaboration/infrastructure/migrations/0009_gate2_9_lesson_reflections.sql"
+  },
+  {
     owner: "education",
     relativePath:
       "apps/api/src/modules/education-domain/infrastructure/migrations/0001_education.sql"
@@ -173,6 +193,11 @@ export const moduleMigrations = [
     owner: "education",
     relativePath:
       "apps/api/src/modules/education-domain/infrastructure/migrations/0005_gate2_7_assignment_learning_evidence.sql"
+  },
+  {
+    owner: "education",
+    relativePath:
+      "apps/api/src/modules/education-domain/infrastructure/migrations/0006_gate2_9_classroom_implementation.sql"
   },
   {
     owner: "personalization",

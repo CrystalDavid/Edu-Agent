@@ -18,7 +18,10 @@ export const TeacherResourceKindSchema = z.enum([
   "lesson",
   "assignment",
   "file",
-  "teaching_plan"
+  "teaching_plan",
+  "lesson_reflection",
+  "lesson_delivery",
+  "classroom_observation"
 ]);
 
 export const TeacherResourceLinkSchema = z.object({

@@ -3,6 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   AuthorizedContextPlanSchema,
   CreateModelInvocationResultSchema,
+  ReflectionGenerationResultSchema,
+  GenerateReflectionRequestSchema,
+  ReflectionContentSchema,
+  StructuredReflectionOutputSchema,
   ModelExecutionViewSchema,
   ModelUsageSummarySchema,
   ProviderCapabilitiesSchema,
@@ -31,6 +35,7 @@ import {
 import {
   PostgresGate2ArtifactRepository
 } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
+import { PostgresGate29ArtifactRepository } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-9-artifact-repository.js";
 import {
   assembleLessonPreparationModelRequest,
   assembleRepairModelRequest,
@@ -47,6 +52,12 @@ import {
 import {
   validateModelOutput
 } from "../modules/capability-integration/application/model-output-validation.js";
+import {
+  assembleLessonReflectionModelRequest,
+  assembleReflectionRepairRequest,
+  lessonReflectionPromptBundle
+} from "../modules/capability-integration/application/lesson-reflection-prompt-bundle.js";
+import { validateReflectionOutput } from "../modules/capability-integration/application/reflection-output-validation.js";
 import {
   ProviderCapabilityProbe,
   type ProviderCapabilityProbeResult
@@ -74,6 +85,7 @@ import {
 import {
   PostgresGate25EducationRepository
 } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
+import { PostgresGate29EducationRepository } from "../modules/education-domain/infrastructure/postgres-gate2-9-education-repository.js";
 import {
   PostgresGovernanceRepository
 } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
@@ -84,6 +96,7 @@ import {
 import {
   PostgresGate2WorkRepository
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
+import { PostgresGate29WorkRepository } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-9-work-repository.js";
 import {
   PostgresWorkRepository
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-work-repository.js";
@@ -102,6 +115,8 @@ const GENERATE_PURPOSE =
   "teacher-copilot.adjust-next-lesson";
 const MODEL_DATA_PURPOSE =
   "teacher-copilot.lesson-preparation";
+const REFLECTION_MODEL_DATA_PURPOSE =
+  "teacher-copilot.lesson-reflection";
 const CAPABILITY_PROBE_PURPOSE =
   "system.model-provider.capability-probe";
 
@@ -126,6 +141,9 @@ interface ModelInvocationDependencies {
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
   gate25Education?: PostgresGate25EducationRepository;
+  gate29Education?: PostgresGate29EducationRepository;
+  gate29Artifacts?: PostgresGate29ArtifactRepository;
+  gate29Work?: PostgresGate29WorkRepository;
   executions?: PostgresModelExecutionRepository;
   debugSink?: LocalSyntheticModelDebugSink;
   clock?: Clock;
@@ -143,6 +161,9 @@ export class PostgresModelInvocationService {
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
   private readonly gate25Education: PostgresGate25EducationRepository;
+  private readonly gate29Education: PostgresGate29EducationRepository;
+  private readonly gate29Artifacts: PostgresGate29ArtifactRepository;
+  private readonly gate29Work: PostgresGate29WorkRepository;
   private readonly executions: PostgresModelExecutionRepository;
   private readonly clock: Clock;
   private readonly delay: Delay;
@@ -185,6 +206,12 @@ export class PostgresModelInvocationService {
     this.gate25Education =
       dependencies.gate25Education ??
       new PostgresGate25EducationRepository();
+    this.gate29Education =
+      dependencies.gate29Education ?? new PostgresGate29EducationRepository();
+    this.gate29Artifacts =
+      dependencies.gate29Artifacts ?? new PostgresGate29ArtifactRepository();
+    this.gate29Work =
+      dependencies.gate29Work ?? new PostgresGate29WorkRepository();
     this.executions =
       dependencies.executions ??
       new PostgresModelExecutionRepository();
@@ -872,6 +899,7 @@ export class PostgresModelInvocationService {
                 : this.settings.budget.maxOutputTokens,
             outputSchemaVersion:
               lessonPreparationPromptBundle.outputSchemaVersion,
+            resultKind: "teaching_proposal",
             metadata: createWriteMetadata(
               writeContext,
               "capability",
@@ -956,6 +984,381 @@ export class PostgresModelInvocationService {
         replayed: false,
         reusedSuccessfulResult: false,
         execution
+      });
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw translateRepositoryConflict(error);
+    } finally {
+      client.release();
+    }
+  }
+
+  async createReflectionInvocation(input: {
+    tenantRef: string;
+    actorRef: string;
+    request: unknown;
+  }) {
+    assertDemoActor(input.tenantRef, input.actorRef);
+    const request = GenerateReflectionRequestSchema.parse(input.request);
+    const now = this.clock().toISOString();
+    const rootKey = [
+      input.tenantRef,
+      input.actorRef,
+      "lesson-reflection.generate",
+      request.idempotencyKey
+    ].join("|");
+    const decisionRef = stableDecisionRef(rootKey);
+    const writeContext: WriteContext = {
+      actorRef: input.actorRef,
+      purpose: request.purpose,
+      rootIdempotencyKey: request.idempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt: now
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: hash(request),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "reflection-model-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return ReflectionGenerationResultSchema.parse({
+          ...reservation.result,
+          replayed: true
+        });
+      }
+      const reflection = await this.gate29Artifacts.getReflection(
+        client,
+        input.tenantRef,
+        request.reflectionRef
+      );
+      const draft = reflection?.revisions.find(
+        (revision) => revision.status === "draft"
+      );
+      if (!draft || draft.revisionNumber !== request.expectedDraftRevisionNumber) {
+        throw new DomainConflictError(
+          "LESSON_REFLECTION_VERSION_CONFLICT",
+          "课后反思草稿已变化，请刷新后重新生成。"
+        );
+      }
+      const reflectionTask = await this.gate29Work.getReflectionTask(
+        client,
+        input.tenantRef,
+        request.reflectionRef
+      );
+      if (!reflectionTask || reflectionTask.actorRef !== input.actorRef) {
+        throw new NotFoundError("Reflection-owned Task was not found.");
+      }
+      if (!["draft", "draft_ready"].includes(reflectionTask.status)) {
+        throw new DomainConflictError(
+          "LESSON_REFLECTION_GENERATION_NOT_ALLOWED",
+          "当前反思状态不能启动新的模型生成。"
+        );
+      }
+      const delivery = await this.gate29Education.getDeliveryByRevision(
+        client,
+        input.tenantRef,
+        input.actorRef,
+        draft.deliveryRevisionRef
+      );
+      const observations = await this.gate29Education.validateConfirmedObservations(
+        client,
+        input.tenantRef,
+        input.actorRef,
+        draft.lessonRef,
+        draft.observationRevisionRefs
+      );
+      const evidence = await this.gate29Education.validateAssignmentEvidence(
+        client,
+        input.tenantRef,
+        draft.lessonRef,
+        draft.assignmentEvidenceRefs
+      );
+      if (
+        !delivery ||
+        delivery.status !== "confirmed" ||
+        observations.length !== new Set(draft.observationRevisionRefs).size ||
+        evidence.length !== new Set(draft.assignmentEvidenceRefs).size
+      ) {
+        throw new DomainConflictError(
+          "REFLECTION_CONTEXT_NOT_AUTHORIZED",
+          "反思生成只能使用当前明确选择的已确认课堂事实与 Evidence。"
+        );
+      }
+      const provider = this.settings.activeProvider;
+      const modelId = provider === "volcengine-ark"
+        ? this.settings.ark?.modelId
+        : "mock";
+      if (!modelId) {
+        throw new DomainConflictError(
+          "ARK_PROVIDER_NOT_CONFIGURED",
+          "Volcengine Ark configuration is unavailable."
+        );
+      }
+      const taskRunRef = `task-run:${randomUUID()}`;
+      const agentRunRef = `agent-run:${randomUUID()}`;
+      const contextManifestRef = `context-manifest:${randomUUID()}`;
+      const authorizedContextPlanRef = `authorized-context-plan:${randomUUID()}`;
+      const executionRef = `model-execution:${randomUUID()}`;
+      const resourceRefs = [
+        draft.courseRunRef,
+        draft.lessonRef,
+        draft.teachingPlanRevisionRef,
+        draft.deliveryRevisionRef,
+        draft.reflectionRevisionRef,
+        ...draft.observationRevisionRefs
+      ];
+      const authorizedContextPlan = AuthorizedContextPlanSchema.parse({
+        authorizedContextPlanRef,
+        taskRef: reflectionTask.taskRef,
+        taskRunRef,
+        workingSetVersion: reflectionTask.workingSet.version,
+        authorizedResourceRefs: resourceRefs,
+        authorizedEvidenceRefs: draft.assignmentEvidenceRefs,
+        deniedResourceRefs: [],
+        requestedFieldMask: reflectionTask.workingSet.requestedFieldMask,
+        authorizationDecisionRef: decisionRef,
+        contentHash: hash({
+          taskRunRef,
+          workingSetVersion: reflectionTask.workingSet.version,
+          resourceRefs,
+          evidenceRefs: draft.assignmentEvidenceRefs,
+          fieldMask: reflectionTask.workingSet.requestedFieldMask,
+          authorizationDecisionRef: decisionRef
+        }),
+        resolvedAt: now
+      });
+      const taskRequest: TeacherTaskRequest = {
+        requestText:
+          request.teacherNotes.trim() ||
+          "请基于本次已确认课堂事实生成课后反思草稿。",
+        actorRef: input.actorRef,
+        purpose: request.purpose,
+        courseRunRef: draft.courseRunRef,
+        learningObjectiveRefs: reflectionTask.workingSet.learningObjectiveRefs,
+        selectedEvidenceRefs: draft.assignmentEvidenceRefs,
+        curriculumUnitRef: reflectionTask.workingSet.curriculumUnitRef,
+        lessonRef: draft.lessonRef,
+        baselineTeachingPlanRef: draft.teachingPlanRevisionRef,
+        workingSetVersion: reflectionTask.workingSet.version,
+        createdAt: now,
+        requestVersion: 1
+      };
+      const modelDataManifest = createModelDataManifest({
+        purpose: REFLECTION_MODEL_DATA_PURPOSE,
+        tenantRef: input.tenantRef,
+        actorRef: input.actorRef,
+        taskRunRef,
+        contextManifestRef,
+        provider,
+        modelId,
+        resourceRefs: [...resourceRefs, ...draft.assignmentEvidenceRefs],
+        authorizationDecisionRef: decisionRef,
+        syntheticData: true,
+        createdAt: now
+      });
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: input.actorRef,
+        tenantRef: input.tenantRef,
+        purpose: request.purpose,
+        action: "lesson-reflection.generate",
+        resourceRef: request.reflectionRef,
+        requestedFieldMask: reflectionTask.workingSet.requestedFieldMask,
+        effect: "allow",
+        reasonCodes: [
+          "synthetic-teacher-role",
+          "confirmed-delivery-only",
+          "selected-evidence-only",
+          "reflection-draft-only",
+          "transaction-outside-network"
+        ],
+        policyVersion: "policy:model-data-synthetic-reflection@1",
+        decidedAt: now
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "reflection-model-authorization"
+          )
+        })
+      ];
+      const attempt = await this.gate25Work.nextTaskRunAttempt(
+        client,
+        reflectionTask.taskRef
+      );
+      receipts.push(...await this.gate25Work.insertTaskRun(client, {
+        taskRunRef,
+        taskRef: reflectionTask.taskRef,
+        attempt,
+        status: "queued",
+        request: taskRequest,
+        metadata: createWriteMetadata(writeContext, "work", "reflection-task-run"),
+        outboxRef: `outbox:${randomUUID()}`,
+        outboxMetadata: createWriteMetadata(writeContext, "work", "reflection-task-run-outbox"),
+        outboxEventName: "LessonReflectionTaskRunQueued"
+      }));
+      receipts.push(await this.gate2Runtime.insertAuthorizedContextPlan(client, {
+        ...authorizedContextPlan,
+        metadata: createWriteMetadata(writeContext, "runtime", "reflection-authorized-context")
+      }));
+      receipts.push(...await this.runtime.insertAgentRunBundle(client, {
+        agentRun: {
+          agentRunRef,
+          runKind: "TaskRun",
+          boundRunRef: taskRunRef,
+          status: "queued",
+          modelProvider: provider,
+          modelProfile: this.settings.availability.modelDisplayName,
+          toolName: "none",
+          output: {
+            resultKind: "lesson_reflection_draft",
+            reflectionRef: request.reflectionRef,
+            teacherConfirmationRequired: true,
+            rawProviderContentStored: false
+          },
+          metadata: createWriteMetadata(writeContext, "runtime", "reflection-agent-run")
+        },
+        manifest: {
+          manifestRef: `run-manifest:${randomUUID()}`,
+          agentRunRef,
+          contextManifestRef,
+          promptVersionRef: lessonReflectionPromptBundle.promptBundleRef,
+          policyVersionRef: decision.policyVersion,
+          capabilityRefs: [this.provider.descriptor.capabilityRef],
+          contextRefs: [...resourceRefs, ...draft.assignmentEvidenceRefs],
+          contentHash: hash({
+            prompt: lessonReflectionPromptBundle.contentHash,
+            context: authorizedContextPlan.contentHash
+          }),
+          metadata: createWriteMetadata(writeContext, "runtime", "reflection-run-manifest")
+        },
+        outbox: {
+          outboxRef: `outbox:${randomUUID()}`,
+          eventName: "AgentRunQueued",
+          aggregateRef: agentRunRef,
+          payload: { taskRunRef, modelExecutionRef: executionRef },
+          metadata: createWriteMetadata(writeContext, "runtime", "reflection-runtime-outbox")
+        }
+      }));
+      receipts.push(await this.gate2Runtime.insertContextManifest(client, {
+        contextManifestRef,
+        agentRunRef,
+        resourceRefs,
+        evidenceRefs: draft.assignmentEvidenceRefs,
+        unknowns: draft.content.uncertainties,
+        requestedFieldMask: reflectionTask.workingSet.requestedFieldMask,
+        taskRef: reflectionTask.taskRef,
+        authorizedContextPlanRef,
+        requestSummary: taskRequest,
+        metadata: createWriteMetadata(writeContext, "runtime", "reflection-context-manifest")
+      }));
+      receipts.push(await this.governance.insertModelDataManifest(client, {
+        manifest: modelDataManifest,
+        metadata: createWriteMetadata(
+          { ...writeContext, purpose: REFLECTION_MODEL_DATA_PURPOSE },
+          "governance",
+          "reflection-model-data-manifest"
+        )
+      }));
+      const timeoutMs = provider === "volcengine-ark"
+        ? (this.settings.ark?.timeoutMs ?? 120_000)
+        : 120_000;
+      const maxOutputTokens = provider === "volcengine-ark"
+        ? (this.settings.ark?.maxOutputTokens ?? this.settings.budget.maxOutputTokens)
+        : this.settings.budget.maxOutputTokens;
+      receipts.push(...await this.executions.insertQueued(client, {
+        execution: {
+          executionRef,
+          provider,
+          modelId,
+          modelDisplayName: this.settings.availability.modelDisplayName,
+          taskRef: reflectionTask.taskRef,
+          taskRunRef,
+          agentRunRef,
+          promptBundleRef: lessonReflectionPromptBundle.promptBundleRef,
+          promptBundleVersion: lessonReflectionPromptBundle.version,
+          contextManifestRef,
+          authorizedContextPlanRef,
+          modelDataManifestRef: modelDataManifest.modelDataManifestRef,
+          requestHash: hash({
+            reflectionRef: request.reflectionRef,
+            draftRevision: draft.reflectionRevisionRef,
+            teacherNotesHash: hash(request.teacherNotes),
+            promptVersion: lessonReflectionPromptBundle.version,
+            contextHash: authorizedContextPlan.contentHash,
+            provider,
+            modelId,
+            maxOutputTokens,
+            timeoutMs
+          }),
+          inputSummary: {
+            reflectionRef: request.reflectionRef,
+            reflectionRevisionRef: draft.reflectionRevisionRef,
+            courseRunRef: draft.courseRunRef,
+            curriculumUnitRef: reflectionTask.workingSet.curriculumUnitRef,
+            lessonRef: draft.lessonRef,
+            teachingPlanRevisionRef: draft.teachingPlanRevisionRef,
+            deliveryRevisionRef: draft.deliveryRevisionRef,
+            observationRevisionRefs: draft.observationRevisionRefs,
+            assignmentEvidenceRefs: draft.assignmentEvidenceRefs,
+            teacherNotesHash: hash(request.teacherNotes),
+            syntheticData: true
+          },
+          maxAttempts: provider === "volcengine-ark"
+            ? (this.settings.ark?.maxAttempts ?? 2)
+            : 2,
+          timeoutMs,
+          maxOutputTokens,
+          outputSchemaVersion: lessonReflectionPromptBundle.outputSchemaVersion,
+          resultKind: "lesson_reflection_draft",
+          metadata: createWriteMetadata(writeContext, "capability", "reflection-model-execution")
+        },
+        eventRef: `model-execution-event:${randomUUID()}`,
+        eventMetadata: createWriteMetadata(writeContext, "capability", "reflection-model-queued-event"),
+        outboxRef: `outbox:${randomUUID()}`,
+        outboxMetadata: createWriteMetadata(writeContext, "capability", "reflection-model-outbox")
+      }));
+      const transitioned = await this.gate29Work.setReflectionTaskStatus(client, {
+        taskRef: reflectionTask.taskRef,
+        fromStatuses: ["draft", "draft_ready"],
+        toStatus: "generating",
+        modelExecutionRef: executionRef,
+        updatedAt: now
+      });
+      if (!transitioned) {
+        throw new DomainConflictError(
+          "LESSON_REFLECTION_GENERATION_CONFLICT",
+          "反思生成状态已变化。"
+        );
+      }
+      const result = ReflectionGenerationResultSchema.parse({
+        replayed: false,
+        modelExecutionRef: executionRef,
+        status: "queued",
+        reflectionRef: request.reflectionRef,
+        contextManifestRef,
+        authorizedContextPlanRef
       });
       await this.governance.completeIdempotency(client, {
         rootKey,
@@ -1239,8 +1642,11 @@ export class PostgresModelInvocationService {
             "model-retry-authorization"
           )
         });
+      const retryDataPurpose = source.resultKind === "lesson_reflection_draft"
+        ? REFLECTION_MODEL_DATA_PURPOSE
+        : MODEL_DATA_PURPOSE;
       const manifest = createModelDataManifest({
-        purpose: MODEL_DATA_PURPOSE,
+        purpose: retryDataPurpose,
         tenantRef: input.tenantRef,
         actorRef: input.actorRef,
         taskRunRef: source.taskRunRef,
@@ -1250,7 +1656,15 @@ export class PostgresModelInvocationService {
         resourceRefs: [
           String(source.inputSummary["courseRunRef"] ?? ""),
           String(source.inputSummary["curriculumUnitRef"] ?? ""),
-          String(source.inputSummary["lessonRef"] ?? "")
+          String(source.inputSummary["lessonRef"] ?? ""),
+          String(source.inputSummary["reflectionRef"] ?? ""),
+          String(source.inputSummary["deliveryRevisionRef"] ?? ""),
+          ...(Array.isArray(source.inputSummary["observationRevisionRefs"])
+            ? source.inputSummary["observationRevisionRefs"] as string[]
+            : []),
+          ...(Array.isArray(source.inputSummary["assignmentEvidenceRefs"])
+            ? source.inputSummary["assignmentEvidenceRefs"] as string[]
+            : [])
         ].filter(Boolean),
         authorizationDecisionRef: decisionRef,
         syntheticData: true,
@@ -1265,7 +1679,7 @@ export class PostgresModelInvocationService {
           metadata: createWriteMetadata(
             {
               ...writeContext,
-              purpose: MODEL_DATA_PURPOSE
+              purpose: retryDataPurpose
             },
             "governance",
             "model-retry-data-manifest"
@@ -1293,6 +1707,7 @@ export class PostgresModelInvocationService {
             timeoutMs: source.timeoutMs,
             maxOutputTokens: source.maxOutputTokens,
             outputSchemaVersion: source.outputSchemaVersion,
+            resultKind: source.resultKind,
             retryOfExecutionRef: source.executionRef,
             metadata: createWriteMetadata(
               writeContext,
@@ -1314,6 +1729,21 @@ export class PostgresModelInvocationService {
           )
         }))
       ];
+      if (source.resultKind === "lesson_reflection_draft") {
+        const transitioned = await this.gate29Work.setReflectionTaskStatus(client, {
+          taskRef: source.taskRef,
+          fromStatuses: ["draft_ready"],
+          toStatus: "generating",
+          modelExecutionRef: executionRef,
+          updatedAt: now
+        });
+        if (!transitioned) {
+          throw new DomainConflictError(
+            "LESSON_REFLECTION_GENERATION_CONFLICT",
+            "反思任务状态已变化，无法重试。"
+          );
+        }
+      }
       const queued = await this.executions.get(
         client,
         executionRef
@@ -1377,7 +1807,9 @@ export class PostgresModelInvocationService {
       return;
     }
 
-    const context = await this.loadPromptContext(execution);
+    const context = execution.resultKind === "lesson_reflection_draft"
+      ? await this.loadReflectionPromptContext(execution)
+      : await this.loadPromptContext(execution);
     let request = context.request;
     const usage = await this.executions.usageSnapshot(
       this.pool,
@@ -1526,10 +1958,26 @@ export class PostgresModelInvocationService {
             outputText: result.outputText
           })
           .catch(() => undefined);
-        const validation = validateModelOutput({
-          outputText: result.outputText,
-          request
-        });
+        const validation = execution.resultKind === "lesson_reflection_draft"
+          ? validateReflectionOutput({
+              outputText: result.outputText,
+              request,
+              teachingPlanRevisionRef: String(
+                execution.inputSummary["teachingPlanRevisionRef"] ?? ""
+              ),
+              deliveryRevisionRef: String(
+                execution.inputSummary["deliveryRevisionRef"] ?? ""
+              ),
+              observationRevisionRefs: Array.isArray(
+                execution.inputSummary["observationRevisionRefs"]
+              )
+                ? execution.inputSummary["observationRevisionRefs"] as string[]
+                : []
+            })
+          : validateModelOutput({
+              outputText: result.outputText,
+              request
+            });
         if (validation.valid) {
           await this.persistValidatedOutput(
             execution,
@@ -1549,11 +1997,17 @@ export class PostgresModelInvocationService {
             undefined,
             latestOutput
           );
-          request = assembleRepairModelRequest({
+          request = execution.resultKind === "lesson_reflection_draft"
+            ? assembleReflectionRepairRequest({
+                original: context.request,
+                invalidOutput: result.outputText,
+                validationIssues: validation.issues
+              })
+            : assembleRepairModelRequest({
             original: context.request,
             invalidOutput: result.outputText,
             validationIssues: validation.issues
-          });
+              });
           execution =
             (await this.executions.get(
               this.pool,
@@ -1565,7 +2019,9 @@ export class PostgresModelInvocationService {
           status: "validation_failed",
           category: "OUTPUT_VALIDATION_FAILED",
           safeMessage:
-            "模型输出经过一次受控修复后仍未通过验证，未创建教学建议。",
+            execution.resultKind === "lesson_reflection_draft"
+              ? "模型输出经过一次受控修复后仍未通过验证，未创建课后反思草稿。"
+              : "模型输出经过一次受控修复后仍未通过验证，未创建教学建议。",
           attemptMetrics: latestOutput
         });
         return;
@@ -1789,6 +2245,186 @@ export class PostgresModelInvocationService {
     };
   }
 
+  private async loadReflectionPromptContext(
+    execution: StoredModelExecution
+  ): Promise<{ request: ModelRequestV2 }> {
+    const reflectionRef = String(
+      execution.inputSummary["reflectionRef"] ?? ""
+    );
+    const revisionRef = String(
+      execution.inputSummary["reflectionRevisionRef"] ?? ""
+    );
+    const [taskRun, reflectionTask, storedReflection, contextManifest, authorizedContextPlan] =
+      await Promise.all([
+        this.gate25Work.getTaskRun(this.pool, execution.taskRunRef),
+        this.gate29Work.getReflectionTaskByTaskRef(
+          this.pool,
+          "tenant:demo-school",
+          execution.taskRef
+        ),
+        this.gate29Artifacts.getReflection(
+          this.pool,
+          "tenant:demo-school",
+          reflectionRef
+        ),
+        this.gate2Runtime.getContextManifestByRef(
+          this.pool,
+          execution.contextManifestRef
+        ),
+        this.gate2Runtime.getAuthorizedContextPlanByRef(
+          this.pool,
+          execution.authorizedContextPlanRef
+        )
+      ]);
+    const reflection = storedReflection?.revisions.find(
+      (item) => item.reflectionRevisionRef === revisionRef
+    );
+    if (
+      !taskRun ||
+      !reflectionTask ||
+      !reflection ||
+      reflection.status !== "draft" ||
+      !contextManifest ||
+      !authorizedContextPlan
+    ) {
+      throw new Error("The sealed Reflection model context cannot be reconstructed.");
+    }
+    const [courseRun, lesson, delivery, observations, teachingPlan] =
+      await Promise.all([
+        this.gate25Education.getCourseRun(
+          this.pool,
+          reflection.tenantRef,
+          reflection.courseRunRef
+        ),
+        this.gate25Education.getLesson(
+          this.pool,
+          reflection.tenantRef,
+          reflection.lessonRef
+        ),
+        this.gate29Education.getDeliveryByRevision(
+          this.pool,
+          reflection.tenantRef,
+          execution.actorRef,
+          reflection.deliveryRevisionRef
+        ),
+        this.gate29Education.validateConfirmedObservations(
+          this.pool,
+          reflection.tenantRef,
+          execution.actorRef,
+          reflection.lessonRef,
+          reflection.observationRevisionRefs
+        ),
+        this.artifacts.getTeachingPlanRevision(
+          this.pool,
+          reflection.teachingPlanRevisionRef
+        )
+      ]);
+    if (!courseRun || !lesson || !delivery || !teachingPlan) {
+      throw new Error("A confirmed Reflection input disappeared.");
+    }
+    if (
+      contextManifest.requestSummary.requestText !== taskRun.request.requestText ||
+      !sameStringRefs(
+        contextManifest.evidenceRefs,
+        reflection.assignmentEvidenceRefs
+      ) ||
+      !sameStringRefs(
+        observations.map((item) => item.observationRevisionRef),
+        reflection.observationRevisionRefs
+      )
+    ) {
+      throw new Error("The sealed Reflection context does not match its source facts.");
+    }
+    const evidenceResult = reflection.assignmentEvidenceRefs.length === 0
+      ? { rows: [] as Array<{ observation_ref: string; objective_ref: string; outcome: string }> }
+      : await this.pool.query<{
+          observation_ref: string;
+          objective_ref: string;
+          outcome: string;
+        }>(
+          `SELECT source.observation_ref, item.objective_ref, grade.outcome
+             FROM education.assignment_evidence_source AS source
+             JOIN education.assignment AS assignment
+               ON assignment.assignment_ref = source.assignment_ref
+             JOIN education.assignment_item AS item
+               ON item.item_ref = source.item_ref
+             JOIN education.teacher_item_grade AS grade
+               ON grade.grade_decision_ref = source.grade_decision_ref
+              AND grade.response_ref = source.response_ref
+            WHERE assignment.tenant_ref = $1
+              AND source.lesson_ref = $2
+              AND source.observation_ref = ANY($3::text[])
+              AND NOT EXISTS (
+                SELECT 1 FROM education.assignment_evidence_source AS newer
+                 WHERE newer.supersedes_observation_ref = source.observation_ref
+              )`,
+          [
+            reflection.tenantRef,
+            reflection.lessonRef,
+            reflection.assignmentEvidenceRefs
+          ]
+        );
+    const capabilities = await this.getCapabilities();
+    const responseFormat = execution.provider === "mock"
+      ? "json_schema"
+      : capabilities?.supportsJsonSchema
+        ? "json_schema"
+        : capabilities?.supportsJsonObject === false
+          ? "prompt_json"
+          : "json_object";
+    return {
+      request: assembleLessonReflectionModelRequest({
+        invocationRef: execution.executionRef,
+        taskRunRef: execution.taskRunRef,
+        agentRunRef: execution.agentRunRef,
+        contextManifestRef: execution.contextManifestRef,
+        timeoutMs: execution.timeoutMs,
+        maxOutputTokens: execution.maxOutputTokens,
+        responseFormat,
+        teacherNotes: taskRun.request.requestText,
+        courseRun: {
+          courseRunRef: courseRun.courseRunRef,
+          subject: courseRun.subject,
+          gradeLevel: courseRun.gradeLevel,
+          className: courseRun.className
+        },
+        lesson: {
+          lessonRef: lesson.lessonRef,
+          title: lesson.title,
+          durationMinutes: lesson.durationMinutes
+        },
+        learningObjectives: lesson.learningObjectives,
+        approvedTeachingPlan: {
+          revisionRef: teachingPlan.revisionRef,
+          content: teachingPlan.content
+        },
+        confirmedDelivery: {
+          deliveryRevisionRef: delivery.deliveryRevisionRef,
+          actualStartAt: delivery.actualStartAt,
+          actualEndAt: delivery.actualEndAt,
+          steps: delivery.steps,
+          paceNotes: delivery.paceNotes,
+          unresolvedQuestions: delivery.unresolvedQuestions,
+          followUpNotes: delivery.followUpNotes
+        },
+        confirmedObservations: observations.map((item) => ({
+          observationRevisionRef: item.observationRevisionRef,
+          scope: item.scope,
+          scopeRef: item.scopeRef,
+          observationType: item.observationType,
+          content: item.content,
+          observedAt: item.observedAt
+        })),
+        authorizedEvidence: evidenceResult.rows.map((item) => ({
+          evidenceRef: item.observation_ref,
+          objectiveRef: item.objective_ref,
+          summary: `教师已确认的合成作业 Evidence，结果：${item.outcome}`
+        })),
+        currentReflectionDraft: reflection.content
+      })
+    };
+  }
+
   private async beginAttempt(
     executionRef: string,
     attempt: number
@@ -1950,11 +2586,7 @@ export class PostgresModelInvocationService {
 
   private async persistValidatedOutput(
     execution: StoredModelExecution,
-    output: ReturnType<
-      typeof validateModelOutput
-    > extends infer _T
-      ? import("@edu-agent/contracts").StructuredTeachingSuggestionOutput
-      : never,
+    output: import("@edu-agent/contracts").StructuredModelOutput,
     providerResult: {
       inputTokens?: number;
       outputTokens?: number;
@@ -2048,6 +2680,11 @@ export class PostgresModelInvocationService {
         throw new Error(
           "Only a validated ModelExecution can create a Proposal."
         );
+      }
+      if (execution.resultKind === "lesson_reflection_draft") {
+        await this.finalizeReflectionExecution(client, execution);
+        await client.query("COMMIT");
+        return;
       }
       const existing =
         await this.gate2Work.getTaskResultByTaskRun(
@@ -2249,6 +2886,146 @@ export class PostgresModelInvocationService {
     }
   }
 
+  private async finalizeReflectionExecution(
+    client: import("../platform/postgres/types.js").PostgresClient,
+    execution: StoredModelExecution
+  ): Promise<void> {
+    const output = StructuredReflectionOutputSchema.parse(
+      execution.validatedOutput
+    );
+    const reflectionRef = String(
+      execution.inputSummary["reflectionRef"] ?? ""
+    );
+    const expectedDraftRef = String(
+      execution.inputSummary["reflectionRevisionRef"] ?? ""
+    );
+    const stored = await this.gate29Artifacts.getReflection(
+      client,
+      "tenant:demo-school",
+      reflectionRef
+    );
+    const currentDraft = stored?.revisions.find(
+      (item) => item.status === "draft"
+    );
+    if (
+      !currentDraft ||
+      currentDraft.reflectionRevisionRef !== expectedDraftRef
+    ) {
+      throw new DomainConflictError(
+        "LESSON_REFLECTION_DRAFT_CHANGED",
+        "模型生成期间反思草稿已变化，未覆盖教师内容。"
+      );
+    }
+    const context = await this.loadReflectionPromptContext(execution);
+    const validation = validateReflectionOutput({
+      outputText: JSON.stringify(output),
+      request: context.request,
+      teachingPlanRevisionRef: currentDraft.teachingPlanRevisionRef,
+      deliveryRevisionRef: currentDraft.deliveryRevisionRef,
+      observationRevisionRefs: currentDraft.observationRevisionRefs
+    });
+    if (!validation.valid) {
+      throw new Error("Persisted Reflection output no longer passes validation.");
+    }
+    const now = this.clock().toISOString();
+    const writeContext = executionWriteContext(execution, now);
+    const revisionRef = `artifact-revision:${randomUUID()}`;
+    const content = ReflectionContentSchema.parse(output);
+    const inserted = await this.gate29Artifacts.insertDraftRevision(client, {
+      reflectionRef,
+      revisionRef,
+      parentRevisionRef: currentDraft.reflectionRevisionRef,
+      title: `课后反思（Agent 草稿 v${currentDraft.revisionNumber + 1}）`,
+      content,
+      scope: {
+        tenantRef: currentDraft.tenantRef,
+        courseRunRef: currentDraft.courseRunRef,
+        lessonRef: currentDraft.lessonRef,
+        teachingPlanRevisionRef: currentDraft.teachingPlanRevisionRef,
+        deliveryRevisionRef: currentDraft.deliveryRevisionRef,
+        observationRevisionRefs: currentDraft.observationRevisionRefs,
+        assignmentEvidenceRefs: currentDraft.assignmentEvidenceRefs
+      },
+      sourceAgentRunRef: execution.agentRunRef,
+      revisionMetadata: createWriteMetadata(
+        writeContext,
+        "artifact",
+        "reflection-model-draft-revision"
+      ),
+      scopeMetadata: createWriteMetadata(
+        writeContext,
+        "artifact",
+        "reflection-model-draft-scope"
+      ),
+      eventRef: `reflection-event:${randomUUID()}`,
+      eventMetadata: createWriteMetadata(
+        writeContext,
+        "artifact",
+        "reflection-model-draft-event"
+      ),
+      outboxRef: `outbox:${randomUUID()}`,
+      outboxMetadata: createWriteMetadata(
+        writeContext,
+        "artifact",
+        "reflection-model-draft-outbox"
+      ),
+      eventName: "LessonReflectionDraftGenerated"
+    });
+    const receipts: FormalWriteReceipt[] = [...inserted.receipts];
+    const reflectionTask = await this.gate29Work.getReflectionTask(
+      client,
+      currentDraft.tenantRef,
+      reflectionRef
+    );
+    if (!reflectionTask) {
+      throw new Error("Reflection Task disappeared during finalization.");
+    }
+    const transitioned = await this.gate29Work.setReflectionTaskStatus(client, {
+      taskRef: reflectionTask.taskRef,
+      fromStatuses: ["generating"],
+      toStatus: "draft_ready",
+      modelExecutionRef: execution.executionRef,
+      updatedAt: now
+    });
+    if (!transitioned) {
+      throw new DomainConflictError(
+        "LESSON_REFLECTION_GENERATION_CONFLICT",
+        "反思任务状态已变化，未重复创建草稿。"
+      );
+    }
+    await this.gate25Work.updateTaskRunStatus(client, {
+      taskRunRef: execution.taskRunRef,
+      status: "completed",
+      updatedAt: now
+    });
+    await this.runtime.updateAgentRunStatus(client, {
+      agentRunRef: execution.agentRunRef,
+      status: "completed",
+      output: {
+        modelExecutionRef: execution.executionRef,
+        resultKind: "lesson_reflection_draft",
+        reflectionRef,
+        reflectionRevisionRef: revisionRef,
+        teacherConfirmationRequired: true,
+        outputHash: execution.outputHash,
+        rawProviderContentStored: false
+      },
+      updatedAt: now
+    });
+    receipts.push(await this.executions.markTerminal(client, {
+      executionRef: execution.executionRef,
+      status: "succeeded",
+      resultRef: revisionRef,
+      eventRef: `model-execution-event:${randomUUID()}`,
+      metadata: createWriteMetadata(
+        writeContext,
+        "capability",
+        "reflection-model-succeeded"
+      )
+    }));
+    await this.governance.saveAudits(client, receipts);
+  }
+
   private async finishFailure(
     execution: StoredModelExecution,
     input: {
@@ -2336,6 +3113,15 @@ export class PostgresModelInvocationService {
         },
         updatedAt: now
       });
+      if (execution.resultKind === "lesson_reflection_draft") {
+        await this.gate29Work.setReflectionTaskStatus(client, {
+          taskRef: execution.taskRef,
+          fromStatuses: ["generating"],
+          toStatus: "draft_ready",
+          modelExecutionRef: execution.executionRef,
+          updatedAt: now
+        });
+      }
       await this.governance.saveAudits(client, [receipt]);
       await client.query("COMMIT");
     } catch (error) {
@@ -2367,7 +3153,10 @@ export class PostgresModelInvocationService {
           executionRef: current.executionRef,
           status: "cancelled",
           safeErrorCategory: "REQUEST_CANCELLED",
-          safeMessage: "模型调用已取消，未创建教学建议。",
+          safeMessage:
+            current.resultKind === "lesson_reflection_draft"
+              ? "模型调用已取消，未创建新的课后反思草稿。"
+              : "模型调用已取消，未创建教学建议。",
           eventRef: `model-execution-event:${randomUUID()}`,
           metadata: createWriteMetadata(
             executionWriteContext(current, now),
@@ -2389,6 +3178,15 @@ export class PostgresModelInvocationService {
         },
         updatedAt: now
       });
+      if (current.resultKind === "lesson_reflection_draft") {
+        await this.gate29Work.setReflectionTaskStatus(client, {
+          taskRef: current.taskRef,
+          fromStatuses: ["generating"],
+          toStatus: "draft_ready",
+          modelExecutionRef: current.executionRef,
+          updatedAt: now
+        });
+      }
       await this.governance.saveAudits(client, [receipt]);
       await client.query("COMMIT");
     } catch (error) {
@@ -2635,6 +3433,8 @@ function toExecutionView(
     safeErrorCategory: execution.safeErrorCategory,
     safeMessage: execution.safeMessage,
     outputSchemaVersion: execution.outputSchemaVersion,
+    resultKind: execution.resultKind,
+    resultRef: execution.resultRef,
     proposalRevisionRef: execution.proposalRevisionRef,
     retryOfModelExecutionRef:
       execution.retryOfExecutionRef,
@@ -2651,6 +3451,15 @@ function activeModelId(
   return settings.activeProvider === "volcengine-ark"
     ? (settings.ark?.modelId ?? "")
     : "mock";
+}
+
+function sameStringRefs(
+  left: readonly string[],
+  right: readonly string[]
+): boolean {
+  const normalized = (values: readonly string[]) =>
+    [...new Set(values)].sort();
+  return JSON.stringify(normalized(left)) === JSON.stringify(normalized(right));
 }
 
 function executionWriteContext(

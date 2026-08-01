@@ -67,7 +67,10 @@ export function createModelDataManifest(input: {
   if (
     input.tenantRef !== "tenant:demo-school" ||
     input.actorRef !== "user:teacher-001" ||
-    input.purpose !== "teacher-copilot.lesson-preparation" ||
+    ![
+      "teacher-copilot.lesson-preparation",
+      "teacher-copilot.lesson-reflection"
+    ].includes(input.purpose) ||
     !input.syntheticData
   ) {
     throw new Error(
@@ -103,18 +106,32 @@ export function createModelDataManifest(input: {
       "demo-teacher-request"
     ],
     resourceRefs: [...input.resourceRefs],
-    fieldNames: [
-      "request_text",
-      "course_run",
-      "curriculum_unit",
-      "lesson",
-      "learning_objectives",
-      "current_approved_teaching_plan",
-      "authorized_evidence",
-      "known_gaps",
-      "interaction_contract",
-      "task_working_set"
-    ],
+    fieldNames:
+      input.purpose === "teacher-copilot.lesson-reflection"
+        ? [
+            "teacher_notes",
+            "course_run",
+            "lesson",
+            "learning_objectives",
+            "approved_teaching_plan",
+            "confirmed_delivery",
+            "confirmed_observations",
+            "authorized_evidence",
+            "reflection_draft",
+            "task_working_set"
+          ]
+        : [
+            "request_text",
+            "course_run",
+            "curriculum_unit",
+            "lesson",
+            "learning_objectives",
+            "current_approved_teaching_plan",
+            "authorized_evidence",
+            "known_gaps",
+            "interaction_contract",
+            "task_working_set"
+          ],
     syntheticDataAssertion: true,
     authorizationDecisionRef: input.authorizationDecisionRef,
     retentionPolicy:
