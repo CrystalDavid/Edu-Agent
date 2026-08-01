@@ -1,10 +1,10 @@
-# Gate 2.6A 可恢复模型执行本地演示
+# Edu Agent 教师端本地演示
 
 ## 演示边界
 
 本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
 
-普通教师端七个一级页面中，概览的备课/作业区、教学的课程/课时/作业区、学生近期 Evidence、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；日程、考试、通用 Agent 对话和设置仍主要是高保真 Mock。不要把视觉完整度解释为学校生产上线。
+普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业区、学生近期 Evidence、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
 
 ## 前置条件
 
@@ -134,6 +134,19 @@ MODEL_DEBUG_CONTENT=false
 8. 执行 `demo:down` 后重新 `demo:dev`，确认 Assignment、Attempt、GradeDecision、Evidence、TaskWorkingSet、Proposal 和 TeachingPlan 仍可读取；
 9. 文件页可把教师上传参考资料关联到 Assignment 或明确 AssignmentVersion；模型不会自动读取这些附件。
 
+### Gate 2.8 日程、待办与教师工作台
+
+1. 打开“概览”，点击“新建待办”，创建“准备周五教研材料”，设置优先级和截止时间；确认概览和日程右侧 Todo 面板显示同一条 PostgreSQL 记录；
+2. 在日程中把 Todo 安排到一个时间段，切换日/周/月视图并编辑时间；确认三个视图读取同一 CalendarEvent；
+3. 完成 Todo，确认时间块仍为 `scheduled`；Calendar 完成也不会自动完成 Todo；刷新后保持；
+4. 创建并发布带截止时间的 Assignment，再载入合成提交；确认日历出现只读截止项，工作台出现未交和待确认批改提醒；
+5. 对待批改提醒点击“明天提醒”，确认 Assignment 的截止时间、发布状态和 GradeDecision 未改变；切换“查看已稍后提醒”可以恢复显示；
+6. 从“继续备课”“审核计划”“去批改”等来源事项进入真实源页面；在源页面完成命令后回到工作台，确认投影自动更新，不使用本地通用“完成”伪造状态；
+7. 创建 Todo 并关联“斜率与图像变化”，点击“在 Agent 中处理”；确认 TaskWorkingSet 显示 Todo 和明确 Lesson，输入请求后生成 Proposal，而 Todo 仍为 `active`；
+8. 重启 API/Worker/Web，确认 Todo、CalendarEvent、TodoCalendarLink、提醒偏好和来源状态全部恢复。
+
+来源业务提醒是可重建读取投影。置顶、稍后提醒和隐藏只影响当前教师、当前 source version；不会修改备课 Task、Assignment、TeachingPlan、GradeDecision、ModelExecution 或 FileAsset。
+
 本地文件设置（均为非敏感服务端配置）：
 
 ```text
@@ -188,7 +201,7 @@ Playwright 的文件字节写入独立的 `.demo/e2e/<run-id>/uploads`，测试�
 
 ## Outbox Worker
 
-`demo:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 还消费 `ModelInvocationQueued`：先用租约领取，事务外调用 Provider，再把验证后的 Proposal 通过应用服务提交。它继续消费 Gate 2.5 Work 事件，并使用 Outbox Consumer Effect 去重。
+`demo:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 还消费 `ModelInvocationQueued`：先用租约领取，事务外调用 Provider，再把验证后的 Proposal 通过应用服务提交。它继续消费备课、作业、TeachingPlan、模型、文件、Todo 和 Calendar 相关事件，并用幂等 upsert 重建 TeacherWorkProjection；Outbox Consumer Effect 负责去重。
 
 业务事务中的 Task、状态历史、Working Set、AuthorizedContextPlan、ContextManifest、Disposition、TeachingPlan Revision、current 指针、Lesson 投影与 Audit 同步提交；Worker 记录可恢复的异步消费效果，不负责决定业务事务是否成功。Worker 停止不会回滚业务写入，重启后会继续领取 pending/retry 或租约过期事件。本项目不声称 exactly-once。
 
@@ -249,7 +262,7 @@ corepack pnpm demo:doctor
 - 第二模型、DeepSeek、多供应商或模型选择器；
 - CloudBase、Netlify、CVM；
 - 云 ObjectStore、文件分享/协作、在线 Office 编辑、上传内容进入模型；
-- Todo/Calendar、完整课程资源树和课程 CRUD、完整题库/考试业务闭环；
+- 外部/共享日历、复杂重复日程、自动 Agent、完整课程资源树和课程 CRUD、完整题库/考试业务闭环；
 - 学生长期模型、多 Agent、v0.4；
 - 自动发布或外部承诺。
 - 图片产品流程、streaming 产品化、Function Calling、OCR 或 Provider 托管会话。

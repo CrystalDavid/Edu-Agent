@@ -1,6 +1,6 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。Gate 2.5C 教师产品稳定性基线已经 verified；当前分支建设 **Gate 2.7 — 作业、学习证据与教学调整闭环**，把作业发布、匿名合成提交、教师确认批改和 selected Evidence 接回既有备课与 TeachingPlan 流程。
+面向学校的教育智能体平台工程仓库。Gate 2.7 作业、学习证据与教学调整闭环已经 verified；当前分支建设 **Gate 2.8 — 日程、待办与教师统一工作台**，把个人 Todo、CalendarEvent 和既有备课/作业/批改/TeachingPlan/模型/文件事实汇入同一可恢复工作入口。
 
 ## 当前真实能力
 
@@ -13,6 +13,11 @@
 - confirmed GradeDecision 生成可追溯 `Assignment → Attempt → ItemResponse → GradeDecision → EvidenceObservation` 来源链，修订会创建替代版本而非覆盖历史；
 - 作业/题目/Objective/learner 统计均从 PostgreSQL 事实实时重算；学生页只显示近期动态 Evidence，不形成长期能力标签；
 - 教师可以从共性错误中显式选择 Evidence 创建下一 Lesson 的 `lesson_preparation` Task；TaskWorkingSet、AuthorizedContextPlan 和 ContextManifest 只包含该次选择并在每次 Run 重新授权；
+- Work-owned `TeacherTodo` 支持创建、编辑、优先级、截止时间、完成、取消、重开、置顶、稍后提醒和显式资源关联；
+- Work-owned `CalendarEvent` 支持日/周/月统一读取、创建、移动、完成和取消；Todo 安排到日历会建立 `TodoCalendarLink`，二者不会互相自动完成；
+- 备课、Assignment 截止/未交/待批改、active in-review、待处理 Proposal、模型失败和最近文件通过可重建 `TeacherWorkProjection` 汇入工作台，不复制源业务真值；
+- 来源事项只能进入源页面执行真实动作；置顶、稍后和隐藏属于 source-version-bound 的教师个人偏好，不修改源对象；
+- Todo 进入 Agent 只把 Todo 与明确关联资源写入 TaskWorkingSet Revision，每次 Run 仍重新授权；模型不会自动完成 Todo；
 - 复用 `work.task` 表达 `lesson_preparation`，持久化 `planned → in_progress → awaiting_plan_review → ready_for_use → completed` 状态和历史；
 - TaskWorkingSet 保存教师显式选择；每个 AgentRun 重新生成 AuthorizedContextPlan 并封存 ContextManifest；
 - 教师请求原文及所选课时、目标、Evidence 和 baseline plan 被保存到 TaskRun、Resolved Contract、ContextManifest 和 MockModelProvider 输入；
@@ -36,7 +41,7 @@
 - 正式 TeachingPlan 导出文件不能通过通用 API 手工替换版本或改绑来源，只能由新的 approved Revision 导出创建版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
-普通教师端的概览备课/作业区、教学课程/课时/作业、匿名学生近期 Evidence、Task-scoped Agent、Teaching Plan、Runs，以及文件/教学成果链路已接入真实闭环；日程、考试、通用 Agent 对话和设置仍主要是高保真 Mock。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
+普通教师端的概览工作台、日程/Todo、教学课程/课时/作业、匿名学生近期 Evidence、Task-scoped Agent、Teaching Plan、Runs，以及文件/教学成果链路已接入真实闭环；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
 
 ## 本地启动
 
@@ -79,8 +84,9 @@ corepack pnpm demo:doctor
 
 ## 明确边界
 
-当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、完整题库/考试闭环、学生端、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
+当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、外部/共享日历、复杂重复日程、自动 Agent、完整课程资源树或课程 CRUD、完整题库/考试闭环、学生端、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
 
 Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md](docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)。Gate 2.5 业务语义见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。
 Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。Gate 2.5C 的问题分级、单一真值源与修复证据见 [TEACHER_PRODUCT_STABILIZATION_MATRIX.md](docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。
 Gate 2.7 的 Assignment、Submission、GradeDecision、Evidence 来源链与调整下一课语义见 [GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md](docs/product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md)。
+Gate 2.8 的 Todo、Calendar、来源投影、提醒偏好与 Agent handoff 语义见 [GATE_2_8_TEACHER_WORKBENCH.md](docs/product/GATE_2_8_TEACHER_WORKBENCH.md)。

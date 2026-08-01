@@ -2,7 +2,7 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.7 实施复核：2026-08-01。第 21 节是当前权威状态；前述调查和候选方案保留为决策历史。
+> Gate 2.8 实施复核：2026-08-01。第 22 节是当前权威状态；前述调查和候选方案保留为决策历史。
 > 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
 
 ## 1. 执行结论
@@ -983,3 +983,51 @@ Gate 2.7 采用教师端、匿名合成数据的窄闭环，没有建立学生�
 ### 21.5 下一阶段建议：Gate 2.8 教师工作台
 
 建议 Gate 2.8 只建立 Work-owned 的教师日程/待办最小闭环：`TeacherTodo`/`CalendarEvent` 或在既有 Task 上增加明确工作投影，支持作业截止、批改任务、备课 Task 与人工事件的统一读取、状态驱动提醒和待办转日程。不要把 Assignment、PreparationTask 或文件复制成第二套真值，也不要同时建设学生端、考试或自动化 Agent。开始前需要产品所有者裁决：哪些系统事实自动投影到工作台、哪些由教师手工创建，以及关闭/延期是否回写源业务对象。
+
+## 22. Gate 2.8 日程、待办与教师统一工作台（权威更新）
+
+### 22.1 当前真实完成度
+
+Gate 2.8 已在功能分支完成工程实现，等待人工验收：
+
+| 能力 | 当前真值与语义 |
+|---|---|
+| 教师个人待办 | `work.teacher_todo`，支持编辑、优先级、截止、完成、取消、重开、置顶、稍后提醒与资源关联 |
+| 手工日历 | `work.calendar_event`，日/周/月共用同一 API，支持创建、移动、完成、取消、IANA 时区和跨日事件 |
+| Todo 安排日历 | `work.todo_calendar_link`；创建独立时间块，不改变 Todo 类型，二者不自动互相完成 |
+| 来源工作事项 | `work.teacher_work_projection` 可从备课、Assignment、批改、TeachingPlan、Proposal、ModelExecution、Lesson 和 File 事实重建，不拥有源状态 |
+| 教师提醒偏好 | `work.teacher_work_preference` 绑定 teacher + source ref + source version；置顶/稍后/隐藏不回写源对象 |
+| 概览 | PostgreSQL-backed 今日 Todo/Calendar、业务提醒、待批改、计划审核、未完成备课、模型失败和最近文件 |
+| Agent handoff | Todo 与明确关联资源写入既有 TaskWorkingSet Revision；每次 AgentRun 仍重新授权，Todo 不会自动完成 |
+
+### 22.2 单一真值源和状态所有权
+
+- Work 只拥有个人 Todo、手工 Calendar、关联、偏好与可重建投影；
+- Education 继续拥有 Assignment、Submission、GradeDecision 和 Evidence；
+- Artifact 继续拥有 Proposal、TeachingPlan 和 FileAsset；
+- Capability 继续拥有 ModelExecution；
+- 来源事项不能在工作台用通用完成按钮伪造状态，只能通过 deep link 进入所属模块；
+- 日程页旧前端数组、sessionStorage Todo handoff 和假成功操作已从产品路径移除。
+
+### 22.3 数据库与执行增量
+
+Migration 36（`0008_gate2_8_teacher_workbench.sql`）新增 Todo、resource link、CalendarEvent、TodoCalendarLink、projection、preference 和两张不可变状态历史表，并扩展 TaskWorkingSet Revision 保存 Todo/resource refs。正式写入仍经过 ActingContext、ActionIntent、AuthorizationDecision、模块事务、Outbox 和 Audit。
+
+相关 Outbox 事件由现有应用级 Worker 触发投影刷新；读取 API 也能重建投影，因此 Worker 暂停不破坏源业务事实。重复事件通过 Consumer Effect 和唯一键幂等，服务重启后可恢复。
+
+### 22.4 已验证语义
+
+- Todo CRUD、状态转换、偏好、expected-version 冲突与请求幂等；
+- Calendar CRUD、跨日时区、移动、完成/取消，以及 Todo/Calendar 生命周期独立；
+- 重复安排只创建一个 CalendarEvent；
+- 同一 source ref/version 只有一个有效投影，源版本变化后旧 snooze 不永久隐藏新事实；
+- Assignment 截止、未交、待批改与备课状态更新工作台，但 snooze 不修改源对象；
+- Todo Agent handoff 只封存明确资源，且不完成 Todo；
+- Worker 重放、服务重启、tenant 隔离以及临时 E2E 数据库/ObjectStore 清理；
+- 概览、日程和 Agent 页面不使用前端业务副本。
+
+### 22.5 当前边界与下一阶段建议
+
+当前仍不包含外部 Google/Outlook/学校日历、共享日历、复杂重复规则、定时自动 Agent、自动改截止时间、正式组织身份或学生端。Todo Agent handoff 复用 lesson preparation，因此生成 TeachingPlan Proposal 仍要求 Lesson 满足既有 approved baseline 约束。
+
+Gate 2.8 人工验收通过后，下一步不宜立刻扩成通用工作流平台。优先候选是 **Gate 2.9 教师评测与课堂实施反馈最小闭环**：从已批准计划/已完成备课显式记录课堂实施事实和课后反思，再把观察转为可追溯 Evidence。若产品优先级转向交付，应先建设正式身份、组织权限和部署运维基线，而不是增加更多教师端 Mock 页面。
