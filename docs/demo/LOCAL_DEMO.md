@@ -95,9 +95,9 @@ MODEL_DEBUG_CONTENT=false
 6. 确认恢复同一 ModelExecution、请求、TaskRun、Evidence 和 sealed ContextManifest；成功后进入同一 Proposal，不重复调用；
 7. 选择策略并“修改后接受”，进入 Teaching Plan；确认新 Revision 为 active `in_review`，原 current `approved` 不变；
 8. 单独点击“批准为当前教学计划”；确认新 immutable `approved` 成为 current，Task 为 `ready_for_use`；
-9. 单独点击“完成备课”；确认 Task 为 `completed`、概览未完成数量减少、课时显示“已准备”；
+9. 单独点击“完成备课”；确认 Task 为 `completed`、概览未完成数量减少、课时显示“已完成”；
 10. 进入 Runs 查看 request、Lesson、TaskWorkingSet、AuthorizedContextPlan、ContextManifest、Provider、PromptBundle 版本、Token、延迟、估算费用、脱敏 request ID、Proposal、Plan/Work、Audit 和 Outbox；
-11. 在同一已完成 Task 创建第二 Proposal 并拒绝；确认 current approved 和 completed 状态不变；
+11. 在同一已完成 Task 创建第二 Proposal；确认页面明确标注“仅允许补充审阅”，接受/修改被禁用，拒绝或延后不改变 current approved 和 completed 状态；如需接受修改，必须先显式 reopen 或新建一轮备课；
 12. 执行 `corepack pnpm demo:down` 后重新 `corepack pnpm demo:dev`，确认上述状态仍存在。
 
 ### Gate 2.5B 文件与教学成果
@@ -106,10 +106,21 @@ MODEL_DEBUG_CONTENT=false
 2. 确认文件页出现“斜率与图像变化 教案”，来源为“已批准 TeachingPlan 导出”；
 3. 下载 DOCX，检查课程、单元、课时、目标、重点/难点、教学流程、Evidence 摘要、已知缺口、反思占位、Revision 和“AI 辅助生成、教师已批准”说明；
 4. 在文件页选择一个 Lesson，上传一份不含隐私的 PDF、图片、Markdown/TXT 或 Office 参考文件；
-5. 创建新版本，确认版本历史保留旧版本并可分别下载；
+5. 对教师上传的参考文件创建新版本，确认版本历史保留旧版本并可分别下载；正式教案文件的新版本必须由新的 approved TeachingPlan Revision 再次导出；
 6. 回到 Lesson，确认参考文件和正式 DOCX 都出现在关联教学文件中；
-7. 正式 DOCX 的删除按钮应明确禁用；普通上传文件可软删除并恢复；
+7. 正式 DOCX 的删除、手工新版本和手工改绑入口应明确禁用；普通上传文件可软删除并恢复；
 8. 停止并重启 Demo，确认文件元数据、对象内容、版本和关联仍存在。
+
+### Gate 2.5C 教师产品稳定性
+
+1. 在课时页分别观察 `planned`、`awaiting_plan_review`、`ready_for_use`、`completed` 与 `cancelled`，确认主按钮分别是继续备课、继续审核、查看并完成、查看已完成和重新打开，而不是统一跳入 Agent；
+2. 从“斜率与图像变化”的“打开文件”进入文件页，确认 URL 包含 `lesson`，下拉仍选择该课时；点击关联文件时 URL 还应包含 `asset`，刷新后恢复同一文件；
+3. active in-review 页面应显示“当前待审核版本”，不得显示“历史版本”；批准后才成为新的 current approved；
+4. 模型为 queued/running/validating/retry/cancel-requested 时，“生成备课建议”必须禁用并说明原因；取消、超时和 retry 后从持久化 ModelExecution 恢复；
+5. Proposal 处置请求发出时接受、编辑、拒绝、延后和策略切换不能并发操作；结构化 409 后页面重新读取最终处置；
+6. 取消一个 planned/in-progress/awaiting/ready Task，确认 Proposal、计划和文件历史没有被删除；再显式 reopen，确认进入原 Task；
+7. 概览中的学生、备课组和学校动态明确标注只读演示；“制作课件”和协作写操作禁用且没有假成功 toast；
+8. Runs 在 active ModelExecution 时自动刷新到 terminal，并同时显示教师可读状态与审计 code。
 
 本地文件设置（均为非敏感服务端配置）：
 

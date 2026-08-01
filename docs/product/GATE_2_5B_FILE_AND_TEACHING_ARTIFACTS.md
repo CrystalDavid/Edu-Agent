@@ -88,6 +88,7 @@ approved TeachingPlan / Lesson
 
 - 教师删除是 soft delete；下载和普通列表默认隐藏 deleted Asset。
 - 被 TeachingPlan Artifact/Revision 正式引用的成果文件禁止教师软删除或物理清除；普通上传文件可软删除并恢复。
+- `teaching_plan_export` FileAsset 的版本和 bindings 只由明确 approved Revision 的导出 Application Service 维护；通用“创建文件版本”和“新增绑定”API 对正式成果返回结构化 409，避免手工内容与来源 Revision 错位。
 - 本 Gate 不提供教师物理 purge。Orphan cleanup 只清理没有数据库引用、超过安全宽限期的对象。
 
 ## 6. 文件安全策略

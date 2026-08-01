@@ -1,6 +1,6 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。当前分支建设 **Gate 2.5B — 文件与教学成果闭环**：在已验证的 Gate 2.6A Provider 和 Gate 2.5 可恢复备课闭环上，增加真实文件版本、Lesson/Task/TeachingPlan 关联与 approved TeachingPlan DOCX 导出。
+面向学校的教育智能体平台工程仓库。Gate 2.6A Provider 与 Gate 2.5B 文件/教学成果均已验证；当前分支建设 **Gate 2.5C — 教师端产品正确性与体验收口**，不新增大业务模块，重点保证备课、模型、TeachingPlan 与文件在不同页面、刷新和重启后的语义一致。
 
 ## 当前真实能力
 
@@ -25,6 +25,10 @@
 - DOCX/PPTX/XLSX 上传会校验实际 OOXML 容器，并在服务端本地提取有界文本摘要；不会把文件内容发送给模型；
 - 同一 tenant 的重复内容按 SHA-256 与大小复用物理对象，但保留各自 FileAsset/FileVersion 与审计语义；
 - 明确的 current approved TeachingPlan Revision 可导出 DOCX，并作为正式 FileAsset 绑定 Lesson、备课 Task 与 TeachingPlan；新 approved Revision 导出形成同一文件的新版本；
+- `ready_for_use` 与 `completed` 使用不同文案和主操作；awaiting/ready/completed/cancelled 的按钮严格映射 Work 状态机，取消、reopen 和新一轮备课均为显式动作；
+- `/files?lesson=…&asset=…` 保存 Lesson/FileAsset 上下文；从课时、概览和 TeachingPlan 进入文件页不会回落到错误课时；
+- active ModelExecution 期间禁止重复提交；Proposal 处置统一锁定，409 后重读 PostgreSQL 当前版本；Runs 对 active execution 自动刷新到 terminal；
+- 正式 TeachingPlan 导出文件不能通过通用 API 手工替换版本或改绑来源，只能由新的 approved Revision 导出创建版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
 普通教师端的概览备课区、教学课程/课时、Task-scoped Agent、Teaching Plan、Runs，以及文件/教学成果链路已接入真实闭环；日程、作业、测试、学生、通用 Agent 对话和设置仍主要是高保真 Mock。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
@@ -73,4 +77,4 @@ corepack pnpm demo:doctor
 当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、Todo/Calendar 持久化、完整课程资源树或课程 CRUD、作业/考试闭环、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
 
 Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md](docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)。Gate 2.5 业务语义见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。
-Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。
+Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。Gate 2.5C 的问题分级、单一真值源与修复证据见 [TEACHER_PRODUCT_STABILIZATION_MATRIX.md](docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。

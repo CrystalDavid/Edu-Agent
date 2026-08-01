@@ -905,3 +905,34 @@ Artifact 前向修复 `0007_gate2_5b_shared_object_keys.sql` 移除 `file_versio
 ### 19.4 下一阶段判断
 
 完成 Gate 2.5B 人工验收后，可以讨论 **Gate 2.6B — 多模态文件理解**，但建议仍保持单一 Provider、单一合成图片/PDF 试点和明确授权的 FileVersion 输入。进入前必须先产品裁决：允许发送的 MIME/数据类别、内容净化与恶意文档边界、保留策略、费用上限，以及教师是否必须逐次选择文件。若这些裁决尚未完成，应先做文件安全加固而不是扩大模型输入面。
+
+## 20. Gate 2.5C 教师产品稳定性收口（权威更新）
+
+### 20.1 编号与基线
+
+仓库中不存在已实现的 Gate 2.6B：没有对应分支、PR、Tag、实现提交或产品文档。Gate 2.6B 只作为“文件多模态理解”的未来候选出现。实际最新 verified 基线是 `gate-2-5b-verified` / `main@b3787fa`，因此教师端稳定性阶段采用 **Gate 2.5C**。
+
+### 20.2 已收口
+
+- Task 的 `ready_for_use` 与 `completed` 不再使用同一文案；课时主操作严格映射 planned/in-progress/awaiting/ready/completed/cancelled；
+- active in-review 不再被误标为历史版本；批准和显式完成继续保持两个命令；
+- active ModelExecution 阻止重复提交；completed Task 的补充建议只能拒绝/延后，接受修改前必须显式 reopen 或新建一轮；
+- Proposal scope 变化先清空 React 缓存；Disposition、ModelExecution、WorkingSet、TeachingPlan 与 File 的 409 会重读服务端真值；
+- Lesson/FileAsset 通过 `/files?lesson=…&asset=…` 保持上下文，刷新和跨页返回不再默认绑定第一课时；
+- 正式 TeachingPlan 导出文件的版本、Revision/Lesson/Task bindings 只允许导出服务维护；通用 File API fail closed；
+- 文件软删除自动进入可恢复视图，mutation 期间统一禁用，deleted history 不能下载；
+- Runs 对 active execution 轮询到 terminal；概览的前端数组均明确标为 Mock/READ_ONLY，未实现写操作禁用，不再产生假成功。
+
+完整问题分级、根因、后端真值和回归证据见 `docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md`。核心业务状态继续来自 PostgreSQL；React state 只承担筛选、选择、loading/error 与已加载 DTO 缓存。
+
+### 20.3 下一阶段建议：Gate 2.7 作业—学情—学生最小闭环
+
+稳定基线之后，建议优先建设一个窄范围的 **Gate 2.7**，而不是立即把任意上传文件发送给模型：
+
+1. 只支持当前一次函数 CourseRun 的一个 Assignment 和少量合成 StudentSubmission；
+2. 教师从 approved TeachingPlan 创建作业草稿，单独批准/发布到演示班级；
+3. 提交、评分/反馈、Evidence 生成和班级/学生本次学习快照具有明确状态所有者、幂等与审计；
+4. 教学页、作业页和学生页读取同一 PostgreSQL 投影，教师可从共性错误回到 Lesson 创建新的备课 Task；
+5. Agent 只能基于教师明确选择并重新授权的 Assignment/Submission Evidence 生成建议，不自动修改成绩、学生事实或 TeachingPlan。
+
+Gate 2.7 明确推迟：长期学生画像、自动个性化发布、题库/考试完整系统、家长/学生端、通用日程、真实学校数据、图片/PDF 多模态、云部署与第二供应商。开始前仍需产品所有者决定评分是否只支持教师录入、是否需要学生提交入口，以及首轮 Evidence 的最小可见范围。
