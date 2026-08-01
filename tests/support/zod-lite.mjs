@@ -132,6 +132,33 @@ class NumberSchema extends Schema {
     ]);
   }
 
+  finite() {
+    return new NumberSchema([
+      ...this.checks,
+      (value, path) => {
+        if (!Number.isFinite(value)) fail(path, "Expected finite number");
+      }
+    ]);
+  }
+
+  min(minimum) {
+    return new NumberSchema([
+      ...this.checks,
+      (value, path) => {
+        if (value < minimum) fail(path, `Expected number >= ${minimum}`);
+      }
+    ]);
+  }
+
+  max(maximum) {
+    return new NumberSchema([
+      ...this.checks,
+      (value, path) => {
+        if (value > maximum) fail(path, `Expected number <= ${maximum}`);
+      }
+    ]);
+  }
+
   nonnegative() {
     return new NumberSchema([
       ...this.checks,
