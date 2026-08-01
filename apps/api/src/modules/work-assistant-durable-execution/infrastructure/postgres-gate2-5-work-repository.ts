@@ -136,13 +136,15 @@ export class PostgresGate25WorkRepository {
       `INSERT INTO work.task_working_set (
          task_ref, current_version, course_run_ref,
          curriculum_unit_ref, lesson_ref, learning_objective_refs,
-         evidence_refs, baseline_teaching_plan_ref, context_purpose,
+         evidence_refs, baseline_teaching_plan_ref,
+         source_lesson_ref, source_assignment_ref,
+         source_assignment_item_refs, context_purpose,
          requested_field_mask, updated_by, updated_at,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12, $13, $14, $15, $16, $17, $18
+         $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
        )`,
       [
         input.taskRef,
@@ -152,6 +154,11 @@ export class PostgresGate25WorkRepository {
         toPostgresJson(input.workingSet.learningObjectiveRefs),
         toPostgresJson(input.workingSet.evidenceRefs),
         input.workingSet.baselineTeachingPlanRef,
+        input.workingSet.sourceLessonRef ?? null,
+        input.workingSet.sourceAssignmentRef ?? null,
+        toPostgresJson(
+          input.workingSet.sourceAssignmentItemRefs ?? []
+        ),
         input.workingSet.purpose,
         toPostgresJson(input.workingSet.requestedFieldMask),
         input.createdBy,
@@ -421,7 +428,9 @@ export class PostgresGate25WorkRepository {
       `SELECT task_ref, current_version, course_run_ref,
               curriculum_unit_ref, lesson_ref,
               learning_objective_refs, evidence_refs,
-              baseline_teaching_plan_ref, context_purpose,
+              baseline_teaching_plan_ref, source_lesson_ref,
+              source_assignment_ref, source_assignment_item_refs,
+              context_purpose,
               requested_field_mask, updated_at
          FROM work.task_working_set
         WHERE task_ref = $1
@@ -441,6 +450,9 @@ export class PostgresGate25WorkRepository {
       evidenceRefs: [...new Set(input.evidenceRefs)],
       baselineTeachingPlanRef:
         row.baseline_teaching_plan_ref,
+      sourceLessonRef: row.source_lesson_ref,
+      sourceAssignmentRef: row.source_assignment_ref,
+      sourceAssignmentItemRefs: row.source_assignment_item_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask
     };
@@ -510,7 +522,9 @@ export class PostgresGate25WorkRepository {
       `SELECT task_ref, current_version, course_run_ref,
               curriculum_unit_ref, lesson_ref,
               learning_objective_refs, evidence_refs,
-              baseline_teaching_plan_ref, context_purpose,
+              baseline_teaching_plan_ref, source_lesson_ref,
+              source_assignment_ref, source_assignment_item_refs,
+              context_purpose,
               requested_field_mask, updated_at
          FROM work.task_working_set
         WHERE task_ref = $1
@@ -529,6 +543,9 @@ export class PostgresGate25WorkRepository {
       learningObjectiveRefs: row.learning_objective_refs,
       evidenceRefs: row.evidence_refs,
       baselineTeachingPlanRef: input.baselineTeachingPlanRef,
+      sourceLessonRef: row.source_lesson_ref,
+      sourceAssignmentRef: row.source_assignment_ref,
+      sourceAssignmentItemRefs: row.source_assignment_item_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask
     };
@@ -767,13 +784,15 @@ export class PostgresGate25WorkRepository {
          working_set_revision_ref, task_ref, working_set_version,
          course_run_ref, curriculum_unit_ref, lesson_ref,
          learning_objective_refs, evidence_refs,
-         baseline_teaching_plan_ref, context_purpose,
+         baseline_teaching_plan_ref, source_lesson_ref,
+         source_assignment_ref, source_assignment_item_refs,
+         context_purpose,
          requested_field_mask,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12, $13, $14, $15, $16, $17, $18
+         $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
        )`,
       [
         input.revisionRef,
@@ -785,6 +804,11 @@ export class PostgresGate25WorkRepository {
         toPostgresJson(input.workingSet.learningObjectiveRefs),
         toPostgresJson(input.workingSet.evidenceRefs),
         input.workingSet.baselineTeachingPlanRef,
+        input.workingSet.sourceLessonRef ?? null,
+        input.workingSet.sourceAssignmentRef ?? null,
+        toPostgresJson(
+          input.workingSet.sourceAssignmentItemRefs ?? []
+        ),
         input.workingSet.purpose,
         toPostgresJson(input.workingSet.requestedFieldMask),
         ...formalMetadataValues(input.metadata)
@@ -866,6 +890,9 @@ const preparationTaskSelect = `
          working_set.learning_objective_refs,
          working_set.evidence_refs,
          working_set.baseline_teaching_plan_ref,
+         working_set.source_lesson_ref,
+         working_set.source_assignment_ref,
+         working_set.source_assignment_item_refs,
          working_set.context_purpose,
          working_set.requested_field_mask,
          (
@@ -909,6 +936,9 @@ interface PreparationTaskRow {
   learning_objective_refs: string[];
   evidence_refs: string[];
   baseline_teaching_plan_ref: string | null;
+  source_lesson_ref: string | null;
+  source_assignment_ref: string | null;
+  source_assignment_item_refs: string[];
   context_purpose: string;
   requested_field_mask: string[];
   latest_proposal_revision_ref: string | null;
@@ -924,6 +954,9 @@ interface WorkingSetRow {
   learning_objective_refs: string[];
   evidence_refs: string[];
   baseline_teaching_plan_ref: string | null;
+  source_lesson_ref: string | null;
+  source_assignment_ref: string | null;
+  source_assignment_item_refs: string[];
   context_purpose: string;
   requested_field_mask: string[];
   updated_at: Date;
@@ -968,6 +1001,9 @@ function toPreparationTask(
       evidenceRefs: row.evidence_refs,
       baselineTeachingPlanRef:
         row.baseline_teaching_plan_ref,
+      sourceLessonRef: row.source_lesson_ref,
+      sourceAssignmentRef: row.source_assignment_ref,
+      sourceAssignmentItemRefs: row.source_assignment_item_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask,
       updatedAt: row.updated_at.toISOString()

@@ -9,7 +9,8 @@ const container = createProductContainer(
 
 try {
   const result = await container.services.seed.seed({
-    includeGate25: true
+    includeGate25: true,
+    includeGate27: true
   });
   process.stdout.write(
     `Gate 2 synthetic demo ready: ${result.courseRunRef}` +

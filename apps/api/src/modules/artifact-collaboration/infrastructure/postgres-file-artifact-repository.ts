@@ -466,7 +466,8 @@ export class PostgresFileArtifactRepository {
           WHERE asset_ref = $1
             AND target_type IN (
               'teaching_plan_artifact',
-              'teaching_plan_revision'
+              'teaching_plan_revision',
+              'assignment_version'
             )
        ) AS protected`,
       [assetRef]
@@ -975,7 +976,8 @@ const fileAssetSummarySelect = `
             WHERE binding.asset_ref = asset.asset_ref
               AND binding.target_type IN (
                 'teaching_plan_artifact',
-                'teaching_plan_revision'
+                'teaching_plan_revision',
+                'assignment_version'
               )
          ) AS deletion_protected
     FROM artifact.file_asset AS asset

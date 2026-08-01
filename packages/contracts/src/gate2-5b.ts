@@ -32,7 +32,9 @@ export const FileBindingTargetTypeSchema = z.enum([
   "lesson",
   "preparation_task",
   "teaching_plan_artifact",
-  "teaching_plan_revision"
+  "teaching_plan_revision",
+  "assignment",
+  "assignment_version"
 ]);
 
 export const FileBindingRelationSchema = z.enum([

@@ -18,6 +18,9 @@ import {
   PostgresGate25EducationRepository
 } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
 import {
+  PostgresGate27EducationRepository
+} from "../modules/education-domain/infrastructure/postgres-gate2-7-education-repository.js";
+import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
@@ -37,6 +40,10 @@ import {
   gate25CurriculumFixture,
   gate25DemoRefs
 } from "./gate2-5-demo-fixture.js";
+import {
+  gate27DemoRefs,
+  gate27SyntheticEnrollments
+} from "./gate2-7-demo-fixture.js";
 
 function hash(value: unknown): string {
   return createHash("sha256")
@@ -55,12 +62,14 @@ export class Gate2DemoSeedService {
     private readonly education = new PostgresEducationRepository(),
     private readonly gate25Education =
       new PostgresGate25EducationRepository(),
+    private readonly gate27Education =
+      new PostgresGate27EducationRepository(),
     private readonly gate25Work =
       new PostgresGate25WorkRepository()
   ) {}
 
   async seed(
-    options: { includeGate25?: boolean } = {}
+    options: { includeGate25?: boolean; includeGate27?: boolean } = {}
   ): Promise<{
     replayed: boolean;
     courseRunRef: string;
@@ -72,9 +81,13 @@ export class Gate2DemoSeedService {
       return gate24;
     }
     const gate25 = await this.seedGate25();
+    const gate27 = options.includeGate27
+      ? await this.seedGate27()
+      : { replayed: true };
     return {
       ...gate24,
-      replayed: gate24.replayed && gate25.replayed
+      replayed:
+        gate24.replayed && gate25.replayed && gate27.replayed
     };
   }
 
@@ -706,6 +719,111 @@ export class Gate2DemoSeedService {
         ))
       );
 
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: createdAt
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async seedGate27(): Promise<{ replayed: boolean }> {
+    const rootIdempotencyKey =
+      "gate2-7:assignment-learning-evidence-seed:v1";
+    const rootKey = [
+      gate2DemoRefs.tenantRef,
+      gate2DemoRefs.teacherRef,
+      "gate2-7.assignment-learning-evidence.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const decisionRef =
+      "authorization-decision:gate2-7-assignment-seed";
+    const createdAt = "2026-09-18T08:10:00.000Z";
+    const writeContext: WriteContext = {
+      actorRef: gate2DemoRefs.teacherRef,
+      purpose: "gate2-7.assignment-learning-evidence.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(
+        client,
+        {
+          idempotencyRef: "idempotency:gate2-7-assignment-seed",
+          rootKey,
+          requestFingerprint: hash({
+            fixture: "gate2-7-anonymous-course-enrollments@1"
+          }),
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-7-seed-idempotency"
+          )
+        }
+      );
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: gate2DemoRefs.teacherRef,
+        tenantRef: gate2DemoRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "gate2-7.assignment-learning-evidence.seed",
+        resourceRef: gate2DemoRefs.courseRunRef,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["local-synthetic-demo-bootstrap"],
+        policyVersion: "policy:gate2-7-local-demo-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-7-seed-authorization"
+          )
+        })
+      ];
+      receipts.push(
+        ...(await this.gate27Education.insertFoundation(client, {
+          courseRunRef: gate2DemoRefs.courseRunRef,
+          objective: {
+            objectiveRef: gate27DemoRefs.nextLessonObjectiveRef,
+            title: "根据两点确定一次函数解析式",
+            description:
+              "学生能够根据两个已知条件使用待定系数法求出一次函数解析式，并检查结果。",
+            knowledgeConceptRefs: [
+              "knowledge-concept:linear-function-coefficients"
+            ],
+            competencyRefs: ["competency:mathematical-reasoning"],
+            lessonRef: gate27DemoRefs.nextLessonRef
+          },
+          enrollments: gate27SyntheticEnrollments,
+          metadata: (suffix) =>
+            createWriteMetadata(
+              writeContext,
+              "education",
+              `gate2-7-seed-${suffix}`
+            )
+        }))
+      );
+      const result = { replayed: false };
       await this.governance.completeIdempotency(client, {
         rootKey,
         result,
