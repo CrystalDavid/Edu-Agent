@@ -50,6 +50,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0007_gate2_7_assignment_work_context.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0008_gate2_8_teacher_workbench.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"

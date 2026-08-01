@@ -430,6 +430,7 @@ export class PostgresGate25WorkRepository {
               learning_objective_refs, evidence_refs,
               baseline_teaching_plan_ref, source_lesson_ref,
               source_assignment_ref, source_assignment_item_refs,
+              source_todo_ref, source_resource_refs,
               context_purpose,
               requested_field_mask, updated_at
          FROM work.task_working_set
@@ -453,6 +454,8 @@ export class PostgresGate25WorkRepository {
       sourceLessonRef: row.source_lesson_ref,
       sourceAssignmentRef: row.source_assignment_ref,
       sourceAssignmentItemRefs: row.source_assignment_item_refs,
+      sourceTodoRef: row.source_todo_ref,
+      sourceResourceRefs: row.source_resource_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask
     };
@@ -524,6 +527,7 @@ export class PostgresGate25WorkRepository {
               learning_objective_refs, evidence_refs,
               baseline_teaching_plan_ref, source_lesson_ref,
               source_assignment_ref, source_assignment_item_refs,
+              source_todo_ref, source_resource_refs,
               context_purpose,
               requested_field_mask, updated_at
          FROM work.task_working_set
@@ -546,6 +550,8 @@ export class PostgresGate25WorkRepository {
       sourceLessonRef: row.source_lesson_ref,
       sourceAssignmentRef: row.source_assignment_ref,
       sourceAssignmentItemRefs: row.source_assignment_item_refs,
+      sourceTodoRef: row.source_todo_ref,
+      sourceResourceRefs: row.source_resource_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask
     };
@@ -786,13 +792,15 @@ export class PostgresGate25WorkRepository {
          learning_objective_refs, evidence_refs,
          baseline_teaching_plan_ref, source_lesson_ref,
          source_assignment_ref, source_assignment_item_refs,
+         source_todo_ref, source_resource_refs,
          context_purpose,
          requested_field_mask,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+         $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+         $22, $23
        )`,
       [
         input.revisionRef,
@@ -809,6 +817,8 @@ export class PostgresGate25WorkRepository {
         toPostgresJson(
           input.workingSet.sourceAssignmentItemRefs ?? []
         ),
+        input.workingSet.sourceTodoRef ?? null,
+        toPostgresJson(input.workingSet.sourceResourceRefs ?? []),
         input.workingSet.purpose,
         toPostgresJson(input.workingSet.requestedFieldMask),
         ...formalMetadataValues(input.metadata)
@@ -893,6 +903,8 @@ const preparationTaskSelect = `
          working_set.source_lesson_ref,
          working_set.source_assignment_ref,
          working_set.source_assignment_item_refs,
+         working_set.source_todo_ref,
+         working_set.source_resource_refs,
          working_set.context_purpose,
          working_set.requested_field_mask,
          (
@@ -939,6 +951,8 @@ interface PreparationTaskRow {
   source_lesson_ref: string | null;
   source_assignment_ref: string | null;
   source_assignment_item_refs: string[];
+  source_todo_ref: string | null;
+  source_resource_refs: string[];
   context_purpose: string;
   requested_field_mask: string[];
   latest_proposal_revision_ref: string | null;
@@ -957,6 +971,8 @@ interface WorkingSetRow {
   source_lesson_ref: string | null;
   source_assignment_ref: string | null;
   source_assignment_item_refs: string[];
+  source_todo_ref: string | null;
+  source_resource_refs: string[];
   context_purpose: string;
   requested_field_mask: string[];
   updated_at: Date;
@@ -1004,6 +1020,8 @@ function toPreparationTask(
       sourceLessonRef: row.source_lesson_ref,
       sourceAssignmentRef: row.source_assignment_ref,
       sourceAssignmentItemRefs: row.source_assignment_item_refs,
+      sourceTodoRef: row.source_todo_ref,
+      sourceResourceRefs: row.source_resource_refs,
       purpose: row.context_purpose,
       requestedFieldMask: row.requested_field_mask,
       updatedAt: row.updated_at.toISOString()

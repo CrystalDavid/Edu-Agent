@@ -22,7 +22,20 @@ const gate24Events = {
     "LessonPreparationReviewContinued",
     "LessonPreparationReadyForUse",
     "LessonPreparationCompleted",
-    "LessonPreparationCancelled"
+    "LessonPreparationCancelled",
+    "AssignmentPublished",
+    "TeacherTodoCreated",
+    "TeacherTodoUpdated",
+    "TeacherTodoCompleted",
+    "TeacherTodoReopened",
+    "TeacherTodoCancelled",
+    "TeacherTodoPreferenceUpdated",
+    "TeacherTodoResourceLinked",
+    "CalendarEventScheduled",
+    "CalendarEventUpdated",
+    "CalendarEventCompleted",
+    "CalendarEventCancelled",
+    "TeacherWorkPreferenceUpdated"
   ],
   runtime: ["AgentRunCompleted"],
   capability: [
@@ -40,6 +53,15 @@ const gate24Events = {
     "FileAssetSoftDeleted",
     "FileAssetRestored",
     "TeachingPlanDocxExported"
+  ],
+  education: [
+    "AssignmentDraftCreated",
+    "AssignmentClosed",
+    "AssignmentArchived",
+    "SyntheticSubmissionsImported",
+    "TeacherGradeDraftSaved",
+    "TeacherGradeDecisionConfirmed",
+    "TeacherGradeDecisionReopened"
   ]
 } as const satisfies Partial<
   Record<OutboxOwner, readonly string[]>
@@ -47,6 +69,7 @@ const gate24Events = {
 
 export class LocalCopilotOutboxWorker {
   private readonly workers: {
+    owner: OutboxOwner;
     worker: PostgresOutboxWorker;
     handle: (
       event: ClaimedOutboxEvent
@@ -62,10 +85,12 @@ export class LocalCopilotOutboxWorker {
     private readonly pollMilliseconds = 100,
     processModelInvocation?: (
       modelExecutionRef: string
-    ) => Promise<void>
+    ) => Promise<void>,
+    refreshTeacherWorkbench?: () => Promise<number>
   ) {
     this.workers = Object.entries(gate24Events).map(
       ([owner, eventNames]) => ({
+        owner: owner as OutboxOwner,
         worker: new PostgresOutboxWorker(
           pool,
           `${workerId}:${owner}`,
@@ -87,16 +112,24 @@ export class LocalCopilotOutboxWorker {
                 ? event.payload["modelExecutionRef"]
                 : event.aggregateRef;
             await processModelInvocation(executionRef);
+            const projectionCount = refreshTeacherWorkbench
+              ? await refreshTeacherWorkbench()
+              : 0;
             return {
               effectKey: `teacher-copilot-model:${event.outboxRef}`,
               effectPayload: {
                 outcome: "model-invocation-processed",
                 modelExecutionRef: executionRef,
-                attemptCount: event.attemptCount
+                attemptCount: event.attemptCount,
+                projectionCount
               }
             };
           }
-          return handleEvent(event);
+          if (refreshTeacherWorkbench) {
+            const projectionCount = await refreshTeacherWorkbench();
+            return handleEvent(event, projectionCount, true);
+          }
+          return handleEvent(event, 0, false);
         }
       })
     );
@@ -128,9 +161,15 @@ export class LocalCopilotOutboxWorker {
       foundWork = false;
       for (const entry of this.workers) {
         if (processed >= limit) break;
-        const outcome = await entry.worker.processOne(
-          entry.handle
-        );
+        let outcome: "empty" | "processed";
+        try {
+          outcome = await entry.worker.processOne(entry.handle);
+        } catch (error) {
+          if (error instanceof Error) {
+            error.message = `${entry.owner} outbox: ${error.message}`;
+          }
+          throw error;
+        }
         if (outcome === "processed") {
           processed += 1;
           foundWork = true;
@@ -158,7 +197,9 @@ export class LocalCopilotOutboxWorker {
 }
 
 async function handleEvent(
-  event: ClaimedOutboxEvent
+  event: ClaimedOutboxEvent,
+  projectionCount: number,
+  projectionRebuilt: boolean
 ): Promise<OutboxBusinessEffect> {
   return {
     effectKey: `teacher-copilot-local:${event.outboxRef}`,
@@ -167,7 +208,10 @@ async function handleEvent(
       eventName: event.eventName,
       aggregateRef: event.aggregateRef,
       attemptCount: event.attemptCount,
-      projectionMode: "none-business-state-synchronous"
+      projectionMode: projectionRebuilt
+        ? "teacher-workbench-rebuilt"
+        : "none-business-state-synchronous",
+      projectionCount
     }
   };
 }

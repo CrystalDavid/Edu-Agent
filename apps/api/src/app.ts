@@ -9,13 +9,17 @@ import {
   apiRoutes,
   AssignmentActionRequestSchema,
   ApproveTeachingPlanRequestSchema,
+  CalendarEventActionRequestSchema,
   CancelModelInvocationRequestSchema,
+  CreateCalendarEventRequestSchema,
   CreateLessonPreparationTaskRequestSchema,
+  CreateTeacherTodoRequestSchema,
   CreateAssignmentRequestSchema,
   CreateAdjustmentTaskRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
+  LinkTeacherTodoResourceRequestSchema,
   LessonPreparationTaskActionRequestSchema,
   RetryModelInvocationRequestSchema,
   FileAssetListQuerySchema,
@@ -26,11 +30,20 @@ import {
   ConfirmGradeRequestSchema,
   ReopenGradeRequestSchema,
   SaveGradeDraftRequestSchema,
+  ScheduleTodoRequestSchema,
   SyntheticSubmissionImportRequestSchema,
   TeachingPlanDocxExportRequestSchema,
   SuggestionDispositionRequestSchema,
   TaskResourceSelectionRequestSchema,
+  TeacherCalendarListQuerySchema,
+  TeacherTodoActionRequestSchema,
+  TeacherTodoListQuerySchema,
+  TeacherTodoPreferenceRequestSchema,
+  TodoAgentHandoffRequestSchema,
+  UpdateCalendarEventRequestSchema,
   UpdateAssignmentDraftRequestSchema,
+  UpdateTeacherTodoRequestSchema,
+  WorkProjectionPreferenceRequestSchema,
   type ActingContext,
   type TenantContext
 } from "@edu-agent/contracts";
@@ -248,6 +261,7 @@ export function createApp(
     const preparation = product.services.lessonPreparation;
     const assignments = product.services.assignments;
     const files = product.services.files;
+    const workbench = product.services.teacherWorkbench;
     const modelInvocations =
       product.services.modelInvocations;
     const withProductContext = async (request: Request) =>
@@ -256,6 +270,343 @@ export function createApp(
         product,
         demoIdentity
       );
+
+    app.get(
+      apiRoutes.teacher.todos,
+      markRoute("product.teacher.todos.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.listTodos({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            query: TeacherTodoListQuerySchema.parse(request.query)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.todos,
+      markRoute("product.teacher.todos.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await workbench.createTodo({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateTeacherTodoRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.todoPattern,
+      markRoute("product.teacher.todos.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.getTodo({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.todoPattern,
+      markRoute("product.teacher.todos.update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.updateTodo({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"]),
+            request: UpdateTeacherTodoRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    for (const action of ["complete", "reopen", "cancel"] as const) {
+      const path = action === "complete"
+        ? apiRoutes.teacher.todoCompletePattern
+        : action === "reopen"
+          ? apiRoutes.teacher.todoReopenPattern
+          : apiRoutes.teacher.todoCancelPattern;
+      app.post(
+        path,
+        markRoute(`product.teacher.todos.${action}`),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            response.json(await workbench.transitionTodo({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              todoRef: routeParameter(request.params["todoRef"]),
+              action,
+              request: TeacherTodoActionRequestSchema.parse(request.body)
+            }));
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.post(
+      apiRoutes.teacher.todoPreferencePattern,
+      markRoute("product.teacher.todos.preference"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.updateTodoPreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"]),
+            request: TeacherTodoPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.todoResourcesPattern,
+      markRoute("product.teacher.todos.resource-link"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await workbench.linkTodoResource({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"]),
+            request: LinkTeacherTodoResourceRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.todoSchedulePattern,
+      markRoute("product.teacher.todos.schedule"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await workbench.scheduleTodo({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"]),
+            request: ScheduleTodoRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.todoAgentHandoffPattern,
+      markRoute("product.teacher.todos.agent-handoff"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await workbench.handoffTodoToAgent({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            todoRef: routeParameter(request.params["todoRef"]),
+            request: TodoAgentHandoffRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.calendarEvents,
+      markRoute("product.teacher.calendar.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.listCalendar({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            query: TeacherCalendarListQuerySchema.parse(request.query)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.calendarEvents,
+      markRoute("product.teacher.calendar.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await workbench.createCalendarEvent({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateCalendarEventRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.calendarEventPattern,
+      markRoute("product.teacher.calendar.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.getCalendarEvent({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            eventRef: routeParameter(request.params["eventRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.calendarEventPattern,
+      markRoute("product.teacher.calendar.update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.updateCalendarEvent({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            eventRef: routeParameter(request.params["eventRef"]),
+            request: UpdateCalendarEventRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    for (const action of ["complete", "cancel"] as const) {
+      const path = action === "complete"
+        ? apiRoutes.teacher.calendarEventCompletePattern
+        : apiRoutes.teacher.calendarEventCancelPattern;
+      app.post(
+        path,
+        markRoute(`product.teacher.calendar.${action}`),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request);
+            response.json(await workbench.transitionCalendarEvent({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              eventRef: routeParameter(request.params["eventRef"]),
+              action,
+              request: CalendarEventActionRequestSchema.parse(request.body)
+            }));
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.get(
+      apiRoutes.teacher.workbenchOverview,
+      markRoute("product.teacher.workbench.overview"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const timezone = typeof request.query["timezone"] === "string"
+            ? request.query["timezone"]
+            : undefined;
+          response.json(await workbench.getOverview({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            ...(timezone ? { timezone } : {})
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.workbenchActionItems,
+      markRoute("product.teacher.workbench.action-items"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.listActionItems({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            includeDeferred: request.query["includeDeferred"] === "true"
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.workbenchProjectionPattern,
+      markRoute("product.teacher.workbench.projection-detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.getProjection({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            projectionRef: routeParameter(request.params["projectionRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.workbenchProjectionPreferencePattern,
+      markRoute("product.teacher.workbench.projection-preference"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await workbench.updateProjectionPreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            projectionRef: routeParameter(request.params["projectionRef"]),
+            request: WorkProjectionPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.files,

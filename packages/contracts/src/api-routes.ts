@@ -49,6 +49,15 @@ const teacherGradeDecisionRoute = (
     gradeDecisionRef
   )}`;
 
+const teacherTodoRoute = (todoRef: string): string =>
+  `/api/v1/teacher/todos/${encodeRouteSegment(todoRef)}`;
+
+const teacherCalendarEventRoute = (eventRef: string): string =>
+  `/api/v1/teacher/calendar-events/${encodeRouteSegment(eventRef)}`;
+
+const teacherWorkProjectionRoute = (projectionRef: string): string =>
+  `/api/v1/teacher/workbench/projections/${encodeRouteSegment(projectionRef)}`;
+
 export const apiRoutes = {
   health: "/api/health",
   teacher: {
@@ -245,7 +254,37 @@ export const apiRoutes = {
       `/api/v1/teacher/course-runs/${encodeRouteSegment(
         courseRunRef
       )}/learners/${encodeRouteSegment(learnerRef)}/evidence`,
-    assignmentOverview: "/api/v1/teacher/assignment-overview"
+    assignmentOverview: "/api/v1/teacher/assignment-overview",
+    todos: "/api/v1/teacher/todos",
+    todoPattern: "/api/v1/teacher/todos/:todoRef",
+    todo: teacherTodoRoute,
+    todoCompletePattern: "/api/v1/teacher/todos/:todoRef/complete",
+    todoComplete: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/complete`,
+    todoReopenPattern: "/api/v1/teacher/todos/:todoRef/reopen",
+    todoReopen: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/reopen`,
+    todoCancelPattern: "/api/v1/teacher/todos/:todoRef/cancel",
+    todoCancel: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/cancel`,
+    todoPreferencePattern: "/api/v1/teacher/todos/:todoRef/preference",
+    todoPreference: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/preference`,
+    todoResourcesPattern: "/api/v1/teacher/todos/:todoRef/resources",
+    todoResources: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/resources`,
+    todoSchedulePattern: "/api/v1/teacher/todos/:todoRef/schedule",
+    todoSchedule: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/schedule`,
+    todoAgentHandoffPattern: "/api/v1/teacher/todos/:todoRef/agent-handoff",
+    todoAgentHandoff: (todoRef: string): string => `${teacherTodoRoute(todoRef)}/agent-handoff`,
+    calendarEvents: "/api/v1/teacher/calendar-events",
+    calendarEventPattern: "/api/v1/teacher/calendar-events/:eventRef",
+    calendarEvent: teacherCalendarEventRoute,
+    calendarEventCompletePattern: "/api/v1/teacher/calendar-events/:eventRef/complete",
+    calendarEventComplete: (eventRef: string): string => `${teacherCalendarEventRoute(eventRef)}/complete`,
+    calendarEventCancelPattern: "/api/v1/teacher/calendar-events/:eventRef/cancel",
+    calendarEventCancel: (eventRef: string): string => `${teacherCalendarEventRoute(eventRef)}/cancel`,
+    workbenchOverview: "/api/v1/teacher/workbench/overview",
+    workbenchActionItems: "/api/v1/teacher/workbench/action-items",
+    workbenchProjectionPattern: "/api/v1/teacher/workbench/projections/:projectionRef",
+    workbenchProjection: teacherWorkProjectionRoute,
+    workbenchProjectionPreferencePattern: "/api/v1/teacher/workbench/projections/:projectionRef/preference",
+    workbenchProjectionPreference: (projectionRef: string): string => `${teacherWorkProjectionRoute(projectionRef)}/preference`
   },
   demo: {
     bootstrap: "/api/v1/demo/workspace",
