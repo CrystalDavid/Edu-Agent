@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type {
   FileAssetSummary,
   LessonPreparationSummary,
+  TeacherAssignmentOverview,
   TeacherWorkspace
 } from "@edu-agent/contracts";
 
@@ -10,10 +11,9 @@ import { Button } from "antd";
 
 import {
   preparationGroupUpdates,
-  schoolUpdates,
-  students
+  schoolUpdates
 } from "../teacher-portal-data";
-import { loadFiles, loadLessonPreparationSummary } from "../api";
+import { loadAssignmentOverview, loadFiles, loadLessonPreparationSummary } from "../api";
 import type { AppRoute } from "../route";
 import { lessonPreparationStatusLabel } from "../presentation";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
@@ -43,6 +43,9 @@ export function OverviewPage(props: {
     useState<string | null>(null);
   const [recentFiles, setRecentFiles] = useState<FileAssetSummary[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [assignmentOverview, setAssignmentOverview] =
+    useState<TeacherAssignmentOverview | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     void loadLessonPreparationSummary()
@@ -72,7 +75,15 @@ export function OverviewPage(props: {
         );
       });
   }, []);
-  const followUps = students.filter((student) => student.followUp);
+  useEffect(() => {
+    void loadAssignmentOverview()
+      .then(setAssignmentOverview)
+      .catch((caught) => {
+        setAssignmentError(
+          caught instanceof Error ? caught.message : "作业概览加载失败"
+        );
+      });
+  }, []);
   return (
     <div className="portal-page overview-page" data-testid="overview-page">
       <PageHeader
@@ -127,28 +138,27 @@ export function OverviewPage(props: {
 
         <ModuleCard
           title="学生概况"
-          description="高保真示例数据，不是当前 PostgreSQL 学情真值"
+          description="来自 Assignment、Submission、GradeDecision 和可重算 Evidence 读取模型"
           action={(
             <span>
-              <StatusPill>只读演示</StatusPill>{" "}
+              <StatusPill tone="success">真实数据</StatusPill>{" "}
               <button type="button" className="text-action" onClick={() => props.navigate("/students")}>进入学生页面</button>
             </span>
           )}
           testId="student-summary"
         >
+          {assignmentError ? <p role="alert">{assignmentError}</p> : null}
           <div className="student-overview-summary">
             <div className="trend-summary">
-              <span>班级整体趋势</span>
-              <strong>解释质量正在改善</strong>
-              <small>最近四次作业平均正确率 72% → 82%</small>
-              <div className="spark-bars" aria-label="最近四次作业趋势">
-                {[48, 58, 70, 82].map((value) => <i key={value} style={{ height: `${value}%` }} />)}
-              </div>
+              <span>当前教师工作</span>
+              <strong>{assignmentOverview?.pendingGradingCount ?? 0} 份提交待确认</strong>
+              <small>只统计已发布作业；未交不是 0 分</small>
             </div>
             <dl>
-              <div><dt>作业上交</dt><dd>38 / 42</dd></div>
-              <div><dt>需要跟进</dt><dd>{followUps.length} 人</dd></div>
-              <div><dt>主要共性问题</dt><dd>斜率与截距的解释仍易混淆</dd></div>
+              <div><dt>待发布草稿</dt><dd>{assignmentOverview?.draftCount ?? 0}</dd></div>
+              <div><dt>当前已发布</dt><dd>{assignmentOverview?.publishedCount ?? 0}</dd></div>
+              <div><dt>本次未交</dt><dd>{assignmentOverview?.notSubmittedCount ?? 0}</dd></div>
+              <div><dt>教学调整候选</dt><dd>{assignmentOverview?.adjustmentCandidates.length ?? 0}</dd></div>
             </dl>
           </div>
         </ModuleCard>
@@ -191,8 +201,8 @@ export function OverviewPage(props: {
       <section className="overview-quick-row" aria-label="快捷操作">
         <QuickAction icon="lesson" label="开始备课" description="从当前章节继续" onClick={() => props.navigate("/teaching")} />
         <QuickAction icon="slides" label="制作课件" description="本阶段未实现 PPTX 生成" onClick={() => undefined} disabled disabledReason="当前只支持 approved TeachingPlan 导出 DOCX" />
-        <QuickAction icon="assignment" label="查看作业" description="4 人未交" onClick={() => props.navigate("/assignments")} />
-        <QuickAction icon="students" label="查看学生" description={`${followUps.length} 人待跟进`} onClick={() => props.navigate("/students")} />
+        <QuickAction icon="assignment" label="查看作业" description={`${assignmentOverview?.notSubmittedCount ?? 0} 人次未交 · ${assignmentOverview?.pendingGradingCount ?? 0} 份待确认`} onClick={() => props.navigate("/assignments")} />
+        <QuickAction icon="students" label="查看学生" description={`${assignmentOverview?.recentlyConfirmed.length ?? 0} 条近期确认批改`} onClick={() => props.navigate("/students")} />
       </section>
 
       <div className="overview-grid overview-grid--middle">

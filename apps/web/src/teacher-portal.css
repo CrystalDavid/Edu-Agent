@@ -1538,6 +1538,29 @@ textarea:focus-visible,
   width: 100%;
 }
 
+.assignment-workspace .course-list button {
+  display: grid;
+  width: 100%;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.assignment-workspace .course-list button:hover,
+.assignment-workspace .course-list button.is-active {
+  border-color: #b8ccff;
+  background: var(--color-brand-soft);
+}
+
+.assignment-workspace .course-list button small {
+  color: var(--color-text-secondary);
+}
+
 .course-tree,
 .course-file-list,
 .file-preview {
