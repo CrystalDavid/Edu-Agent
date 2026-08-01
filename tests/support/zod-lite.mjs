@@ -36,6 +36,20 @@ class Schema {
     );
   }
 
+  refine(refiner, options = {}) {
+    const base = this;
+    return new Schema((value, path) => {
+      const parsed = base.parser(value, path);
+      if (!refiner(parsed)) {
+        throw new ZodError([{
+          path,
+          message: options.message ?? "Invalid input"
+        }]);
+      }
+      return parsed;
+    });
+  }
+
   superRefine(refiner) {
     const base = this;
     return new Schema((value, path) => {
@@ -266,6 +280,13 @@ class EnumSchema extends Schema {
       if (!values.includes(value)) fail(path, "Expected enum value");
       return value;
     });
+    this.values = values;
+  }
+
+  exclude(excluded) {
+    return new EnumSchema(
+      this.values.filter((value) => !excluded.includes(value))
+    );
   }
 }
 
