@@ -24,7 +24,6 @@ const bannedTeacherTerms = [
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
-  await mkdir("docs/ui/images", { recursive: true });
 });
 
 test("portal bootstrap, sidebar and modular overview use the verified API contract", async ({
@@ -126,11 +125,6 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     path: `${screenshotRoot}/01-overview-1440x900.png`,
     animations: "disabled"
   });
-  await page.screenshot({
-    path: "docs/ui/images/teacher-portal-v1-after.png",
-    animations: "disabled"
-  });
-
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/overview");
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible();
