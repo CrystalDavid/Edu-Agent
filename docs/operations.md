@@ -12,7 +12,7 @@
 | PostgreSQL | `127.0.0.1:55432` | Docker Compose，长期开发 Volume |
 | LocalObjectStore | `apps/api/.demo/uploads/objects` | API package 下的本地目录，跨重启保留 |
 
-完整操作和产品验收见 [LOCAL_DEMO](demo/LOCAL_DEMO.md)。
+完整操作和产品验收见 [本地 Demo 指南](demo/local-demo.md)。
 
 ## 生命周期命令
 
@@ -35,7 +35,7 @@ corepack pnpm demo:down    # 关闭容器，保留 Volume
 - `apps/api/.demo/uploads/objects`；
 - 用户保留的验收输出。
 
-可再生但默认仍不自动删除：`dist/`、`*.tsbuildinfo`、Playwright reports、`test-results/`、`.playwright-cli/` 和 `output/playwright/`。它们都不应提交 Git。
+`dist/` 和 `*.tsbuildinfo` 是可再生构建产物。Playwright 报告、结果、Trace、Video、截图和浏览器临时状态不得写入仓库根目录：Windows 优先写入 `C:\Code\test\edu-agent\playwright`，其他环境写入系统临时目录，也可用 `EDU_AGENT_TEST_OUTPUT_ROOT` 覆盖。
 
 ## 健康与诊断
 
@@ -51,4 +51,4 @@ corepack pnpm demo:down    # 关闭容器，保留 Volume
 
 ## Gate 2.10B 边界
 
-云部署、正式 OIDC、托管 PostgreSQL/ObjectStore、Secret Manager、TLS、监控、告警、备份恢复、远程 E2E、容量和发布 Runbook 尚未开始。详细差距和退出条件见 [DEPLOYMENT_READINESS_GAPS](operations/DEPLOYMENT_READINESS_GAPS.md)，未来顺序见 [ROADMAP](ROADMAP.md)。
+云部署、正式 OIDC、托管 PostgreSQL/ObjectStore、Secret Manager、TLS、监控、告警、备份恢复、远程 E2E、容量和发布 Runbook 尚未开始。详细差距和退出条件见 [部署准备差距](operations/deployment-readiness-gaps.md)，未来顺序见 [后续路线](roadmap.md)。

@@ -5,7 +5,7 @@ Edu-Agent 使用七模块模块化单体和只向前 Migration。贡献的首要
 ## 开始之前
 
 1. 阅读 [README.md](README.md) 和 [AGENTS.md](AGENTS.md)；
-2. 根据任务阅读 [CAPABILITIES](docs/CAPABILITIES.md)、[ARCHITECTURE](docs/ARCHITECTURE.md) 和相关 ADR；
+2. 根据任务阅读 [当前能力](docs/capabilities.md)、[当前架构](docs/architecture.md) 和相关 ADR；
 3. 确认工作区已有改动并只处理当前任务范围；
 4. 从最新 `main` 创建主题分支。
 
@@ -26,7 +26,7 @@ corepack pnpm demo:doctor
 6. 更新唯一权威文档；
 7. 按主题提交，推送分支并创建 Draft PR。
 
-常用入口见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。不要直接猜测内部脚本；根 `package.json` 是稳定命令注册表。
+常用入口见 [docs/development.md](docs/development.md)。不要直接猜测内部脚本；根 `package.json` 是稳定命令注册表。
 
 ## Migration 和数据库
 
@@ -36,7 +36,7 @@ corepack pnpm demo:doctor
 - 不让 app/worker role 获得 Migration owner 或其他 Schema 的直接写权限；
 - 数据库变更必须通过 PGlite、architecture 和真实 PostgreSQL 验证。
 
-详见 [Migration ownership](infra/postgres/MIGRATION_OWNERSHIP.md)。
+详见 [Migration ownership](infra/postgres/migration-ownership.md)。
 
 ## Contract 和产品状态
 
@@ -61,17 +61,18 @@ corepack pnpm verify:markdown-links
 git diff --check
 ```
 
-涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `demo:doctor`。完整矩阵见 [docs/VALIDATION.md](docs/VALIDATION.md)。
+涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `demo:doctor`。完整矩阵见 [docs/validation.md](docs/validation.md)。
 
 ## 文档
 
-- 当前能力只维护在 `docs/CAPABILITIES.md`；
-- 当前架构只维护在 `docs/ARCHITECTURE.md`；
-- 未来计划只维护在 `docs/ROADMAP.md`；
-- Verified 历史更新 `docs/VERSION_HISTORY.md` 和 `CHANGELOG.md`；
+- 当前能力只维护在 `docs/capabilities.md`；
+- 当前架构只维护在 `docs/architecture.md`；
+- 未来计划只维护在 `docs/roadmap.md`；
+- Verified 历史更新 `docs/version-history.md` 和 `CHANGELOG.md`；
 - 详细 Gate/UI/研究记录进入 `docs/history/`；
 - 长期不可逆决策使用独立 ADR，不能覆写旧 ADR；
 - 所有移动必须更新本地链接并通过 Markdown verifier。
+- 主题文档使用小写 kebab-case，例如 `version-history.md`；只保留 GitHub、Agent 和目录索引约定的全大写入口文件。
 
 ## Commit 与 PR
 
@@ -83,4 +84,4 @@ git diff --check
 
 ## 不得提交
 
-`.env.local`、真实 Key/Token、数据库数据/备份、`.demo/`、LocalObjectStore、`node_modules/`、`dist/`、构建缓存、Playwright reports、`test-results/`、`output/playwright/`、个人桌面报告或外部参考仓库副本。
+`.env.local`、真实 Key/Token、数据库数据/备份、`.demo/`、LocalObjectStore、`node_modules/`、`dist/`、构建缓存、测试报告/Trace/Video/截图、个人桌面报告或外部参考仓库副本。Playwright 产物应写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不得散落在仓库根目录。

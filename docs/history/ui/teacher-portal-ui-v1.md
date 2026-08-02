@@ -144,7 +144,7 @@ Evidence、教学目标和运行记录仍然保留，但分别作为学生/课�
 - 字体内部版本：2.040；
 - 文件：`apps/web/public/fonts/harmonyos-sans-sc/HarmonyOS_Sans_SC.ttf`；
 - 许可证：`apps/web/public/fonts/licenses/HarmonyOS-Sans-License.txt`；
-- 归属说明：`apps/web/public/fonts/ATTRIBUTION.md`。
+- 归属说明：`apps/web/public/fonts/attribution.md`。
 
 官方协议允许把未修改字体随软件嵌入和再分发，但禁止修改字体。因此本项目保留官方原始可变 TTF，不做 WOFF2 转换或子集化；一个文件覆盖 400、500、600、700 字重。字体作为独立静态资源输出，不进入 JavaScript，也没有运行时 CDN 请求。20.6MB 的静态字体体积是已知性能问题；若未来要转换或子集化，必须先获得允许修改字体的授权。
 

@@ -1,6 +1,6 @@
 # Changelog
 
-本文件面向开发者和产品负责人，按仓库的 verified stages 摘要主要变化。完整 Commit、PR、Migration、状态所有者和时间顺序见 [VERSION_HISTORY](docs/VERSION_HISTORY.md)。
+本文件面向开发者和产品负责人，按仓库的 verified stages 摘要主要变化。完整 Commit、PR、Migration、状态所有者和时间顺序见 [版本历史](docs/version-history.md)。
 
 ## Current
 
@@ -8,7 +8,7 @@
 
 > 普通教师端本地功能型 MVP，已具备正式身份和学校组织基线，尚未达到云端学校试点生产条件。
 
-Gate 2.10A 之后的仓库治理提交不改变产品状态语义。下一产品阶段候选是 Gate 2.10B 云部署与试点运维，仍需先完成并审查 [部署就绪差距](docs/operations/DEPLOYMENT_READINESS_GAPS.md)。
+Gate 2.10A 之后的仓库治理提交不改变产品状态语义。下一产品阶段候选是 Gate 2.10B 云部署与试点运维，仍需先完成并审查 [部署就绪差距](docs/operations/deployment-readiness-gaps.md)。
 
 ## Unreleased — repository cleanup and reorganization
 

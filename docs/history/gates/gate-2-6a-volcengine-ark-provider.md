@@ -436,4 +436,4 @@ Runs 的技术折叠区显示 Provider、展示名、执行状态、PromptBundle
 
 `corepack pnpm model:probe:live` 在严格模式下写入带 `live=true` 的能力快照，并把 JSON Object、JSON Schema、Function Calling、图片 URL 与 streaming 分别记录为 `supported`、`unsupported`、`partially_supported` 或 `not_tested`。逐次安全报告写入 Git ignored 的 `.demo/live-model-reports/`，只包含 Token、延迟、脱敏 Request ID、能力状态和安全错误类别。
 
-可提交的最终验收状态已归档在 `docs/history/gates/GATE_2_6A_LIVE_ACCEPTANCE.md`。真实推理与产品所有者控制台用量确认缺一不可；在此之前状态必须保持 `PENDING`。
+可提交的最终验收状态已归档在 `docs/history/gates/gate-2-6a-live-acceptance.md`。真实推理与产品所有者控制台用量确认缺一不可；在此之前状态必须保持 `PENDING`。

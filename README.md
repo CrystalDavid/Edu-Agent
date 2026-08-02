@@ -8,7 +8,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前完成的是**普�
 - 默认数据：明确标记的 synthetic 学校、教师、课程与匿名 learner 数据
 - 下一产品阶段：Gate 2.10B 云部署与小范围试点准备；本仓库整理不构成新 Gate
 
-详细 Commit、PR、Tag 和 43 个 Migration 的时间线见 [VERSION_HISTORY](docs/VERSION_HISTORY.md)。
+详细 Commit、PR、Tag 和 43 个 Migration 的时间线见 [版本历史](docs/version-history.md)。
 
 ## 项目定位
 
@@ -46,7 +46,7 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 | 学生端、家长端 | NOT STARTED | 无 | 不是当前 MVP 范围 |
 | 多模态、OCR | NOT STARTED | 文件元数据/下载已存在 | 文件理解尚未产品化 |
 
-逐页面、逐闭环和真值来源见 [CAPABILITIES](docs/CAPABILITIES.md)。
+逐页面、逐闭环和真值来源见 [当前能力](docs/capabilities.md)。
 
 ## 核心产品原则
 
@@ -83,7 +83,7 @@ flowchart LR
     API --> IDP["IdentityProvider Port\nLocal 或 OIDC"]
 ```
 
-浏览器不直接连接数据库、模型、ObjectStore 或身份供应商。更完整的数据流、状态所有权和安全边界见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+浏览器不直接连接数据库、模型、ObjectStore 或身份供应商。更完整的数据流、状态所有权和安全边界见 [当前架构](docs/architecture.md)。
 
 ## 仓库目录
 
@@ -96,12 +96,14 @@ flowchart LR
 | `packages/test-fixtures` | 仅供自动化测试的构造器和 Fixture |
 | `infra` | 本地 Docker/PostgreSQL 配置和数据库所有权说明 |
 | `scripts` | Demo、PostgreSQL、安全、仓库和静态验证编排 |
-| `tests` | unit、architecture、HTTP E2E、PGlite、PostgreSQL、Playwright 和 live tests |
+| `tests` | unit、architecture、HTTP E2E、PGlite、PostgreSQL、Playwright、live tests 和专用测试配置 |
 | `docs` | 当前权威文档、ADR、运维、项目研究与历史记录 |
 
-以下内容只属于本机并被 Git 忽略：`.env.local`、`infra/docker/.env.local`、`.demo/`、本地 ObjectStore、`node_modules/`、`dist/`、`.playwright-cli/`、`playwright-report*/`、`test-results/` 和 `output/playwright/`。不要把它们移动进正式目录或提交 Git。
+仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`infra/docker/.env.local`、`.demo/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
 
-目录决策和延期项见 [TARGET_REPOSITORY_STRUCTURE](docs/project/TARGET_REPOSITORY_STRUCTURE.md)。
+Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。旧根目录测试产物已保留在 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
+
+目录决策和延期项见 [目标仓库结构](docs/project/target-repository-structure.md)。
 
 ## 核心业务闭环
 
@@ -156,7 +158,7 @@ corepack pnpm demo:down
 
 `demo:reset` 和 `db:clean` 是显式破坏性入口，不属于普通启动或测试流程。不要删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。
 
-默认模型是确定性 Mock。要在 synthetic Demo 中调用豆包/火山方舟，只在被忽略的根 `.env.local` 设置 `MODEL_PROVIDER_MODE=ark`、`ARK_API_KEY` 和模型配置；Key 不得进入命令参数、日志、截图、文档或 Git。完整说明见 [LOCAL_DEMO](docs/demo/LOCAL_DEMO.md)。
+默认模型是确定性 Mock。要在 synthetic Demo 中调用豆包/火山方舟，只在被忽略的根 `.env.local` 设置 `MODEL_PROVIDER_MODE=ark`、`ARK_API_KEY` 和模型配置；Key 不得进入命令参数、日志、截图、文档或 Git。完整说明见 [本地 Demo 指南](docs/demo/local-demo.md)。
 
 ## 推荐验收顺序
 
@@ -195,18 +197,18 @@ corepack pnpm demo:down
 | `corepack pnpm verify:markdown-links` | 所有跟踪/待提交 Markdown 本地链接 |
 | `corepack pnpm verify:repo-sync` | 必需文件、忽略项、禁止跟踪目录、upstream 和 HEAD 同步 |
 
-测试隔离语义和推荐组合见 [VALIDATION](docs/VALIDATION.md)。
+测试隔离语义和推荐组合见 [验证指南](docs/validation.md)。
 
 ## 文档阅读顺序
 
 1. [文档入口](docs/README.md)：按角色选择阅读路径；
-2. [当前能力](docs/CAPABILITIES.md)：REAL / PARTIAL / MOCK 和限制；
-3. [当前架构](docs/ARCHITECTURE.md)：七模块、数据流和安全边界；
-4. [开发指南](docs/DEVELOPMENT.md)：目录、命令和修改路径；
-5. [验证指南](docs/VALIDATION.md)：测试证明范围；
-6. [版本历史](docs/VERSION_HISTORY.md)：0 → Gate 2.10A；
-7. [Roadmap](docs/ROADMAP.md)：只描述未来工作；
-8. [本地运维](docs/OPERATIONS.md)和 [Gate 2.10B 部署差距](docs/operations/DEPLOYMENT_READINESS_GAPS.md)。
+2. [当前能力](docs/capabilities.md)：REAL / PARTIAL / MOCK 和限制；
+3. [当前架构](docs/architecture.md)：七模块、数据流和安全边界；
+4. [开发指南](docs/development.md)：目录、命令和修改路径；
+5. [验证指南](docs/validation.md)：测试证明范围；
+6. [版本历史](docs/version-history.md)：0 → Gate 2.10A；
+7. [Roadmap](docs/roadmap.md)：只描述未来工作；
+8. [本地运维](docs/operations.md)和 [Gate 2.10B 部署差距](docs/operations/deployment-readiness-gaps.md)。
 
 ## 当前限制
 
@@ -226,4 +228,4 @@ corepack pnpm demo:down
 2. 以整洁仓库为基线单独设计 Gate 2.10B，完成云部署、正式身份、托管数据库/ObjectStore、安全、可观测性、备份恢复和试点运维；
 3. Gate 2.10B 验证后，再按产品优先级评估学生端、完整考试、多模态/OCR、第二模型 Provider 或更长期个性化能力。
 
-未来计划以 [ROADMAP](docs/ROADMAP.md) 为唯一入口；本 README 不记录逐 Gate 实施日志。
+未来计划以 [后续路线](docs/roadmap.md) 为唯一入口；本 README 不记录逐 Gate 实施日志。

@@ -372,7 +372,7 @@ describe("Gate 2 architecture invariants", () => {
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(
-      "apps/web/public/fonts/ATTRIBUTION.md"
+      "apps/web/public/fonts/attribution.md"
     );
     const styleGuide = source(
       "apps/web/src/pages/TeacherStyleGuidePage.tsx"

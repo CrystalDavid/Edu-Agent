@@ -12,8 +12,8 @@
 本方案综合：
 
 - 当前代码、workspace dependency、路由、import、测试和 Migration registry；
-- [当前架构](../ARCHITECTURE.md)、[仓库地图](REPOSITORY_MAP.md)和[清理计划](REPOSITORY_CLEANUP_PLAN.md)；
-- [Claude Code 仓库组织经验](CLAUDE_CODE_REPOSITORY_LESSONS.md)；
+- [当前架构](../architecture.md)、[仓库地图](repository-map.md)和[清理计划](repository-cleanup-plan.md)；
+- [Claude Code 仓库组织经验](claude-code-repository-lessons.md)；
 - Git 跟踪/忽略、大文件、Secret、二进制和本地运行目录审计。
 
 优先级依次为：保持状态所有权和历史可追溯性、保持可运行、建立唯一入口、减少歧义，最后才是目录视觉整齐。
@@ -42,16 +42,18 @@ Edu-Agent/
 │   ├── postgres/                     数据库生命周期和集成测试编排
 │   ├── security/                     Secret 扫描
 │   └── *.ts/*.mjs                    仓库级静态和一致性验证
-├── tests/                            跨 workspace 的 contract/integration/E2E 测试
+├── tests/
+│   ├── config/                       专用 Playwright/Vitest 配置与产物路径
+│   └── ...                           跨 workspace 的 contract/integration/E2E 测试
 ├── docs/
 │   ├── README.md                     文档入口和阅读顺序
-│   ├── ARCHITECTURE.md               当前架构唯一权威入口
-│   ├── CAPABILITIES.md               当前 REAL/PARTIAL/MOCK 能力入口
-│   ├── VERSION_HISTORY.md            Commit/PR/Tag/Migration 历史
-│   ├── ROADMAP.md                    只描述未来计划
-│   ├── DEVELOPMENT.md                目录、命令和开发路径
-│   ├── VALIDATION.md                 测试类型、命令和证明范围
-│   ├── OPERATIONS.md                 本地运行与部署准备入口
+│   ├── architecture.md               当前架构唯一权威入口
+│   ├── capabilities.md               当前 REAL/PARTIAL/MOCK 能力入口
+│   ├── version-history.md            Commit/PR/Tag/Migration 历史
+│   ├── roadmap.md                    只描述未来计划
+│   ├── development.md                目录、命令和开发路径
+│   ├── validation.md                 测试类型、命令和证明范围
+│   ├── operations.md                 本地运行与部署准备入口
 │   ├── adr/                          不可随意重写的长期决策入口
 │   ├── demo/                         本地 Demo 专项指南
 │   ├── operations/                   详细运维/部署差距
@@ -63,16 +65,17 @@ Edu-Agent/
 ├── .env.example                      无真实 Secret 的环境模板
 ├── package.json                      稳定命令注册表
 ├── pnpm-workspace.yaml               workspace 成员入口
-└── *.config.ts                       TypeScript、Vitest、Playwright、Drizzle 配置
+└── *.config.ts                       仅保留工具自动发现的默认配置
 
-本地存在但不进入 Git：
+仓库内保留但不进入 Git：
 
 ├── .env.local                        本机 Secret/配置
 ├── .demo/                            Demo 日志、报告和 LocalObjectStore
-├── node_modules/、dist/               安装与构建产物
-├── playwright-report*/、test-results/ 浏览器测试报告
-├── output/playwright/                 本地验收截图
-└── .playwright-cli/                   浏览器自动化临时状态
+└── node_modules/、dist/               安装与构建产物
+
+仓库外测试产物：
+
+└── C:\Code\test\edu-agent\playwright  Windows 上的报告、结果、Trace、Video 和截图
 ```
 
 ## 3. 保留不动的正式边界
@@ -92,14 +95,22 @@ Edu-Agent/
 
 ### 4.1 文档
 
-- 把三个 `CURRENT_*` 权威文档移动为 `docs/ARCHITECTURE.md`、`CAPABILITIES.md`、`VERSION_HISTORY.md`；
-- 增加 `ROADMAP.md`、`DEVELOPMENT.md`、`VALIDATION.md` 和 `OPERATIONS.md`，每份只维护一种当前事实；
+- 把三个 `CURRENT_*` 权威文档移动为 `docs/architecture.md`、`capabilities.md`、`version-history.md`；
+- 增加 `roadmap.md`、`development.md`、`validation.md` 和 `operations.md`，每份只维护一种当前事实；
 - 把 Gate、UI 和早期架构/研究资料移动到 `docs/history/`，保留 Git 历史和文档内容；
 - 保留 `docs/project/` 作为仓库审计、目标结构、清理和参考研究区，不把它列为新开发者第一阅读层；
 - 更新所有本地 Markdown 链接，并用自动脚本验证；
 - 根目录只保留五个入口/治理 Markdown。
+- 主题文档使用小写 kebab-case；约定入口和目录索引继续使用标准大写文件名。
 
-### 4.2 Demo 与测试数据
+### 4.2 根目录测试配置和产物
+
+- 根目录只保留 Playwright、Vitest、TypeScript、Drizzle 等工具自动发现的默认配置；
+- Fake Ark Playwright 和 live/PostgreSQL Vitest 配置移动到 `tests/config/`；
+- Playwright 产物通过 `tests/config/test-artifacts.ts` 写到仓库外；
+- 旧报告、验收截图和 `.playwright-cli` 状态保留在 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
+
+### 4.3 Demo 与测试数据
 
 - 新增 `packages/demo-fixtures`，接收当前由产品代码使用的 Gate 2 synthetic refs、教学计划和演示数据；
 - `apps/api` 改为依赖 `@edu-agent/demo-fixtures`；
@@ -107,7 +118,7 @@ Edu-Agent/
 - `packages/test-fixtures` 只保留 Gate 1A/1B 测试构造器；
 - Fake Provider 响应、Playwright 行为和断言继续留在测试基础设施，不进入 demo package。
 
-### 4.3 已证明无运行引用的遗留代码
+### 4.4 已证明无运行引用的遗留代码
 
 在再次核对静态 import、动态 import、路由、package scripts、测试、文档链接和 Git 历史后，可删除：
 

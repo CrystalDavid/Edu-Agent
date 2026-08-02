@@ -109,7 +109,7 @@ Tool 是否只读、是否可并发、是否具有破坏性、如何中断、如
 | 根目录保持简洁 | 根目录只保留项目入口、治理文件、workspace/config；把五份早期架构资料移入 `docs/history/research/` |
 | 唯一首要入口 | 重写根 `README.md`，让产品、开发、验收和文档阅读顺序从同一处开始 |
 | Agent 快速获得上下文 | 新增根 `AGENTS.md`，只放可执行不变量、目录、命令和权威文档链接 |
-| 当前事实与历史分离 | 当前文档固定为 `docs/ARCHITECTURE.md`、`CAPABILITIES.md`、`VERSION_HISTORY.md` 等；Gate/UI/研究记录进入 `docs/history/` |
+| 当前事实与历史分离 | 当前文档固定为 `docs/architecture.md`、`capabilities.md`、`version-history.md` 等；Gate/UI/研究记录进入 `docs/history/` |
 | 稳定命令入口 | 以根 `package.json` 作为命令注册表，补齐 `test:unit`、`test:ark-fake`、`verify:repo-sync`、Markdown 链接检查等可预测名称 |
 | 正式源码与生成物隔离 | 保持 `.demo/`、ObjectStore、测试报告、截图、构建缓存和本地环境被忽略；增加 Git 同步验证脚本 |
 | 功能边界名称表达真实用途 | 把运行时合成 Demo 数据移到 `packages/demo-fixtures`，让产品不再依赖 `test-fixtures` |

@@ -25,7 +25,7 @@
 | 设置 | PARTIAL | 查看真实用户、学校、角色、CourseRun scope、活跃 Session；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance PostgreSQL；auth/session/workspace、organization/admin、governance request API | Governance；2.10A | 偏好/通知部分仍是演示；无邮件邀请、MFA、SCIM 或完整学校后台 |
 | 管理员入口 | REAL（最小） | school admin 查看成员、安全事件，创建/激活/停用成员，分配 ordinary_teacher 和 CourseRun access | Governance PostgreSQL；`/api/v1/admin/*` | Governance；2.10A | 只在当前学校生效；不授予修改教学事实的超级权限；subject lead/homeroom 仅保留边界 |
 
-`DEAD = 0` 的 Gate 2.5C 固化证据见历史 [教师门户功能矩阵](history/gates/TEACHER_PORTAL_FUNCTION_MATRIX.md)。当前仍为 Mock 的入口必须显式标注，不能显示成功写入提示。
+`DEAD = 0` 的 Gate 2.5C 固化证据见历史 [教师门户功能矩阵](history/gates/teacher-portal-function-matrix.md)。当前仍为 Mock 的入口必须显式标注，不能显示成功写入提示。
 
 ## 2. 按业务闭环
 
@@ -58,4 +58,4 @@
 
 当前最强证据是：核心状态均来自七个 PostgreSQL Schema，写入经过服务端 Session → ActingContext → Authorization → owning Application Service，刷新与服务重启可恢复；当前最大缺口不是再增加教师页面，而是完成云基础设施、安全加固、运维、数据治理执行和小规模试点验证。
 
-相关文档：[完整版本历史](VERSION_HISTORY.md) · [当前架构](ARCHITECTURE.md) · [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)
+相关文档：[完整版本历史](version-history.md) · [当前架构](architecture.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)

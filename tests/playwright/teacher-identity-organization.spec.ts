@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { apiRoutes } from "@edu-agent/contracts";
 
-const screenshotRoot = "output/playwright/gate-2-10a";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-10a");
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });

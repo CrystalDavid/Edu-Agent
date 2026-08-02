@@ -2,7 +2,7 @@
 
 > 状态：CURRENT
 
-本文是开发者和工程 Agent 的仓库导航与稳定命令入口。产品不变量见 [AGENTS](../AGENTS.md)，当前架构见 [ARCHITECTURE](ARCHITECTURE.md)。
+本文是开发者和工程 Agent 的仓库导航与稳定命令入口。产品不变量见 [Agent 指南](../AGENTS.md)，当前架构见 [当前架构](architecture.md)。
 
 ## 环境与安装
 
@@ -29,10 +29,11 @@ corepack pnpm demo:doctor
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |
 | 产品 synthetic Demo | `packages/demo-fixtures` 或 API composition 的领域专用 Demo fixture | 不含断言/真实数据 |
 | 测试构造器 | `packages/test-fixtures`、`tests/fixtures`、`tests/support` | 产品不得依赖 |
+| 专用测试配置 | `tests/config` | 根目录只保留工具自动发现的默认配置 |
 | 本地生命周期 | 根 `package.json` → `scripts/demo` / `scripts/postgres` | 不删除长期 DB/ObjectStore |
-| 当前事实文档 | `docs/CAPABILITIES.md` / `ARCHITECTURE.md` | 不在历史文档重复维护 |
+| 当前事实文档 | `docs/capabilities.md` / `architecture.md` | 不在历史文档重复维护 |
 
-更细的路径见 [仓库结构地图](project/REPOSITORY_MAP.md)。
+更细的路径见 [仓库结构地图](project/repository-map.md)。
 
 ## 稳定命令
 
@@ -81,7 +82,9 @@ corepack pnpm demo:doctor
 - `test:postgres` 与 Playwright 使用独立 Compose project、端口和 Volume；
 - `apps/api/.demo/uploads/objects` 是长期开发文件，不随普通测试或清理删除。
 
-详细本地流程见 [OPERATIONS](OPERATIONS.md) 和 [LOCAL_DEMO](demo/LOCAL_DEMO.md)。
+Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test-artifacts.ts` 解析外部路径：Windows 优先 `C:\Code\test\edu-agent\playwright`，也可设置 `EDU_AGENT_TEST_OUTPUT_ROOT`；这些产物不进入仓库根目录。
+
+详细本地流程见 [运维指南](operations.md) 和 [本地 Demo 指南](demo/local-demo.md)。
 
 ## 新增能力时的路径
 
@@ -91,7 +94,7 @@ corepack pnpm demo:doctor
 4. 通过 Composition Root 注入 Port/Adapter；
 5. Web 只消费类型化 API，不直接表达数据库/模型内部状态；
 6. 增加 unit/architecture/PostgreSQL/Playwright 中最接近风险的回归；
-7. 更新当前权威文档和 CHANGELOG/VERSION_HISTORY（仅完成 Gate 时）。
+7. 更新当前权威文档和 `CHANGELOG.md` / `version-history.md`（仅完成 Gate 时）。
 
 ## 已知维护热点
 
@@ -103,4 +106,4 @@ corepack pnpm demo:doctor
 - 大型 Composition Service、Repository、Contract 和页面；
 - `apps/web/src/teacher-portal-data.ts`。
 
-后续拆分必须先固定公共契约和依赖图，保持 route/middleware 顺序、Schema 单一真值和业务语义，并有回归测试。具体延期见 [目标仓库结构](project/TARGET_REPOSITORY_STRUCTURE.md)。
+后续拆分必须先固定公共契约和依赖图，保持 route/middleware 顺序、Schema 单一真值和业务语义，并有回归测试。具体延期见 [目标仓库结构](project/target-repository-structure.md)。

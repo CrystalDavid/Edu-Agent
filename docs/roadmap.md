@@ -3,7 +3,7 @@
 > 状态：CURRENT ROADMAP
 > 产品基线：Gate 2.10A / `gate-2-10a-verified`
 
-本文只描述尚未完成的未来工作。当前已经具备的能力以 [CAPABILITIES](CAPABILITIES.md) 为准，历史阶段以 [VERSION_HISTORY](VERSION_HISTORY.md) 为准。
+本文只描述尚未完成的未来工作。当前已经具备的能力以 [当前能力](capabilities.md) 为准，历史阶段以 [版本历史](version-history.md) 为准。
 
 ## 近期：完成仓库治理审查
 
@@ -26,7 +26,7 @@ Gate 2.10B 尚未开始。进入实施前需要产品所有者确认试点范围
 8. staging 远程 E2E、容量/延迟基线、故障降级和发布/回滚 Runbook；
 9. 试点隐私、DPA、保留、访问、支持和事件响应流程。
 
-完整 blocker/required 清单见 [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)。该文档是规划输入，不是部署授权。
+完整 blocker/required 清单见 [部署就绪差距](operations/deployment-readiness-gaps.md)。该文档是规划输入，不是部署授权。
 
 ## Gate 2.10B 之后的候选方向
 

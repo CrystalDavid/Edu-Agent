@@ -50,11 +50,19 @@
 ### Markdown 与根目录
 
 - 根目录五份早期架构/研究资料已移入 `docs/history/research/` 或 `docs/adr/`；
-- 当前权威入口统一为 `docs/ARCHITECTURE.md`、`CAPABILITIES.md`、`VERSION_HISTORY.md`、`ROADMAP.md`、`DEVELOPMENT.md`、`VALIDATION.md` 和 `OPERATIONS.md`；
+- 当前权威入口统一为 `docs/architecture.md`、`capabilities.md`、`version-history.md`、`roadmap.md`、`development.md`、`validation.md` 和 `operations.md`；
 - Gate、live acceptance、UI 规格和历史图片已归档到 `docs/history/`；
 - 根目录新增 `AGENTS.md`、`SECURITY.md`、`CONTRIBUTING.md`；
-- Playwright 不再改写已跟踪历史 UI 图片，只写 ignored `output/playwright/`；
+- Playwright 不再改写已跟踪历史 UI 图片，也不再把报告、结果或截图写进仓库根目录；
 - 新增 Markdown 链接验证。
+
+### 物理根目录与命名
+
+- `playwright-report`、`playwright-report-ark`、`test-results`、`output` 和 `.playwright-cli` 已迁移到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`；
+- 专用 Playwright/Vitest 配置已移动到 `tests/config/`；
+- Windows 测试产物默认写入 `C:\Code\test\edu-agent\playwright`，其他环境使用系统临时目录或 `EDU_AGENT_TEST_OUTPUT_ROOT`；
+- 主题文档统一为小写 kebab-case，只保留标准工具/治理入口的大写约定名；
+- `verify:repo-sync` 同时检查 Git 整洁度和根目录物理生成物。
 
 ### 稳定工程入口
 
@@ -94,7 +102,7 @@
 
 ## 本地生成物处理
 
-本轮不删除 `.env.local`、开发 Volume、`apps/api/.demo/uploads/objects` 或用户验收输出。`node_modules`、`dist`、reports、`test-results`、`.playwright-cli` 和 `output/playwright` 均正确 ignored；它们是可再生或需用户判断的本地内容，不是“应提交但遗漏”的源码。
+本轮不删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。经用户明确要求，根目录测试报告、结果、验收截图和浏览器临时状态均采用可恢复移动而非删除，归档到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。`node_modules` 和 `.demo` 仍被开发流程使用，因此保留。
 
 ## 完成条件
 
@@ -107,4 +115,4 @@
 - [x] 功能分支已推送，并创建 Draft PR #12；
 - [x] Draft PR 保持未合并，等待用户人工审查；本轮未自动合并、未创建 Gate Tag。
 
-最终同步结论见 [GITHUB_SYNC_AUDIT](GITHUB_SYNC_AUDIT.md)，目标结构和延期理由见 [TARGET_REPOSITORY_STRUCTURE](TARGET_REPOSITORY_STRUCTURE.md)。
+最终同步结论见 [GitHub 同步审计](github-sync-audit.md)，目标结构和延期理由见 [目标仓库结构](target-repository-structure.md)。

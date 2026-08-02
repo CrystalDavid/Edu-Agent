@@ -1,6 +1,6 @@
 # 教育智能体平台：从 0 到 1 的真实演进
 
-> 状态：HISTORICAL / SUPERSEDED。本文保留 2026-07-30 调查及 Gate 2.5 补记；当前完整事实请使用 [VERSION_HISTORY](../../VERSION_HISTORY.md)、[CAPABILITIES](../../CAPABILITIES.md) 和 [ARCHITECTURE](../../ARCHITECTURE.md)。
+> 状态：HISTORICAL / SUPERSEDED。本文保留 2026-07-30 调查及 Gate 2.5 补记；当前完整事实请使用 [版本历史](../../version-history.md)、[当前能力](../../capabilities.md) 和 [当前架构](../../architecture.md)。
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
 > Gate 2.5 实施复核：2026-07-31；本文末次更新已将 Gate 2.4 合并基线和 Gate 2.5 实现事实合并进时间线。
@@ -152,19 +152,19 @@ UI 的演进方向非常清楚：
 ### 仍可作为有效约束
 
 - `教育智能体平台v0.3.2架构修订.md`
-- `教育智能体平台v0.3.2勘误与ADR包.md`
+- `教育智能体平台v0.3.2勘误与adr包.md`
 - `教育智能体平台第一轮工程验证计划.md`
-- `infra/postgres/MIGRATION_OWNERSHIP.md`
+- `infra/postgres/migration-ownership.md`
 - `infra/docker/README.md`
-- `docs/demo/LOCAL_DEMO.md`
-- `docs/ui/TEACHER_PORTAL_UI_V1.md`
+- `docs/demo/local-demo.md`
+- `docs/ui/teacher-portal-ui-v1.md`
 
 其中 ADR 和工程验证计划仍需以代码是否落地为准。
 
 ### 已被后续 UI 版本部分覆盖
 
-- `docs/ui/GATE2_UI_REDESIGN.md`
-- `docs/ui/GATE2_UI_REDESIGN_V2.md`
+- `docs/ui/gate-2-ui-redesign.md`
+- `docs/ui/gate-2-ui-redesign-v2.md`
 
 它们对设计演进有价值，但不再是当前页面结构的唯一规范。
 

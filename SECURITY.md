@@ -31,7 +31,7 @@ Edu-Agent 当前是普通教师端本地功能型 MVP，尚未完成生产云安
 - Production 缺少 OIDC、Secure Cookie 或 Provider 配置时必须拒绝启动，不能静默回 Local/Mock/Demo。
 - 上传文件受大小、类型、hash、tenant key 和授权下载边界约束；当前 LocalObjectStore 仅用于本地 synthetic Demo。
 
-更完整的当前架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，生产前差距见 [docs/operations/DEPLOYMENT_READINESS_GAPS.md](docs/operations/DEPLOYMENT_READINESS_GAPS.md)。
+更完整的当前架构见 [docs/architecture.md](docs/architecture.md)，生产前差距见 [docs/operations/deployment-readiness-gaps.md](docs/operations/deployment-readiness-gaps.md)。
 
 ## 本地数据和测试隔离
 

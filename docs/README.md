@@ -1,6 +1,6 @@
 # Edu-Agent 文档入口
 
-根 [README](../README.md) 是项目唯一首要入口。本文只负责说明“接下来读哪一份”和“新事实应该写在哪里”，不重复当前能力或架构正文。
+根 [项目 README](../README.md) 是项目唯一首要入口。本文只负责说明“接下来读哪一份”和“新事实应该写在哪里”，不重复当前能力或架构正文。
 
 > 最新产品 Verified Gate：Gate 2.10A / `gate-2-10a-verified`
 > 当前定位：普通教师端本地功能型 MVP；尚未开始 Gate 2.10B 云部署。
@@ -10,52 +10,52 @@
 ### 新开发者或工程 Agent
 
 1. [根 README](../README.md)：产品定位、闭环、启动和验收；
-2. [AGENTS](../AGENTS.md)：不可违反的边界、命令和最低验证；
-3. [CAPABILITIES](CAPABILITIES.md)：当前哪些是 REAL、PARTIAL、MOCK；
-4. [ARCHITECTURE](ARCHITECTURE.md)：七模块、Schema、Composition Root 和数据流；
-5. [DEVELOPMENT](DEVELOPMENT.md)：目录、稳定命令和常见修改路径；
-6. [VALIDATION](VALIDATION.md)：每类测试证明什么。
+2. [Agent 指南](../AGENTS.md)：不可违反的边界、命令和最低验证；
+3. [当前能力](capabilities.md)：当前哪些是 REAL、PARTIAL、MOCK；
+4. [当前架构](architecture.md)：七模块、Schema、Composition Root 和数据流；
+5. [开发指南](development.md)：目录、稳定命令和常见修改路径；
+6. [验证指南](validation.md)：每类测试证明什么。
 
 ### 产品负责人或验收者
 
 1. [根 README](../README.md)；
-2. [CAPABILITIES](CAPABILITIES.md)；
-3. [本地 Demo](demo/LOCAL_DEMO.md)；
-4. [VERSION_HISTORY](VERSION_HISTORY.md)；
-5. [ROADMAP](ROADMAP.md)。
+2. [当前能力](capabilities.md)；
+3. [本地 Demo](demo/local-demo.md)；
+4. [版本历史](version-history.md)；
+5. [后续路线](roadmap.md)。
 
 ### 运维或 Gate 2.10B 规划
 
-1. [OPERATIONS](OPERATIONS.md)；
-2. [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)；
-3. [SECURITY](../SECURITY.md)；
-4. [ROADMAP](ROADMAP.md)。
+1. [运维指南](operations.md)；
+2. [部署就绪差距](operations/deployment-readiness-gaps.md)；
+3. [安全政策](../SECURITY.md)；
+4. [后续路线](roadmap.md)。
 
 ## 当前权威文档
 
 | 文档 | 唯一职责 | 不应放入 |
 |---|---|---|
-| [README](../README.md) | 项目总览、启动、业务闭环和阅读入口 | 逐 Gate 历史细节 |
-| [CAPABILITIES](CAPABILITIES.md) | 当前功能状态和限制 | 未来承诺、实现过程日志 |
-| [ARCHITECTURE](ARCHITECTURE.md) | 当前有效架构、状态所有权和数据流 | 已被替代的设计方案 |
-| [VERSION_HISTORY](VERSION_HISTORY.md) | Commit、PR、Tag、Migration 和阶段变化 | 未来 Roadmap |
-| [ROADMAP](ROADMAP.md) | 尚未完成的未来计划 | 已完成能力的重复说明 |
-| [DEVELOPMENT](DEVELOPMENT.md) | 仓库定位、命令和开发路径 | 产品状态表 |
-| [VALIDATION](VALIDATION.md) | 测试类型、隔离语义和证明范围 | 手工产品路线图 |
-| [OPERATIONS](OPERATIONS.md) | 本地生命周期、运行数据和运维入口 | 云部署已经完成的暗示 |
-| [CHANGELOG](../CHANGELOG.md) | Verified stage 的面向人摘要 | 完整 Git 证据表 |
+| [项目 README](../README.md) | 项目总览、启动、业务闭环和阅读入口 | 逐 Gate 历史细节 |
+| [当前能力](capabilities.md) | 当前功能状态和限制 | 未来承诺、实现过程日志 |
+| [当前架构](architecture.md) | 当前有效架构、状态所有权和数据流 | 已被替代的设计方案 |
+| [版本历史](version-history.md) | Commit、PR、Tag、Migration 和阶段变化 | 未来 Roadmap |
+| [后续路线](roadmap.md) | 尚未完成的未来计划 | 已完成能力的重复说明 |
+| [开发指南](development.md) | 仓库定位、命令和开发路径 | 产品状态表 |
+| [验证指南](validation.md) | 测试类型、隔离语义和证明范围 | 手工产品路线图 |
+| [运维指南](operations.md) | 本地生命周期、运行数据和运维入口 | 云部署已经完成的暗示 |
+| [变更日志](../CHANGELOG.md) | Verified stage 的面向人摘要 | 完整 Git 证据表 |
 
 ## 支持性当前资料
 
 这些文档用于仓库治理或专项执行，不是第一阅读层：
 
-- [仓库结构地图](project/REPOSITORY_MAP.md)；
-- [仓库清理计划](project/REPOSITORY_CLEANUP_PLAN.md)；
-- [GitHub 同步审计](project/GITHUB_SYNC_AUDIT.md)；
-- [目标仓库结构](project/TARGET_REPOSITORY_STRUCTURE.md)；
-- [Claude Code 仓库经验](project/CLAUDE_CODE_REPOSITORY_LESSONS.md)；
-- [部署就绪差距明细](operations/DEPLOYMENT_READINESS_GAPS.md)；
-- [Migration ownership](../infra/postgres/MIGRATION_OWNERSHIP.md)；
+- [仓库结构地图](project/repository-map.md)；
+- [仓库清理计划](project/repository-cleanup-plan.md)；
+- [GitHub 同步审计](project/github-sync-audit.md)；
+- [目标仓库结构](project/target-repository-structure.md)；
+- [Claude Code 仓库经验](project/claude-code-repository-lessons.md)；
+- [部署就绪差距明细](operations/deployment-readiness-gaps.md)；
+- [Migration ownership](../infra/postgres/migration-ownership.md)；
 - [Docker/PostgreSQL](../infra/docker/README.md)。
 
 ## ADR 与历史资料

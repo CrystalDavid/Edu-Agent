@@ -60,7 +60,7 @@ try {
       "vitest",
       "run",
       "--config",
-      "vitest.postgres.config.ts",
+      "tests/config/vitest-postgres.config.ts",
       ...process.argv.slice(2)
     ],
     environment

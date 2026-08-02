@@ -210,4 +210,4 @@ Worker 使用 `pending/retry/processing`、租约到期回收、attempt count �
 - E2E 临时 Volume 独立与受保护本地状态不变；
 - Playwright 完整接受/批准/拒绝/Run 链路。
 
-验收命令见根 [README](../../README.md)。
+验收命令见根 [项目 README](../../README.md)。

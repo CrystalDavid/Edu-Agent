@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-const screenshotRoot = "output/playwright/gate-2-7";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-7");
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
   "x-demo-actor": "user:teacher-001"

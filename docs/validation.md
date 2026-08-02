@@ -68,7 +68,8 @@ corepack pnpm test:postgres
 - 长期开发数据库使用稳定 Compose project/Volume；
 - PostgreSQL integration 与 Playwright 创建带唯一名称的临时 project、端口和 Volume；
 - 测试失败也应在 `finally` 清理临时容器/Volume；
-- 默认 Playwright 只把截图写入被忽略的 `output/playwright/`，不会改写已跟踪文档图片；
+- Playwright 的报告、结果、Trace、Video 和截图写入外部测试产物目录，不会污染仓库根目录或改写已跟踪文档图片；
+- Windows 检测到 `C:\Code\test` 时使用 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，可由 `EDU_AGENT_TEST_OUTPUT_ROOT` 覆盖；
 - `apps/api/.demo/uploads/objects` 是开发数据，不能被测试清理器删除；
 - Fake Ark 只监听本地隔离端口，不可被误报为 live 验收；
 - live tests 必须明确 opt-in，并对 Key、request ID 和内容脱敏。

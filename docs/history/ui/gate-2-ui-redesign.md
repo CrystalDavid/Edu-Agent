@@ -67,7 +67,7 @@
 - 不使用远程字体 CDN，不把字体放入 JavaScript。
 - 浏览器实测中，样式指南的简体样例没有使用 Chiron，全部回退到系统简体中文字体；因此不宣称 Chiron 完整支持简化字。
 
-字体版本、许可证与来源保存在 `apps/web/public/fonts/ATTRIBUTION.md` 及对应 `OFL.txt`。
+字体版本、许可证与来源保存在 `apps/web/public/fonts/attribution.md` 及对应 `OFL.txt`。
 
 ## 中文化映射
 

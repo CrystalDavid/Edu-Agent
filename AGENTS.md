@@ -5,9 +5,9 @@
 ## 任务前先读
 
 1. [README.md](README.md)：产品定位、业务闭环和当前限制；
-2. [docs/CAPABILITIES.md](docs/CAPABILITIES.md)：REAL / PARTIAL / MOCK 状态；
-3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：七模块、Schema ownership 和数据流；
-4. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)：目录、命令和修改路径；
+2. [docs/capabilities.md](docs/capabilities.md)：REAL / PARTIAL / MOCK 状态；
+3. [docs/architecture.md](docs/architecture.md)：七模块、Schema ownership 和数据流；
+4. [docs/development.md](docs/development.md)：目录、命令和修改路径；
 5. 与任务直接相关的 ADR、Gate 历史或局部 README。
 
 最新产品基线是 Gate 2.10A / `gate-2-10a-verified`。当前是普通教师端本地功能型 MVP，不得把尚未完成的云部署、学生端、考试或多模态写成已有能力。
@@ -46,7 +46,7 @@
 - `packages/test-fixtures`：测试专用构造器；产品不得依赖；
 - `infra`：本地 PostgreSQL 与所有权说明；
 - `scripts`：通过根 package scripts 调用的编排器；
-- `tests`：跨 workspace 验证；
+- `tests`：跨 workspace 验证；专用 Playwright/Vitest 配置位于 `tests/config`；
 - `docs`：当前权威文档、ADR、运维和历史。
 
 ## 稳定命令入口
@@ -76,6 +76,8 @@ corepack pnpm verify:repo-sync
 
 不要猜测并直接调用内部脚本；先检查根 `package.json` 和 [scripts/README.md](scripts/README.md)。数据库清理命令必须保持显式、可识别且 fail closed，普通测试不得间接重置长期开发 Volume。
 
+Playwright 报告、结果和截图不得写入仓库根目录。默认 Windows 输出根是 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，必要时通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 覆盖。
+
 ## Migration 规则
 
 - 43 个历史 Migration 只向前、不可修改、不可合并、不可重排、不可重命名。
@@ -83,7 +85,7 @@ corepack pnpm verify:repo-sync
 - 同步更新 `apps/api/src/database/migrations.ts`；不要建立第二个 registry。
 - Migration 以受限 owner 执行；app/worker role 权限不得扩大。
 - 修改数据库前至少运行 `test:migrations`、`test:architecture` 和 `test:postgres`。
-- 详细规则见 [infra/postgres/MIGRATION_OWNERSHIP.md](infra/postgres/MIGRATION_OWNERSHIP.md)。
+- 详细规则见 [infra/postgres/migration-ownership.md](infra/postgres/migration-ownership.md)。
 
 ## Contracts 规则
 
@@ -124,21 +126,23 @@ corepack pnpm verify:repo-sync
 - 不 force push、重写已共享历史、自动合并 PR 或自行创建 Verified Gate Tag，除非用户明确授权。
 - 文档/清理提交不构成产品 Gate；Tag 只在完整 Gate 验收后创建。
 - Draft PR 必须说明改动、风险、测试、Migration 状态和人工检查点。
+- 主题文档使用小写 kebab-case；只保留 GitHub/Agent 约定的 `README.md`、`AGENTS.md`、`CHANGELOG.md`、`CONTRIBUTING.md`、`SECURITY.md` 和目录级 `README.md`。
 
 ## Secret、本地状态与生成物
 
 - Secret 只放 `.env.local`、部署平台 Secret 或其他已批准的本地/外部存储。
 - `.env.example` 只能放空值或安全占位，不得提交 Key、Token、Cookie、真实 DSN 或私钥。
 - 不输出或提交模型完整 Prompt/响应、OIDC Token、API Key、学生资料或数据库备份。
-- 不提交 `.demo/`、LocalObjectStore、`node_modules/`、`dist/`、`.playwright-cli/`、reports、`test-results/` 或 `output/playwright/`。
+- 不提交 `.demo/`、LocalObjectStore、`node_modules`、`dist` 或任何测试报告、Trace、Video、截图和临时浏览器状态。
+- 不在仓库根目录生成 `.playwright-cli`、`playwright-report*`、`test-results` 或 `output`；这些内容统一放到外部测试产物目录。
 - 不删除 `.env.local`、长期开发数据库、`apps/api/.demo/uploads/objects` 或用户验收资料；仅在目标明确且用户授权时清理可再生缓存。
 
 ## 完成任务时更新什么
 
-- 当前能力变化：`docs/CAPABILITIES.md`；
-- 架构/状态所有权变化：`docs/ARCHITECTURE.md`，必要时新增 ADR；
-- 已完成 Gate：`docs/VERSION_HISTORY.md` 和 `CHANGELOG.md`；
-- 未来工作：只更新 `docs/ROADMAP.md`；
-- 命令/目录变化：`README.md`、`docs/DEVELOPMENT.md` 和相关局部 README；
-- 运维边界变化：`docs/OPERATIONS.md` / `docs/operations/`；
+- 当前能力变化：`docs/capabilities.md`；
+- 架构/状态所有权变化：`docs/architecture.md`，必要时新增 ADR；
+- 已完成 Gate：`docs/version-history.md` 和 `CHANGELOG.md`；
+- 未来工作：只更新 `docs/roadmap.md`；
+- 命令/目录变化：`README.md`、`docs/development.md` 和相关局部 README；
+- 运维边界变化：`docs/operations.md` / `docs/operations/`；
 - 不把历史 Gate 文档改写成当前事实，移动后必须修复链接。

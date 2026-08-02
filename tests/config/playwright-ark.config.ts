@@ -1,14 +1,19 @@
+import { fileURLToPath } from "node:url";
+
 import { defineConfig, devices } from "@playwright/test";
+
+import { playwrightArtifactPath } from "./test-artifacts.js";
 
 const webOrigin = `http://127.0.0.1:${
   process.env.E2E_WEB_PORT ?? "5173"
 }`;
+const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 export default defineConfig({
-  globalSetup: "./tests/playwright/global-setup.ts",
-  testDir: "./tests/playwright",
+  globalSetup: "../playwright/global-setup.ts",
+  testDir: "../playwright",
   testMatch: "teacher-model-provider.spec.ts",
-  outputDir: "./test-results/playwright-ark",
+  outputDir: playwrightArtifactPath("ark-fake", "results"),
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
@@ -19,14 +24,14 @@ export default defineConfig({
     [
       "html",
       {
-        outputFolder: "playwright-report-ark",
+        outputFolder: playwrightArtifactPath("ark-fake", "report"),
         open: "never"
       }
     ]
   ],
   use: {
     baseURL: webOrigin,
-    storageState: "./test-results/playwright/.auth/teacher.json",
+    storageState: playwrightArtifactPath("shared", ".auth", "teacher.json"),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -37,6 +42,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node scripts/demo/run-e2e-demo.mjs",
+    cwd: workspaceRoot,
     url: `${webOrigin}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,

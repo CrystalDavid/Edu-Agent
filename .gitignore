@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 .vite/
+# Legacy root-output guards. Current Playwright config writes outside the repo.
 playwright-report/
 playwright-report-ark/
 test-results/

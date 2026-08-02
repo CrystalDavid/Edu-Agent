@@ -80,7 +80,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | `playwright-report*/`、`test-results/` | 约 1 MiB | 可再生测试报告，正确 ignored |
 | `.env.local`、`infra/docker/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
 
-`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存；本轮未删除。`output/playwright` 可能包含用户验收资料，虽然可再生且不上传，本轮也未擅自删除。
+`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。首次审计因验收资料边界不明确而保留根目录测试输出；用户随后明确要求保持物理根目录整洁，因此这些内容已采用可恢复移动方式归档到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
 
 ### D. 可疑地被忽略、需人工判断
 
@@ -95,7 +95,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 没有发现被跟踪的 `.env.local`、数据库数据、`.demo`、ObjectStore blob、node_modules、dist、reports、测试截图、日志、dump 或 Secret。`git ls-files -ci --exclude-standard` 为空，说明没有“已经跟踪但现在被 ignore”的遗留文件。
 
-四张历史 UI PNG 和字体二进制是有 Attribution/历史文档用途的正式资源，不是运行缓存。默认 Playwright 原先会覆写其中一张历史图片；本轮已停止该行为，测试截图只写 ignored `output/playwright/`。
+四张历史 UI PNG 和字体二进制是有 Attribution/历史文档用途的正式资源，不是运行缓存。默认 Playwright 原先会覆写其中一张历史图片；本轮已停止该行为，测试报告、结果和截图统一写到仓库外测试产物目录。
 
 ### F. 本地存在但不应上传的个人分析资料
 
@@ -119,7 +119,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 - 跟踪文件名中仅有安全模板 `.env.example`、字体/设计 token 名称和 Secret scanner 本身；
 - 根与 Docker env example 中 Key/Client Secret 保持空值或安全占位；
-- `corepack pnpm test:secrets` 在最终清理分支通过（396 个跟踪文件）；
+- `corepack pnpm test:secrets` 在最终清理分支通过（397 个跟踪文件）；
 - production Web bundle 共扫描 68 个 JS/CSS/HTML/JSON 文件，禁止的 Secret 标记命中为 0；
 - 另以内存读取方式核对 1 个本机非空 Secret 值，bundle 命中为 0；该值没有输出到终端、日志或文档。
 
@@ -140,7 +140,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 | 验证 | 结果 |
 |---|---|
-| Secret scan | 396 个跟踪文件通过 |
+| Secret scan | 397 个跟踪文件通过 |
 | TypeScript | root 与 workspace 项目全部通过 |
 | Vitest 默认套件 | 21 files / 105 tests 通过 |
 | Unit | 11 files / 48 tests 通过 |
@@ -157,12 +157,26 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | Demo Doctor | Node、pnpm、Docker Engine、Compose、env ignore 和端口检查通过 |
 | Version history | 10 stages / 25 refs / 40 Markdown / 361 checks 通过 |
 | Markdown links | 52 Markdown / 138 个本地链接通过 |
-| Repo sync | 396 个跟踪文件、0 个未跟踪文件、43 个历史 Migration 未变、0 个可疑 ignored 文件；首轮推送点本地/远程一致 |
+| Repo sync | 397 个跟踪文件、0 个未跟踪文件、43 个历史 Migration 未变、0 个可疑 ignored 文件；最终推送后本地/远程一致 |
 | Git hygiene | `git diff --check` 通过；Web bundle Secret 检查通过 |
 
 真实 PostgreSQL 和 Playwright 使用隔离测试资源；测试结束后临时容器、Volume 和 ObjectStore 已清理。开发 PostgreSQL Volume、`.env.local`、`apps/api/.demo/uploads/objects` 和 ignored 用户验收输出均未删除。
 
-## 8. 最终结论
+## 8. 物理根目录复核与纠正
+
+Git clean 不等于文件系统整洁。用户复核后指出根目录仍存在 ignored 的 Playwright 报告和专用配置，本轮追加完成：
+
+- 将 `.playwright-cli`、`output`、`playwright-report`、`playwright-report-ark` 和 `test-results` 移出仓库，保留于 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`；
+- 将 Fake Ark Playwright 和 live/PostgreSQL Vitest 专用配置移动到 `tests/config/`；
+- 将 Playwright 的报告、结果、Trace、Video、认证状态和验收截图统一写入仓库外；
+- 将主题 Markdown 改为小写 kebab-case，并保留标准工具入口名；
+- 增强 `verify:repo-sync`，使根目录生成物重新出现时直接失败。
+
+纠正后重新通过 TypeScript、105 个默认 Vitest、51 个架构测试、1,343 条静态断言、真实 PostgreSQL 93 个测试、默认 Playwright 19/19、Fake Ark 1/1、Production Build、Secret、Markdown 链接和版本历史检查。临时 E2E 资源均已移除。
+
+根目录继续保留 `.demo`、`.env.local` 和 `node_modules`，因为它们分别承载本地运行状态、配置和已安装依赖，不属于无用文件。
+
+## 9. 最终结论
 
 基线审计没有发现“应该上传但遗漏”的既有项目文件，也没有发现错误提交或错误忽略的源码/文档。主要仓库治理缺口是此前文档入口混乱、产品运行时依赖 test-fixtures、失效 Web 文件、测试覆写历史图片、缺少 Agent/安全/贡献指南、缺少 repo-sync verifier，以及 `.github/` 尚未建立。
 

@@ -3,8 +3,13 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-const screenshotRoot =
-  "output/playwright/teacher-portal-ui-v1/final";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath(
+  "evidence",
+  "teacher-portal-ui-v1",
+  "final"
+);
 
 const bannedTeacherTerms = [
   "EvidenceObservation",

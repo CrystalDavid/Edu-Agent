@@ -8,11 +8,13 @@ import {
   type Page
 } from "@playwright/test";
 
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
   "x-demo-actor": "user:teacher-001"
 };
-const screenshotRoot = "output/playwright/gate-2-6a";
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-6a");
 const fakeArkPort = Number(process.env.E2E_FAKE_ARK_PORT);
 const fakeArkControlOrigin =
   `http://127.0.0.1:${fakeArkPort}/__fake_ark`;

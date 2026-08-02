@@ -19,29 +19,31 @@ const requiredFiles = [
   "apps/api/src/app.ts",
   "apps/api/src/database/migrations.ts",
   "apps/web/package.json",
-  "apps/web/public/fonts/ATTRIBUTION.md",
+  "apps/web/public/fonts/attribution.md",
   "apps/web/src/App.tsx",
-  "docs/ARCHITECTURE.md",
-  "docs/CAPABILITIES.md",
-  "docs/DEVELOPMENT.md",
-  "docs/OPERATIONS.md",
+  "docs/architecture.md",
+  "docs/capabilities.md",
+  "docs/development.md",
+  "docs/operations.md",
   "docs/README.md",
-  "docs/ROADMAP.md",
-  "docs/VALIDATION.md",
-  "docs/VERSION_HISTORY.md",
+  "docs/roadmap.md",
+  "docs/validation.md",
+  "docs/version-history.md",
   "infra/docker/.env.example",
   "infra/docker/compose.postgres.yml",
   "package.json",
   "packages/contracts/package.json",
   "packages/demo-fixtures/package.json",
   "packages/test-fixtures/package.json",
-  "playwright.ark.config.ts",
   "playwright.config.ts",
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
   "tsconfig.json",
-  "vitest.config.ts",
-  "vitest.postgres.config.ts"
+  "tests/config/playwright-ark.config.ts",
+  "tests/config/test-artifacts.ts",
+  "tests/config/vitest-live.config.ts",
+  "tests/config/vitest-postgres.config.ts",
+  "vitest.config.ts"
 ] as const;
 
 const requiredTrackedRoots = [
@@ -64,6 +66,23 @@ const sourceLikeExtension =
   /\.(?:c?js|mjs|ts|tsx|json|ya?ml|toml|md|mdx|sql|css|scss|html|svg)$/i;
 const knownIgnoredRuntime =
   /(^|\/)(?:node_modules|dist|coverage|\.vite|\.demo|\.playwright-cli|\.pglite|\.gate1a-data|\.pgdata|playwright-report(?:-ark)?|test-results)(?:\/|$)|^output\/playwright\/|(^|\/)\.env(?:\..+)?$|\.(?:log|tmp|bak|orig|tsbuildinfo)$/i;
+const forbiddenPhysicalRootEntries = [
+  ".playwright-cli",
+  ".vite",
+  "coverage",
+  "dist",
+  "output",
+  "playwright-report",
+  "playwright-report-ark",
+  "test-results"
+] as const;
+const conventionalUppercaseMarkdown = new Set([
+  "AGENTS.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "README.md",
+  "SECURITY.md"
+]);
 
 const failures: string[] = [];
 const warnings: string[] = [];
@@ -125,6 +144,13 @@ for (const root of requiredTrackedRoots) {
   );
 }
 
+for (const rootEntry of forbiddenPhysicalRootEntries) {
+  check(
+    !existsSync(resolve(workspaceRoot, rootEntry)),
+    `generated artifact must not exist in repository root: ${rootEntry}`
+  );
+}
+
 for (const trackedFile of trackedFiles) {
   if (forbiddenTrackedPath.test(trackedFile)) {
     failures.push(`generated/runtime path is tracked: ${trackedFile}`);
@@ -137,6 +163,16 @@ for (const trackedFile of trackedFiles) {
   }
   if (forbiddenSecretExtension.test(trackedFile)) {
     failures.push(`secret-bearing file extension is tracked: ${trackedFile}`);
+  }
+  const fileName = basename(trackedFile);
+  if (
+    trackedFile.endsWith(".md") &&
+    /[A-Z]/.test(fileName) &&
+    !conventionalUppercaseMarkdown.has(fileName)
+  ) {
+    failures.push(
+      `topic Markdown filename must use lowercase kebab-case: ${trackedFile}`
+    );
   }
 }
 
@@ -260,6 +296,7 @@ if (failures.length > 0) {
   console.log(`- non-ignored untracked files: ${untrackedFiles.length}`);
   console.log(`- historical migrations unchanged: ${baselineMigrations.length}`);
   console.log(`- suspicious ignored source/docs: ${suspiciousIgnored.length}`);
+  console.log("- forbidden generated root entries: 0");
   if (warnings.length > 0) {
     console.log("Warnings:");
     for (const warning of warnings) console.log(`- ${warning}`);

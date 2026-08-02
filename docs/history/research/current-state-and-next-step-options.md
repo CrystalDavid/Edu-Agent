@@ -1,6 +1,6 @@
 # 教育智能体平台：当前真实状态与下一步候选方案
 
-> 状态：HISTORICAL / SUPERSEDED。本文是从 Teacher Portal v1 到 Gate 2.10A 的追加式决策记录；当前能力和下一步部署差距分别以 [CAPABILITIES](../../CAPABILITIES.md) 和 [DEPLOYMENT_READINESS_GAPS](../../operations/DEPLOYMENT_READINESS_GAPS.md) 为准。
+> 状态：HISTORICAL / SUPERSEDED。本文是从 Teacher Portal v1 到 Gate 2.10A 的追加式决策记录；当前能力和下一步部署差距分别以 [当前能力](../../capabilities.md) 和 [部署准备差距](../../operations/deployment-readiness-gaps.md) 为准。
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
 > Gate 2.10A 实施复核：2026-08-02。第 24 节是当前权威状态；前述调查和候选方案保留为决策历史。
@@ -736,7 +736,7 @@ PostgreSQL 中会保留：
 3. approved 与完成备课分开：批准后 Task 为 `ready_for_use`，教师另行执行 complete。
 4. Gate 2.5 继续使用确定性 MockModelProvider；真实 Provider 进入独立后续 Gate。
 
-完整语义见 `docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md`。
+完整语义见 `docs/product/gate-2-5-recoverable-lesson-preparation.md`。
 
 ## 17. Gate 2.5 完成后的当前状态（权威更新）
 
@@ -780,7 +780,7 @@ Gate 2.5 真实范围：
 - 通用 `/agent` 对话、长期会话和记忆；
 - 正式登录/SSO、真实模型、云部署和多角色。
 
-详细逐交互状态见 `docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md`；Gate 2.5 闭环内 `DEAD = 0`。
+详细逐交互状态见 `docs/product/teacher-portal-function-matrix.md`；Gate 2.5 闭环内 `DEAD = 0`。
 
 ### 17.4 当前主要风险
 
@@ -924,7 +924,7 @@ Artifact 前向修复 `0007_gate2_5b_shared_object_keys.sql` 移除 `file_versio
 - 文件软删除自动进入可恢复视图，mutation 期间统一禁用，deleted history 不能下载；
 - Runs 对 active execution 轮询到 terminal；概览的前端数组均明确标为 Mock/READ_ONLY，未实现写操作禁用，不再产生假成功。
 
-完整问题分级、根因、后端真值和回归证据见 `docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md`。核心业务状态继续来自 PostgreSQL；React state 只承担筛选、选择、loading/error 与已加载 DTO 缓存。
+完整问题分级、根因、后端真值和回归证据见 `docs/product/teacher-product-stabilization-matrix.md`。核心业务状态继续来自 PostgreSQL；React state 只承担筛选、选择、loading/error 与已加载 DTO 缓存。
 
 ### 20.3 下一阶段建议：Gate 2.7 作业—学情—学生最小闭环
 

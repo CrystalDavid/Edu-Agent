@@ -167,4 +167,4 @@ Audit 记录 actor/organization、intent、decision、资源 refs、版本、状
 
 ## 11. 当前部署边界
 
-当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)。
+当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](operations/deployment-readiness-gaps.md)。

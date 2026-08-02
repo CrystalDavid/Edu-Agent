@@ -47,4 +47,4 @@ included.
   explicitly does not claim Simplified Chinese support.
 - License: SIL Open Font License 1.1
 - License copy:
-  `licenses/Chiron-GoRound-TC-OFL-1.1.md`
+  `licenses/chiron-goround-tc-ofl-1.1.md`

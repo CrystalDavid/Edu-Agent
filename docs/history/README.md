@@ -8,4 +8,4 @@
 | `research/` | 早期架构修订、红队审查、第一轮计划、0→1 调查和追加式状态报告 | 理解决策演进，不作为当前能力声明 |
 | `ui/` | Gate 2 UI redesign、Teacher Portal UI v1 和当时图片 | 对比历史视觉方向，图片不再由日常测试改写 |
 
-完整时间线和每个 Gate 的固定 Commit/PR/Tag 见 [VERSION_HISTORY](../VERSION_HISTORY.md)。
+完整时间线和每个 Gate 的固定 Commit/PR/Tag 见 [版本历史](../version-history.md)。

@@ -3,7 +3,7 @@
 > 状态：CURRENT SUPPORTING GUIDE
 > 最新产品基线：`gate-2-10a-verified`
 
-本地图回答“文件应放在哪里”。首要入口是根 [README](../../README.md)，状态所有权和数据流以 [ARCHITECTURE](../ARCHITECTURE.md) 为准。
+本地图回答“文件应放在哪里”。首要入口是根 [项目 README](../../README.md)，状态所有权和数据流以 [当前架构](../architecture.md) 为准。
 
 ## 根目录
 
@@ -20,14 +20,14 @@ Edu-Agent/
 │   └── test-fixtures/
 ├── infra/
 ├── scripts/
-├── tests/
+├── tests/（专用测试配置位于 `tests/config/`）
 ├── docs/
 ├── .env.example
 ├── package.json / pnpm-lock.yaml / pnpm-workspace.yaml
-└── TypeScript、Vitest、Playwright、Drizzle 配置
+└── 工具自动发现的默认 TypeScript、Vitest、Playwright、Drizzle 配置
 ```
 
-根目录不再放阶段性研究、Gate 计划或 UI 规格。新的当前文档按 [docs/README](../README.md) 分工，详细历史进入 `docs/history/`。
+根目录不再放阶段性研究、Gate 计划、UI 规格、专用测试配置或测试输出。新的当前文档按 [文档入口](../README.md) 分工，详细历史进入 `docs/history/`。
 
 ## `apps/api` — 服务端和七模块
 
@@ -101,13 +101,13 @@ tests    -> contracts + demo-fixtures + test-fixtures
 - `infra/docker/compose.postgres.yml`：PostgreSQL 18 本地编排；
 - `infra/docker/.env.example`：无 Secret 模板；
 - `infra/docker/.env.local`：脚本生成的本地凭据，Git ignored；
-- `infra/postgres/MIGRATION_OWNERSHIP.md`：Schema owner、app/worker role 和 Migration 规则。
+- `infra/postgres/migration-ownership.md`：Schema owner、app/worker role 和 Migration 规则。
 
 43 个历史 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。历史文件不可修改、合并、重排或重命名。
 
 ## `scripts` 与稳定命令
 
-脚本实现按职责分为 `demo/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [DEVELOPMENT](../DEVELOPMENT.md) 说明。
+脚本实现按职责分为 `demo/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](../development.md) 说明。
 
 不要直接恢复或复制已经失效的 `run-demo-fresh.mjs`。安全替代是隔离 `test:playwright`，长期数据重置则必须显式使用受保护的 `demo:reset`。
 
@@ -124,16 +124,17 @@ tests    -> contracts + demo-fixtures + test-fixtures
 | `playwright/` | 隔离浏览器业务流程 |
 | `live/` | 显式 opt-in 真实 Provider |
 | `fixtures/`、`support/` | 测试数据、Fake Ark 和 loader |
+| `config/` | 专用 Playwright/Vitest 配置和仓库外产物路径策略 |
 
-详细隔离语义见 [VALIDATION](../VALIDATION.md)。Gate 1A Test Container 虽不是产品 Composition Root，仍被测试使用，不属于可删除遗留代码。
+详细隔离语义见 [验证指南](../validation.md)。Gate 1A Test Container 虽不是产品 Composition Root，仍被测试使用，不属于可删除遗留代码。
 
 ## `docs`
 
 ```text
 docs/
 ├── README.md
-├── ARCHITECTURE.md / CAPABILITIES.md / VERSION_HISTORY.md
-├── ROADMAP.md / DEVELOPMENT.md / VALIDATION.md / OPERATIONS.md
+├── architecture.md / capabilities.md / version-history.md
+├── roadmap.md / development.md / validation.md / operations.md
 ├── adr/
 ├── demo/
 ├── operations/
@@ -160,9 +161,9 @@ docs/
 | `apps/api/.demo/uploads/objects` | 长期开发 LocalObjectStore | 不能当缓存删除 |
 | `.demo/*` 其他内容 | 日志、报告、Demo 状态 | 不提交，按用途人工判断 |
 | `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |
-| `playwright-report*/`、`test-results/` | 测试报告 | 可重建，不提交 |
-| `output/playwright/` | 本地验收截图 | 不提交，是否删除由用户决定 |
-| `.playwright-cli/` | 浏览器自动化临时状态 | 可重建，不提交 |
+| `C:\Code\test\edu-agent\playwright` | Windows 测试报告、结果、Trace、Video 和截图 | 仓库外生成，不提交 |
+| `EDU_AGENT_TEST_OUTPUT_ROOT` | 跨平台自定义测试产物根目录 | 可选环境变量，不提交 |
+| `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts` | 整理前根目录生成物的保留归档 | 位于仓库外，不提交 |
 
 ## 快速定位
 
@@ -173,8 +174,8 @@ docs/
 - 新 Page：`apps/web/src/pages` + `route.ts` + `App.tsx`；
 - 新 synthetic Demo 数据：`packages/demo-fixtures` 或 API 领域专用 demo fixture；
 - 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
-- 当前功能说明：`docs/CAPABILITIES.md`；
-- 未来计划：`docs/ROADMAP.md`；
+- 当前功能说明：`docs/capabilities.md`；
+- 未来计划：`docs/roadmap.md`；
 - 详细历史：`docs/history/`。
 
-目标结构和明确延期项见 [TARGET_REPOSITORY_STRUCTURE](TARGET_REPOSITORY_STRUCTURE.md)。
+目标结构和明确延期项见 [目标仓库结构](target-repository-structure.md)。
