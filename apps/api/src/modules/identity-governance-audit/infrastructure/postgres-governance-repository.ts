@@ -94,7 +94,7 @@ export class PostgresGovernanceRepository {
          $1, $2, $3, 'processing', NULL,
          $4, $5, $6, $7, $8, $9, $10
        )
-       ON CONFLICT (root_key) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [
         input.idempotencyRef,
         input.rootKey,

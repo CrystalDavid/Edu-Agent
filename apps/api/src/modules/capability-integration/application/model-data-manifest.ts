@@ -64,9 +64,13 @@ export function createModelDataManifest(input: {
   syntheticData: boolean;
   createdAt: string;
 }): ModelDataManifest {
+  const allowedSyntheticTenants = new Set([
+    "tenant:demo-school",
+    "tenant:demo-school-b"
+  ]);
   if (
-    input.tenantRef !== "tenant:demo-school" ||
-    input.actorRef !== "user:teacher-001" ||
+    !allowedSyntheticTenants.has(input.tenantRef) ||
+    !input.actorRef.startsWith("user:") ||
     ![
       "teacher-copilot.lesson-preparation",
       "teacher-copilot.lesson-reflection"
@@ -74,7 +78,7 @@ export function createModelDataManifest(input: {
     !input.syntheticData
   ) {
     throw new Error(
-      "MODEL_DATA_POLICY_BLOCKED: Gate 2.6A only permits the synthetic demo tenant."
+      "MODEL_DATA_POLICY_BLOCKED: model calls only permit authenticated synthetic demo-school scopes."
     );
   }
   if (

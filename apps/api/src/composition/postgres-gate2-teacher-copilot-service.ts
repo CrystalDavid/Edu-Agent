@@ -229,7 +229,8 @@ export class PostgresGate2TeacherCopilotService {
           await this.gate25Work.lockPreparationTask(
             client,
             input.tenantRef,
-            input.request.preparationTaskRef
+            input.request.preparationTaskRef,
+            input.actorRef
           );
         if (!preparationTask) {
           throw new NotFoundError(
@@ -1131,7 +1132,8 @@ export class PostgresGate2TeacherCopilotService {
         await this.gate25Work.lockPreparationTask(
           client,
           input.tenantRef,
-          taskResult.taskRef
+          taskResult.taskRef,
+          input.actorRef
         );
       const goal = await this.gate2Work.getDemoCaseAndGoal(
         client,
@@ -1565,7 +1567,8 @@ export class PostgresGate2TeacherCopilotService {
           await this.gate25Work.lockPreparationTask(
             client,
             input.tenantRef,
-            revisionScope.preparationTaskRef
+            revisionScope.preparationTaskRef,
+            input.actorRef
           );
         if (!preparationTask) {
           throw new NotFoundError(
@@ -1808,10 +1811,7 @@ export class PostgresGate2TeacherCopilotService {
     tenantRef: string,
     actorRef: string
   ): void {
-    if (
-      tenantRef !== "tenant:demo-school" ||
-      actorRef !== "user:teacher-001"
-    ) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
         "本地演示身份没有访问该租户或学习者数据的权限。"
       );

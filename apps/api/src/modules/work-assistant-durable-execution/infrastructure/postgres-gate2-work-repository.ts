@@ -329,7 +329,8 @@ export class PostgresGate2WorkRepository {
 
   async listSuggestionSummaries(
     executor: SqlExecutor,
-    tenantRef: string
+    tenantRef: string,
+    actorRef?: string
   ): Promise<
     Array<{
       proposalArtifactRef: string;
@@ -373,8 +374,9 @@ export class PostgresGate2WorkRepository {
          ON disposition.proposal_revision_ref =
               result.proposal_revision_ref
        WHERE goal.tenant_ref = $1
+         AND ($2::text IS NULL OR task_run.request_payload ->> 'actorRef' = $2)
        ORDER BY result.created_at DESC`,
-      [tenantRef]
+      [tenantRef, actorRef ?? null]
     );
     return result.rows.map((row) => ({
       proposalArtifactRef: row.proposal_artifact_ref,
@@ -517,6 +519,7 @@ export class PostgresGate2WorkRepository {
     executor: SqlExecutor,
     input: {
       tenantRef: string;
+      actorRef: string;
       proposalRevisionRef: string;
     }
   ): Promise<ProposalReviewWork | undefined> {
@@ -549,8 +552,9 @@ export class PostgresGate2WorkRepository {
          JOIN work.goal_record AS goal
            ON goal.goal_ref = result.goal_ref
         WHERE result.proposal_revision_ref = $1
-          AND goal.tenant_ref = $2`,
-      [input.proposalRevisionRef, input.tenantRef]
+          AND goal.tenant_ref = $2
+          AND task_run.request_payload ->> 'actorRef' = $3`,
+      [input.proposalRevisionRef, input.tenantRef, input.actorRef]
     );
     const row = result.rows[0];
     return row
@@ -574,7 +578,8 @@ export class PostgresGate2WorkRepository {
 
   async getRunExplanationWork(
     executor: SqlExecutor,
-    taskRef: string
+    taskRef: string,
+    actorRef?: string
   ): Promise<Gate2WorkExplanation | undefined> {
     const result = await executor.query<Gate2WorkExplanationRow>(
       `SELECT
@@ -619,9 +624,10 @@ export class PostgresGate2WorkRepository {
         AND approval_outbox.payload ->> 'inReviewRevisionRef' =
               disposition.resulting_revision_ref
        WHERE task.task_ref = $1
+         AND ($2::text IS NULL OR task_run.request_payload ->> 'actorRef' = $2)
        ORDER BY task_run.attempt DESC
        LIMIT 1`,
-      [taskRef]
+      [taskRef, actorRef ?? null]
     );
     const row = result.rows[0];
     if (!row) {

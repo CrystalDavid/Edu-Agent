@@ -427,14 +427,20 @@ export class PostgresGate27EducationRepository {
   async listAssignments(
     executor: SqlExecutor,
     tenantRef: string,
-    lessonRef?: string
+    lessonRef?: string,
+    allowedCourseRunRefs?: readonly string[]
   ): Promise<AssignmentSummary[]> {
     const result = await executor.query<AssignmentSummaryRow>(
       `${assignmentSummarySelect}
         WHERE assignment.tenant_ref = $1
           AND ($2::text IS NULL OR assignment.lesson_ref = $2)
+          AND ($3::text[] IS NULL OR assignment.course_run_ref = ANY($3::text[]))
         ORDER BY assignment.updated_at DESC, assignment.assignment_ref`,
-      [tenantRef, lessonRef ?? null]
+      [
+        tenantRef,
+        lessonRef ?? null,
+        allowedCourseRunRefs ? [...allowedCourseRunRefs] : null
+      ]
     );
     return result.rows.map(toAssignmentSummary);
   }

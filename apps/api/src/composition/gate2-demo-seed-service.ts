@@ -44,6 +44,9 @@ import {
   gate27DemoRefs,
   gate27SyntheticEnrollments
 } from "./gate2-7-demo-fixture.js";
+import type {
+  PostgresIdentityOrganizationService
+} from "./postgres-identity-organization-service.js";
 
 function hash(value: unknown): string {
   return createHash("sha256")
@@ -51,9 +54,30 @@ function hash(value: unknown): string {
     .digest("hex");
 }
 
+const schoolBRefs = {
+  tenantRef: "tenant:demo-school-b",
+  teacherRef: "user:teacher-b-001",
+  courseRunRef: "course-run:school-b-grade8-math-2026-fall",
+  objectiveRef: "learning-objective:school-b-linear-function",
+  followUpObjectiveRef: "learning-objective:school-b-linear-application",
+  profileRef: "learning-interaction-profile:school-b-linear-function",
+  attemptRef: "attempt:school-b:synthetic-001",
+  learnerRef: "learner:school-b:synthetic-001",
+  enrollmentRef: "enrollment:school-b:synthetic-001",
+  observationRef: "evidence-observation:school-b-linear-function",
+  claimRef: "evidence-claim:school-b-linear-function",
+  caseRef: "case:school-b:linear-function",
+  goalRef: "goal:school-b:linear-function",
+  planArtifactRef: "artifact:school-b:teaching-plan",
+  planRevisionRef: "artifact-revision:school-b:teaching-plan:baseline",
+  unitRef: "curriculum-unit:school-b-linear-functions",
+  lessonRef: "lesson:school-b-linear-function-application"
+} as const;
+
 export class Gate2DemoSeedService {
   constructor(
     private readonly pool: Pool,
+    private readonly identity?: PostgresIdentityOrganizationService,
     private readonly governance =
       new PostgresGovernanceRepository(),
     private readonly work = new PostgresGate2WorkRepository(),
@@ -76,9 +100,14 @@ export class Gate2DemoSeedService {
     goalRef: string;
     teachingPlanArtifactRef: string;
   }> {
+    await this.identity?.seedSyntheticFoundation();
     const gate24 = await this.seedGate24();
+    const schoolB = await this.seedSchoolBIsolationFoundation();
     if (!options.includeGate25) {
-      return gate24;
+      return {
+        ...gate24,
+        replayed: gate24.replayed && schoolB.replayed
+      };
     }
     const gate25 = await this.seedGate25();
     const gate29Support = await this.seedGate29CurriculumSupport();
@@ -88,8 +117,290 @@ export class Gate2DemoSeedService {
     return {
       ...gate24,
       replayed:
-        gate24.replayed && gate25.replayed && gate29Support.replayed && gate27.replayed
+        gate24.replayed && schoolB.replayed && gate25.replayed &&
+        gate29Support.replayed && gate27.replayed
     };
+  }
+
+  private async seedSchoolBIsolationFoundation(): Promise<{ replayed: boolean }> {
+    const rootIdempotencyKey = "gate2-10a:school-b-isolation-foundation:v1";
+    const rootKey = [
+      schoolBRefs.tenantRef,
+      schoolBRefs.teacherRef,
+      "gate2-10a.school-b.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const decisionRef = "authorization-decision:gate2-10a-school-b-seed";
+    const createdAt = "2026-09-18T07:50:00.000Z";
+    const writeContext: WriteContext = {
+      actorRef: schoolBRefs.teacherRef,
+      purpose: "gate2-10a.school-b.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: "idempotency:gate2-10a-school-b-seed",
+        rootKey,
+        requestFingerprint: hash({ fixture: "gate2-10a-school-b@1" }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "gate2-10a-school-b-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: schoolBRefs.teacherRef,
+        tenantRef: schoolBRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "gate2-10a.school-b.seed",
+        resourceRef: schoolBRefs.courseRunRef,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["synthetic-school-isolation-fixture"],
+        policyVersion: "policy:gate2-10a-synthetic-school-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-10a-school-b-authorization"
+          )
+        })
+      ];
+      const metadata = <
+        TOwner extends "work" | "education" | "artifact"
+      >(
+        owner: TOwner,
+        suffix: string
+      ) => createWriteMetadata(
+        writeContext,
+        owner,
+        `gate2-10a-school-b-${suffix}`
+      );
+      receipts.push(...await this.work.insertCaseAndGoal(client, {
+        caseRecord: {
+          caseRef: schoolBRefs.caseRef,
+          tenantRef: schoolBRefs.tenantRef,
+          caseType: "TeachingImprovementCase",
+          title: "School B 合成教学改进案例",
+          status: "active",
+          metadata: metadata("work", "case")
+        },
+        goal: {
+          goalRef: schoolBRefs.goalRef,
+          tenantRef: schoolBRefs.tenantRef,
+          caseRef: schoolBRefs.caseRef,
+          title: "建立一次函数应用的可解释教学方案",
+          status: "active",
+          successCriteria: ["仅使用 School B 合成证据完成教师审阅"],
+          metadata: metadata("work", "goal")
+        }
+      }));
+      const schoolBPlan = {
+        ...baselineTeachingPlan,
+        objective: "学生能够用一次函数解释 School B 合成情境中的变量关系。",
+        evidenceRefs: [schoolBRefs.observationRef]
+      };
+      receipts.push(...await this.artifacts.insertTeachingPlanSeed(client, {
+        artifactRef: schoolBRefs.planArtifactRef,
+        revisionRef: schoolBRefs.planRevisionRef,
+        title: "School B 一次函数应用｜已批准合成教案",
+        content: schoolBPlan,
+        metadata: metadata("artifact", "teaching-plan"),
+        outboxMetadata: metadata("artifact", "teaching-plan-outbox"),
+        outboxRef: "outbox:gate2-10a-school-b-plan"
+      }));
+      receipts.push(...await this.education.insertSyntheticSlice(client, {
+        courseRun: {
+          courseRunRef: schoolBRefs.courseRunRef,
+          tenantRef: schoolBRefs.tenantRef,
+          curriculumFrameworkRef: "curriculum:cn-junior-math:synthetic@1",
+          subject: "数学",
+          gradeLevel: "八年级",
+          className: "八年级 2 班（School B 合成）",
+          academicTerm: "2026 秋季学期",
+          metadata: metadata("education", "course-run")
+        },
+        objective: {
+          objectiveRef: schoolBRefs.objectiveRef,
+          courseRunRef: schoolBRefs.courseRunRef,
+          title: "解释一次函数中的变量关系",
+          description: "完全合成的 School B 教学目标。",
+          knowledgeConceptRefs: ["knowledge-concept:linear-function"],
+          competencyRefs: ["competency:mathematical-reasoning"],
+          metadata: metadata("education", "objective")
+        },
+        profile: {
+          profileRef: schoolBRefs.profileRef,
+          profileVersion: 1,
+          scopeRef: schoolBRefs.courseRunRef,
+          participationMode: "teacher-copilot-review",
+          supportLimit: 2,
+          answerReleaseBoundary: "teacher-approval-required",
+          policyVersionRef: "policy:teacher-copilot-synthetic@1",
+          promptVersionRef: "prompt-bundle:teacher-copilot-slope@1",
+          evidenceRuleVersionRef: "evidence-rule:slope-review@1",
+          profilePayload: { synthetic: true, school: "B" },
+          contentHash: hash({ synthetic: true, school: "B" }),
+          validFrom: createdAt,
+          metadata: metadata("education", "profile")
+        },
+        attempt: {
+          attemptRef: schoolBRefs.attemptRef,
+          courseRunRef: schoolBRefs.courseRunRef,
+          objectiveRef: schoolBRefs.objectiveRef,
+          learnerRef: schoolBRefs.learnerRef,
+          submittedAt: createdAt,
+          responseSummary: { learnerLabel: "School B 匿名学习者 B-01", synthetic: true },
+          metadata: metadata("education", "attempt")
+        },
+        observation: {
+          observationRef: schoolBRefs.observationRef,
+          attemptRef: schoolBRefs.attemptRef,
+          objectiveRef: schoolBRefs.objectiveRef,
+          observerType: "synthetic-rule",
+          observationType: "concept-explanation",
+          observationValue: { summary: "合成解释仍需教师复核", synthetic: true },
+          observedAt: createdAt,
+          sourceRef: schoolBRefs.attemptRef,
+          metadata: metadata("education", "observation")
+        },
+        claim: {
+          claimRef: schoolBRefs.claimRef,
+          objectiveRef: schoolBRefs.objectiveRef,
+          claimType: "instructional-gap",
+          claimValue: { summary: "School B 合成证据缺口", synthetic: true },
+          confidence: 0.5,
+          validFrom: createdAt,
+          status: "candidate",
+          metadata: metadata("education", "claim")
+        },
+        claimObservation: {
+          claimRef: schoolBRefs.claimRef,
+          observationRef: schoolBRefs.observationRef,
+          relationType: "supports",
+          metadata: metadata("education", "claim-observation")
+        },
+        teachingPlanAlignment: {
+          alignmentRef: "teaching-plan-alignment:school-b-baseline",
+          teachingPlanArtifactRef: schoolBRefs.planArtifactRef,
+          courseRunRef: schoolBRefs.courseRunRef,
+          objectiveRef: schoolBRefs.objectiveRef,
+          validationStatus: "validated",
+          validationResult: { objectiveAligned: true, dataMode: "synthetic" },
+          metadata: metadata("education", "plan-alignment")
+        },
+        outbox: {
+          outboxRef: "outbox:gate2-10a-school-b-evidence",
+          eventName: "EvidenceClaimRecorded",
+          aggregateRef: schoolBRefs.claimRef,
+          payload: { observationRef: schoolBRefs.observationRef, synthetic: true },
+          metadata: metadata("education", "evidence-outbox")
+        }
+      }));
+      receipts.push(...await this.gate25Education.insertCurriculumSeed(client, {
+        courseRunRef: schoolBRefs.courseRunRef,
+        courseRunPresentation: {
+          className: "八年级 2 班（School B 合成）",
+          academicTerm: "当前学期"
+        },
+        unit: {
+          unitRef: schoolBRefs.unitRef,
+          sequence: 1,
+          title: "一次函数应用（School B）",
+          description: "用于验证组织隔离的合成单元。",
+          status: "active",
+          metadata: metadata("education", "unit")
+        },
+        lessons: [{
+          lessonRef: schoolBRefs.lessonRef,
+          sequence: 1,
+          title: "一次函数应用（School B 合成课时）",
+          plannedAt: "2026-09-24T00:30:00.000Z",
+          durationMinutes: 45,
+          preparationState: "ready_for_use",
+          currentApprovedPlanRef: schoolBRefs.planRevisionRef,
+          metadata: metadata("education", "lesson")
+        }],
+        additionalObjective: {
+          objectiveRef: schoolBRefs.followUpObjectiveRef,
+          title: "在合成情境中应用一次函数",
+          description: "School B 合成后续目标。",
+          knowledgeConceptRefs: ["knowledge-concept:linear-function-model"],
+          competencyRefs: ["competency:mathematical-modelling"],
+          metadata: metadata("education", "follow-up-objective")
+        },
+        objectiveLinks: [{
+          lessonRef: schoolBRefs.lessonRef,
+          objectiveRef: schoolBRefs.objectiveRef,
+          metadata: metadata("education", "lesson-objective")
+        }],
+        evidenceLinks: [{
+          lessonRef: schoolBRefs.lessonRef,
+          evidenceRef: schoolBRefs.observationRef,
+          evidenceKind: "observation",
+          metadata: metadata("education", "lesson-evidence")
+        }],
+        currentPlanBinding: {
+          bindingRef: "lesson-plan-binding:school-b-baseline",
+          lessonRef: schoolBRefs.lessonRef,
+          teachingPlanArtifactRef: schoolBRefs.planArtifactRef,
+          teachingPlanRevisionRef: schoolBRefs.planRevisionRef,
+          metadata: metadata("education", "lesson-plan-binding")
+        }
+      }));
+      receipts.push(...await this.artifacts.insertTeachingPlanSeedScope(client, {
+        artifactRef: schoolBRefs.planArtifactRef,
+        revisionRef: schoolBRefs.planRevisionRef,
+        lessonRef: schoolBRefs.lessonRef,
+        writeContext
+      }));
+      receipts.push(...await this.gate27Education.insertFoundation(client, {
+        courseRunRef: schoolBRefs.courseRunRef,
+        objective: {
+          objectiveRef: schoolBRefs.followUpObjectiveRef,
+          title: "在合成情境中应用一次函数",
+          description: "School B 合成后续目标。",
+          knowledgeConceptRefs: ["knowledge-concept:linear-function-model"],
+          competencyRefs: ["competency:mathematical-modelling"],
+          lessonRef: schoolBRefs.lessonRef
+        },
+        enrollments: [{
+          enrollmentRef: schoolBRefs.enrollmentRef,
+          learnerRef: schoolBRefs.learnerRef,
+          displayName: "School B 匿名学习者 B-01",
+          enrolledAt: createdAt
+        }],
+        metadata: (suffix) => metadata("education", `enrollment-${suffix}`)
+      }));
+      const result = { replayed: false };
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: createdAt
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async seedGate29CurriculumSupport(): Promise<{ replayed: boolean }> {

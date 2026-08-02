@@ -307,15 +307,17 @@ export class PostgresGate25EducationRepository {
 
   async listCourseRuns(
     executor: SqlExecutor,
-    tenantRef: string
+    tenantRef: string,
+    allowedCourseRunRefs?: readonly string[]
   ): Promise<CourseRunView[]> {
     const result = await executor.query<CourseRunRow>(
       `SELECT course_run_ref, subject, grade_level,
               class_name, academic_term
          FROM education.course_run
         WHERE tenant_ref = $1
+          AND ($2::text[] IS NULL OR course_run_ref = ANY($2::text[]))
         ORDER BY academic_term DESC, subject, class_name`,
-      [tenantRef]
+      [tenantRef, allowedCourseRunRefs ? [...allowedCourseRunRefs] : null]
     );
     return result.rows.map(toCourseRun);
   }

@@ -238,13 +238,21 @@ export class PostgresGate25WorkRepository {
 
   async listPreparationTasks(
     executor: SqlExecutor,
-    tenantRef: string
+    tenantRef: string,
+    actorRef?: string,
+    allowedCourseRunRefs?: readonly string[]
   ): Promise<StoredLessonPreparationTask[]> {
     const result = await executor.query<PreparationTaskRow>(
       `${preparationTaskSelect}
         WHERE details.tenant_ref = $1
+          AND ($2::text IS NULL OR task.actor_ref = $2)
+          AND ($3::text[] IS NULL OR details.course_run_ref = ANY($3::text[]))
         ORDER BY task.updated_at DESC, task.task_ref`,
-      [tenantRef]
+      [
+        tenantRef,
+        actorRef ?? null,
+        allowedCourseRunRefs ? [...allowedCourseRunRefs] : null
+      ]
     );
     return result.rows.map(toPreparationTask);
   }
@@ -252,13 +260,15 @@ export class PostgresGate25WorkRepository {
   async getPreparationTask(
     executor: SqlExecutor,
     tenantRef: string,
-    taskRef: string
+    taskRef: string,
+    actorRef?: string
   ): Promise<StoredLessonPreparationTask | undefined> {
     const result = await executor.query<PreparationTaskRow>(
       `${preparationTaskSelect}
         WHERE details.tenant_ref = $1
-          AND task.task_ref = $2`,
-      [tenantRef, taskRef]
+          AND task.task_ref = $2
+          AND ($3::text IS NULL OR task.actor_ref = $3)`,
+      [tenantRef, taskRef, actorRef ?? null]
     );
     return result.rows[0]
       ? toPreparationTask(result.rows[0])
@@ -268,7 +278,8 @@ export class PostgresGate25WorkRepository {
   async lockPreparationTask(
     client: PostgresClient,
     tenantRef: string,
-    taskRef: string
+    taskRef: string,
+    actorRef?: string
   ): Promise<StoredLessonPreparationTask | undefined> {
     const locked = await client.query(
       `SELECT task.task_ref
@@ -277,11 +288,12 @@ export class PostgresGate25WorkRepository {
            ON details.task_ref = task.task_ref
         WHERE details.tenant_ref = $1
           AND task.task_ref = $2
+          AND ($3::text IS NULL OR task.actor_ref = $3)
         FOR UPDATE OF task`,
-      [tenantRef, taskRef]
+      [tenantRef, taskRef, actorRef ?? null]
     );
     if (!locked.rows[0]) return undefined;
-    return this.getPreparationTask(client, tenantRef, taskRef);
+    return this.getPreparationTask(client, tenantRef, taskRef, actorRef);
   }
 
   async findOpenTaskForLesson(

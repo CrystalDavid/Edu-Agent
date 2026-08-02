@@ -88,13 +88,15 @@ export class PostgresAssignmentLearningService {
     tenantRef: string;
     actorRef: string;
     lessonRef?: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     return AssignmentListSchema.parse({
       items: await this.education.listAssignments(
         this.pool,
         input.tenantRef,
-        input.lessonRef
+        input.lessonRef,
+        input.allowedCourseRunRefs
       )
     });
   }
@@ -1239,11 +1241,17 @@ export class PostgresAssignmentLearningService {
     });
   }
 
-  async getOverview(input: { tenantRef: string; actorRef: string }) {
+  async getOverview(input: {
+    tenantRef: string;
+    actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
+  }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const assignments = await this.education.listAssignments(
       this.pool,
-      input.tenantRef
+      input.tenantRef,
+      undefined,
+      input.allowedCourseRunRefs
     );
     let pendingGradingCount = 0;
     let notSubmittedCount = 0;
@@ -1888,10 +1896,7 @@ export class PostgresAssignmentLearningService {
   }
 
   private assertDemoActor(tenantRef: string, actorRef: string): void {
-    if (
-      tenantRef !== gate2DemoRefs.tenantRef ||
-      actorRef !== gate2DemoRefs.teacherRef
-    ) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
         "当前教师无权访问该 tenant 的作业或学习证据。"
       );
