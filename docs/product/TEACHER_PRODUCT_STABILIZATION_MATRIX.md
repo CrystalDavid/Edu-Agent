@@ -5,6 +5,8 @@
 > 基线：`main@b3787fa117b74729e0e6347b993b2c7f4a5e37f4`，Tag `gate-2-5b-verified`
 >
 > 功能分支：`feat/gate-2-5c-teacher-product-stabilization`
+>
+> 状态：HISTORICAL / VERIFIED。PR #6，Merge `afdcfbd9d342822038dee3e6c1a19b64dca535ac`，annotated tag `gate-2-5c-verified`。
 
 ## 1. Gate 编号裁决
 

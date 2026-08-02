@@ -1,6 +1,6 @@
 # Gate 2.9 — 课堂实施、课后反思与教学改进闭环
 
-状态：工程实现完成，等待人工验收。
+> 状态：HISTORICAL / VERIFIED。功能 HEAD `a264bb5718d5f3a3af78255691e6329b6b32166d`，PR #9，Merge `f2c756630b45e1b6e284d0f02269f0c094c3964d`，annotated tag `gate-2-9-verified`。
 
 ## 产品目标与裁决
 

@@ -1,5 +1,7 @@
 # Gate 2.10A — 正式身份、学校组织与权限基线
 
+> 状态：HISTORICAL / VERIFIED。功能 HEAD `2fd31f874afa9f6097cd1c6e019763148eb59a47`，PR #10，Merge `bbba3428602bb148a3d73a201ad97fcb29181c1b`，annotated tag `gate-2-10a-verified`。
+
 ## 1. 目标与边界
 
 Gate 2.10A 将产品请求从浏览器提交的演示身份 Header 迁移到服务端认证会话。外部身份供应商只证明稳定的 external subject；Edu-Agent 的 Governance 模块拥有用户、学校、成员关系、角色、CourseRun 授权、会话、安全事件和数据治理请求。
