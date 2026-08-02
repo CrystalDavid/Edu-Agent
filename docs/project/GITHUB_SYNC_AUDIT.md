@@ -1,11 +1,11 @@
 # Edu-Agent 本地与 GitHub 同步审计
 
-> 状态：CURRENT AUDIT — cleanup branch pre-PR
+> 状态：FINAL RECORD FOR DRAFT PR #12
 > 审计日期：2026-08-02（Asia/Shanghai）
 > 正式目录：`D:\03_Edu-Agent`
 > GitHub：`CrystalDavid/Edu-Agent`
 
-本审计使用 Git 对象、index、工作树、`.gitignore`、文件系统和远程 refs 交叉核对，不只依赖 `git status`。最终推送后还必须以 `corepack pnpm verify:repo-sync` 证明当前 HEAD 等于远程跟踪分支。
+本审计使用 Git 对象、index、工作树、`.gitignore`、文件系统和远程 refs 交叉核对，不只依赖 `git status`。清理分支首轮推送后，`corepack pnpm verify:repo-sync` 已证明本地 HEAD 等于远程跟踪分支；本记录提交并推送后再次执行同一检查，作为最终同步证明。
 
 ## 1. 分支和基线
 
@@ -18,7 +18,9 @@
 | `origin/main` | 审计 fetch 后与本地 `main` 相同 |
 | 清理分支 | `chore/repository-cleanup-and-reorganization`，从上述最新 `main` 创建 |
 | 清理分支起点 | `7a30538d4717e886521658af4121286a1ad79cbd` |
-| 清理分支最终 HEAD/upstream | 完成最终提交和首次推送后更新；推送前无 upstream 是预期临时状态 |
+| 清理分支 upstream | `origin/chore/repository-cleanup-and-reorganization` |
+| 首轮完整验证与同步点 | `acd09202916f7542a136497308e27c8f99779acc`；当时本地/远程 ahead/behind 为 `0/0` |
+| 清理 Draft PR | [#12 chore: clean up and reorganize repository](https://github.com/CrystalDavid/Edu-Agent/pull/12) |
 | 最新产品基线 | `gate-2-10a-verified` → `bbba3428602bb148a3d73a201ad97fcb29181c1b` |
 
 `main` 在 PR #11 合并后没有未推送 Commit。远程保留多条历史 feature 分支作为审计入口；本地 `feat/gate-2-8-teacher-workbench` 相对其旧 upstream 多出的 Commit 是已经进入 `origin/main` 的 merge commit，不是遗漏的独有产品工作。
@@ -62,7 +64,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 审计开始时没有非 ignored 的未跟踪文件，也没有只存在本机、应上传但遗漏的源码、Migration、Contract、配置、文档或正式静态资源。没有发现尚未推送的独有产品 Commit。
 
-清理分支在第一次推送前会暂时显示“无 upstream/本地有新 Commit”；这不是历史遗漏。最终必须推送并由 `verify:repo-sync` 消除该状态。
+清理分支第一次推送前曾短暂显示“无 upstream/本地有新 Commit”；这不是历史遗漏。建立 upstream 后，`verify:repo-sync` 已确认该状态消除。
 
 ### C. 正确被忽略的本地运行内容
 
@@ -117,9 +119,9 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 - 跟踪文件名中仅有安全模板 `.env.example`、字体/设计 token 名称和 Secret scanner 本身；
 - 根与 Docker env example 中 Key/Client Secret 保持空值或安全占位；
-- `corepack pnpm test:secrets` 在 PR #11 合并前通过（386 个跟踪文件）；
-- 最终分支需在所有新文档和脚本提交后再次通过 Secret scan；
-- Web bundle 仍需在 production build 后人工/脚本确认不含服务端 Secret。
+- `corepack pnpm test:secrets` 在最终清理分支通过（396 个跟踪文件）；
+- production Web bundle 共扫描 68 个 JS/CSS/HTML/JSON 文件，禁止的 Secret 标记命中为 0；
+- 另以内存读取方式核对 1 个本机非空 Secret 值，bundle 命中为 0；该值没有输出到终端、日志或文档。
 
 ## 6. 最终同步判定标准
 
@@ -134,8 +136,36 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 7. Secret、Markdown link、version history 和 repo-sync verifier 全部通过；
 8. Draft PR 已创建，未自动合并，未创建新 Gate Tag。
 
-## 7. 当前结论
+## 7. 完整验证结果
+
+| 验证 | 结果 |
+|---|---|
+| Secret scan | 396 个跟踪文件通过 |
+| TypeScript | root 与 workspace 项目全部通过 |
+| Vitest 默认套件 | 21 files / 105 tests 通过 |
+| Unit | 11 files / 48 tests 通过 |
+| Architecture | 8 files / 51 tests 通过 |
+| Static assertions | 1,343 assertions 通过 |
+| HTTP E2E | 1 file / 5 tests 通过 |
+| Node smoke | 5 tests 通过 |
+| PGlite Migration | 1 test 通过 |
+| 真实 PostgreSQL | 16 files / 93 tests 通过；隔离测试 Volume 已移除 |
+| 默认 Playwright | 19/19 通过；隔离 DB/ObjectStore 已移除 |
+| Fake Ark Playwright | 1/1 通过；没有调用真实模型 |
+| Production build | 通过 |
+| Bundle analysis | 初始包 793.7 KiB raw / 256.3 KiB gzip，与 Gate 2.10A 基线相同 |
+| Demo Doctor | Node、pnpm、Docker Engine、Compose、env ignore 和端口检查通过 |
+| Version history | 10 stages / 25 refs / 40 Markdown / 361 checks 通过 |
+| Markdown links | 52 Markdown / 138 个本地链接通过 |
+| Repo sync | 396 个跟踪文件、0 个未跟踪文件、43 个历史 Migration 未变、0 个可疑 ignored 文件；首轮推送点本地/远程一致 |
+| Git hygiene | `git diff --check` 通过；Web bundle Secret 检查通过 |
+
+真实 PostgreSQL 和 Playwright 使用隔离测试资源；测试结束后临时容器、Volume 和 ObjectStore 已清理。开发 PostgreSQL Volume、`.env.local`、`apps/api/.demo/uploads/objects` 和 ignored 用户验收输出均未删除。
+
+## 8. 最终结论
 
 基线审计没有发现“应该上传但遗漏”的既有项目文件，也没有发现错误提交或错误忽略的源码/文档。主要仓库治理缺口是此前文档入口混乱、产品运行时依赖 test-fixtures、失效 Web 文件、测试覆写历史图片、缺少 Agent/安全/贡献指南、缺少 repo-sync verifier，以及 `.github/` 尚未建立。
 
-本轮已处理其中所有低风险仓库内问题；`.github/`、大文件专项优化、Drizzle 工具依赖和大型代码拆分保留为后续独立审查。最终 HEAD、upstream 和 Draft PR 在推送完成后回填本节。
+本轮已处理其中所有低风险仓库内问题；`.github/`、大文件专项优化、Drizzle 工具依赖和大型代码拆分保留为后续独立审查。清理分支已推送并建立 upstream，Draft PR #12 保持未合并，且没有创建新 Gate Tag。
+
+仓库已经达到可由人工审查 Draft PR、并在合并后开始 Gate 2.10B 独立工作的整洁度。这里的“可开始”只表示仓库入口、边界、历史和验证基线已清楚，不表示正式 OIDC、云基础设施、CI/CD、托管 ObjectStore 或生产运维条件已经完成。

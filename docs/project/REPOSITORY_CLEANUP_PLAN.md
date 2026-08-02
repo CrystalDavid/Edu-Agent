@@ -103,8 +103,8 @@
 - [x] 当前与历史 Markdown 分层，根目录只保留入口/治理文档；
 - [x] 已记录大文件、Secret、忽略项和 GitHub 同步审计；
 - [x] 已增加 Agent 指南和稳定命令；
-- [ ] 完整 PostgreSQL、Playwright、Fake Ark、build、bundle、Demo Doctor 和 repo-sync 最终回归；
-- [ ] 推送功能分支并创建 Draft PR；
-- [ ] 用户人工审查后再决定合并；本轮不自动合并、不创建 Gate Tag。
+- [x] 完整 PostgreSQL、Playwright、Fake Ark、build、bundle、Demo Doctor 和 repo-sync 回归通过；
+- [x] 功能分支已推送，并创建 Draft PR #12；
+- [x] Draft PR 保持未合并，等待用户人工审查；本轮未自动合并、未创建 Gate Tag。
 
 最终同步结论见 [GITHUB_SYNC_AUDIT](GITHUB_SYNC_AUDIT.md)，目标结构和延期理由见 [TARGET_REPOSITORY_STRUCTURE](TARGET_REPOSITORY_STRUCTURE.md)。
