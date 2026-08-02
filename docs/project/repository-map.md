@@ -163,7 +163,7 @@ docs/
 | `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |
 | `C:\Code\test\edu-agent\playwright` | Windows 测试报告、结果、Trace、Video 和截图 | 仓库外生成，不提交 |
 | `EDU_AGENT_TEST_OUTPUT_ROOT` | 跨平台自定义测试产物根目录 | 可选环境变量，不提交 |
-| `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts` | 整理前根目录生成物的保留归档 | 位于仓库外，不提交 |
+| 旧根目录测试产物 | 可再生报告、结果和浏览器状态 | 已移出仓库；当前没有可验证的长期外部归档 |
 
 ## 快速定位
 

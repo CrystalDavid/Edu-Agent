@@ -108,7 +108,7 @@ Edu-Agent/
 - 根目录只保留 Playwright、Vitest、TypeScript、Drizzle 等工具自动发现的默认配置；
 - Fake Ark Playwright 和 live/PostgreSQL Vitest 配置移动到 `tests/config/`；
 - Playwright 产物通过 `tests/config/test-artifacts.ts` 写到仓库外；
-- 旧报告、验收截图和 `.playwright-cli` 状态保留在 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
+- 旧报告、验收截图和 `.playwright-cli` 状态已从仓库根目录移除；独立复核未发现可验证的外部归档，因此不得把这些可再生产物视为长期验收记录。
 
 ### 4.3 Demo 与测试数据
 

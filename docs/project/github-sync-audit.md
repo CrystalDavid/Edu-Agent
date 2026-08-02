@@ -80,7 +80,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | `playwright-report*/`、`test-results/` | 约 1 MiB | 可再生测试报告，正确 ignored |
 | `.env.local`、`infra/docker/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
 
-`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。首次审计因验收资料边界不明确而保留根目录测试输出；用户随后明确要求保持物理根目录整洁，因此这些内容已采用可恢复移动方式归档到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
+`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。根目录测试输出已按可再生产物移出仓库；2026-08-02 独立复核未发现此前文档声称的外部归档，因此不再把它列为可恢复验收证据。
 
 ### D. 可疑地被忽略、需人工判断
 
@@ -166,7 +166,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 
 Git clean 不等于文件系统整洁。用户复核后指出根目录仍存在 ignored 的 Playwright 报告和专用配置，本轮追加完成：
 
-- 将 `.playwright-cli`、`output`、`playwright-report`、`playwright-report-ark` 和 `test-results` 移出仓库，保留于 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`；
+- 将 `.playwright-cli`、`output`、`playwright-report`、`playwright-report-ark` 和 `test-results` 移出仓库；独立复核确认根目录已清理，但没有发现可验证的长期外部归档；
 - 将 Fake Ark Playwright 和 live/PostgreSQL Vitest 专用配置移动到 `tests/config/`；
 - 将 Playwright 的报告、结果、Trace、Video、认证状态和验收截图统一写入仓库外；
 - 将主题 Markdown 改为小写 kebab-case，并保留标准工具入口名；

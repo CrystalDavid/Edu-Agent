@@ -101,7 +101,7 @@ flowchart LR
 
 仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`infra/docker/.env.local`、`.demo/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
 
-Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。旧根目录测试产物已保留在 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。
+Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。整理前的根目录测试产物属于可再生运行输出，当前仓库与本机均不承诺保留其外部归档。
 
 目录决策和延期项见 [目标仓库结构](docs/project/target-repository-structure.md)。
 

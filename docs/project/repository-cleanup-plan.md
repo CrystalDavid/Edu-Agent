@@ -58,7 +58,7 @@
 
 ### 物理根目录与命名
 
-- `playwright-report`、`playwright-report-ark`、`test-results`、`output` 和 `.playwright-cli` 已迁移到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`；
+- `playwright-report`、`playwright-report-ark`、`test-results`、`output` 和 `.playwright-cli` 已从仓库根目录移除；独立复核未找到此前声称的外部归档，这些内容按可再生测试产物处理；
 - 专用 Playwright/Vitest 配置已移动到 `tests/config/`；
 - Windows 测试产物默认写入 `C:\Code\test\edu-agent\playwright`，其他环境使用系统临时目录或 `EDU_AGENT_TEST_OUTPUT_ROOT`；
 - 主题文档统一为小写 kebab-case，只保留标准工具/治理入口的大写约定名；
@@ -102,7 +102,7 @@
 
 ## 本地生成物处理
 
-本轮不删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。经用户明确要求，根目录测试报告、结果、验收截图和浏览器临时状态均采用可恢复移动而非删除，归档到 `C:\Code\test\edu-agent\archive-2026-08-02-root-artifacts`。`node_modules` 和 `.demo` 仍被开发流程使用，因此保留。
+本轮不删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。根目录测试报告、结果和浏览器临时状态已移出仓库；2026-08-02 独立复核时未发现此前文档声称的外部归档，因此不能承诺恢复这些可再生产物。以后需要长期保留的验收证据必须写入明确的外部目录并单独核验。`node_modules` 和 `.demo` 仍被开发流程使用，因此保留。
 
 ## 完成条件
 
