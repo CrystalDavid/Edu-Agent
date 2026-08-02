@@ -79,7 +79,7 @@ corepack pnpm demo:doctor
 - `db:migrate` 只向前执行 registry 中 Migration；
 - `db:clean` 和 `demo:reset` 是显式破坏性入口；
 - `test:postgres` 与 Playwright 使用独立 Compose project、端口和 Volume；
-- `.demo/uploads/objects` 是长期开发文件，不随普通测试或清理删除。
+- `apps/api/.demo/uploads/objects` 是长期开发文件，不随普通测试或清理删除。
 
 详细本地流程见 [OPERATIONS](OPERATIONS.md) 和 [LOCAL_DEMO](demo/LOCAL_DEMO.md)。
 

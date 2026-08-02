@@ -94,7 +94,7 @@
 
 ## 本地生成物处理
 
-本轮不删除 `.env.local`、开发 Volume、`.demo/uploads/objects` 或用户验收输出。`node_modules`、`dist`、reports、`test-results`、`.playwright-cli` 和 `output/playwright` 均正确 ignored；它们是可再生或需用户判断的本地内容，不是“应提交但遗漏”的源码。
+本轮不删除 `.env.local`、开发 Volume、`apps/api/.demo/uploads/objects` 或用户验收输出。`node_modules`、`dist`、reports、`test-results`、`.playwright-cli` 和 `output/playwright` 均正确 ignored；它们是可再生或需用户判断的本地内容，不是“应提交但遗漏”的源码。
 
 ## 完成条件
 

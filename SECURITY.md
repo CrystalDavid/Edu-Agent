@@ -35,7 +35,7 @@ Edu-Agent 当前是普通教师端本地功能型 MVP，尚未完成生产云安
 
 ## 本地数据和测试隔离
 
-- `.demo/uploads/objects` 是长期开发 LocalObjectStore，不属于通用缓存清理目标。
+- `apps/api/.demo/uploads/objects` 是长期开发 LocalObjectStore，不属于通用缓存清理目标。
 - PostgreSQL 开发 Volume 与 E2E 临时 Volume 必须使用不同 Compose project/name。
 - 普通测试不得调用 `db:clean` 或 `demo:reset`；破坏性重置要求显式授权保护。
 - Playwright 截图、reports、database dumps 和 live model reports 默认被忽略，不作为 Secret 的安全存储位置。

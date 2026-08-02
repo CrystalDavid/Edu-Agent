@@ -157,7 +157,7 @@ docs/
 |---|---|---|
 | `.env.local` | 本机模型/身份配置 | 不提交、不自动删除 |
 | `infra/docker/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
-| `.demo/uploads/objects` | 长期开发 LocalObjectStore | 不能当缓存删除 |
+| `apps/api/.demo/uploads/objects` | 长期开发 LocalObjectStore | 不能当缓存删除 |
 | `.demo/*` 其他内容 | 日志、报告、Demo 状态 | 不提交，按用途人工判断 |
 | `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |
 | `playwright-report*/`、`test-results/` | 测试报告 | 可重建，不提交 |

@@ -63,7 +63,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 
 Capability 模块定义 `ObjectStore` Port；`LocalObjectStore` 使用服务端生成的 object key 和可配置、Git-ignored 目录。它提供流式 put/get、exists、metadata、delete 和 SHA-256，校验路径、大小、MIME/扩展名与 OOXML 容器。Artifact 模块保存 FileAsset/FileVersion 真值；对象成功而数据库失败时执行补偿，孤儿清理由有界任务处理。
 
-开发默认目录是 `.demo/uploads/objects`；E2E 使用 `.demo/e2e/<run-id>/uploads`，不会删除开发文件。
+配置默认值是 `.demo/uploads/objects`；在当前 pnpm API package 进程中，从仓库根目录观察的实际目录是 `apps/api/.demo/uploads/objects`。E2E 使用根 `.demo/e2e/<run-id>/uploads`，不会删除开发文件。
 
 ### ModelProvider
 

@@ -69,7 +69,7 @@ corepack pnpm test:postgres
 - PostgreSQL integration 与 Playwright 创建带唯一名称的临时 project、端口和 Volume；
 - 测试失败也应在 `finally` 清理临时容器/Volume；
 - 默认 Playwright 只把截图写入被忽略的 `output/playwright/`，不会改写已跟踪文档图片；
-- `.demo/uploads/objects` 是开发数据，不能被测试清理器删除；
+- `apps/api/.demo/uploads/objects` 是开发数据，不能被测试清理器删除；
 - Fake Ark 只监听本地隔离端口，不可被误报为 live 验收；
 - live tests 必须明确 opt-in，并对 Key、request ID 和内容脱敏。
 

@@ -131,7 +131,7 @@ corepack pnpm verify:repo-sync
 - `.env.example` 只能放空值或安全占位，不得提交 Key、Token、Cookie、真实 DSN 或私钥。
 - 不输出或提交模型完整 Prompt/响应、OIDC Token、API Key、学生资料或数据库备份。
 - 不提交 `.demo/`、LocalObjectStore、`node_modules/`、`dist/`、`.playwright-cli/`、reports、`test-results/` 或 `output/playwright/`。
-- 不删除 `.env.local`、长期开发数据库、`.demo/uploads/objects` 或用户验收资料；仅在目标明确且用户授权时清理可再生缓存。
+- 不删除 `.env.local`、长期开发数据库、`apps/api/.demo/uploads/objects` 或用户验收资料；仅在目标明确且用户授权时清理可再生缓存。
 
 ## 完成任务时更新什么
 

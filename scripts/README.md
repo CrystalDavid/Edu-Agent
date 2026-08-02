@@ -7,4 +7,4 @@
 - `security/`：Secret 扫描；
 - 根脚本：静态断言、版本历史、Markdown 链接和仓库同步验证。
 
-`db:clean`、`demo:reset` 等破坏性入口必须保持显式授权和 fail-closed。普通测试不得重置长期开发 Volume，任何脚本都不得删除 `.demo/uploads/objects`。
+`db:clean`、`demo:reset` 等破坏性入口必须保持显式授权和 fail-closed。普通测试不得重置长期开发 Volume，任何脚本都不得删除 `apps/api/.demo/uploads/objects`。

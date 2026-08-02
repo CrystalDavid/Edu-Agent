@@ -146,7 +146,7 @@ corepack pnpm demo:doctor
 corepack pnpm demo:dev
 ```
 
-浏览器打开 <http://localhost:5173/>。`demo:dev` 会复用长期开发 PostgreSQL Volume、运行 43 个 Migration、幂等写入 synthetic Demo、启动 API/Web/Worker，并保留 `.demo/uploads/objects` 中的本地文件。
+浏览器打开 <http://localhost:5173/>。`demo:dev` 会复用长期开发 PostgreSQL Volume、运行 43 个 Migration、幂等写入 synthetic Demo、启动 API/Web/Worker，并保留 `apps/api/.demo/uploads/objects` 中的本地文件。
 
 停止前台进程后，如需关闭数据库容器但保留 Volume：
 
@@ -154,7 +154,7 @@ corepack pnpm demo:dev
 corepack pnpm demo:down
 ```
 
-`demo:reset` 和 `db:clean` 是显式破坏性入口，不属于普通启动或测试流程。不要删除 `.env.local`、开发 Volume 或 `.demo/uploads/objects`。
+`demo:reset` 和 `db:clean` 是显式破坏性入口，不属于普通启动或测试流程。不要删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。
 
 默认模型是确定性 Mock。要在 synthetic Demo 中调用豆包/火山方舟，只在被忽略的根 `.env.local` 设置 `MODEL_PROVIDER_MODE=ark`、`ARK_API_KEY` 和模型配置；Key 不得进入命令参数、日志、截图、文档或 Git。完整说明见 [LOCAL_DEMO](docs/demo/LOCAL_DEMO.md)。
 

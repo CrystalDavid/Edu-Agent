@@ -31,7 +31,7 @@ corepack pnpm demo:dev
 4. 幂等 Seed 合成数据；
 5. 显式以 `APP_ENV=local`、`IDENTITY_PROVIDER_MODE=local`、`DEMO_AUTH_BYPASS=false` 启动演示 API；浏览器从登录页建立 HttpOnly Session；
 6. 启动共用 Outbox Worker；模型执行先提交 queued 事实，再在事务外调用 Mock 或 Ark；
-7. 使用 `.demo/uploads/objects` 作为 Git ignored 的开发 LocalObjectStore（可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖）；
+7. 配置值 `.demo/uploads/objects` 在 API package 进程中解析为仓库内 `apps/api/.demo/uploads/objects`，作为 Git ignored 的开发 LocalObjectStore（可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖）；
 8. 等待 API 和 Web 通过启动检查。
 
 打开：

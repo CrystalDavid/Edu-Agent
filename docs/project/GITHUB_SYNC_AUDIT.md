@@ -78,7 +78,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | `playwright-report*/`、`test-results/` | 约 1 MiB | 可再生测试报告，正确 ignored |
 | `.env.local`、`infra/docker/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
 
-`.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存；本轮未删除。`output/playwright` 可能包含用户验收资料，虽然可再生且不上传，本轮也未擅自删除。
+`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存；本轮未删除。`output/playwright` 可能包含用户验收资料，虽然可再生且不上传，本轮也未擅自删除。
 
 ### D. 可疑地被忽略、需人工判断
 

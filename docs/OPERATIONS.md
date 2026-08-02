@@ -10,7 +10,7 @@
 | Web | `http://localhost:5173` | `demo:dev` 前台进程 |
 | API | `http://localhost:3001` | `demo:dev` 前台进程 |
 | PostgreSQL | `127.0.0.1:55432` | Docker Compose，长期开发 Volume |
-| LocalObjectStore | `.demo/uploads/objects` | 本地目录，跨重启保留 |
+| LocalObjectStore | `apps/api/.demo/uploads/objects` | API package 下的本地目录，跨重启保留 |
 
 完整操作和产品验收见 [LOCAL_DEMO](demo/LOCAL_DEMO.md)。
 
@@ -32,7 +32,7 @@ corepack pnpm demo:down    # 关闭容器，保留 Volume
 - 根 `.env.local`；
 - `infra/docker/.env.local`；
 - Docker Volume `edu-agent-dev-postgres-data`；
-- `.demo/uploads/objects`；
+- `apps/api/.demo/uploads/objects`；
 - 用户保留的验收输出。
 
 可再生但默认仍不自动删除：`dist/`、`*.tsbuildinfo`、Playwright reports、`test-results/`、`.playwright-cli/` 和 `output/playwright/`。它们都不应提交 Git。
