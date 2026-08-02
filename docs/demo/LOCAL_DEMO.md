@@ -315,4 +315,4 @@ ARK_LIVE_STRICT=true
 MODEL_DEBUG_CONTENT=false
 ```
 
-随后运行 `corepack pnpm model:probe:live`。严格模式不允许 Mock 或 Fake Ark fallback，也不允许把 skipped 计为通过。API Key 只放在根目录 `.env.local`，不得作为命令参数或控制台输出。脱敏逐次报告位于 `.demo/live-model-reports/`；可提交状态见 `docs/verification/GATE_2_6A_LIVE_ACCEPTANCE.md`。
+随后运行 `corepack pnpm model:probe:live`。严格模式不允许 Mock 或 Fake Ark fallback，也不允许把 skipped 计为通过。API Key 只放在根目录 `.env.local`，不得作为命令参数或控制台输出。脱敏逐次报告位于 `.demo/live-model-reports/`；已固化验收状态见 `docs/history/gates/GATE_2_6A_LIVE_ACCEPTANCE.md`。

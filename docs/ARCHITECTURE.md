@@ -1,7 +1,7 @@
 # Edu-Agent 当前技术架构
 
 > 状态：CURRENT
-> 代码基线：`main` @ `bbba3428602bb148a3d73a201ad97fcb29181c1b`（`gate-2-10a-verified`）
+> 最新产品基线：`gate-2-10a-verified`（`bbba3428602bb148a3d73a201ad97fcb29181c1b`）
 
 本文描述当前可运行代码。早期 v0.3.x 文档仍是重要设计来源，但当其与代码不同，以这里列出的实现和自动化约束为准。
 
@@ -12,7 +12,8 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `apps/web`：React 19 + Vite 8 + Ant Design 6 的教师门户；
 - `apps/api`：Express 5 API、七个领域/能力模块、Composition Root 和本地 Worker；
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
-- `packages/test-fixtures`：合成演示 refs/seed 与测试夹具（当前也被本地产品 composition 使用，是待清理边界）；
+- `packages/demo-fixtures`：本地产品 Demo 和 Gate 2 测试共用的稳定 synthetic refs/seed；
+- `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
 - PostgreSQL 18：七个 Schema、43 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；
 - 可选生产集成 Adapter：OIDC Identity Provider、Volcengine Ark Chat Completions。
@@ -166,4 +167,4 @@ Audit 记录 actor/organization、intent、decision、资源 refs、版本、状
 
 ## 11. 当前部署边界
 
-当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](DEPLOYMENT_READINESS_GAPS.md)。
+当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)。

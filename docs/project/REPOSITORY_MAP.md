@@ -1,165 +1,180 @@
 # Edu-Agent 仓库结构地图
 
-> 状态：CURRENT
-> 基线：`gate-2-10a-verified`
+> 状态：CURRENT SUPPORTING GUIDE
+> 最新产品基线：`gate-2-10a-verified`
 
-本地图说明“代码应放在哪里”和“哪些目录只是运行产物”。更细的模块状态所有权见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)。
+本地图回答“文件应放在哪里”。首要入口是根 [README](../../README.md)，状态所有权和数据流以 [ARCHITECTURE](../ARCHITECTURE.md) 为准。
 
-## 1. 根目录总览
+## 根目录
 
 ```text
 Edu-Agent/
-├─ apps/                    正式可部署应用
-│  ├─ api/                  Express API、七模块、Composition Root、Worker
-│  └─ web/                  React/Vite 教师门户
-├─ packages/
-│  ├─ contracts/            共享路由、DTO、Zod Schema
-│  └─ test-fixtures/        合成 refs/seed 与测试夹具（存在产品依赖待清理）
-├─ tests/                   跨 workspace 的测试套件
-├─ scripts/                 Demo、PostgreSQL、安全和静态验证脚本
-├─ infra/                   本地 Docker/PostgreSQL 配置
-├─ docs/                    项目、产品、Demo、UI、验收文档
-├─ output/                  本地生成/验收输出（Git ignored）
-├─ .demo/                   本地数据库外运行状态和 ObjectStore（Git ignored）
-├─ playwright-report*/      浏览器测试报告（Git ignored）
-├─ test-results/            测试附件（Git ignored）
-├─ node_modules/            pnpm 安装产物（Git ignored）
-├─ package.json             根命令入口
-├─ pnpm-workspace.yaml      workspace 定义
-├─ *.config.ts              TypeScript / Vitest / Playwright / Drizzle 配置
-├─ README.md                项目入口
-└─ 教育智能体平台*.md       早期历史架构与第一轮计划
+├── README.md / CHANGELOG.md
+├── AGENTS.md / SECURITY.md / CONTRIBUTING.md
+├── apps/
+│   ├── api/
+│   └── web/
+├── packages/
+│   ├── contracts/
+│   ├── demo-fixtures/
+│   └── test-fixtures/
+├── infra/
+├── scripts/
+├── tests/
+├── docs/
+├── .env.example
+├── package.json / pnpm-lock.yaml / pnpm-workspace.yaml
+└── TypeScript、Vitest、Playwright、Drizzle 配置
 ```
 
-## 2. 正式产品代码
+根目录不再放阶段性研究、Gate 计划或 UI 规格。新的当前文档按 [docs/README](../README.md) 分工，详细历史进入 `docs/history/`。
 
-### `apps/api`
+## `apps/api` — 服务端和七模块
 
-| 路径 | 职责 | 新代码放置规则 |
-|---|---|---|
-| `src/app.ts` | Express 路由装配、认证/CSRF、请求解析和安全错误映射 | 只做 HTTP adapter；业务规则进入 owning service |
-| `src/composition/` | Product/Test Composition Roots、配置、Demo seed、Provider probe | 新 Adapter 的选择和运行时装配放这里；不要让领域 import SDK |
-| `src/modules/<module>/domain/` | 领域对象、状态和 invariant（各目录实际细分略有差异） | 新领域对象进入拥有状态的既有模块 |
-| `src/modules/<module>/application/` | Application Service、命令、读取服务、事务编排 | 正式写入和跨端口协调放这里 |
-| `src/modules/<module>/infrastructure/` | PostgreSQL Repository、外部 Adapter、序列化 | Port 实现放这里，不把 SDK 类型泄漏给 domain/contracts |
-| `src/database/migrations.ts` | 43 个前向 Migration 的单一注册表（owner + relative path） | 新 Migration 必须在这里登记，不能只新增 SQL 文件 |
-| `src/platform/postgres/` | Migration bootstrap/executor、pool/role 与 write-context 支持 | 数据库平台执行代码；不在这里重复维护 Migration 清单 |
+| 路径 | 作用 |
+|---|---|
+| `src/index.ts` | API 进程入口、端口与启动失败处理 |
+| `src/app.ts` | Express application、middleware、auth 和 route 组合 |
+| `src/composition/` | Product Composition Root、Application Service、Worker 组装、Demo seed |
+| `src/database/migrations.ts` | 43 个 Migration 的唯一 registry |
+| `src/platform/` | PostgreSQL、auth、errors、server 等平台 Adapter |
+| `src/modules/` | 七个状态所有者模块 |
 
-当前七个模块目录：
+每个模块通常包含：
 
 ```text
-agent-runtime-context
-artifact-collaboration
-capability-integration
-education-domain
-identity-governance-audit
-personalization-memory-analytics
-work-assistant-durable-execution
+apps/api/src/modules/<module>/
+├── application/                Application Service / use case
+├── domain/                     领域类型和规则
+└── infrastructure/
+    ├── migrations/             该模块只向前 SQL Migration
+    └── postgres-*.ts           Repository Adapter
 ```
 
-不要为新业务创建第八模块，除非先有独立架构决策。状态必须放到现有 owning module，跨模块只通过 Port/Application Service/Outbox 协调。
+实际目录按模块复杂度略有不同。Migration 统一位于 `<module>/infrastructure/migrations/`；不要创建 `infrastructure/postgres/migrations` 或第二个 registry。执行器是 `apps/api/src/platform/postgres/bootstrap.ts`。
 
-### `apps/web`
+七模块：
 
-| 路径 | 职责 | 新代码放置规则 |
+- `identity-governance-audit` → `governance`；
+- `work-assistant-durable-execution` → `work`；
+- `agent-runtime-context` → `runtime`；
+- `capability-integration` → `capability`；
+- `artifact-collaboration` → `artifact`；
+- `education-domain` → `education`；
+- `personalization-memory-analytics` → `personalization`。
+
+正式写入只能发生在 owning module。Composition Service 可以编排多个 Port/transaction，但不能用跨 Schema SQL 绕过所有权。
+
+## `apps/web` — 教师门户
+
+| 路径 | 作用 |
+|---|---|
+| `src/main.tsx` | 浏览器入口 |
+| `src/App.tsx` | Session/bootstrap 与现行 Page lazy composition |
+| `src/route.ts` | `AppRoute`、URL 解析和导航 |
+| `src/pages/` | 当前 `Teacher*Page`、Workspace 和业务详情页 |
+| `src/components/portal/` | 教师门户功能组件 |
+| `src/api.ts` | 当前单一 API client；后续可在保留 transport 契约后按领域拆分 |
+| `src/teacher-portal-data.ts` | 仍被使用的显式 Demo/READ_ONLY Portal 数据 |
+| `public/fonts/` | 正式字体、Attribution 和许可证 |
+
+旧的未路由 Page、Inspector/Student legacy components 和 `demo-read-model.ts` 已在清理分支删除。新增页面必须同时进入 `route.ts`、`App.tsx` 和回归测试，不能只创建文件。
+
+## `packages` — 共享边界
+
+| Package | 消费者 | 内容边界 |
 |---|---|---|
-| `src/pages/` | 一级页面和真实业务 workspace | 新页面状态从正式 API 读取；只有未保存表单/导航可放 React state |
-| `src/components/` | 可复用视觉与业务组件 | 不在组件内建立第二套业务数组 |
-| `src/api.ts` | 当前集中式、类型化 API client | 新产品调用复用 contracts route builder；后续可按域拆分但不能复制 |
-| `src/route.ts` | 自定义 URL/parser/deep-link 状态 | 新深链加入这里并添加 route 测试 |
-| `src/App.tsx` | 页面 lazy loading 和顶层 session/navigation | 不把领域逻辑堆入 App |
+| `@edu-agent/contracts` | Web、API、tests | route builder、DTO、enum、Zod Schema；不含 Repository/UI |
+| `@edu-agent/demo-fixtures` | API local demo、Gate 2 tests | stable synthetic refs/data；无断言或 Fake Provider |
+| `@edu-agent/test-fixtures` | tests | Gate 1A/1B 测试构造器；`apps/*` 不得依赖 |
 
-### `packages/contracts`
-
-- `src/api-routes.ts`：服务端和 Web 共用的 URL 构造器；
-- `src/gate*.ts` 及身份/文件等 contract 文件：Zod 请求响应、稳定 enum 和安全错误 DTO；
-- `src/index.ts`：公开导出。
-
-新增 API 时先在 Contracts 定义路由与 Zod，再实现 API adapter 和 Web client。禁止把 OpenAI/OIDC/PostgreSQL SDK 类型放入 Contracts。
-
-## 3. Migration 与数据库
-
-Migration 文件随 owning module 放置：
+稳定依赖方向：
 
 ```text
-apps/api/src/modules/<module>/infrastructure/migrations/*.sql
+apps/web -> contracts
+apps/api -> contracts + demo-fixtures
+tests    -> contracts + demo-fixtures + test-fixtures
 ```
 
-注册入口位于 `apps/api/src/database/migrations.ts`，执行入口位于 `apps/api/src/platform/postgres/bootstrap.ts`。新增 Migration 必须：
+## `infra` 与 Migration
 
-1. 使用下一个模块内序号，不能改写已应用文件；
-2. 进入 registry，并有 checksum/owner；
-3. 可从空 PostgreSQL Volume 执行；
-4. 对旧 Gate 数据前向兼容；
-5. 通过 PGlite 和真实 PostgreSQL tests。
+- `infra/docker/compose.postgres.yml`：PostgreSQL 18 本地编排；
+- `infra/docker/.env.example`：无 Secret 模板；
+- `infra/docker/.env.local`：脚本生成的本地凭据，Git ignored；
+- `infra/postgres/MIGRATION_OWNERSHIP.md`：Schema owner、app/worker role 和 Migration 规则。
 
-## 4. 测试专用代码
+43 个历史 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。历史文件不可修改、合并、重排或重命名。
 
-| 路径 | 内容 |
+## `scripts` 与稳定命令
+
+脚本实现按职责分为 `demo/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [DEVELOPMENT](../DEVELOPMENT.md) 说明。
+
+不要直接恢复或复制已经失效的 `run-demo-fresh.mjs`。安全替代是隔离 `test:playwright`，长期数据重置则必须显式使用受保护的 `demo:reset`。
+
+## `tests`
+
+| 目录 | 证明范围 |
 |---|---|
-| `tests/unit/` | domain/service/adapter 单元测试 |
-| `tests/architecture/` | 模块边界、Product/Test Composition Root、bundle/SDK 等约束 |
-| `tests/e2e/` | Vitest HTTP/application E2E |
-| `tests/integration/` | PGlite Migration 等集成验证 |
-| `tests/postgres/` | 真实 PostgreSQL repository/lifecycle/transaction 测试 |
-| `tests/playwright/` | 教师门户浏览器主流程与截图/下载验证 |
-| `tests/live/` | 默认关闭、只使用合成数据的真实 Ark 集成测试 |
-| `tests/node/` | Node walking skeleton smoke |
-| `tests/support/` | 测试服务器、隔离环境与辅助工具 |
-| `tests/fixtures/` | 测试输入文件；不得放 Secret 或貌似真实的 Key |
+| `unit/`、`gate2/` | 纯逻辑和 Contract |
+| `architecture/` | 模块/Schema/Ingress/安全不变量 |
+| `e2e/` | 无浏览器 HTTP skeleton |
+| `integration/` | PGlite Migration |
+| `node/` | Gate 1A Test Container |
+| `postgres/` | 临时真实 PostgreSQL |
+| `playwright/` | 隔离浏览器业务流程 |
+| `live/` | 显式 opt-in 真实 Provider |
+| `fixtures/`、`support/` | 测试数据、Fake Ark 和 loader |
 
-Gate 1A 的内存 Repository 和 Test Container 仍服务隔离测试；它们不是产品 fallback。`packages/test-fixtures` 被 Product Composition 使用合成 demo seed 是当前命名/依赖债，见清理计划。
+详细隔离语义见 [VALIDATION](../VALIDATION.md)。Gate 1A Test Container 虽不是产品 Composition Root，仍被测试使用，不属于可删除遗留代码。
 
-## 5. 脚本与基础设施
+## `docs`
 
-| 路径 | 内容 |
-|---|---|
-| `scripts/postgres/` | dev database lifecycle、隔离 E2E Compose Project、Migration/测试启动 |
-| `scripts/demo/` | Demo doctor、seed/dev/test server、Playwright 隔离、bundle analysis |
-| `scripts/security/` | Secret scan |
-| `scripts/gate1a-static-check.mjs` | 历史与当前架构静态断言 |
-| `scripts/verify-version-history.ts` | 版本文档、commit/tag/link 的离线一致性检查 |
-| `infra/docker/` | PostgreSQL 18 Compose、角色和本地环境模板 |
+```text
+docs/
+├── README.md
+├── ARCHITECTURE.md / CAPABILITIES.md / VERSION_HISTORY.md
+├── ROADMAP.md / DEVELOPMENT.md / VALIDATION.md / OPERATIONS.md
+├── adr/
+├── demo/
+├── operations/
+├── project/
+└── history/
+    ├── gates/
+    ├── research/
+    └── ui/
+```
 
-长期开发数据库使用稳定 Compose project/volume；测试创建 `edu-agent-e2e-*` 临时资源。任何删除开发 volume 的命令必须显式 `ALLOW_DESTRUCTIVE_DB_RESET=1`。
+- 当前事实只进入根层权威文档；
+- 项目同步/清理/研究记录放 `project/`；
+- Gate 2.10B 详细差距放 `operations/`；
+- Gate、早期研究和 UI 记录进入 `history/`；
+- ADR 通过新增文件演进，不覆写旧决策；
+- 文档移动后运行 `verify:markdown-links`。
 
-## 6. 文档结构
+## Git ignored 本地内容
 
-| 路径 | 读者与状态 |
-|---|---|
-| `docs/project/` | 当前状态、版本、架构、仓库、清理和部署差距；优先阅读 |
-| `docs/product/` | 各 Gate 的产品语义、功能矩阵和验收设计 |
-| `docs/demo/` | 本地演示与身份/模型/数据库运行说明 |
-| `docs/verification/` | 安全脱敏的验收记录 |
-| `docs/ui/` | UI 规格、Design Token 与验收图片 |
-| 根目录中文文档 | v0.3.x 与第一轮历史架构资料；HISTORICAL/SUPERSEDED，不代表当前代码 |
-
-总入口：[docs/README.md](../README.md)。新增 Gate 文档放 `docs/product/GATE_<编号>_<主题>.md`，项目横切现状放 `docs/project/`，可提交的验收摘要放 `docs/verification/`。
-
-## 7. 本地 Demo 与 Git-ignored 运行文件
-
-| 路径 | 是否正式源码 | 生命周期 |
+| 路径 | 用途 | 清理边界 |
 |---|---|---|
-| `.env.local` | 否；Secret 配置 | Git ignored，测试不得读取输出或删除 |
-| `.demo/uploads/objects` | 否；开发 LocalObjectStore 数据 | 持久保留，Demo/E2E 不得清空 |
-| `.demo/e2e/<run-id>` | 否；隔离测试数据 | 只清理已解析并验证的当前 run 目录 |
-| `.demo/live-model-reports` | 否；脱敏 live 摘要 | Git ignored、有界信息，不含内容/Secret |
-| `output/` | 否；本地生成/验收产物 | Git ignored；不能当作产品真值 |
-| `playwright-report*`、`test-results` | 否；测试报告 | Git ignored，可重建 |
-| `apps/*/dist`、`packages/*/dist` | 否；构建输出 | Git ignored，可重建 |
+| `.env.local` | 本机模型/身份配置 | 不提交、不自动删除 |
+| `infra/docker/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
+| `.demo/uploads/objects` | 长期开发 LocalObjectStore | 不能当缓存删除 |
+| `.demo/*` 其他内容 | 日志、报告、Demo 状态 | 不提交，按用途人工判断 |
+| `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |
+| `playwright-report*/`、`test-results/` | 测试报告 | 可重建，不提交 |
+| `output/playwright/` | 本地验收截图 | 不提交，是否删除由用户决定 |
+| `.playwright-cli/` | 浏览器自动化临时状态 | 可重建，不提交 |
 
-## 8. 快速定位清单
+## 快速定位
 
-- 新领域对象：`apps/api/src/modules/<owning-module>/domain`，并更新模块 application/repository/architecture test；
-- 新 Migration：owning module 的 `infrastructure/migrations` + `apps/api/src/database/migrations.ts` 注册表；
-- 新 API Contract：`packages/contracts/src` + `api-routes.ts`；
-- 新 API Handler：`apps/api/src/app.ts` 或对应 HTTP adapter，业务放 Application Service；
-- 新教师页面：`apps/web/src/pages` + lazy route + typed `api.ts` client；
-- 新单元/架构/数据库/浏览器测试：对应 `tests/*` 目录；
-- 新 Gate 文档：`docs/product`；
-- 新项目横切文档：`docs/project`；
-- 新本地运行文件：必须放已忽略且与 E2E 隔离的目录，不能提交到仓库。
+- 新 Route/DTO：`packages/contracts/src`；
+- 新 HTTP endpoint：`apps/api/src/app.ts` + owning Application Service；
+- 新领域状态：owning module + 新 Migration + registry；
+- 新模型/存储身份 Adapter：`capability-integration` 或 platform Port/Adapter；
+- 新 Page：`apps/web/src/pages` + `route.ts` + `App.tsx`；
+- 新 synthetic Demo 数据：`packages/demo-fixtures` 或 API 领域专用 demo fixture；
+- 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
+- 当前功能说明：`docs/CAPABILITIES.md`；
+- 未来计划：`docs/ROADMAP.md`；
+- 详细历史：`docs/history/`。
 
-## 9. 历史和可能过时区域
-
-已核实但本轮不删除的候选包括：八个未路由旧 Page、未引用 Inspector/Student components、只被旧 Page 使用的 `demo-read-model.ts`、被产品依赖的 `test-fixtures` 命名边界、仍保留的 Gate 1A exports、历史演示脚本，以及多份状态已过时的 Gate 文档。完整证据和风险见 [REPOSITORY_CLEANUP_PLAN.md](REPOSITORY_CLEANUP_PLAN.md)。
+目标结构和明确延期项见 [TARGET_REPOSITORY_STRUCTURE](TARGET_REPOSITORY_STRUCTURE.md)。

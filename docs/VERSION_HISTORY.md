@@ -54,8 +54,8 @@
 | 权限、事务、幂等、审计 | 规范上确立 ActingContext/ActionIntent、AuthorizationDecision、Audit、Outbox、模块所有权；首轮代码只实现最小验证面。 |
 | 测试与验收 | 根提交带 Architecture、Ingress、Walking Skeleton、PGlite 和 Node smoke 测试；没有独立人工验收记录。 |
 | 已实现 / 未实现 | 已建立仓库、工具链和架构骨架；真实 PostgreSQL Adapter、产品闭环、真实模型、文件、身份均未完成。 |
-| 后续修正 | Gate 1B 完成真实 PostgreSQL；后续 Gate 逐步把早期 ADR 的一部分转成产品代码。当前实现以 [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md) 为准。 |
-| 主要文档 | [v0.3 红队审查](../../教育智能体平台架构红队审查与v0.3建议.md)、[v0.3.1 修订](../../教育智能体平台v0.3.1架构修订.md)、[v0.3.2 修订](../../教育智能体平台v0.3.2架构修订.md)、[v0.3.2 ADR 包](../../教育智能体平台v0.3.2勘误与ADR包.md)。 |
+| 后续修正 | Gate 1B 完成真实 PostgreSQL；后续 Gate 逐步把早期 ADR 的一部分转成产品代码。当前实现以 [ARCHITECTURE](ARCHITECTURE.md) 为准。 |
+| 主要文档 | [v0.3 红队审查](history/research/教育智能体平台架构红队审查与v0.3建议.md)、[v0.3.1 修订](history/research/教育智能体平台v0.3.1架构修订.md)、[v0.3.2 修订](history/research/教育智能体平台v0.3.2架构修订.md)、[v0.3.2 ADR 包](adr/教育智能体平台v0.3.2勘误与ADR包.md)。 |
 
 ### 1. Gate 1A — 七模块无 LLM Walking Skeleton
 
@@ -75,7 +75,7 @@
 | 测试 | Architecture boundaries、Ingress contract、Vitest E2E、Node smoke、PGlite Migration 和静态断言。 |
 | 已实现 / 未实现 | 完成架构骨架；未完成 PostgreSQL 产品路径、Education 业务、教师 Copilot、正式身份。 |
 | 后续修正 | Gate 1B 增加 PostgreSQL Adapter；Gate 2.4 后内存 Container 明确只属于 Test Composition Root。 |
-| 主要文档 | [第一轮工程验证计划](../../教育智能体平台第一轮工程验证计划.md)。 |
+| 主要文档 | [第一轮工程验证计划](history/research/教育智能体平台第一轮工程验证计划.md)。 |
 
 ### 2. Gate 1B — PostgreSQL 与最小 Education Domain
 
@@ -95,7 +95,7 @@
 | 测试 | 真实 Docker PostgreSQL、角色隔离、事务、并发、Outbox、Artifact immutable、Education contract；PR #1 后 annotated tag 固化。 |
 | 已实现 / 未实现 | 建立数据库工程基线；尚无教师产品切片、课程页面、模型 Provider 或正式身份。 |
 | 后续修正 | Gate 2 建立产品切片；Gate 2.4 将 Product/Test Composition Root 分离；所有后续 Migration 继续 owner/checksum 规则。 |
-| 主要文档 | [第一轮工程验证计划](../../教育智能体平台第一轮工程验证计划.md)、[Migration ownership](../../infra/postgres/MIGRATION_OWNERSHIP.md)。 |
+| 主要文档 | [第一轮工程验证计划](history/research/教育智能体平台第一轮工程验证计划.md)、[Migration ownership](../infra/postgres/MIGRATION_OWNERSHIP.md)。 |
 
 ### 3. Gate 2 — Teacher Copilot 纵向切片
 
@@ -115,7 +115,7 @@
 | 测试 | HTTP、PostgreSQL、Playwright、启动诊断、视觉/启动回归和 bundle measurement。 |
 | 已实现 / 未实现 | 完成确定性 Mock 的 Teacher Copilot 切片；真实教师输入未完整进入 Task、两套 Composition Root 并存、身份和审核语义有缺口。 |
 | 后续修正 | Gate 2.4 系统性修复数据库隔离、身份、请求、Proposal 恢复、Plan 状态和 Worker；后续 UI 版本替代主要界面。 |
-| 主要文档 | [早期 0→1 调查](PROJECT_EVOLUTION_0_TO_1.md)（SUPERSEDED，但保留调查证据）。 |
+| 主要文档 | [早期 0→1 调查](history/research/PROJECT_EVOLUTION_0_TO_1.md)（SUPERSEDED，但保留调查证据）。 |
 
 ### 4. UI redesign v1
 
@@ -131,7 +131,7 @@
 | 测试 | 新增视觉 redesign acceptance 和 Demo API startup 回归。 |
 | 已实现 / 未实现 | 视觉和信息架构改进；没有补齐业务持久化、正式身份或状态正确性。 |
 | 后续修正 | v2 明确否定 v1 的系统概念密度，进一步转向教师日常任务；Teacher Portal UI v1 再次替代整体框架。 |
-| 主要文档 | [Gate 2 UI redesign](../ui/GATE2_UI_REDESIGN.md)（SUPERSEDED）。 |
+| 主要文档 | [Gate 2 UI redesign](history/ui/GATE2_UI_REDESIGN.md)（SUPERSEDED）。 |
 
 ### 5. UI redesign v2
 
@@ -147,7 +147,7 @@
 | 测试 | UI v2 acceptance、性能和文档记录。 |
 | 已实现 / 未实现 | 更贴近教师心智模型；真实 Todo、日历、文件、课程层级和学生 Evidence 尚未实现。 |
 | 后续修正 | Teacher Portal UI v1 重新建立稳定一级导航、卡片和页面骨架；Gate 2.5—2.10A 将高保真区域逐步接成真实 API。 |
-| 主要文档 | [UI redesign v2](../ui/GATE2_UI_REDESIGN_V2.md)（SUPERSEDED）。 |
+| 主要文档 | [UI redesign v2](history/ui/GATE2_UI_REDESIGN_V2.md)（SUPERSEDED）。 |
 
 ### 6. Teacher Portal UI v1
 
@@ -163,7 +163,7 @@
 | 测试 | 路由、页面、字体、视觉和无死链的 Playwright acceptance。 |
 | 已实现 / 未实现 | 完成高保真普通教师门户外壳；未完成真实课程、文件、作业、日程、身份。 |
 | 后续修正 | 侧边栏、一级路由、字体、Design Token 和卡片体系持续冻结；后续 Gate 只在框架内替换 Mock 和补真实交互。 |
-| 主要文档 | [Teacher Portal UI v1](../ui/TEACHER_PORTAL_UI_V1.md)（HISTORICAL）。 |
+| 主要文档 | [Teacher Portal UI v1](history/ui/TEACHER_PORTAL_UI_V1.md)（HISTORICAL）。 |
 
 ### 7. Gate 2.4 — Teacher Copilot 正确性与可恢复性
 
@@ -183,7 +183,7 @@
 | 测试 | 数据库 Volume 隔离、身份 401/403、Product/Test Root、并发 disposition/approval、Revision immutable、Worker recovery、HTTP/PG/Playwright。 |
 | 已实现 / 未实现 | Copilot 正确性与恢复语义完成；正式登录、课程层级、文件、Todo、学生等未实现。 |
 | 后续修正 | Gate 2.5 加真实 Lesson/TaskWorkingSet；Gate 2.10A 用正式 Session 取代普通产品的演示 Header。 |
-| 主要文档 | [Gate 2.4](../product/GATE_2_4_COPILOT_CORRECTNESS.md)。 |
+| 主要文档 | [Gate 2.4](history/gates/GATE_2_4_COPILOT_CORRECTNESS.md)。 |
 
 ### 8. Gate 2.5 — 最小可恢复备课闭环
 
@@ -203,7 +203,7 @@
 | 测试 | 课程层级、状态机、WorkingSet、Plan unique constraints、并发、重启恢复、HTTP 和完整 Playwright。 |
 | 已实现 / 未实现 | 普通教师最小备课闭环完成；仍只用 Mock Provider，无文件、作业、日历、正式身份。 |
 | 后续修正 | Gate 2.6A 增真实 Provider；2.5B 增文件；2.5C 修页面状态；2.7/2.9 增 Evidence/Reflection 来源；2.10A 增正式身份。 |
-| 主要文档 | [Gate 2.5](../product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。 |
+| 主要文档 | [Gate 2.5](history/gates/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。 |
 
 ### 9. Gate 2.6A — Volcengine Ark 单一生产 Provider
 
@@ -223,7 +223,7 @@
 | 测试 | 同一 Provider contract、32 项合成评测、Fake Ark 故障矩阵、PG lifecycle/lease/reuse、HTTP/Playwright；严格 Live 真实验证 18 次公网请求（16 成功、2 客户端超时），无 Mock/Fake fallback。 |
 | 已实现 / 未实现 | 文本/结构化输出、图片/JSON Schema/function/streaming capability probe 均实机通过；产品只使用非流式文本 Chat Completions。无第二模型、路由、多模态产品或 Provider 会话真值。 |
 | 后续修正 | Live acceptance 显式发送 `thinking: disabled` 解决受限 JSON 超时；2.5B 后仍禁止上传内容进入模型。Gate 2.6B 未实施。 |
-| 主要文档 | [Gate 2.6A](../product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)、[Live Acceptance](../verification/GATE_2_6A_LIVE_ACCEPTANCE.md)。 |
+| 主要文档 | [Gate 2.6A](history/gates/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)、[Live Acceptance](history/gates/GATE_2_6A_LIVE_ACCEPTANCE.md)。 |
 
 ### 10. Gate 2.5B — 文件与教学成果闭环
 
@@ -242,7 +242,7 @@
 | 测试 | ObjectStore/path/MIME/hash、immutable version、幂等、补偿/orphan、tenant、DOCX OOXML 内容、服务/API 重启、独立 E2E ObjectStore/Volume 和 Playwright。 |
 | 已实现 / 未实现 | Local 文件闭环和 DOCX 完成；无云 ObjectStore、分享、协作、OCR、文件内容进模型、完整 Office 渲染或 PPT 设计。 |
 | 后续修正 | Gate 2.5C 封堵正式导出文件的通用写入口并改善跨页上下文；Gate 2.10A 把文件下载置于 Session/School 授权下。 |
-| 主要文档 | [Gate 2.5B](../product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。 |
+| 主要文档 | [Gate 2.5B](history/gates/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。 |
 
 ### 11. Gate 2.5C — 教师产品正确性与体验收口
 
@@ -259,7 +259,7 @@
 | 测试 | 审计 20 项：P0=1、P1=8、P2=8 全部修复，P3=3 记录；Unit/PG/HTTP/Playwright/Fake Ark 和服务重启回归。 |
 | 已实现 / 未实现 | P0/P1/DEAD 清零，页面一致性收口；不做视觉重构、作业、学生、日历或云部署。 |
 | 后续修正 | Gate 2.7 以后逐步替换剩余作业/学生/日程 Mock；通用 Agent 和考试仍是明确 Mock/READ_ONLY。 |
-| 主要文档 | [Stabilization Matrix](../product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。 |
+| 主要文档 | [Stabilization Matrix](history/gates/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。 |
 
 ### 12. Gate 2.7 — 作业、学习 Evidence 与教学调整
 
@@ -279,7 +279,7 @@
 | 测试 | lifecycle、immutable attempt、grade revision、Evidence lineage、recalculable analytics、concurrency、tenant、restart、HTTP/Playwright。 |
 | 已实现 / 未实现 | 教师作业与学习证据闭环完成；数据为匿名合成，无学生提交端、正式名单、完整题库/考试或长期能力模型。 |
 | 后续修正 | Gate 2.8 把截止/未交/待批改投影到工作台；Gate 2.9 让 Assignment Evidence 可被教师选择进入 Reflection。 |
-| 主要文档 | [Gate 2.7](../product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md)。 |
+| 主要文档 | [Gate 2.7](history/gates/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md)。 |
 
 ### 13. Gate 2.8 — 日程、待办与教师统一工作台
 
@@ -298,7 +298,7 @@
 | 测试 | Todo/Calendar lifecycle、timezone/cross-day、projection unique/replay、snooze source invariance、Agent context、restart、Playwright。 |
 | 已实现 / 未实现 | 个人工作台闭环完成；无共享/外部日历、复杂 recurrence、自动 Agent 或自动完成源业务。 |
 | 后续修正 | Gate 2.9 添加待实施/待反思和 Reflection follow-up 投影；Gate 2.10A 将 Todo/Calendar 按真实用户和学校隔离。 |
-| 主要文档 | [Gate 2.8](../product/GATE_2_8_TEACHER_WORKBENCH.md)。 |
+| 主要文档 | [Gate 2.8](history/gates/GATE_2_8_TEACHER_WORKBENCH.md)。 |
 
 ### 14. Gate 2.9 — 课堂实施、观察与课后反思
 
@@ -318,7 +318,7 @@
 | 测试 | Plan immutable vs delivery、revision histories、observation scopes、Reflection context/output/follow-up、tenant/learner、Worker replay、restart、Playwright。 |
 | 已实现 / 未实现 | 课堂实施—反思—后续行动完成；无实时课堂助手、音视频、自动观察、考勤、长期 learner label 或多模态。 |
 | 后续修正 | Gate 2.10A 将确认者和范围绑定到正式 Session/Membership/CourseRun access。 |
-| 主要文档 | [Gate 2.9](../product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md)。 |
+| 主要文档 | [Gate 2.9](history/gates/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md)。 |
 
 ### 15. Gate 2.10A — 正式身份、学校组织与权限基线
 
@@ -337,8 +337,8 @@
 | 权限 / 安全 / 幂等 / 审计 | 不透明 token 只存 SHA-256；HttpOnly/SameSite、production Secure、Origin+CSRF；ActingContext 每请求从 active membership 解析；跨学校 404；管理员命令 expected version/idempotency/Audit；Demo bypass 默认关闭。 |
 | 测试 | Secret 377、TypeScript、Vitest 105、Architecture 51、Static 1343、HTTP 5、Node 5、PGlite、PG 93/43 migrations、Playwright 19、Fake Ark 1、build/bundle/doctor；School A/B、OIDC state、session、CSRF、suspend、admin 和既有闭环。 |
 | 已实现 / 未实现 | 本地可运行正式会话和 provider-neutral OIDC 产品代码；未完成真实云 IdP 配置、邮件邀请、MFA/SCIM、云 DB/ObjectStore、监控备份、正式学生/家长身份或部署。 |
-| 后续建议 | Gate 2.10B 应只解决云部署与试点运维差距，见 [DEPLOYMENT_READINESS_GAPS](DEPLOYMENT_READINESS_GAPS.md)。 |
-| 主要文档 | [Gate 2.10A](../product/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md)。 |
+| 后续建议 | Gate 2.10B 应只解决云部署与试点运维差距，见 [DEPLOYMENT_READINESS_GAPS](operations/DEPLOYMENT_READINESS_GAPS.md)。 |
+| 主要文档 | [Gate 2.10A](history/gates/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md)。 |
 
 ## 4. Verified Tag 指向
 

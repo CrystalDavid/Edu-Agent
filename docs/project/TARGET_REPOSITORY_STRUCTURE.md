@@ -12,7 +12,7 @@
 本方案综合：
 
 - 当前代码、workspace dependency、路由、import、测试和 Migration registry；
-- [当前架构](CURRENT_ARCHITECTURE.md)、[仓库地图](REPOSITORY_MAP.md)和[清理计划](REPOSITORY_CLEANUP_PLAN.md)；
+- [当前架构](../ARCHITECTURE.md)、[仓库地图](REPOSITORY_MAP.md)和[清理计划](REPOSITORY_CLEANUP_PLAN.md)；
 - [Claude Code 仓库组织经验](CLAUDE_CODE_REPOSITORY_LESSONS.md)；
 - Git 跟踪/忽略、大文件、Secret、二进制和本地运行目录审计。
 

@@ -1,102 +1,81 @@
 # Edu-Agent 文档入口
 
-> 当前最新 Verified Gate：Gate 2.10A / `gate-2-10a-verified`
-> 核实基线：`main` @ `bbba3428602bb148a3d73a201ad97fcb29181c1b`
+根 [README](../README.md) 是项目唯一首要入口。本文只负责说明“接下来读哪一份”和“新事实应该写在哪里”，不重复当前能力或架构正文。
 
-状态标记：
+> 最新产品 Verified Gate：Gate 2.10A / `gate-2-10a-verified`
+> 当前定位：普通教师端本地功能型 MVP；尚未开始 Gate 2.10B 云部署。
 
-- **CURRENT**：描述当前代码和当前决策，应优先使用；
-- **HISTORICAL**：准确记录当时阶段，不代表当前完整能力；
-- **SUPERSEDED**：后来已有更权威文档，保留用于审计；
-- **DRAFT**：规划/差距分析，尚不是已交付能力。
+## 推荐阅读顺序
 
-## 1. 新开发者推荐阅读顺序
+### 新开发者或工程 Agent
 
-1. **CURRENT** — [根 README](../README.md)：定位、快速启动和验证命令；
-2. **CURRENT** — [当前能力地图](project/CURRENT_CAPABILITIES.md)：页面与闭环的 REAL/PARTIAL/MOCK 状态；
-3. **CURRENT** — [当前技术架构](project/CURRENT_ARCHITECTURE.md)：实际模块、Adapter、数据流与安全边界；
-4. **CURRENT** — [仓库结构地图](project/REPOSITORY_MAP.md)：在哪里新增对象、Migration、Contract、页面和测试；
-5. **CURRENT** — [完整版本历史](project/VERSION_HISTORY.md)：严格时间顺序、Commit、PR、Tag、Migration 与各 Gate；
-6. **DRAFT** — [仓库清理计划](project/REPOSITORY_CLEANUP_PLAN.md)；
-7. **DRAFT** — [Gate 2.10B 部署就绪差距](project/DEPLOYMENT_READINESS_GAPS.md)。
+1. [根 README](../README.md)：产品定位、闭环、启动和验收；
+2. [AGENTS](../AGENTS.md)：不可违反的边界、命令和最低验证；
+3. [CAPABILITIES](CAPABILITIES.md)：当前哪些是 REAL、PARTIAL、MOCK；
+4. [ARCHITECTURE](ARCHITECTURE.md)：七模块、Schema、Composition Root 和数据流；
+5. [DEVELOPMENT](DEVELOPMENT.md)：目录、稳定命令和常见修改路径；
+6. [VALIDATION](VALIDATION.md)：每类测试证明什么。
 
-## 2. 项目现状
+### 产品负责人或验收者
 
-| 状态 | 文档 | 用途 |
+1. [根 README](../README.md)；
+2. [CAPABILITIES](CAPABILITIES.md)；
+3. [本地 Demo](demo/LOCAL_DEMO.md)；
+4. [VERSION_HISTORY](VERSION_HISTORY.md)；
+5. [ROADMAP](ROADMAP.md)。
+
+### 运维或 Gate 2.10B 规划
+
+1. [OPERATIONS](OPERATIONS.md)；
+2. [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)；
+3. [SECURITY](../SECURITY.md)；
+4. [ROADMAP](ROADMAP.md)。
+
+## 当前权威文档
+
+| 文档 | 唯一职责 | 不应放入 |
 |---|---|---|
-| CURRENT | [CURRENT_CAPABILITIES](project/CURRENT_CAPABILITIES.md) | 当前页面和业务闭环能力 |
-| CURRENT | [CURRENT_ARCHITECTURE](project/CURRENT_ARCHITECTURE.md) | 当前代码架构与数据流 |
-| CURRENT | [REPOSITORY_MAP](project/REPOSITORY_MAP.md) | 仓库定位指南 |
-| CURRENT | [VERSION_HISTORY](project/VERSION_HISTORY.md) | 0 → Gate 2.10A 完整历史 |
-| SUPERSEDED / HISTORICAL | [CURRENT_STATE_AND_NEXT_STEP_OPTIONS](project/CURRENT_STATE_AND_NEXT_STEP_OPTIONS.md) | 从 Teacher Portal v1 开始的逐 Gate 决策日志；当前事实已被能力地图替代 |
-| SUPERSEDED / HISTORICAL | [PROJECT_EVOLUTION_0_TO_1](project/PROJECT_EVOLUTION_0_TO_1.md) | 2026-07-30 的 0→1 调查与 Gate2.5 补记 |
+| [README](../README.md) | 项目总览、启动、业务闭环和阅读入口 | 逐 Gate 历史细节 |
+| [CAPABILITIES](CAPABILITIES.md) | 当前功能状态和限制 | 未来承诺、实现过程日志 |
+| [ARCHITECTURE](ARCHITECTURE.md) | 当前有效架构、状态所有权和数据流 | 已被替代的设计方案 |
+| [VERSION_HISTORY](VERSION_HISTORY.md) | Commit、PR、Tag、Migration 和阶段变化 | 未来 Roadmap |
+| [ROADMAP](ROADMAP.md) | 尚未完成的未来计划 | 已完成能力的重复说明 |
+| [DEVELOPMENT](DEVELOPMENT.md) | 仓库定位、命令和开发路径 | 产品状态表 |
+| [VALIDATION](VALIDATION.md) | 测试类型、隔离语义和证明范围 | 手工产品路线图 |
+| [OPERATIONS](OPERATIONS.md) | 本地生命周期、运行数据和运维入口 | 云部署已经完成的暗示 |
+| [CHANGELOG](../CHANGELOG.md) | Verified stage 的面向人摘要 | 完整 Git 证据表 |
 
-## 3. 产品与 Gate 文档
+## 支持性当前资料
 
-以下文档均为 **HISTORICAL / VERIFIED**：它们冻结对应阶段语义；当前组合能力以能力地图为准。
+这些文档用于仓库治理或专项执行，不是第一阅读层：
 
-| 实际时间顺序 | 文档 | Verified 入口 |
-|---:|---|---|
-| 1 | Gate 1A / 1B：见根目录[第一轮工程验证计划](../教育智能体平台第一轮工程验证计划.md)与版本历史 | `gate-1b-verified` |
-| 2 | [Gate 2.4 — Copilot 正确性与可恢复性](product/GATE_2_4_COPILOT_CORRECTNESS.md) | `gate-2-4-verified` |
-| 3 | [Gate 2.5 — 最小可恢复备课](product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md) | `gate-2-5-verified` |
-| 4 | [Gate 2.6A — Volcengine Ark Provider](product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md) | `gate-2-6a-verified` |
-| 5 | [Gate 2.5B — 文件与教学成果](product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md) | `gate-2-5b-verified` |
-| 6 | [Gate 2.5C — 产品稳定性矩阵](product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md) | `gate-2-5c-verified` |
-| 7 | [Gate 2.7 — 作业、Evidence 与调整下一课](product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md) | `gate-2-7-verified` |
-| 8 | [Gate 2.8 — 教师工作台](product/GATE_2_8_TEACHER_WORKBENCH.md) | `gate-2-8-verified` |
-| 9 | [Gate 2.9 — 课堂实施与反思](product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md) | `gate-2-9-verified` |
-| 10 | [Gate 2.10A — 身份与学校组织](product/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md) | `gate-2-10a-verified` |
+- [仓库结构地图](project/REPOSITORY_MAP.md)；
+- [仓库清理计划](project/REPOSITORY_CLEANUP_PLAN.md)；
+- [GitHub 同步审计](project/GITHUB_SYNC_AUDIT.md)；
+- [目标仓库结构](project/TARGET_REPOSITORY_STRUCTURE.md)；
+- [Claude Code 仓库经验](project/CLAUDE_CODE_REPOSITORY_LESSONS.md)；
+- [部署就绪差距明细](operations/DEPLOYMENT_READINESS_GAPS.md)；
+- [Migration ownership](../infra/postgres/MIGRATION_OWNERSHIP.md)；
+- [Docker/PostgreSQL](../infra/docker/README.md)。
 
-Gate 2、UI redesign v1/v2 和 Teacher Portal UI v1 没有独立 PR/Tag；见版本历史。**Gate 2.6B 没有实施**，不存在产品文档、分支、PR 或 Tag。
+## ADR 与历史资料
 
-## 4. 当前功能矩阵
+- [ADR 入口](adr/README.md)：长期架构决策；已有 v0.3.2 勘误与 ADR 包原样保留；
+- [历史索引](history/README.md)：详细 Gate、早期研究和 UI 记录；
+- `history/gates/`：Verified Gate 设计、功能矩阵和验收资料；
+- `history/research/`：早期架构、红队审查、0→1 调查和追加式状态报告；
+- `history/ui/`：历史 UI 规格和当时验收图片。
 
-- **CURRENT** — [普通教师端功能矩阵](product/TEACHER_PORTAL_FUNCTION_MATRIX.md)：逐交互 REAL/MOCK/READ_ONLY/DISABLED/DEAD；
-- **HISTORICAL / VERIFIED** — [Gate 2.5C 稳定性矩阵](product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)：P0/P1/P2/P3 问题、根因和回归证据。
+历史资料准确描述当时阶段，但不再作为当前事实入口。内容与当前代码冲突时，以 `CAPABILITIES`、`ARCHITECTURE`、`VERSION_HISTORY` 和自动化验证为准。
 
-## 5. UI 历史
+## 文档状态与维护规则
 
-以下文档为 **HISTORICAL**，用于解释当前门户视觉演进，不是当前业务真值：
-
-- [Gate 2 UI redesign v1](ui/GATE2_UI_REDESIGN.md)；
-- [Gate 2 UI redesign v2](ui/GATE2_UI_REDESIGN_V2.md)；
-- [Teacher Portal UI v1](ui/TEACHER_PORTAL_UI_V1.md)；
-- `docs/ui/images/`：当时的对比/验收图。
-
-## 6. Demo、测试与验收
-
-- **CURRENT** — [本地 Demo](demo/LOCAL_DEMO.md)：数据库、身份、模型、ObjectStore、启动和人工验收；
-- **HISTORICAL / VERIFIED** — [Gate 2.6A Live Acceptance](verification/GATE_2_6A_LIVE_ACCEPTANCE.md)：脱敏真实 Ark 验收摘要；
-- **CURRENT** — 根 README 的验证命令；
-- **CURRENT** — `tests/` 和 `scripts/` 位置见仓库结构地图；
-- **CURRENT** — `corepack pnpm verify:version-history`：离线核对 Commit、Merge、Tag、Gate 文档和本地链接。
-
-## 7. 部署
-
-- **DRAFT** — [DEPLOYMENT_READINESS_GAPS](project/DEPLOYMENT_READINESS_GAPS.md)：Gate2.10B 的 Blocker/Required/Recommended/Later；
-- 当前没有生产部署手册或受支持云环境；本地 Docker 配置不能当作学校试点生产方案。
-
-## 8. 早期架构资料
-
-根目录五份中文文档保留历史价值：
-
-| 状态 | 文档 |
-|---|---|
-| HISTORICAL | [架构红队审查与 v0.3 建议](../教育智能体平台架构红队审查与v0.3建议.md) |
-| SUPERSEDED | [v0.3.1 架构修订](../教育智能体平台v0.3.1架构修订.md) |
-| HISTORICAL | [v0.3.2 架构修订](../教育智能体平台v0.3.2架构修订.md) |
-| HISTORICAL | [v0.3.2 勘误与 ADR 包](../教育智能体平台v0.3.2勘误与ADR包.md) |
-| HISTORICAL / VERIFIED BASELINE | [第一轮工程验证计划](../教育智能体平台第一轮工程验证计划.md) |
-
-这些文件不应被删除或改写 Git 历史；涉及当前实现时，请转到 CURRENT_ARCHITECTURE。
-
-## 9. 维护约定
-
-每个 verified Gate 固化时应同步：
-
-1. 更新 VERSION_HISTORY、CHANGELOG、CURRENT_CAPABILITIES 和功能矩阵；
-2. 把 Gate 文档状态从待验收改为 verified，并记录 PR/Merge/Tag；
-3. 运行 `corepack pnpm verify:version-history`；
-4. 如架构、仓库位置或部署差距改变，同步对应 CURRENT 文档；
-5. 未来计划必须标 DRAFT，不能在 CURRENT 能力中写成已实现。
+- `CURRENT`：描述当前代码或当前约束；修改相关代码时同步更新；
+- `DRAFT` / `ROADMAP`：尚未交付，不得写成已完成；
+- `HISTORICAL`：保留当时设计、验收或决策，不追改成当前说明；
+- `SUPERSEDED`：已有权威替代文档，保留审计价值；
+- 一个事实只指定一个权威入口，其他文档使用链接，不复制大段状态表；
+- 新 Gate 完成后更新 `CAPABILITIES`、`ARCHITECTURE`（如有变化）、`VERSION_HISTORY` 和 `CHANGELOG`；
+- Gate 详细设计/验收归档到 `history/gates/`，未来计划只写入 `ROADMAP`；
+- 新的长期不可逆架构决策写独立 ADR，不改写旧 ADR；
+- 文档移动后运行 `corepack pnpm verify:markdown-links` 和 `verify:version-history`。

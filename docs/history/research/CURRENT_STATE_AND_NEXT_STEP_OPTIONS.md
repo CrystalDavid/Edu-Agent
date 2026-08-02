@@ -1,6 +1,6 @@
 # 教育智能体平台：当前真实状态与下一步候选方案
 
-> 状态：HISTORICAL / SUPERSEDED。本文是从 Teacher Portal v1 到 Gate 2.10A 的追加式决策记录；当前能力和下一步部署差距分别以 [CURRENT_CAPABILITIES](CURRENT_CAPABILITIES.md) 和 [DEPLOYMENT_READINESS_GAPS](DEPLOYMENT_READINESS_GAPS.md) 为准。
+> 状态：HISTORICAL / SUPERSEDED。本文是从 Teacher Portal v1 到 Gate 2.10A 的追加式决策记录；当前能力和下一步部署差距分别以 [CAPABILITIES](../../CAPABILITIES.md) 和 [DEPLOYMENT_READINESS_GAPS](../../operations/DEPLOYMENT_READINESS_GAPS.md) 为准。
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
 > Gate 2.10A 实施复核：2026-08-02。第 24 节是当前权威状态；前述调查和候选方案保留为决策历史。

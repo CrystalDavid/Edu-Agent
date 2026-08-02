@@ -1,7 +1,7 @@
 # Edu-Agent 当前能力地图
 
 > 状态：CURRENT
-> 基线：`main` @ `bbba3428602bb148a3d73a201ad97fcb29181c1b`，`gate-2-10a-verified`
+> 最新产品基线：`gate-2-10a-verified`（`bbba3428602bb148a3d73a201ad97fcb29181c1b`）
 > 口径：`REAL` = 正式类型化 API + PostgreSQL 真值；`PARTIAL` = 核心链路真实但仍有明确演示/未实现区域；`MOCK` = 前端或测试夹具生成；`READ_ONLY` = 可查看但不可写；`DISABLED` = 明确禁用；`NOT_STARTED` = 尚未进入产品实现。
 
 本文描述当前代码能做什么，不以页面是否存在、旧设计文档或未来计划替代可执行证据。合成演示数据可以经过真实 Repository/API 持久化，因此“数据是合成的”和“实现是 REAL”并不矛盾。
@@ -25,7 +25,7 @@
 | 设置 | PARTIAL | 查看真实用户、学校、角色、CourseRun scope、活跃 Session；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance PostgreSQL；auth/session/workspace、organization/admin、governance request API | Governance；2.10A | 偏好/通知部分仍是演示；无邮件邀请、MFA、SCIM 或完整学校后台 |
 | 管理员入口 | REAL（最小） | school admin 查看成员、安全事件，创建/激活/停用成员，分配 ordinary_teacher 和 CourseRun access | Governance PostgreSQL；`/api/v1/admin/*` | Governance；2.10A | 只在当前学校生效；不授予修改教学事实的超级权限；subject lead/homeroom 仅保留边界 |
 
-`DEAD = 0` 的依据见 [教师门户功能矩阵](../product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。当前仍为 Mock 的入口必须显式标注，不能显示成功写入提示。
+`DEAD = 0` 的 Gate 2.5C 固化证据见历史 [教师门户功能矩阵](history/gates/TEACHER_PORTAL_FUNCTION_MATRIX.md)。当前仍为 Mock 的入口必须显式标注，不能显示成功写入提示。
 
 ## 2. 按业务闭环
 
@@ -58,4 +58,4 @@
 
 当前最强证据是：核心状态均来自七个 PostgreSQL Schema，写入经过服务端 Session → ActingContext → Authorization → owning Application Service，刷新与服务重启可恢复；当前最大缺口不是再增加教师页面，而是完成云基础设施、安全加固、运维、数据治理执行和小规模试点验证。
 
-相关文档：[完整版本历史](VERSION_HISTORY.md) · [当前架构](CURRENT_ARCHITECTURE.md) · [部署就绪差距](DEPLOYMENT_READINESS_GAPS.md)
+相关文档：[完整版本历史](VERSION_HISTORY.md) · [当前架构](ARCHITECTURE.md) · [部署就绪差距](operations/DEPLOYMENT_READINESS_GAPS.md)

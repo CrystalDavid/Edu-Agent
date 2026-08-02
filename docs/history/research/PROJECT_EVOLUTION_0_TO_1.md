@@ -1,6 +1,6 @@
 # 教育智能体平台：从 0 到 1 的真实演进
 
-> 状态：HISTORICAL / SUPERSEDED。本文保留 2026-07-30 调查及 Gate 2.5 补记；当前完整事实请使用 [VERSION_HISTORY](VERSION_HISTORY.md)、[CURRENT_CAPABILITIES](CURRENT_CAPABILITIES.md) 和 [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md)。
+> 状态：HISTORICAL / SUPERSEDED。本文保留 2026-07-30 调查及 Gate 2.5 补记；当前完整事实请使用 [VERSION_HISTORY](../../VERSION_HISTORY.md)、[CAPABILITIES](../../CAPABILITIES.md) 和 [ARCHITECTURE](../../ARCHITECTURE.md)。
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
 > Gate 2.5 实施复核：2026-07-31；本文末次更新已将 Gate 2.4 合并基线和 Gate 2.5 实现事实合并进时间线。
