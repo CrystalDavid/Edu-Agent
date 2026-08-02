@@ -42,7 +42,8 @@ Edu-Agent/
 | `src/modules/<module>/domain/` | 领域对象、状态和 invariant（各目录实际细分略有差异） | 新领域对象进入拥有状态的既有模块 |
 | `src/modules/<module>/application/` | Application Service、命令、读取服务、事务编排 | 正式写入和跨端口协调放这里 |
 | `src/modules/<module>/infrastructure/` | PostgreSQL Repository、外部 Adapter、序列化 | Port 实现放这里，不把 SDK 类型泄漏给 domain/contracts |
-| `src/platform/postgres/` | Migration registry、bootstrap、pool/role 支持 | 新 Migration 注册和数据库平台代码 |
+| `src/database/migrations.ts` | 43 个前向 Migration 的单一注册表（owner + relative path） | 新 Migration 必须在这里登记，不能只新增 SQL 文件 |
+| `src/platform/postgres/` | Migration bootstrap/executor、pool/role 与 write-context 支持 | 数据库平台执行代码；不在这里重复维护 Migration 清单 |
 
 当前七个模块目录：
 
@@ -81,10 +82,10 @@ work-assistant-durable-execution
 Migration 文件随 owning module 放置：
 
 ```text
-apps/api/src/modules/<module>/infrastructure/postgres/migrations/*.sql
+apps/api/src/modules/<module>/infrastructure/migrations/*.sql
 ```
 
-注册入口位于 `apps/api/src/platform/postgres/migration-registry.ts`。新增 Migration 必须：
+注册入口位于 `apps/api/src/database/migrations.ts`，执行入口位于 `apps/api/src/platform/postgres/bootstrap.ts`。新增 Migration 必须：
 
 1. 使用下一个模块内序号，不能改写已应用文件；
 2. 进入 registry，并有 checksum/owner；
@@ -150,7 +151,7 @@ Gate 1A 的内存 Repository 和 Test Container 仍服务隔离测试；它们�
 ## 8. 快速定位清单
 
 - 新领域对象：`apps/api/src/modules/<owning-module>/domain`，并更新模块 application/repository/architecture test；
-- 新 Migration：owning module 的 `infrastructure/postgres/migrations` + migration registry；
+- 新 Migration：owning module 的 `infrastructure/migrations` + `apps/api/src/database/migrations.ts` 注册表；
 - 新 API Contract：`packages/contracts/src` + `api-routes.ts`；
 - 新 API Handler：`apps/api/src/app.ts` 或对应 HTTP adapter，业务放 Application Service；
 - 新教师页面：`apps/web/src/pages` + lazy route + typed `api.ts` client；
