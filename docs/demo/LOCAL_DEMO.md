@@ -4,7 +4,7 @@
 
 本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
 
-普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业/课堂实施与反思、学生近期 Evidence/confirmed classroom observation、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
+普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业/课堂实施与反思、学生近期 Evidence/confirmed classroom observation、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan、Runs，以及身份/学校/会话设置组成 PostgreSQL-backed 业务切片；考试和开放式 Agent 对话仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
 
 ## 前置条件
 
@@ -27,7 +27,7 @@ corepack pnpm demo:dev
 2. 创建被 Git 忽略的 `infra/docker/.env.local`（仅在尚不存在时）；
 3. 初始化七个 Schema、数据库角色和 migrations；
 4. 幂等 Seed 合成数据；
-5. 显式以 `APP_ENV=local`、`DEMO_AUTH_BYPASS=true` 启动演示 API；
+5. 显式以 `APP_ENV=local`、`IDENTITY_PROVIDER_MODE=local`、`DEMO_AUTH_BYPASS=false` 启动演示 API；浏览器从登录页建立 HttpOnly Session；
 6. 启动共用 Outbox Worker；模型执行先提交 queued 事实，再在事务外调用 Mock 或 Ark；
 7. 使用 `.demo/uploads/objects` 作为 Git ignored 的开发 LocalObjectStore（可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖）；
 8. 等待 API 和 Web 通过启动检查。
@@ -68,22 +68,44 @@ MODEL_DEBUG_CONTENT=false
 
 请只在本机填写 `ARK_API_KEY`，不要粘贴到终端输出、文档、测试或聊天。Ark 配置不完整时 local/demo 会安全回退到本地演示助手；production 则启动失败。
 
-## 演示身份：默认拒绝，显式绕过
+## 本地身份与服务端会话
 
-产品 API 默认要求身份 Header：
+产品 API 默认要求有效的服务端 Session Cookie。未登录访问教师门户会显示登录页；登录成功后 API 建立随机不透明 Session，浏览器只持有 HttpOnly Cookie，数据库只保存 token hash。刷新和 API 重启后从 PostgreSQL 恢复 User、School、Membership、Role 和 CourseRun access。
 
-- `x-demo-tenant: tenant:demo-school`
-- `x-demo-actor: user:teacher-001`
+本地演示提供四个不含密码的合成身份：普通教师、School Admin、多学校教师和 School B 教师。多学校身份必须选择当前工作空间；切换学校后所有产品读取重新按该 Membership 和 CourseRun access 授权。侧边栏与设置页显示真实 Session 中的姓名、当前学校和角色。
 
-缺失或只提供一个 Header 会返回 `401 AUTHENTICATION_REQUIRED`；错误租户或教师会返回 `403 AUTHORIZATION_DENIED`。
-
-只有同时满足以下条件才允许服务端注入合成教师身份：
+`x-demo-tenant` / `x-demo-actor` 只保留在明确的隔离测试 Adapter；普通浏览器和 production 路径不接受它们。只有同时满足以下条件才允许服务端 Demo bypass 注入合成教师身份：
 
 - `DEMO_AUTH_BYPASS=true`；
 - `APP_ENV=local` 或 `APP_ENV=demo`；
 - 不是 production / `NODE_ENV=production`。
 
-每次服务端身份注入都会写入 `DemoIdentityInjection` Audit。生产模式禁止该开关。浏览器前端仍显式发送合成 Header，因此页面中的“本地演示教师身份”不是正式登录、Cookie Session 或 SSO。
+每次 bypass 注入都会写入 `DemoIdentityInjection` Audit。production 禁止 local identity、测试 Header 和 bypass，并要求完整 OIDC 配置与 Secure Cookie。
+
+### 本地身份配置
+
+```text
+IDENTITY_PROVIDER_MODE=local
+LOCAL_IDENTITY_PROVIDER_ENABLED=true
+AUTH_SESSION_TTL_MINUTES=480
+AUTH_SESSION_SECURE=false
+WEB_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+ALLOW_TEST_IDENTITY_HEADERS=false
+DEMO_AUTH_BYPASS=false
+```
+
+生产 OIDC 使用 `OIDC_ISSUER_URL`、`OIDC_CLIENT_ID`、可选 `OIDC_CLIENT_SECRET`、`OIDC_REDIRECT_URI` 和 `OIDC_SCOPES`。本地文件只放空占位或本机 Secret；不要在文档、日志或命令行输出 Token。
+
+### Gate 2.10A 身份验收
+
+1. 未登录打开 `/overview`，确认出现登录页；选择普通教师后进入 School A，刷新仍登录；
+2. 从侧边栏打开“身份与组织设置”，检查当前用户、学校、角色、CourseRun scope 和 active Session；
+3. 登出后确认产品 API 返回 `401`，重新登录可恢复业务数据；
+4. 选择“多学校教师”，在工作空间页分别进入 School A 和 School B，确认 CourseRun/课时数据完全切换且刷新保持；
+5. 使用 School A Session 修改 URL 请求 School B CourseRun，确认返回不泄漏存在性的 `404`；
+6. 以 School Admin 登录，在设置中预配置合成教师、调整角色/CourseRun access、停用并重新启用；普通教师不显示管理面板；
+7. 在一个浏览器建立同一用户的第二 Session，从设置撤销它，确认第二 Session 立即失效；
+8. 提交数据导出或去标识请求，确认只登记人工审核流程，不删除 TeachingPlan、Evidence、Assignment、Reflection 或 Audit 历史。
 
 ## 推荐验收路径
 
@@ -259,7 +281,7 @@ corepack pnpm demo:doctor
 
 ### 身份错误
 
-确认是通过 `demo:dev` 启动，或在直接启动 API 时显式提供两个 Header。不要为了绕过错误把 `DEMO_AUTH_BYPASS` 用在 production。
+确认通过 `demo:dev` 启动且 `IDENTITY_PROVIDER_MODE=local`、`LOCAL_IDENTITY_PROVIDER_ENABLED=true`。清除旧站点 Cookie 后重新登录；不要把测试 Header 或 `DEMO_AUTH_BYPASS` 用在 production。OIDC 模式下检查 issuer、client、callback 和 Provider 可用性，但不要输出 Token。
 
 ### 模型不可用
 
@@ -271,7 +293,7 @@ corepack pnpm demo:doctor
 
 ## 明确未使用
 
-- 正式登录、SSO 或真实身份数据；
+- 最终云身份供应商配置、MFA、SCIM、邮件邀请或真实身份数据；
 - 第二模型、DeepSeek、多供应商或模型选择器；
 - CloudBase、Netlify、CVM；
 - 云 ObjectStore、文件分享/协作、在线 Office 编辑、上传内容进入模型；

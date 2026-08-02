@@ -1,12 +1,15 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。Gate 2.8 日程、待办与教师统一工作台已经 verified；当前分支建设 **Gate 2.9 — 课堂实施、课后反思与教学改进闭环**，把批准的计划、教师确认的实际实施与课堂观察、可恢复 Reflection 草稿及显式后续行动连接起来。
+面向学校的教育智能体平台工程仓库。Gate 2.9 课堂实施、课后反思与教学改进闭环已经 verified；当前分支建设 **Gate 2.10A — 正式身份、学校组织与权限基线**，把既有教师产品从浏览器演示身份升级为服务端 Session、学校 Membership、角色和 CourseRun 授权。
 
 ## 当前真实能力
 
 - 七模块模块化单体与七个 PostgreSQL Schema；
 - Product Composition Root 全部使用 PostgreSQL，Gate 1A 内存实现只供隔离测试；
-- 默认缺失身份返回 `401`；本地演示绕过必须显式开启且会写 Audit；
+- 产品 Web 使用服务端 HttpOnly Session；ActingContext 由 active User、School、Membership、Role 和 CourseRun access 解析，浏览器不能提交 tenant、actor 或角色；
+- provider-neutral OIDC Adapter 使用 Authorization Code + PKCE/state；本地演示使用不含密码的合成身份 Adapter，production 缺少 OIDC 或 Secure Cookie 配置时 fail closed；
+- ordinary teacher 与最小 school admin 已可用；多学校用户可选择并恢复工作空间，Membership 停用会立即撤销访问；
+- 默认缺失 Session 返回 `401`；Demo Auth Bypass 默认关闭，只能在 local/demo 显式开启且会写 Audit；
 - 正式 Repository/API 提供八年级 3 班数学的 CourseRun、一次函数 Unit、五个 Lesson、教学目标和当前计划；
 - Education-owned CourseRunEnrollment 提供 12 名匿名合成 learner；Assignment 采用 `draft → published → closed → archived`，内容版本、SubmissionAttempt 和 ItemResponse 不可变；
 - 教师可以保存批改草稿、单独确认 GradeDecision、显式重新打开；“未交”表示不存在 SubmissionAttempt，不以 0 分代替；
@@ -45,7 +48,7 @@
 - 正式 TeachingPlan 导出文件不能通过通用 API 手工替换版本或改绑来源，只能由新的 approved Revision 导出创建版本；
 - PostgreSQL、HTTP、Playwright、架构与数据库生命周期测试。
 
-普通教师端的概览工作台、日程/Todo、教学课程/课时/作业、匿名学生近期 Evidence、Task-scoped Agent、Teaching Plan、Runs，以及文件/教学成果链路已接入真实闭环；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
+普通教师端的概览工作台、日程/Todo、教学课程/课时/作业、匿名学生近期 Evidence、Task-scoped Agent、Teaching Plan、Runs、文件/教学成果，以及身份/组织设置已接入真实闭环；考试和开放式 Agent 对话仍主要是高保真 Mock 或明确禁用。详见 [教师门户功能矩阵](docs/product/TEACHER_PORTAL_FUNCTION_MATRIX.md)。
 
 ## 本地启动
 
@@ -58,7 +61,7 @@ corepack pnpm demo:doctor
 corepack pnpm demo:dev
 ```
 
-打开 `http://localhost:5173/`。本地演示只使用合成身份和教育数据；默认 Mock，不联网。用户可在被忽略的 `.env.local` 中显式选择 Ark，配置仍只存在于服务端。它不是正式登录或 SSO。完整说明见 [LOCAL_DEMO.md](docs/demo/LOCAL_DEMO.md)。
+打开 `http://localhost:5173/`，从合成本地身份列表登录。登录会建立数据库持久化的 HttpOnly Session，并可选择 School A、School B 或管理员工作空间；它不实现密码，也不代表已配置生产 OIDC。默认 Mock 不联网，Ark 和 OIDC Secret 只能存在于服务端被忽略的 `.env.local`。完整说明见 [LOCAL_DEMO.md](docs/demo/LOCAL_DEMO.md)。
 
 ## 验证命令
 
@@ -88,10 +91,11 @@ corepack pnpm demo:doctor
 
 ## 明确边界
 
-当前不包含真实学校数据、正式登录/SSO、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、外部/共享日历、复杂重复日程、自动 Agent、完整课程资源树或课程 CRUD、完整题库/考试闭环、学生端、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
+当前不包含真实学校数据、最终云 OIDC 配置、MFA/SCIM、邮件邀请、正式学生/家长身份、第二模型或多供应商路由、DeepSeek、CloudBase、Netlify、云 ObjectStore、文件分享/协作、上传内容进入模型、外部/共享日历、复杂重复日程、自动 Agent、完整课程资源树或课程 CRUD、完整题库/考试闭环、学生端、学生长期模型、多 Agent 或 v0.4。图片、streaming 和 Function Calling 只做 capability probe，不进入产品。
 
 Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md](docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md)。Gate 2.5 业务语义见 [GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md](docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md)。
 Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。Gate 2.5C 的问题分级、单一真值源与修复证据见 [TEACHER_PRODUCT_STABILIZATION_MATRIX.md](docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。
 Gate 2.7 的 Assignment、Submission、GradeDecision、Evidence 来源链与调整下一课语义见 [GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md](docs/product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md)。
 Gate 2.8 的 Todo、Calendar、来源投影、提醒偏好与 Agent handoff 语义见 [GATE_2_8_TEACHER_WORKBENCH.md](docs/product/GATE_2_8_TEACHER_WORKBENCH.md)。
 Gate 2.9 的课堂实施事实、课堂观察、Reflection 与后续行动语义见 [GATE_2_9_CLASSROOM_REFLECTION_LOOP.md](docs/product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md)。
+Gate 2.10A 的身份 Provider、Session、学校 Membership、角色、工作空间和资源隔离语义见 [GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md](docs/product/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md)。

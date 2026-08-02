@@ -1,6 +1,6 @@
 # 普通教师端功能矩阵
 
-> 当前基线：Gate 2.8 已 verified；当前分支进行 Gate 2.9 课堂实施、课后反思与教学改进闭环。
+> 当前基线：Gate 2.9 已 verified；当前分支进行 Gate 2.10A 正式身份、学校组织与权限基线。
 > `REAL` = 真实类型化 API + PostgreSQL；`MOCK` = 前端数组、组件状态或确定性模板；`READ_ONLY` = 只读演示；`DISABLED` = 明确不可操作；`DEAD` = 有入口但无响应或伪成功。
 
 | 页面 / 功能 | REAL | MOCK | READ_ONLY | DISABLED | DEAD |
@@ -18,10 +18,11 @@
 | Copilot / Proposal | Lesson/Task-scoped TaskRun、ModelExecution、1–3 条经校验策略、Proposal、diff、Evidence、Disposition、直接 URL 和刷新恢复 | Mock 模式下建议内容是确定性合成模板 | 已处置 Proposal 和历史 Evidence 只读 | 同一 Proposal 冲突处置、无效 Provider 输出和越权 Evidence 被拒绝 | — |
 | Teaching Plan | current approved、active in-review、draft、superseded、history、继续审阅、独立批准、返回 Task/Lesson、显式完成；active in-review 不再误标历史；明确 approved Revision 导出 DOCX、查看/下载版本 | — | 历史 immutable Revision 只读 | draft/in-review 正式导出、approved 原地编辑和无 approved plan 的完成命令被拒绝 | — |
 | Runs | request、Lesson、Task、TaskWorkingSet、AuthorizedContextPlan、ContextManifest、ModelExecution、Provider/展示名、PromptBundle 版本、Token、延迟、估算费用、脱敏 request ID、Proposal、Plan/Work、权限、Audit 与 Outbox；active execution 自动刷新至 terminal | — | 运行解释和安全模型摘要只读 | 不显示 Key、Base URL、完整 Prompt/响应、错误体或隐藏思维链 | — |
-| 设置 | — | 记忆、通知、偏好等界面状态 | 当前能力说明 | 正式账号、安全和组织配置未实现 | — |
+| 登录 / 工作空间 | Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、Session 过期/撤销、多学校选择与恢复均为正式 API + PostgreSQL；本地 Adapter 使用合成身份 | — | 本地登录选项明确标为合成演示身份 | production 未配置 OIDC 时 fail closed；邮件邀请、MFA、SCIM 未实现 | — |
+| 设置 | 真实用户/学校/角色/CourseRun scope、active Session 及撤销、数据治理请求；school admin 可管理成员状态、角色、CourseRun access 和安全事件 | 记忆、通知与偏好仍是本地视图演示 | 角色扩展说明、数据保留说明只读 | 普通教师管理学校成员、跨学校授权和直接删除历史被拒绝 | — |
 | Style Guide | — | — | 字体、组件和 Design Token 展示 | — | — |
 
-Gate 2.5–2.5C 备课/文件链、Gate 2.6A 模型执行、Gate 2.7 作业/Evidence 和 Gate 2.8 工作台继续为 `REAL`。Gate 2.9 的课堂实施、confirmed observations、Reflection Agent 与显式后续行动均接入 Product Composition Root；默认测试仍用 Mock/Fake，不发起公网请求。考试和开放 Agent 对话仍明确为 Mock/READ_ONLY。`DEAD = 0`。
+Gate 2.5–2.5C 备课/文件链、Gate 2.6A 模型执行、Gate 2.7 作业/Evidence、Gate 2.8 工作台和 Gate 2.9 课堂反思继续为 `REAL`。Gate 2.10A 将这些产品路由统一置于服务端 Session、Membership、Role 与 CourseRun access 之后；默认身份和模型测试均使用本地 Fake/Adapter，不发起公网请求。考试和开放 Agent 对话仍明确为 Mock/READ_ONLY。`DEAD = 0`。
 
 ## 关键持久化边界
 
@@ -44,6 +45,7 @@ Gate 2.5–2.5C 备课/文件链、Gate 2.6A 模型执行、Gate 2.7 作业/Evid
 - 可重建 TeacherWorkProjection、source-version-bound TeacherWorkPreference，以及 Todo Agent handoff 的 TaskWorkingSet Revision。
 - LessonDelivery 与 immutable DeliveryRevision、ClassroomObservation 与 ObservationRevision、确认/修订历史；
 - LessonReflection Artifact/Revision、selected implementation/observations/Assignment Evidence、ModelExecution 与显式 follow-up relations。
+- UserAccount、ExternalIdentityLink、School、Membership、RoleAssignment、CourseRunAccess、OIDC Login State、hashed Session、SecurityEvent 和 DataGovernanceRequest。
 
 ### 刷新后丢失或恢复为演示初始状态
 
@@ -53,12 +55,12 @@ Gate 2.5–2.5C 备课/文件链、Gate 2.6A 模型执行、Gate 2.7 作业/Evid
 - 学生页当前 learner 选择；Enrollment、Submission 和 Evidence 不丢失；
 - 文件筛选和预览滚动位置；从业务页携带的 Lesson/FileAsset 选择可由 URL 恢复（文件业务数据与字节不会丢失）；
 - 通用 `/agent` 对话和上下文；
-- 设置页组件状态。
+- 设置页尚未保存的通知/偏好表单状态；正式身份、组织、会话和治理请求不丢失。
 
 ## 身份和模型说明
 
-- Web 显式发送合成 tenant/teacher Header。
-- API 默认缺失身份返回 `401`；仅 local/demo 显式 bypass 可以注入身份并写 Audit，production 禁止 bypass。
+- Web 不发送 tenant/actor/role；API 从 HttpOnly Session 解析 User、active Membership、角色和 CourseRun access，缺失或失效 Session 返回 `401`。
+- local/demo 使用无密码的合成 Identity Adapter；仅显式 bypass 可以注入身份并写 Audit。production 禁止 local Adapter、测试 Header 和 bypass，并要求 OIDC + Secure Cookie。
 - 默认 Copilot 使用 Mock；服务端显式配置后使用唯一 `VolcengineArkProvider`。普通教师端没有模型选择器。
 - 所有真实 Ark 调用只允许演示 tenant 和合成数据；图片、streaming、Function Calling 仅 Probe。
-- 本矩阵不代表学校生产可用性；正式登录、真实学校数据、云文件存储/协作、文件内容进入模型、学生提交端、完整题库/考试、学生长期模型、云部署和多供应商仍未实现。
+- 本矩阵不代表学校生产可用性；最终云 OIDC 配置、MFA/SCIM、真实学校数据、云文件存储/协作、文件内容进入模型、学生提交端、完整题库/考试、学生长期模型、云部署和多供应商仍未实现。

@@ -54,6 +54,22 @@ import {
 import {
   PostgresClassroomReflectionService
 } from "./postgres-classroom-reflection-service.js";
+import {
+  readIdentitySettings,
+  type IdentitySettings
+} from "../platform/auth/config.js";
+import type {
+  IdentityProvider
+} from "../modules/identity-governance-audit/domain/identity-provider.js";
+import {
+  LocalIdentityProvider
+} from "../modules/identity-governance-audit/infrastructure/local-identity-provider.js";
+import {
+  OidcIdentityProvider
+} from "../modules/identity-governance-audit/infrastructure/oidc-identity-provider.js";
+import {
+  PostgresIdentityOrganizationService
+} from "./postgres-identity-organization-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -62,6 +78,8 @@ export function createProductContainer(
     modelProvider?: ModelProvider;
     objectStoreSettings?: ObjectStoreSettings;
     objectStore?: ObjectStore;
+    identitySettings?: IdentitySettings;
+    identityProvider?: IdentityProvider;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -91,6 +109,23 @@ export function createProductContainer(
   const objectStore =
     options.objectStore ??
     new LocalObjectStore(objectStoreSettings.rootDirectory);
+  const identitySettings =
+    options.identitySettings ?? readIdentitySettings();
+  const localIdentityProvider =
+    identitySettings.providerMode === "local"
+      ? new LocalIdentityProvider(identitySettings.localProviderEnabled)
+      : undefined;
+  const identityProvider =
+    options.identityProvider ??
+    (identitySettings.providerMode === "oidc" && identitySettings.oidc
+      ? new OidcIdentityProvider(identitySettings.oidc)
+      : localIdentityProvider!);
+  const identity = new PostgresIdentityOrganizationService(
+    appPool,
+    identitySettings,
+    identityProvider,
+    localIdentityProvider
+  );
   const lessonPreparation = new PostgresLessonPreparationService(appPool);
   const teacherWorkbench = new PostgresTeacherWorkbenchService(
     appPool,
@@ -109,14 +144,18 @@ export function createProductContainer(
     100,
     (modelExecutionRef) =>
       modelInvocations.processExecution(modelExecutionRef),
-    () => teacherWorkbench.refreshProjections({
-      tenantRef: "tenant:demo-school",
-      actorRef: "user:teacher-001"
-    })
+    async () => {
+      let projectionCount = 0;
+      for (const scope of await identity.listActiveTeacherScopes()) {
+        projectionCount += await teacherWorkbench.refreshProjections(scope);
+      }
+      return projectionCount;
+    }
   );
   return {
     services: {
-      seed: new Gate2DemoSeedService(appPool),
+      seed: new Gate2DemoSeedService(appPool, identity),
+      identity,
       read: new PostgresGate2ReadService(appPool),
       demoIdentityAudit:
         new PostgresDemoIdentityAuditService(appPool),

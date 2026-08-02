@@ -2,7 +2,7 @@
 
 > 调查基线：`feat/teacher-portal-ui-v1` / `43c8e03a8e0e7060989d886442de283ae6f43fc5`
 > 调查日期：2026-07-30
-> Gate 2.9 实施复核：2026-08-01。第 23 节是当前权威状态；前述调查和候选方案保留为决策历史。
+> Gate 2.10A 实施复核：2026-08-02。第 24 节是当前权威状态；前述调查和候选方案保留为决策历史。
 > 状态词：已实现并验证 / 已实现但未充分验证 / 只有 Mock / 只有接口或 Schema / 只存在于文档 / 尚未开始。
 
 ## 1. 执行结论
@@ -1036,7 +1036,7 @@ Gate 2.8 人工验收后，项目进入 **Gate 2.9 课堂实施、课后反思�
 
 ### 23.1 当前真实完成度
 
-Gate 2.9 已在功能分支完成工程实现，等待人工验收：
+Gate 2.9 已通过人工验收，并以 merge commit `f2c756630b45e1b6e284d0f02269f0c094c3964d` 和 annotated tag `gate-2-9-verified` 固化：
 
 | 能力 | 当前真值与语义 |
 |---|---|
@@ -1076,3 +1076,34 @@ Reflection 模型调用继续复用 Gate 2.6A 的 queued/running/validating/term
 ### 23.5 下一阶段建议：Gate 2.10 教师试点就绪
 
 不建议继续横向扩展更多教师业务。下一 Gate 应聚焦小范围试点所需的正式身份/组织与租户配置、部署和备份恢复、可观测性、数据保留/导出/删除策略、权限管理、错误支持流程、性能容量与试点运维手册。实时课堂采集、多模态分析、长期学生画像、家长/学生端和完整考试仍应推迟。
+
+## 24. Gate 2.10A 正式身份、学校组织与权限基线（权威更新）
+
+### 24.1 当前真实完成度
+
+| 能力 | 当前真值与语义 |
+|---|---|
+| Identity Provider | Governance-owned provider-neutral Port；本地合成 Adapter 和基于 `openid-client` 的标准 OIDC Authorization Code + PKCE/state Adapter |
+| 用户与学校 | `UserAccount`、hashed `ExternalIdentityLink`、School/Organization、Membership、RoleAssignment 和 CourseRunAccess 均在 PostgreSQL governance Schema |
+| Session | 服务端随机不透明 Session/CSRF；数据库只保存 hash；HttpOnly + SameSite=Lax，production 强制 Secure；支持过期、刷新、撤销和登出 |
+| ActingContext | 每个产品请求从 active Session、User、School、Membership、Role 和 CourseRun access 重新解析；浏览器不再提交 tenant、actor 或角色 |
+| 多学校 | 一个 User 可拥有多个 Membership；未选择时 fail closed，选择后 Session 恢复当前工作空间，切换后重新读取所有产品数据 |
+| 管理员 | 最小 school admin 可预配置 external subject 成员、启停 Membership、分配角色/CourseRun、查看当前学校和安全事件；不取得教学事实写权限 |
+| 数据治理 | export、de-identification、deletion request 只登记受控人工审核；不会级联破坏 Audit、Evidence、TeachingPlan、Assignment、GradeDecision 或 Reflection 历史 |
+| 测试身份 | Demo bypass 默认关闭且仅 local/demo 可显式开启；测试 Header 只存在隔离 Adapter；production 对 local、bypass 和 test header 全部 fail closed |
+
+### 24.2 数据与资源隔离
+
+现有 `tenant_ref` 与正式 Organization ref 保持一致，不修改旧业务主键。School A 现有 Gate 数据通过前向 Seed 映射到正式 User/Membership；School B 具有独立 CourseRun、Unit、Lesson、learner/Evidence 和 approved plan fixture。产品读取同时经过统一 CourseRun scope 检查和 owning Repository tenant 条件，跨学校 ref 返回不泄漏存在性的 404；访问拒绝写入安全事件。
+
+Membership 被停用、学校停用、Session 过期/撤销或 external identity 解绑后，既有 Cookie 立即失效。文件下载、Agent context、Runs、Audit 及所有既有业务服务继续使用服务端 ActingContext，而不是前端身份副本。
+
+### 24.3 Migration 与兼容性
+
+Governance `0005_gate2_10a_identity_organization.sql` 新增 Organization/User/ExternalIdentity/Membership/Role/Course access/Session/OIDC state/security event/data-governance request 和身份命令幂等表；`0006_gate2_10a_model_data_scope.sql` 为 ModelDataManifest 增加正式组织与 synthetic scope 校验。总 Migration 为 43，全部以前向 Migration、owner 和 checksum 执行，不重写历史。
+
+### 24.4 当前边界与 Gate 2.10B 建议
+
+当前本地身份是真实服务端 Session 流程，但不实现密码，也不是最终云身份供应商。邮件邀请、MFA、SCIM、正式学生/家长身份、完整组织树、生产部署、备份恢复、集中日志/指标/告警、运行手册和真实身份供应商配置仍未完成。
+
+下一阶段建议 **Gate 2.10B — 云部署与试点运维**：选择一个正式 OIDC 供应商和远程运行环境，配置 HTTPS/域名/Secret、托管 PostgreSQL 与 ObjectStore、备份恢复、迁移发布、观测告警、支持流程和小范围合成数据容量验证。不要同时扩展新的教师业务、学生端或第二模型供应商。

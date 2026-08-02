@@ -54,6 +54,15 @@ import {
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
   GenerateReflectionRequestSchema,
+  LocalLoginRequestSchema,
+  RefreshSessionRequestSchema,
+  SwitchWorkspaceRequestSchema,
+  RevokeSessionRequestSchema,
+  CreateMemberRequestSchema,
+  UpdateMemberStatusRequestSchema,
+  UpdateMemberRolesRequestSchema,
+  UpdateMemberCourseAccessRequestSchema,
+  CreateDataGovernanceRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
   UpdateLessonDeliveryDraftRequestSchema,
@@ -79,18 +88,79 @@ import {
   DomainConflictError,
   IdempotencyConflictError,
   InvalidFileError,
-  NotFoundError
+  NotFoundError,
+  ServiceUnavailableError
 } from "./platform/errors.js";
+import type {
+  ProductResourceRefs,
+  ResolvedProductIdentity
+} from "./composition/postgres-identity-organization-service.js";
 
 type RouteResponseLocals = {
   routeId?: string;
   safeErrorCode?: string;
+  identity?: ResolvedProductIdentity;
 };
+
+const requestIdentities = new WeakMap<Request, ResolvedProductIdentity>();
+
+const resourceRefKeys = {
+  courseRunRef: "courseRunRefs",
+  courseRunRefs: "courseRunRefs",
+  unitRef: "unitRefs",
+  unitRefs: "unitRefs",
+  lessonRef: "lessonRefs",
+  lessonRefs: "lessonRefs",
+  assignmentRef: "assignmentRefs",
+  assignmentRefs: "assignmentRefs",
+  learnerRef: "learnerRefs",
+  learnerRefs: "learnerRefs",
+  deliveryRef: "deliveryRefs",
+  deliveryRefs: "deliveryRefs",
+  observationRef: "observationRefs",
+  observationRefs: "observationRefs",
+  reflectionRef: "reflectionRefs",
+  reflectionRefs: "reflectionRefs",
+  taskRef: "taskRefs",
+  taskRefs: "taskRefs",
+  preparationTaskRef: "taskRefs",
+  preparationTaskRefs: "taskRefs"
+} as const satisfies Record<string, keyof ProductResourceRefs>;
+
+function collectProductResourceRefs(request: Request): ProductResourceRefs {
+  const collected = new Map<keyof ProductResourceRefs, Set<string>>();
+  const visit = (value: unknown, depth = 0): void => {
+    if (depth > 8 || !value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      const target = resourceRefKeys[key as keyof typeof resourceRefKeys];
+      if (target) {
+        const values = Array.isArray(nested) ? nested : [nested];
+        const bucket = collected.get(target) ?? new Set<string>();
+        for (const item of values) {
+          if (typeof item === "string" && item) bucket.add(item);
+        }
+        collected.set(target, bucket);
+      }
+      visit(nested, depth + 1);
+    }
+  };
+  visit(request.params);
+  visit(request.query);
+  visit(request.body);
+  return Object.fromEntries(
+    [...collected].map(([key, values]) => [key, [...values]])
+  ) as ProductResourceRefs;
+}
 
 export interface CreateAppOptions {
   product?: ProductContainer;
   test?: TestContainer;
   demoIdentity?: DemoIdentityPolicy;
+  allowTestIdentityHeaders?: boolean;
   exposeInternalTestRoutes?: boolean;
 }
 
@@ -167,6 +237,46 @@ function contextsFromHeaders(
   };
 }
 
+function parseCookies(request: Request): Record<string, string> {
+  const raw = request.header("cookie");
+  if (!raw) return {};
+  const result: Record<string, string> = {};
+  for (const part of raw.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator <= 0) continue;
+    const name = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    try {
+      result[name] = decodeURIComponent(value);
+    } catch {
+      // Invalid Cookie values are ignored and fail closed as missing.
+    }
+  }
+  return result;
+}
+
+function clientLabel(request: Request): string {
+  const value = request.header("user-agent")?.replace(/[\r\n]/gu, " ").trim();
+  return value ? value.slice(0, 160) : "Unknown browser";
+}
+
+function clientFingerprint(request: Request): string {
+  return [
+    request.ip,
+    request.header("user-agent") ?? "unknown"
+  ].join("|");
+}
+
+function isSafeMethod(method: string): boolean {
+  return method === "GET" || method === "HEAD" || method === "OPTIONS";
+}
+
+function safeReturnTo(value: unknown): string {
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
+    ? value
+    : "/overview";
+}
+
 function strictContextsFromRequest(request: Request): {
   tenant: TenantContext;
   acting: ActingContext;
@@ -187,39 +297,82 @@ function strictContextsFromRequest(request: Request): {
 async function productContextsFromRequest(
   request: Request,
   product: ProductContainer,
-  policy: DemoIdentityPolicy
-): Promise<{
-  tenant: TenantContext;
-  acting: ActingContext;
-}> {
+  policy: DemoIdentityPolicy,
+  allowTestIdentityHeaders =
+    product.services.identity.settings.allowTestIdentityHeaders ||
+    policy.applicationEnvironment === "test",
+  validateProductResources = true,
+  requireTeacherProductAccess = true
+): Promise<ResolvedProductIdentity> {
+  const finalize = async (
+    identity: ResolvedProductIdentity
+  ): Promise<ResolvedProductIdentity> => {
+    if (!isSafeMethod(request.method)) {
+      const origin = request.header("origin");
+      if (
+        origin &&
+        !product.services.identity.settings.allowedWebOrigins.includes(origin)
+      ) {
+        throw new AuthorizationDeniedError("Request Origin is not allowed.");
+      }
+      product.services.identity.verifyCsrf(
+        identity,
+        request.header("x-csrf-token")
+      );
+    }
+    requestIdentities.set(request, identity);
+    if (validateProductResources) {
+      await product.services.identity.assertResourceAccess(
+        identity,
+        collectProductResourceRefs(request)
+      );
+    }
+    return identity;
+  };
   const tenantRef = request.header("x-demo-tenant");
   const actorRef = request.header("x-demo-actor");
   if (tenantRef && actorRef) {
-    return contextsFromHeaders(
+    if (!allowTestIdentityHeaders) {
+      throw new AuthenticationRequiredError(
+        "Browser-supplied identity headers are not accepted."
+      );
+    }
+    return finalize(await product.services.identity.resolveFixtureIdentity({
       tenantRef,
       actorRef
-    );
+    }));
   }
   if (tenantRef || actorRef) {
     throw new AuthenticationRequiredError(
-      "Partial demo identity is not accepted; provide both identity headers."
-    );
-  }
-  if (!policy.allowBypass) {
-    throw new AuthenticationRequiredError(
-      "Demo identity headers are required. Local bypass is disabled."
+      "Partial test identity is not accepted."
     );
   }
 
-  const tenant = "tenant:demo-school";
-  const actor = "user:teacher-001";
+  const cookies = parseCookies(request);
+  const settings = product.services.identity.settings;
+  const sessionToken = cookies[settings.sessionCookieName];
+  const csrfToken = cookies[settings.csrfCookieName];
+  if (sessionToken) {
+    return finalize(await product.services.identity.resolveProductIdentity({
+      sessionToken,
+      ...(csrfToken ? { csrfToken } : {}),
+      requireTeacherProductAccess
+    }));
+  }
+  if (!policy.allowBypass) {
+    throw new AuthenticationRequiredError(
+      "A server authentication session is required."
+    );
+  }
+
+  const identity = await product.services.identity.resolveDemoBypassIdentity();
   await product.services.demoIdentityAudit.recordInjection({
-    actorRef: actor,
+    actorRef: identity.acting.actorRef,
     method: request.method,
     path: requestPath(request),
     purpose: "local.demo.identity-injection"
   });
-  return contextsFromHeaders(tenant, actor);
+  return finalize(identity);
 }
 
 export function createApp(
@@ -229,6 +382,10 @@ export function createApp(
   const test = options.test;
   const demoIdentity =
     options.demoIdentity ?? strictDemoIdentityPolicy;
+  const allowTestIdentityHeaders =
+    options.allowTestIdentityHeaders ??
+    (product?.services.identity.settings.allowTestIdentityHeaders === true ||
+      demoIdentity.applicationEnvironment === "test");
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "64kb" }));
@@ -272,6 +429,419 @@ export function createApp(
   );
 
   if (product) {
+    const identity = product.services.identity;
+    const identitySettings = identity.settings;
+    const setSessionCookies = (
+      response: Response,
+      sessionToken: string,
+      csrfToken: string
+    ) => {
+      const cookieBase = {
+        secure: identitySettings.sessionSecure,
+        sameSite: identitySettings.sessionSameSite,
+        path: "/",
+        maxAge: identitySettings.sessionTtlMs
+      } as const;
+      response.cookie(identitySettings.sessionCookieName, sessionToken, {
+        ...cookieBase,
+        httpOnly: true
+      });
+      response.cookie(identitySettings.csrfCookieName, csrfToken, {
+        ...cookieBase,
+        httpOnly: false
+      });
+    };
+    const clearSessionCookies = (response: Response) => {
+      const cookieBase = {
+        secure: identitySettings.sessionSecure,
+        sameSite: identitySettings.sessionSameSite,
+        path: "/"
+      } as const;
+      response.clearCookie(identitySettings.sessionCookieName, {
+        ...cookieBase,
+        httpOnly: true
+      });
+      response.clearCookie(identitySettings.csrfCookieName, {
+        ...cookieBase,
+        httpOnly: false
+      });
+    };
+    const rawSessionCookies = (request: Request) => {
+      const cookies = parseCookies(request);
+      return {
+        sessionToken: cookies[identitySettings.sessionCookieName],
+        csrfToken: cookies[identitySettings.csrfCookieName]
+      };
+    };
+    const assertAllowedAuthOrigin = (request: Request) => {
+      const origin = request.header("origin");
+      if (origin && !identitySettings.allowedWebOrigins.includes(origin)) {
+        throw new AuthorizationDeniedError("Request Origin is not allowed.");
+      }
+    };
+    const requireIdentity = async (request: Request) =>
+      productContextsFromRequest(
+        request,
+        product,
+        demoIdentity,
+        allowTestIdentityHeaders,
+        false,
+        false
+      );
+
+    app.get(
+      apiRoutes.authentication.provider,
+      markRoute("authentication.provider"),
+      async (_request, response, next) => {
+        try {
+          response.json(await identity.providerAvailability());
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.authentication.session,
+      markRoute("authentication.session.status"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const cookies = rawSessionCookies(request);
+          const status = await identity.getSessionStatus({
+            ...(cookies.sessionToken
+              ? { sessionToken: cookies.sessionToken }
+              : {}),
+            ...(cookies.csrfToken ? { csrfToken: cookies.csrfToken } : {})
+          });
+          if (!status.authenticated && demoIdentity.allowBypass) {
+            response.json({ ...status, demoBypassAvailable: true });
+            return;
+          }
+          response.json(status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.sessionRefresh,
+      markRoute("authentication.session.refresh"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const cookies = rawSessionCookies(request);
+          if (!cookies.sessionToken || !cookies.csrfToken) {
+            throw new AuthenticationRequiredError("A valid server session is required.");
+          }
+          const parsed = RefreshSessionRequestSchema.parse(request.body);
+          const result = await identity.refreshSession({
+            sessionToken: cookies.sessionToken,
+            csrfToken: request.header("x-csrf-token") ?? "",
+            expectedSessionVersion: parsed.expectedSessionVersion
+          });
+          setSessionCookies(response, result.sessionToken, result.csrfToken);
+          response.json(result.status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.localLogin,
+      markRoute("authentication.local.login"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const parsed = LocalLoginRequestSchema.parse(request.body);
+          const result = await identity.localLogin({
+            profile: parsed.profile,
+            clientLabel: clientLabel(request),
+            clientFingerprint: clientFingerprint(request)
+          });
+          setSessionCookies(response, result.sessionToken, result.csrfToken);
+          response.status(201).json(result.status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.authentication.oidcStart,
+      markRoute("authentication.oidc.start"),
+      async (request, response, next) => {
+        try {
+          const result = await identity.beginOidcLogin(
+            safeReturnTo(request.query["returnTo"])
+          );
+          response.redirect(302, result.authorizationUrl);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.authentication.oidcCallback,
+      markRoute("authentication.oidc.callback"),
+      async (request, response, next) => {
+        try {
+          const state = request.query["state"];
+          if (typeof state !== "string") {
+            throw new AuthenticationRequiredError("OIDC callback state is required.");
+          }
+          const callbackUrl = new URL(
+            identitySettings.oidc?.redirectUri ??
+              "http://localhost/api/v1/auth/oidc/callback"
+          );
+          callbackUrl.search = new URL(
+            request.originalUrl,
+            "http://localhost"
+          ).search;
+          const result = await identity.completeOidcLogin({
+            currentUrl: callbackUrl,
+            state,
+            clientLabel: clientLabel(request),
+            clientFingerprint: clientFingerprint(request)
+          });
+          setSessionCookies(response, result.sessionToken, result.csrfToken);
+          response.redirect(302, result.returnTo);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.logout,
+      markRoute("authentication.logout"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const cookies = rawSessionCookies(request);
+          await identity.logout(
+            cookies.sessionToken,
+            request.header("x-csrf-token")
+          );
+          clearSessionCookies(response);
+          response.status(204).end();
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.switchWorkspace,
+      markRoute("authentication.workspace.switch"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const cookies = rawSessionCookies(request);
+          if (!cookies.sessionToken || !cookies.csrfToken) {
+            throw new AuthenticationRequiredError("A valid server session is required.");
+          }
+          const parsed = SwitchWorkspaceRequestSchema.parse(request.body);
+          const status = await identity.switchWorkspace({
+            sessionToken: cookies.sessionToken,
+            csrfToken: request.header("x-csrf-token") ?? "",
+            membershipRef: parsed.membershipRef,
+            expectedSessionVersion: parsed.expectedSessionVersion
+          });
+          response.json(status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.authentication.activeSessions,
+      markRoute("authentication.sessions.list"),
+      async (request, response, next) => {
+        try {
+          response.json(await identity.listSessions(await requireIdentity(request)));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.revokeSessionPattern,
+      markRoute("authentication.sessions.revoke"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          const parsed = RevokeSessionRequestSchema.parse(request.body);
+          await identity.revokeSession({
+            current,
+            sessionRef: routeParameter(request.params["sessionRef"]),
+            expectedVersion: parsed.expectedVersion
+          });
+          response.status(204).end();
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.organization.currentSchool,
+      markRoute("organization.current"),
+      async (request, response, next) => {
+        try {
+          response.json(await identity.getCurrentSchool(await requireIdentity(request)));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.organization.members,
+      markRoute("organization.members.list"),
+      async (request, response, next) => {
+        try {
+          response.json(await identity.listMembers(await requireIdentity(request)));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.organization.members,
+      markRoute("organization.members.create"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          response.status(201).json(
+            await identity.createMember(
+              current,
+              CreateMemberRequestSchema.parse(request.body)
+            )
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.organization.memberStatusPattern,
+      markRoute("organization.members.status"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          response.json(
+            await identity.updateMemberStatus(
+              current,
+              routeParameter(request.params["membershipRef"]),
+              UpdateMemberStatusRequestSchema.parse(request.body)
+            )
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.organization.memberRolesPattern,
+      markRoute("organization.members.roles"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          response.json(
+            await identity.updateMemberRoles(
+              current,
+              routeParameter(request.params["membershipRef"]),
+              UpdateMemberRolesRequestSchema.parse(request.body)
+            )
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.organization.memberCourseAccessPattern,
+      markRoute("organization.members.course-access"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          response.json(
+            await identity.updateMemberCourseAccess(
+              current,
+              routeParameter(request.params["membershipRef"]),
+              UpdateMemberCourseAccessRequestSchema.parse(request.body)
+            )
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.organization.securityEvents,
+      markRoute("organization.security-events"),
+      async (request, response, next) => {
+        try {
+          response.json(
+            await identity.listSecurityEvents(await requireIdentity(request))
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.userGovernance.requests,
+      markRoute("user-governance.requests.list"),
+      async (request, response, next) => {
+        try {
+          response.json(
+            await identity.listDataGovernanceRequests(await requireIdentity(request))
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.userGovernance.requests,
+      markRoute("user-governance.requests.create"),
+      async (request, response, next) => {
+        try {
+          const current = await requireIdentity(request);
+          identity.verifyCsrf(current, request.header("x-csrf-token"));
+          response.status(201).json(
+            await identity.createDataGovernanceRequest(
+              current,
+              CreateDataGovernanceRequestSchema.parse(request.body)
+            )
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+  }
+
+  if (product) {
     const preparation = product.services.lessonPreparation;
     const assignments = product.services.assignments;
     const files = product.services.files;
@@ -279,12 +849,18 @@ export function createApp(
     const classroom = product.services.classroomReflection;
     const modelInvocations =
       product.services.modelInvocations;
-    const withProductContext = async (request: Request) =>
-      productContextsFromRequest(
+    const withProductContext = async (request: Request, response?: Response) => {
+      const identity = await productContextsFromRequest(
         request,
         product,
-        demoIdentity
+        demoIdentity,
+        allowTestIdentityHeaders
       );
+      if (response) {
+        (response.locals as RouteResponseLocals).identity = identity;
+      }
+      return identity;
+    };
 
     app.get(
       apiRoutes.teacher.pendingReflections,
@@ -808,6 +1384,7 @@ export function createApp(
           response.json(await workbench.listCalendar({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             query: TeacherCalendarListQuerySchema.parse(request.query)
           }));
         } catch (error) {
@@ -905,6 +1482,7 @@ export function createApp(
           response.json(await workbench.getOverview({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             ...(timezone ? { timezone } : {})
           }));
         } catch (error) {
@@ -922,6 +1500,7 @@ export function createApp(
           response.json(await workbench.listActionItems({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             includeDeferred: request.query["includeDeferred"] === "true"
           }));
         } catch (error) {
@@ -939,6 +1518,7 @@ export function createApp(
           response.json(await workbench.getProjection({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             projectionRef: routeParameter(request.params["projectionRef"])
           }));
         } catch (error) {
@@ -956,6 +1536,7 @@ export function createApp(
           response.json(await workbench.updateProjectionPreference({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             projectionRef: routeParameter(request.params["projectionRef"]),
             request: WorkProjectionPreferenceRequestSchema.parse(request.body)
           }));
@@ -1306,7 +1887,8 @@ export function createApp(
           response.json(
             await preparation.listCourseRuns({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -1425,7 +2007,8 @@ export function createApp(
           response.json(
             await preparation.getSummary({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -1443,7 +2026,8 @@ export function createApp(
           response.json(
             await preparation.listTasks({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -1693,6 +2277,7 @@ export function createApp(
             await assignments.listAssignments({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               ...(typeof lessonQuery === "string" && lessonQuery
                 ? { lessonRef: lessonQuery }
                 : {})
@@ -2122,7 +2707,8 @@ export function createApp(
           response.json(
             await assignments.getOverview({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2143,7 +2729,27 @@ export function createApp(
           );
           const result = await product.services.read.getWorkspace({
             tenantRef: contexts.tenant.tenantRef,
-            actorRef: contexts.acting.actorRef
+            actorRef: contexts.acting.actorRef,
+            actorDisplayName: contexts.status.user.displayName,
+            roleRefs: contexts.acting.roleRefs,
+            demoIdentity: contexts.status.demoIdentity,
+            modelMode:
+              product.services.modelInvocations.settings.activeProvider ===
+              "volcengine-ark"
+                ? "ark"
+                : "mock",
+            ...(contexts.status.currentWorkspace?.organizationName
+              ? {
+                  organizationName:
+                    contexts.status.currentWorkspace.organizationName
+                }
+              : {}),
+            ...(contexts.acting.membershipRef
+              ? { membershipRef: contexts.acting.membershipRef }
+              : {}),
+            ...(contexts.acting.courseRunRefs
+              ? { courseRunRefs: contexts.acting.courseRunRefs }
+              : {})
           });
           response.json(result);
         } catch (error) {
@@ -2292,6 +2898,7 @@ export function createApp(
             await product.services.read.getTeachingPlanRevision({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               revisionRef: routeParameter(
                 request.params["revisionRef"]
               )
@@ -2344,7 +2951,8 @@ export function createApp(
           response.json(
             await product.services.read.getCurrentApprovedTeachingPlan({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2366,7 +2974,8 @@ export function createApp(
           response.json(
             await product.services.read.getCurrentInReviewTeachingPlan({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2388,7 +2997,8 @@ export function createApp(
           response.json(
             await product.services.read.listTeachingPlanDrafts({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2410,7 +3020,8 @@ export function createApp(
           response.json(
             await product.services.read.listTeachingPlanHistory({
               tenantRef: contexts.tenant.tenantRef,
-              actorRef: contexts.acting.actorRef
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2519,15 +3130,35 @@ export function createApp(
   });
 
   app.use(
-    (
+    async (
       error: unknown,
-      _request: Request,
+      request: Request,
       response: Response,
       next: NextFunction
     ) => {
       if (response.headersSent) {
         next(error);
         return;
+      }
+      const deniedIdentity = requestIdentities.get(request);
+      if (
+        product &&
+        deniedIdentity &&
+        (error instanceof AuthorizationDeniedError || error instanceof NotFoundError)
+      ) {
+        await product.services.identity.recordSecurityEvent({
+          eventType: "ProductAccessDenied",
+          actorRef: deniedIdentity.acting.actorRef,
+          organizationRef: deniedIdentity.acting.tenantRef,
+          sessionRef: deniedIdentity.acting.sessionRef ?? null,
+          outcome: "denied",
+          safeReason: "An authenticated product resource request was denied.",
+          safeDetails: {
+            method: request.method,
+            path: requestPath(request),
+            routeId: (response.locals as RouteResponseLocals).routeId ?? "unknown"
+          }
+        }).catch(() => undefined);
       }
       if (error instanceof ZodError) {
         (response.locals as RouteResponseLocals).safeErrorCode =
@@ -2588,6 +3219,15 @@ export function createApp(
         (response.locals as RouteResponseLocals).safeErrorCode =
           error.code;
         response.status(404).json({
+          code: error.code,
+          message: error.message
+        });
+        return;
+      }
+      if (error instanceof ServiceUnavailableError) {
+        (response.locals as RouteResponseLocals).safeErrorCode =
+          error.code;
+        response.status(503).json({
           code: error.code,
           message: error.message
         });

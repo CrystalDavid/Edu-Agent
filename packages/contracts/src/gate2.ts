@@ -1,12 +1,15 @@
 import { z } from "zod";
 
 export const Gate2DemoIdentitySchema = z.object({
-  tenantRef: z.literal("tenant:demo-school"),
+  tenantRef: z.string().min(1),
   schoolName: z.string().min(1),
-  teacherRef: z.literal("user:teacher-001"),
+  teacherRef: z.string().min(1),
   teacherName: z.string().min(1),
   dataMode: z.literal("synthetic"),
-  modelMode: z.literal("mock")
+  modelMode: z.enum(["mock", "ark"]),
+  roleRefs: z.array(z.string().min(1)).optional(),
+  membershipRef: z.string().min(1).optional(),
+  demoIdentity: z.boolean().optional()
 });
 
 export const TeachingPlanSchema = z.object({

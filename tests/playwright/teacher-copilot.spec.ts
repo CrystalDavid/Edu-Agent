@@ -67,9 +67,11 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
   await expect(page).toHaveURL(/\/overview$/);
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible();
   expect(apiRequests.slice(0, 2)).toEqual([
-    apiRoutes.health,
-    apiRoutes.demo.bootstrap
+    apiRoutes.authentication.session,
+    apiRoutes.authentication.provider
   ]);
+  expect(apiRequests).toContain(apiRoutes.health);
+  expect(apiRequests).toContain(apiRoutes.demo.bootstrap);
   await expect(page.locator("body")).not.toContainText(
     "教师工作空间未能启动"
   );
@@ -99,7 +101,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     ).toHaveCount(0);
   }
   await expect(
-    page.getByRole("button", { name: /林老师.*数学教师/ })
+    page.getByTestId("teacher-profile-trigger")
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: /展开|收起/ })
@@ -394,7 +396,7 @@ test("profile menu opens settings, memory controls and the typography guide", as
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/overview");
-  await page.getByRole("button", { name: /林老师.*数学教师/ }).click();
+  await page.getByTestId("teacher-profile-trigger").click();
   await expect(page.getByRole("menu", { name: "教师设置菜单" })).toBeVisible();
   await page.getByRole("menuitem", { name: "上下文和记忆" }).click();
   await expect(page).toHaveURL(/\/settings$/);

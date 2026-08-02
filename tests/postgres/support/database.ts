@@ -28,6 +28,19 @@ export async function resetGate1BData(
 ): Promise<void> {
   await adminPool.query(`
     TRUNCATE TABLE
+      governance.data_governance_request,
+      governance.security_event,
+      governance.identity_command,
+      governance.organization_invitation,
+      governance.oidc_login_state,
+      governance.authentication_session,
+      governance.membership_course_run_access,
+      governance.membership_role_assignment,
+      governance.organization_membership,
+      governance.external_identity_link,
+      governance.organization,
+      governance.user_account,
+      governance.model_data_manifest,
       governance.audit_record,
       governance.idempotency_record,
       governance.authorization_decision,

@@ -20,6 +20,16 @@ export const moduleMigrations = [
       "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0004_gate2_9_reflection_model_data.sql"
   },
   {
+    owner: "governance",
+    relativePath:
+      "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0005_gate2_10a_identity_organization.sql"
+  },
+  {
+    owner: "governance",
+    relativePath:
+      "apps/api/src/modules/identity-governance-audit/infrastructure/migrations/0006_gate2_10a_model_data_scope.sql"
+  },
+  {
     owner: "work",
     relativePath:
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0001_work.sql"

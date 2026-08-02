@@ -271,8 +271,12 @@ try {
   );
   const applicationEnvironment = {
     ...databaseEnvironment,
-    APP_ENV: "demo",
-    DEMO_AUTH_BYPASS: "true",
+    APP_ENV: "test",
+    DEMO_AUTH_BYPASS: "false",
+    IDENTITY_PROVIDER_MODE: "local",
+    LOCAL_IDENTITY_PROVIDER_ENABLED: "true",
+    ALLOW_TEST_IDENTITY_HEADERS: "true",
+    WEB_ALLOWED_ORIGINS: webOrigin,
     COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",

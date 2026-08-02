@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Avatar } from "antd";
+import type {
+  OrganizationRole,
+  WorkspaceMembershipView
+} from "@edu-agent/contracts";
 
 import type { AppRoute } from "../../route";
 import type { PortalRoute } from "../../teacher-portal-data";
@@ -49,6 +53,12 @@ function activeRoute(route: AppRoute): PortalRoute | null {
 export function TeacherSidebar(props: {
   route: AppRoute;
   teacherName: string;
+  schoolName: string;
+  roles: OrganizationRole[];
+  memberships: WorkspaceMembershipView[];
+  currentMembershipRef: string;
+  onSwitchWorkspace: (membershipRef: string) => Promise<void>;
+  onLogout: () => Promise<void>;
   onNavigate: (route: AppRoute) => void;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
@@ -102,23 +112,27 @@ export function TeacherSidebar(props: {
         {profileOpen ? (
           <TeacherProfileMenu
             onSelect={openSettings}
-            onExit={() => {
-              setProfileOpen(false);
-              window.alert("当前为本地演示环境，没有真实账号会话需要退出。");
-            }}
+            teacherName={props.teacherName}
+            schoolName={props.schoolName}
+            roles={props.roles}
+            memberships={props.memberships}
+            currentMembershipRef={props.currentMembershipRef}
+            onSwitchWorkspace={props.onSwitchWorkspace}
+            onExit={() => void props.onLogout()}
           />
         ) : null}
         <button
+          data-testid="teacher-profile-trigger"
           type="button"
           className="teacher-profile-trigger"
           aria-expanded={profileOpen}
           aria-haspopup="menu"
           onClick={() => setProfileOpen((value) => !value)}
         >
-          <Avatar size={40} className="teacher-avatar">林</Avatar>
+          <Avatar size={40} className="teacher-avatar">{props.teacherName.trim().slice(0, 1) || "师"}</Avatar>
           <span>
             <strong>{props.teacherName}</strong>
-            <small>数学教师</small>
+            <small>{props.schoolName}</small>
           </span>
           <WorkspaceIcon name="more" />
         </button>
@@ -138,17 +152,41 @@ export function TeacherSidebar(props: {
 
 export function TeacherProfileMenu(props: {
   onSelect: (section: string) => void;
+  teacherName: string;
+  schoolName: string;
+  roles: OrganizationRole[];
+  memberships: WorkspaceMembershipView[];
+  currentMembershipRef: string;
+  onSwitchWorkspace: (membershipRef: string) => Promise<void>;
   onExit: () => void;
 }) {
   return (
     <div className="teacher-profile-menu" role="menu" aria-label="教师设置菜单">
       <header>
-        <Avatar size={38} className="teacher-avatar">林</Avatar>
+        <Avatar size={38} className="teacher-avatar">{props.teacherName.trim().slice(0, 1) || "师"}</Avatar>
         <span>
-          <strong>林老师</strong>
-          <small>明远实验中学 · 数学教师</small>
+          <strong>{props.teacherName}</strong>
+          <small>{props.schoolName} · {props.roles.join(" / ")}</small>
         </span>
       </header>
+      {props.memberships.length > 1 ? (
+        <div className="teacher-profile-menu__workspaces">
+          <small>切换学校工作空间</small>
+          {props.memberships
+            .filter((membership) => membership.membershipStatus === "active")
+            .map((membership) => (
+              <button
+                type="button"
+                key={membership.membershipRef}
+                disabled={membership.membershipRef === props.currentMembershipRef}
+                onClick={() => void props.onSwitchWorkspace(membership.membershipRef)}
+              >
+                {membership.organizationName}
+                {membership.membershipRef === props.currentMembershipRef ? "（当前）" : ""}
+              </button>
+            ))}
+        </div>
+      ) : null}
       <div className="teacher-profile-menu__items">
         {profileItems.map((item) => (
           <button
@@ -162,8 +200,8 @@ export function TeacherProfileMenu(props: {
           </button>
         ))}
       </div>
-      <button type="button" className="profile-exit" role="menuitem" onClick={props.onExit}>
-        退出演示
+      <button data-testid="profile-logout" type="button" className="profile-exit" role="menuitem" onClick={props.onExit}>
+        退出登录
       </button>
     </div>
   );

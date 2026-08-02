@@ -1314,7 +1314,7 @@ export class PostgresClassroomReflectionService {
   }
 
   private assertDemoActor(tenantRef: string, actorRef: string): void {
-    if (tenantRef !== gate2DemoRefs.tenantRef || actorRef !== gate2DemoRefs.teacherRef) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError("当前教师无权访问其他 tenant 或教师的课堂实施与反思数据。");
     }
   }

@@ -76,12 +76,21 @@ function stableDecisionRef(rootKey: string): string {
 }
 
 function projectionRef(
+  tenantRef: string,
+  teacherRef: string,
   kind: string,
   module: string,
   type: string,
   sourceRef: string
 ): string {
-  return `work-projection:${hash([kind, module, type, sourceRef]).slice(0, 32)}`;
+  return `work-projection:${hash([
+    tenantRef,
+    teacherRef,
+    kind,
+    module,
+    type,
+    sourceRef
+  ]).slice(0, 32)}`;
 }
 
 function iso(value: Date | null): string | null {
@@ -410,13 +419,20 @@ export class PostgresTeacherWorkbenchService {
   async listCalendar(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
     query: unknown;
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const query = TeacherCalendarListQuerySchema.parse(input.query);
     requireValidTimeZone(query.timezone);
     requireTimeRange(query.from, query.to);
-    await this.refreshProjections({ tenantRef: input.tenantRef, actorRef: input.actorRef });
+    await this.refreshProjections({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      ...(input.courseRunRefs
+        ? { courseRunRefs: input.courseRunRefs }
+        : {})
+    });
     const [manual, projected] = await Promise.all([
       this.work.listCalendarEvents(this.pool, {
         tenantRef: input.tenantRef,
@@ -683,6 +699,7 @@ export class PostgresTeacherWorkbenchService {
   async listActionItems(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
     includeDeferred?: boolean;
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
@@ -703,6 +720,7 @@ export class PostgresTeacherWorkbenchService {
   async getProjection(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
     projectionRef: string;
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
@@ -720,6 +738,7 @@ export class PostgresTeacherWorkbenchService {
   async updateProjectionPreference(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
     projectionRef: string;
     request: unknown;
   }) {
@@ -796,6 +815,7 @@ export class PostgresTeacherWorkbenchService {
   async getOverview(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
     timezone?: string;
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
@@ -953,9 +973,14 @@ export class PostgresTeacherWorkbenchService {
   async refreshProjections(input: {
     tenantRef: string;
     actorRef: string;
+    courseRunRefs?: readonly string[];
   }): Promise<number> {
     this.assertDemoActor(input.tenantRef, input.actorRef);
-    const snapshots = await this.buildProjectionSnapshots(input.tenantRef, input.actorRef);
+    const snapshots = await this.buildProjectionSnapshots(
+      input.tenantRef,
+      input.actorRef,
+      input.courseRunRefs
+    );
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -977,7 +1002,8 @@ export class PostgresTeacherWorkbenchService {
 
   private async buildProjectionSnapshots(
     tenantRef: string,
-    teacherRef: string
+    teacherRef: string,
+    courseRunRefs?: readonly string[]
   ): Promise<WorkProjectionSnapshot[]> {
     const [preparation, lessons, plans, assignments, grading, commonErrors, failures, proposals] = await Promise.all([
       this.pool.query<{
@@ -1003,8 +1029,10 @@ export class PostgresTeacherWorkbenchService {
            FROM education.lesson AS lesson
            JOIN education.curriculum_unit AS unit ON unit.unit_ref = lesson.unit_ref
            JOIN education.course_run AS course ON course.course_run_ref = unit.course_run_ref
-          WHERE course.tenant_ref = $1 AND lesson.planned_at IS NOT NULL`,
-        [tenantRef]
+          WHERE course.tenant_ref = $1
+            AND ($2::text[] IS NULL OR unit.course_run_ref = ANY($2::text[]))
+            AND lesson.planned_at IS NOT NULL`,
+        [tenantRef, courseRunRefs ? [...courseRunRefs] : null]
       ),
       this.pool.query<{
         revision_ref: string; lesson_ref: string; preparation_task_ref: string | null;
@@ -1132,6 +1160,7 @@ export class PostgresTeacherWorkbenchService {
            JOIN education.curriculum_unit AS unit ON unit.unit_ref = lesson.unit_ref
            JOIN education.course_run AS course ON course.course_run_ref = unit.course_run_ref
           WHERE course.tenant_ref = $1
+            AND ($3::text[] IS NULL OR unit.course_run_ref = ANY($3::text[]))
             AND lesson.planned_at IS NOT NULL
             AND lesson.planned_at + make_interval(mins => lesson.duration_minutes) < now()
             AND NOT EXISTS (
@@ -1141,7 +1170,7 @@ export class PostgresTeacherWorkbenchService {
                  AND delivery.teacher_ref = $2
                  AND delivery.current_confirmed_revision_ref IS NOT NULL
             )`,
-        [tenantRef, teacherRef]
+        [tenantRef, teacherRef, courseRunRefs ? [...courseRunRefs] : null]
       ),
       this.pool.query<{
         delivery_ref: string; delivery_revision_ref: string; revision_version: number;
@@ -1391,7 +1420,14 @@ export class PostgresTeacherWorkbenchService {
     priority: "high" | "normal" | "low";
   }): WorkProjectionSnapshot {
     return {
-      projectionRef: projectionRef(input.kind, input.module, input.type, input.sourceRef),
+      projectionRef: projectionRef(
+        input.tenantRef,
+        input.teacherRef,
+        input.kind,
+        input.module,
+        input.type,
+        input.sourceRef
+      ),
       tenantRef: input.tenantRef,
       teacherRef: input.teacherRef,
       projectionKind: input.kind,
@@ -1654,7 +1690,7 @@ export class PostgresTeacherWorkbenchService {
   }
 
   private assertDemoActor(tenantRef: string, actorRef: string): void {
-    if (tenantRef !== gate2DemoRefs.tenantRef || actorRef !== gate2DemoRefs.teacherRef) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError("当前教师无权访问其他 tenant 或教师的工作台数据。");
     }
   }

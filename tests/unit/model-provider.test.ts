@@ -421,6 +421,21 @@ describe("Gate 2.6A policy helpers", () => {
         createdAt: "2026-07-31T10:00:00.000Z"
       })
     ).toThrow(/MODEL_DATA_POLICY_BLOCKED/u);
+    expect(() =>
+      createModelDataManifest({
+        purpose: "teacher-copilot.lesson-preparation",
+        tenantRef: "tenant:demo-school-lookalike",
+        actorRef: "user:teacher-001",
+        taskRunRef: "task-run:test",
+        contextManifestRef: "context:test",
+        provider: "mock",
+        modelId: "mock",
+        resourceRefs: ["lesson:synthetic"],
+        authorizationDecisionRef: "decision:test",
+        syntheticData: true,
+        createdAt: "2026-07-31T10:00:00.000Z"
+      })
+    ).toThrow(/MODEL_DATA_POLICY_BLOCKED/u);
     expect(
       detectProhibitedModelInput(
         "学生姓名：" + "示例某某"

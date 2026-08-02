@@ -440,7 +440,8 @@ export class PostgresModelInvocationService {
         await this.requirePreparationTask(
           client,
           input.tenantRef,
-          input.request.preparationTaskRef
+          input.request.preparationTaskRef,
+          input.actorRef
         );
       this.assertInvocationContext(preparationTask, input.request);
 
@@ -2047,6 +2048,7 @@ export class PostgresModelInvocationService {
       content: TeachingPlan;
     };
   }> {
+    const tenantRef = await this.executionTenantRef(execution);
     const taskRun = await this.gate25Work.getTaskRun(
       this.pool,
       execution.taskRunRef
@@ -2054,8 +2056,9 @@ export class PostgresModelInvocationService {
     const preparationTask =
       await this.gate25Work.getPreparationTask(
         this.pool,
-        "tenant:demo-school",
-        execution.taskRef
+        tenantRef,
+        execution.taskRef,
+        execution.actorRef
       );
     const contextManifest =
       await this.gate2Runtime.getContextManifestByRef(
@@ -2248,6 +2251,7 @@ export class PostgresModelInvocationService {
   private async loadReflectionPromptContext(
     execution: StoredModelExecution
   ): Promise<{ request: ModelRequestV2 }> {
+    const tenantRef = await this.executionTenantRef(execution);
     const reflectionRef = String(
       execution.inputSummary["reflectionRef"] ?? ""
     );
@@ -2259,12 +2263,12 @@ export class PostgresModelInvocationService {
         this.gate25Work.getTaskRun(this.pool, execution.taskRunRef),
         this.gate29Work.getReflectionTaskByTaskRef(
           this.pool,
-          "tenant:demo-school",
+          tenantRef,
           execution.taskRef
         ),
         this.gate29Artifacts.getReflection(
           this.pool,
-          "tenant:demo-school",
+          tenantRef,
           reflectionRef
         ),
         this.gate2Runtime.getContextManifestByRef(
@@ -2807,8 +2811,9 @@ export class PostgresModelInvocationService {
       const preparation =
         await this.requirePreparationTask(
           client,
-          "tenant:demo-school",
-          execution.taskRef
+          await this.executionTenantRef(execution, client),
+          execution.taskRef,
+          execution.actorRef
         );
       if (preparation.status === "in_progress") {
         const awaiting = await this.gate25Work.transition(
@@ -2890,6 +2895,7 @@ export class PostgresModelInvocationService {
     client: import("../platform/postgres/types.js").PostgresClient,
     execution: StoredModelExecution
   ): Promise<void> {
+    const tenantRef = await this.executionTenantRef(execution, client);
     const output = StructuredReflectionOutputSchema.parse(
       execution.validatedOutput
     );
@@ -2901,7 +2907,7 @@ export class PostgresModelInvocationService {
     );
     const stored = await this.gate29Artifacts.getReflection(
       client,
-      "tenant:demo-school",
+      tenantRef,
       reflectionRef
     );
     const currentDraft = stored?.revisions.find(
@@ -3202,13 +3208,15 @@ export class PostgresModelInvocationService {
       PostgresGate25WorkRepository["getPreparationTask"]
     >[0],
     tenantRef: string,
-    taskRef: string
+    taskRef: string,
+    actorRef?: string
   ): Promise<StoredLessonPreparationTask> {
     const task =
       await this.gate25Work.getPreparationTask(
         executor,
         tenantRef,
-        taskRef
+        taskRef,
+        actorRef
       );
     if (!task || task.tenantRef !== tenantRef) {
       throw new NotFoundError(
@@ -3216,6 +3224,25 @@ export class PostgresModelInvocationService {
       );
     }
     return task;
+  }
+
+  private async executionTenantRef(
+    execution: StoredModelExecution,
+    executor: Parameters<
+      PostgresGate25WorkRepository["getPreparationTask"]
+    >[0] = this.pool
+  ): Promise<string> {
+    const manifestScope = await executor.query<{ tenant_ref: string }>(
+      `SELECT tenant_ref
+         FROM governance.model_data_manifest
+        WHERE model_data_manifest_ref = $1`,
+      [execution.modelDataManifestRef]
+    );
+    const tenantRef = manifestScope.rows[0]?.tenant_ref;
+    if (!tenantRef) {
+      throw new Error("The ModelDataManifest scope is missing.");
+    }
+    return tenantRef;
   }
 
   private assertInvocationContext(
@@ -3567,12 +3594,9 @@ function assertDemoActor(
   tenantRef: string,
   actorRef: string
 ): void {
-  if (
-    tenantRef !== "tenant:demo-school" ||
-    actorRef !== "user:teacher-001"
-  ) {
+  if (!tenantRef.trim() || !actorRef.trim()) {
     throw new AuthorizationDeniedError(
-      "Gate 2.6A only permits the synthetic demo tenant and teacher."
+      "The authenticated teacher scope is required for model invocation."
     );
   }
 }

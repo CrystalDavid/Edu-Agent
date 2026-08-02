@@ -22,6 +22,24 @@ const modules = {
 const failures = [];
 let assertions = 0;
 
+// Authentication/organization foundation tables are security infrastructure,
+// not module business-command facts. They carry their own actor/source/time
+// fields and are verified through Gate 2.10A security-event/Audit tests.
+const identityInfrastructureTables = new Set([
+  "governance.user_account",
+  "governance.external_identity_link",
+  "governance.organization",
+  "governance.organization_membership",
+  "governance.membership_role_assignment",
+  "governance.membership_course_run_access",
+  "governance.authentication_session",
+  "governance.oidc_login_state",
+  "governance.organization_invitation",
+  "governance.identity_command",
+  "governance.security_event",
+  "governance.data_governance_request"
+]);
+
 function assert(condition, message) {
   assertions += 1;
   if (!condition) failures.push(message);
@@ -147,7 +165,10 @@ for (const path of allMigrations) {
   )) {
     const [, tableName, body] = table;
     if (!tableName || !body) continue;
-    if (tableName === "work.outbox_consumer_effect") {
+    if (
+      tableName === "work.outbox_consumer_effect" ||
+      identityInfrastructureTables.has(tableName)
+    ) {
       continue;
     }
     for (const column of [

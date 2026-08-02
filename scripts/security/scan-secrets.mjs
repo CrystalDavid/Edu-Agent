@@ -62,6 +62,11 @@ const patterns = [
     name: "non-placeholder ARK_API_KEY assignment",
     expression:
       /ARK_API_KEY[ \t]*=[ \t]*(?![ \t]*(?:$|#|<[^>]+>|change-me\b|your-api-key\b|placeholder\b|\$\{))[^\s#]{8,}/gim
+  },
+  {
+    name: "non-placeholder OIDC_CLIENT_SECRET assignment",
+    expression:
+      /OIDC_CLIENT_SECRET[ \t]*=[ \t]*(?![ \t]*(?:$|#|<[^>]+>|change-me\b|your-client-secret\b|placeholder\b|\$\{))[^\s#]{8,}/gim
   }
 ];
 
@@ -94,8 +99,15 @@ const detectorFixtures = [
   },
   {
     label: "empty example placeholder",
-    content: "ARK_" + "API_KEY=\nARK_MODEL_ID=synthetic-model",
+    content:
+      "ARK_" + "API_KEY=\n" +
+      "OIDC_CLIENT_" + "SECRET=\nARK_MODEL_ID=synthetic-model",
     expected: false
+  },
+  {
+    label: "OIDC client secret assignment",
+    content: "OIDC_CLIENT_" + "SECRET=synthetic-client-secret",
+    expected: true
   }
 ];
 for (const fixture of detectorFixtures) {
@@ -142,6 +154,6 @@ if (findings.length > 0) {
   process.exitCode = 1;
 } else {
   process.stdout.write(
-    `Secret scan passed: ${trackedAndUnignoredFiles.length} files checked; no Ark key, Bearer token, or non-placeholder ARK_API_KEY assignment found.\n`
+    `Secret scan passed: ${trackedAndUnignoredFiles.length} files checked; no Ark key, Bearer token, or non-placeholder Ark/OIDC secret assignment found.\n`
   );
 }

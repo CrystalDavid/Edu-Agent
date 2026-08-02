@@ -131,12 +131,14 @@ export class PostgresLessonPreparationService {
   async listCourseRuns(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     return CourseRunListSchema.parse({
       items: await this.education.listCourseRuns(
         this.pool,
-        input.tenantRef
+        input.tenantRef,
+        input.allowedCourseRunRefs
       )
     });
   }
@@ -219,11 +221,14 @@ export class PostgresLessonPreparationService {
   async listTasks(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const tasks = await this.work.listPreparationTasks(
       this.pool,
-      input.tenantRef
+      input.tenantRef,
+      input.actorRef,
+      input.allowedCourseRunRefs
     );
     return LessonPreparationTaskListSchema.parse({
       items: await Promise.all(
@@ -251,7 +256,8 @@ export class PostgresLessonPreparationService {
     const task = await this.work.getPreparationTask(
       this.pool,
       input.tenantRef,
-      input.taskRef
+      input.taskRef,
+      input.actorRef
     );
     if (!task) throw new NotFoundError("备课 Task 不存在。");
     return this.toTaskDetail(input.tenantRef, task);
@@ -280,12 +286,14 @@ export class PostgresLessonPreparationService {
   async getSummary(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const taskList = await this.listTasks(input);
     const courses = await this.education.listCourseRuns(
       this.pool,
-      input.tenantRef
+      input.tenantRef,
+      input.allowedCourseRunRefs
     );
     const lessons = [];
     for (const course of courses) {
@@ -558,7 +566,8 @@ export class PostgresLessonPreparationService {
       const task = await this.work.getPreparationTask(
         client,
         input.tenantRef,
-        taskRef
+        taskRef,
+        input.actorRef
       );
       if (!task) throw new Error("Created Task cannot be read.");
       const result = LessonPreparationTaskResultSchema.parse({
@@ -646,7 +655,8 @@ export class PostgresLessonPreparationService {
       const task = await this.work.lockPreparationTask(
         client,
         input.tenantRef,
-        input.taskRef
+        input.taskRef,
+        input.actorRef
       );
       if (!task) throw new NotFoundError("备课 Task 不存在。");
       if (task.version !== request.expectedVersion) {
@@ -761,7 +771,8 @@ export class PostgresLessonPreparationService {
       const updated = await this.work.getPreparationTask(
         client,
         input.tenantRef,
-        input.taskRef
+        input.taskRef,
+        input.actorRef
       );
       if (!updated) throw new Error("Updated Task cannot be read.");
       const result = LessonPreparationTaskResultSchema.parse({
@@ -851,7 +862,8 @@ export class PostgresLessonPreparationService {
       const task = await this.work.lockPreparationTask(
         client,
         input.tenantRef,
-        input.taskRef
+        input.taskRef,
+        input.actorRef
       );
       if (!task) throw new NotFoundError("备课 Task 不存在。");
       if (
@@ -1123,10 +1135,7 @@ export class PostgresLessonPreparationService {
     tenantRef: string,
     actorRef: string
   ): void {
-    if (
-      tenantRef !== gate2DemoRefs.tenantRef ||
-      actorRef !== gate2DemoRefs.teacherRef
-    ) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
         "本地演示身份无权访问该备课上下文。"
       );

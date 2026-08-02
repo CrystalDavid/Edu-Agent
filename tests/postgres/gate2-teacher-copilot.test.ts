@@ -15,6 +15,15 @@ import {
   PostgresGate2TeacherCopilotService
 } from "../../apps/api/src/composition/postgres-gate2-teacher-copilot-service.js";
 import {
+  PostgresIdentityOrganizationService
+} from "../../apps/api/src/composition/postgres-identity-organization-service.js";
+import {
+  LocalIdentityProvider
+} from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
+import {
+  readIdentitySettings
+} from "../../apps/api/src/platform/auth/config.js";
+import {
   LocalCopilotOutboxWorker,
   localCopilotOutboxEventNames
 } from "../../apps/api/src/composition/local-copilot-outbox-worker.js";
@@ -36,7 +45,19 @@ import {
 const adminPool = poolFor("admin");
 const appPool = poolFor("app", { max: 8 });
 const workerPool = poolFor("worker");
-const seedService = new Gate2DemoSeedService(appPool);
+const identitySettings = readIdentitySettings({
+  APP_ENV: "test",
+  IDENTITY_PROVIDER_MODE: "local",
+  LOCAL_IDENTITY_PROVIDER_ENABLED: "true"
+});
+const localIdentityProvider = new LocalIdentityProvider(true);
+const identity = new PostgresIdentityOrganizationService(
+  appPool,
+  identitySettings,
+  localIdentityProvider,
+  localIdentityProvider
+);
+const seedService = new Gate2DemoSeedService(appPool, identity);
 const copilot = new PostgresGate2TeacherCopilotService(appPool);
 const read = new PostgresGate2ReadService(appPool);
 

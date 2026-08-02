@@ -72,23 +72,48 @@ export class PostgresGate2ReadService {
   async getWorkspace(input: {
     tenantRef: string;
     actorRef: string;
+    organizationName?: string;
+    actorDisplayName?: string;
+    roleRefs?: readonly string[];
+    membershipRef?: string;
+    demoIdentity?: boolean;
+    modelMode?: "mock" | "ark";
+    courseRunRefs?: readonly string[];
   }): Promise<TeacherWorkspace> {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
+    const courseRunRef = input.courseRunRefs
+      ? input.courseRunRefs[0]
+      : gate2DemoRefs.courseRunRef;
+    if (!courseRunRef) {
+      throw new NotFoundError(
+        "The current teacher has no authorized CourseRun in this workspace."
+      );
+    }
     const educationContext =
       await this.education.getTeacherCopilotContext(this.pool, {
         tenantRef: input.tenantRef,
-        courseRunRef: gate2DemoRefs.courseRunRef
+        courseRunRef
       });
     if (!educationContext) {
       throw new NotFoundError(
         "Gate 2 合成数据尚未初始化。"
       );
     }
-    const workContext = await this.work.getDemoCaseAndGoal(
-      this.pool,
-      input.tenantRef,
-      gate2DemoRefs.goalRef
+    const goal = await this.pool.query<{ goal_ref: string }>(
+      `SELECT goal_ref
+         FROM work.goal_record
+        WHERE tenant_ref = $1 AND status = 'active'
+        ORDER BY created_at, goal_ref
+        LIMIT 1`,
+      [input.tenantRef]
     );
+    const workContext = goal.rows[0]
+      ? await this.work.getDemoCaseAndGoal(
+          this.pool,
+          input.tenantRef,
+          goal.rows[0].goal_ref
+        )
+      : undefined;
     if (!workContext) {
       throw new NotFoundError(
         "Gate 2 教学改进 Goal 尚未初始化。"
@@ -111,7 +136,8 @@ export class PostgresGate2ReadService {
       )) ?? null;
     const summaries = await this.work.listSuggestionSummaries(
       this.pool,
-      input.tenantRef
+      input.tenantRef,
+      input.actorRef
     );
     const titles = await this.artifacts.getProposalTitles(
       this.pool,
@@ -120,12 +146,19 @@ export class PostgresGate2ReadService {
 
     return TeacherWorkspaceSchema.parse({
       identity: {
-        tenantRef: gate2SyntheticFixture.identity.tenantRef,
-        schoolName: gate2SyntheticFixture.identity.schoolName,
-        teacherRef: gate2SyntheticFixture.identity.teacherRef,
-        teacherName: gate2SyntheticFixture.identity.teacherName,
+        tenantRef: input.tenantRef,
+        schoolName:
+          input.organizationName ?? gate2SyntheticFixture.identity.schoolName,
+        teacherRef: input.actorRef,
+        teacherName:
+          input.actorDisplayName ?? gate2SyntheticFixture.identity.teacherName,
         dataMode: "synthetic",
-        modelMode: "mock"
+        modelMode: input.modelMode ?? "mock",
+        ...(input.roleRefs ? { roleRefs: [...input.roleRefs] } : {}),
+        ...(input.membershipRef ? { membershipRef: input.membershipRef } : {}),
+        ...(input.demoIdentity !== undefined
+          ? { demoIdentity: input.demoIdentity }
+          : {})
       },
       courseRun: educationContext.courseRun,
       learningObjective: educationContext.objective,
@@ -172,11 +205,12 @@ export class PostgresGate2ReadService {
     tenantRef: string;
     actorRef: string;
   }): Promise<PendingProposalList> {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
     const summaries = (
       await this.work.listSuggestionSummaries(
         this.pool,
-        input.tenantRef
+        input.tenantRef,
+        input.actorRef
       )
     ).filter((item) => !item.disposed);
     const titles = await this.artifacts.getProposalTitles(
@@ -209,11 +243,12 @@ export class PostgresGate2ReadService {
     actorRef: string;
     proposalRevisionRef: string;
   }): Promise<ProposalReviewDetail> {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
     const work = await this.work.getProposalReviewWork(
       this.pool,
       {
         tenantRef: input.tenantRef,
+        actorRef: input.actorRef,
         proposalRevisionRef: input.proposalRevisionRef
       }
     );
@@ -318,10 +353,14 @@ export class PostgresGate2ReadService {
   async getTeachingPlanState(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }): Promise<TeachingPlanStateView> {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
     const artifactRef =
-      await this.getTeachingPlanArtifactRef(input.tenantRef);
+      await this.getTeachingPlanArtifactRef(
+        input.tenantRef,
+        input.allowedCourseRunRefs
+      );
     const [currentApproved, currentInReview, drafts, history] =
       await Promise.all([
         this.artifacts.getCurrentApprovedTeachingPlan(
@@ -360,10 +399,11 @@ export class PostgresGate2ReadService {
     actorRef: string;
     taskRef: string;
   }): Promise<RunExplanation> {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
     const work = await this.work.getRunExplanationWork(
       this.pool,
-      input.taskRef
+      input.taskRef,
+      input.actorRef
     );
     if (!work) {
       throw new NotFoundError("Teacher Copilot 运行不存在。");
@@ -474,7 +514,8 @@ export class PostgresGate2ReadService {
         await this.gate25Work.getPreparationTask(
           this.pool,
           input.tenantRef,
-          work.request.preparationTaskRef
+          work.request.preparationTaskRef,
+          input.actorRef
         );
       const lesson = work.request.lessonRef
         ? await this.gate25Education.getLesson(
@@ -651,12 +692,16 @@ export class PostgresGate2ReadService {
     tenantRef: string;
     actorRef: string;
     revisionRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
-    this.assertDemoActor(input.tenantRef, input.actorRef);
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
     const educationContext =
       await this.education.getTeacherCopilotContext(this.pool, {
         tenantRef: input.tenantRef,
-        courseRunRef: gate2DemoRefs.courseRunRef
+        courseRunRef: await this.getPrimaryCourseRunRef(
+          input.tenantRef,
+          input.allowedCourseRunRefs
+        )
       });
     if (!educationContext) {
       throw new NotFoundError("Gate 2 合成数据尚未初始化。");
@@ -681,6 +726,7 @@ export class PostgresGate2ReadService {
   async getCurrentApprovedTeachingPlan(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     return (await this.getTeachingPlanState(input)).currentApproved;
   }
@@ -688,6 +734,7 @@ export class PostgresGate2ReadService {
   async getCurrentInReviewTeachingPlan(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     return (await this.getTeachingPlanState(input)).currentInReview;
   }
@@ -695,6 +742,7 @@ export class PostgresGate2ReadService {
   async listTeachingPlanDrafts(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     return (await this.getTeachingPlanState(input)).drafts;
   }
@@ -702,17 +750,22 @@ export class PostgresGate2ReadService {
   async listTeachingPlanHistory(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
   }) {
     return (await this.getTeachingPlanState(input)).history;
   }
 
   private async getTeachingPlanArtifactRef(
-    tenantRef: string
+    tenantRef: string,
+    allowedCourseRunRefs?: readonly string[]
   ): Promise<string> {
     const educationContext =
       await this.education.getTeacherCopilotContext(this.pool, {
         tenantRef,
-        courseRunRef: gate2DemoRefs.courseRunRef
+        courseRunRef: await this.getPrimaryCourseRunRef(
+          tenantRef,
+          allowedCourseRunRefs
+        )
       });
     if (!educationContext) {
       throw new NotFoundError(
@@ -720,6 +773,31 @@ export class PostgresGate2ReadService {
       );
     }
     return educationContext.teachingPlanArtifactRef;
+  }
+
+  private async getPrimaryCourseRunRef(
+    tenantRef: string,
+    allowedCourseRunRefs?: readonly string[]
+  ): Promise<string> {
+    if (allowedCourseRunRefs?.length === 0) {
+      throw new NotFoundError(
+        "The current teacher has no authorized CourseRun in this workspace."
+      );
+    }
+    const result = await this.pool.query<{ course_run_ref: string }>(
+      `SELECT course_run_ref
+         FROM education.course_run
+        WHERE tenant_ref = $1
+          AND ($2::text[] IS NULL OR course_run_ref = ANY($2::text[]))
+        ORDER BY created_at, course_run_ref
+        LIMIT 1`,
+      [tenantRef, allowedCourseRunRefs ? [...allowedCourseRunRefs] : null]
+    );
+    const courseRunRef = result.rows[0]?.course_run_ref;
+    if (!courseRunRef) {
+      throw new NotFoundError("The school has no authorized CourseRun context.");
+    }
+    return courseRunRef;
   }
 
   private async listOutbox(
@@ -763,16 +841,36 @@ export class PostgresGate2ReadService {
     }));
   }
 
-  private assertDemoActor(
+  private async assertDemoActor(
     tenantRef: string,
     actorRef: string
-  ): void {
-    if (
-      tenantRef !== gate2DemoRefs.tenantRef ||
-      actorRef !== gate2DemoRefs.teacherRef
-    ) {
+  ): Promise<void> {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
         "本地演示身份没有访问该租户或学习者数据的权限。"
+      );
+    }
+    const membership = await this.pool.query(
+      `SELECT 1
+         FROM governance.organization_membership AS membership
+         JOIN governance.membership_role_assignment AS role
+           ON role.membership_ref = membership.membership_ref
+          AND role.role_key = 'ordinary_teacher'
+         JOIN governance.organization AS organization
+           ON organization.organization_ref = membership.organization_ref
+         JOIN governance.user_account AS account
+           ON account.user_ref = membership.user_ref
+        WHERE membership.organization_ref = $1
+          AND membership.user_ref = $2
+          AND membership.status = 'active'
+          AND organization.status = 'active'
+          AND account.status = 'active'
+        LIMIT 1`,
+      [tenantRef, actorRef]
+    );
+    if (membership.rowCount !== 1) {
+      throw new AuthorizationDeniedError(
+        "The authenticated user has no active teacher membership in this school."
       );
     }
   }

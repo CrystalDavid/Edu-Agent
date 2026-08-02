@@ -1,5 +1,21 @@
 import {
   apiRoutes,
+  ActiveSessionListSchema,
+  AdminMemberListSchema,
+  AuthenticationProviderAvailabilitySchema,
+  AuthenticationSessionStatusSchema,
+  CreateDataGovernanceRequestSchema,
+  CreateMemberRequestSchema,
+  DataGovernanceRequestListSchema,
+  LocalLoginRequestSchema,
+  RefreshSessionRequestSchema,
+  RevokeSessionRequestSchema,
+  SchoolDetailSchema,
+  SecurityEventListSchema,
+  SwitchWorkspaceRequestSchema,
+  UpdateMemberCourseAccessRequestSchema,
+  UpdateMemberRolesRequestSchema,
+  UpdateMemberStatusRequestSchema,
   AdjustmentTaskResultSchema,
   AmendLessonDeliveryRequestSchema,
   AssignmentActionRequestSchema,
@@ -115,6 +131,14 @@ import {
   WorkProjectionPreferenceRequestSchema,
   WorkProjectionPreferenceResultSchema,
   type ApiHealth,
+  type AuthenticationSessionStatus,
+  type CreateDataGovernanceRequest,
+  type CreateMemberRequest,
+  type LocalLoginRequest,
+  type SwitchWorkspaceRequest,
+  type UpdateMemberCourseAccessRequest,
+  type UpdateMemberRolesRequest,
+  type UpdateMemberStatusRequest,
   type AmendLessonDeliveryRequest,
   type AssignmentActionRequest,
   type AssignmentAnalytics,
@@ -192,11 +216,11 @@ import {
   resolveApiUrl
 } from "./api-url";
 
-const demoHeaders = {
-  "content-type": "application/json",
-  "x-demo-tenant": "tenant:demo-school",
-  "x-demo-actor": "user:teacher-001"
-};
+let activeCsrfToken: string | null = null;
+
+function rememberSession(status: AuthenticationSessionStatus): void {
+  activeCsrfToken = status.authenticated ? status.csrfToken : null;
+}
 
 export type RecoverableCopilotTask =
   | CreateTeacherCopilotTaskResult
@@ -260,8 +284,14 @@ async function request<T>(
   try {
     response = await fetch(requestUrl, {
       ...init,
+      credentials: "include",
       headers: {
-        ...demoHeaders,
+        "content-type": "application/json",
+        ...((init?.method ?? "GET").toUpperCase() !== "GET" &&
+        (init?.method ?? "GET").toUpperCase() !== "HEAD" &&
+        activeCsrfToken
+          ? { "x-csrf-token": activeCsrfToken }
+          : {}),
         ...init?.headers
       }
     });
@@ -282,6 +312,10 @@ async function request<T>(
       message?: string;
       details?: Record<string, unknown>;
     };
+    if (response.status === 401) {
+      activeCsrfToken = null;
+      window.dispatchEvent(new CustomEvent("edu-agent:session-expired"));
+    }
     throw new ApiError(
       response.status,
       payload.code ?? "UNKNOWN_API_ERROR",
@@ -323,10 +357,7 @@ async function downloadRequest(path: string): Promise<Blob> {
     window.location.origin
   );
   const response = await fetch(requestUrl, {
-    headers: {
-      "x-demo-tenant": demoHeaders["x-demo-tenant"],
-      "x-demo-actor": demoHeaders["x-demo-actor"]
-    }
+    credentials: "include"
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as {
@@ -346,6 +377,230 @@ async function downloadRequest(path: string): Promise<Blob> {
 
 export function checkApiHealth(): Promise<ApiHealth> {
   return request("API 健康检查", apiRoutes.health, ApiHealthSchema);
+}
+
+export function loadAuthenticationProvider() {
+  return request(
+    "身份供应商状态",
+    apiRoutes.authentication.provider,
+    AuthenticationProviderAvailabilitySchema
+  );
+}
+
+export async function loadAuthenticationSession() {
+  const status = await request(
+    "登录会话",
+    apiRoutes.authentication.session,
+    AuthenticationSessionStatusSchema
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function loginWithLocalIdentity(input: LocalLoginRequest) {
+  LocalLoginRequestSchema.parse(input);
+  const status = await request(
+    "本地身份登录",
+    apiRoutes.authentication.localLogin,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function switchAuthenticationWorkspace(
+  input: SwitchWorkspaceRequest
+) {
+  SwitchWorkspaceRequestSchema.parse(input);
+  const status = await request(
+    "切换学校工作空间",
+    apiRoutes.authentication.switchWorkspace,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function refreshAuthenticationSession(
+  expectedSessionVersion: number
+) {
+  const input = RefreshSessionRequestSchema.parse({ expectedSessionVersion });
+  const status = await request(
+    "续期登录会话",
+    apiRoutes.authentication.sessionRefresh,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function logoutAuthenticationSession(): Promise<void> {
+  const requestUrl = resolveApiUrl(
+    apiRoutes.authentication.logout,
+    import.meta.env.VITE_API_BASE_URL,
+    window.location.origin
+  );
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    credentials: "include",
+    ...(activeCsrfToken
+      ? { headers: { "x-csrf-token": activeCsrfToken } }
+      : {})
+  });
+  activeCsrfToken = null;
+  if (!response.ok && response.status !== 401) {
+    throw new ApiError(
+      response.status,
+      "LOGOUT_FAILED",
+      "退出登录失败。",
+      "退出登录",
+      requestUrl
+    );
+  }
+}
+
+export function loadActiveSessions() {
+  return request(
+    "活跃会话",
+    apiRoutes.authentication.activeSessions,
+    ActiveSessionListSchema
+  );
+}
+
+export function revokeAuthenticationSession(
+  sessionRef: string,
+  expectedVersion: number
+) {
+  const input = RevokeSessionRequestSchema.parse({ expectedVersion });
+  return request(
+    "撤销登录会话",
+    apiRoutes.authentication.revokeSession(sessionRef),
+    {
+      safeParse(value: unknown) {
+        return value && typeof value === "object"
+          ? { success: true as const, data: value as Record<string, unknown> }
+          : { success: false as const, error: new Error("Invalid revoke result") };
+      }
+    },
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadCurrentSchool() {
+  return request(
+    "当前学校",
+    apiRoutes.organization.currentSchool,
+    SchoolDetailSchema
+  );
+}
+
+export function loadSchoolMembers() {
+  return request(
+    "学校成员",
+    apiRoutes.organization.members,
+    AdminMemberListSchema
+  );
+}
+
+export function createSchoolMember(input: CreateMemberRequest) {
+  CreateMemberRequestSchema.parse(input);
+  return request(
+    "创建学校成员",
+    apiRoutes.organization.members,
+    {
+      safeParse(value: unknown) {
+        const parsed = value as { membershipRef?: unknown; userRef?: unknown; version?: unknown };
+        return typeof parsed?.membershipRef === "string" &&
+          typeof parsed.userRef === "string" &&
+          typeof parsed.version === "number"
+          ? { success: true as const, data: parsed as { membershipRef: string; userRef: string; version: number } }
+          : { success: false as const, error: new Error("Invalid member result") };
+      }
+    },
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateSchoolMemberStatus(
+  membershipRef: string,
+  input: UpdateMemberStatusRequest
+) {
+  UpdateMemberStatusRequestSchema.parse(input);
+  return request(
+    "更新成员状态",
+    apiRoutes.organization.memberStatus(membershipRef),
+    {
+      safeParse(value: unknown) {
+        return { success: true as const, data: value as Record<string, unknown> };
+      }
+    },
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function updateSchoolMemberRoles(
+  membershipRef: string,
+  input: UpdateMemberRolesRequest
+) {
+  UpdateMemberRolesRequestSchema.parse(input);
+  return request(
+    "更新成员角色",
+    apiRoutes.organization.memberRoles(membershipRef),
+    {
+      safeParse(value: unknown) {
+        return { success: true as const, data: value as Record<string, unknown> };
+      }
+    },
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function updateSchoolMemberCourseAccess(
+  membershipRef: string,
+  input: UpdateMemberCourseAccessRequest
+) {
+  UpdateMemberCourseAccessRequestSchema.parse(input);
+  return request(
+    "更新课程权限",
+    apiRoutes.organization.memberCourseAccess(membershipRef),
+    {
+      safeParse(value: unknown) {
+        return { success: true as const, data: value as Record<string, unknown> };
+      }
+    },
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function loadSecurityEvents() {
+  return request(
+    "安全审计",
+    apiRoutes.organization.securityEvents,
+    SecurityEventListSchema
+  );
+}
+
+export function loadDataGovernanceRequests() {
+  return request(
+    "数据治理请求",
+    apiRoutes.userGovernance.requests,
+    DataGovernanceRequestListSchema
+  );
+}
+
+export function createUserDataGovernanceRequest(
+  input: CreateDataGovernanceRequest
+) {
+  CreateDataGovernanceRequestSchema.parse(input);
+  return request(
+    "创建数据治理请求",
+    apiRoutes.userGovernance.requests,
+    DataGovernanceRequestListSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
 }
 
 export function loadWorkspace(): Promise<TeacherWorkspace> {

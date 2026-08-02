@@ -1090,10 +1090,7 @@ export class PostgresFileArtifactService {
   }
 
   private assertDemoActor(tenantRef: string, actorRef: string): void {
-    if (
-      tenantRef !== gate2DemoRefs.tenantRef ||
-      actorRef !== gate2DemoRefs.teacherRef
-    ) {
+    if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError("当前教师无权访问该文件范围。");
     }
   }
