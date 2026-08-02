@@ -12,6 +12,9 @@ Gate 2.10A 之后的仓库治理提交不改变产品状态语义。下一产品
 
 ## Unreleased — repository cleanup and reorganization
 
+- **Login**：修复 React StrictMode 下身份启动 Promise 被首轮 effect 清理后永久复用、导致页面停在“正在检查身份供应商”的问题；本地教师登录改为手机号密码或一次性验证码，固定演示账号进入林老师工作空间。
+- **Security**：演示手机号与密码仅以 SHA-256 / `scrypt` 摘要进入服务端配置；登录失败返回统一安全提示，验证码限时、限次且一次性使用；production 仍禁止 local identity。
+- **UI**：登录页改为双栏教师产品入口，移除面向教师无意义的 HttpOnly Cookie、Token、tenant 和角色技术说明。
 - **Docs**：根 README 成为唯一入口；当前能力、架构、版本、Roadmap、开发、验证和运维各有单一职责；Gate/UI/研究资料归档但未删除。
 - **Agent DX**：增加 `AGENTS.md`、局部 README、稳定测试/验证命令和 Claude Code 仓库经验记录。
 - **Cleanup**：删除已证明零引用的八个旧 Page、两个旧组件、旧 demo read model 和失效脚本，共 1,743 行；现行路由和业务语义不变。

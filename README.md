@@ -27,7 +27,7 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 
 | 能力 | 状态 | 当前实现 | 主要限制 |
 |---|---|---|---|
-| 登录与学校工作空间 | REAL（本地）/ PARTIAL（生产） | Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、多学校选择 | 正式 IdP 和云环境尚未配置 |
+| 登录与学校工作空间 | REAL（本地）/ PARTIAL（生产） | 本地手机号密码/验证码、Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、多学校选择 | 本地固定演示账号映射林老师；正式 IdP 和云环境尚未配置 |
 | 教师权限与学校隔离 | REAL | Membership、Role、CourseRun access、服务端 ActingContext、跨校不泄漏 | 角色范围仍是试点最小集合 |
 | 课程与课时 | REAL（最小切片） | CourseRun → Unit → Lesson、目标和实施汇总 | 无课程 CRUD、排课和完整资源树 |
 | 备课任务与授权上下文 | REAL | lesson preparation Task、TaskWorkingSet、重新授权、sealed ContextManifest | 只覆盖当前合成课程切片 |

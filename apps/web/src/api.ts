@@ -7,7 +7,10 @@ import {
   CreateDataGovernanceRequestSchema,
   CreateMemberRequestSchema,
   DataGovernanceRequestListSchema,
+  LocalCredentialLoginRequestSchema,
   LocalLoginRequestSchema,
+  LocalSmsChallengeSchema,
+  RequestLocalSmsCodeSchema,
   RefreshSessionRequestSchema,
   RevokeSessionRequestSchema,
   SchoolDetailSchema,
@@ -134,7 +137,9 @@ import {
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
   type CreateMemberRequest,
+  type LocalCredentialLoginRequest,
   type LocalLoginRequest,
+  type LocalSmsChallenge,
   type SwitchWorkspaceRequest,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
@@ -312,7 +317,11 @@ async function request<T>(
       message?: string;
       details?: Record<string, unknown>;
     };
-    if (response.status === 401) {
+    const authenticationAttempt =
+      path === apiRoutes.authentication.localLogin ||
+      path === apiRoutes.authentication.localCredentialLogin ||
+      path === apiRoutes.authentication.localSmsCode;
+    if (response.status === 401 && !authenticationAttempt) {
       activeCsrfToken = null;
       window.dispatchEvent(new CustomEvent("edu-agent:session-expired"));
     }
@@ -402,6 +411,32 @@ export async function loginWithLocalIdentity(input: LocalLoginRequest) {
   const status = await request(
     "本地身份登录",
     apiRoutes.authentication.localLogin,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function requestLocalSmsCode(
+  phone: string
+): Promise<LocalSmsChallenge> {
+  const input = RequestLocalSmsCodeSchema.parse({ phone });
+  return request(
+    "获取登录验证码",
+    apiRoutes.authentication.localSmsCode,
+    LocalSmsChallengeSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export async function loginWithLocalCredentials(
+  input: LocalCredentialLoginRequest
+) {
+  LocalCredentialLoginRequestSchema.parse(input);
+  const status = await request(
+    "手机号登录",
+    apiRoutes.authentication.localCredentialLogin,
     AuthenticationSessionStatusSchema,
     { method: "POST", body: JSON.stringify(input) }
   );

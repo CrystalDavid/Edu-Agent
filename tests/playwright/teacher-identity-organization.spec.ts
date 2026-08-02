@@ -25,10 +25,62 @@ async function freshContext(
 async function login(page: Page, profile: "teacher" | "admin" | "multi_school" | "school_b_teacher") {
   await page.goto("/overview");
   await expect(page.getByTestId("login-page")).toBeVisible();
-  await page.getByTestId(`login-profile-${profile}`).click();
+  if (profile === "teacher") {
+    await page.getByTestId("login-phone").fill(requiredLoginEnvironment("E2E_LOCAL_LOGIN_PHONE"));
+    await page.getByTestId("login-password").fill(requiredLoginEnvironment("E2E_LOCAL_LOGIN_PASSWORD"));
+    await page.getByTestId("login-submit").click();
+    return;
+  }
+  const status = await page.evaluate(async (selectedProfile) => {
+    const response = await fetch("/api/v1/auth/local-login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profile: selectedProfile, returnTo: "/overview" })
+    });
+    return response.status;
+  }, profile);
+  expect(status).toBe(201);
+  await page.reload();
+}
+
+function requiredLoginEnvironment(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing ${name} for isolated Playwright login.`);
+  return value;
 }
 
 test.describe("Gate 2.10A formal identity and organization", () => {
+  test("offers password and one-time-code login without exposing technical session notes", async ({ browser, baseURL }) => {
+    const context = await freshContext(browser, baseURL);
+    const page = await context.newPage();
+    try {
+      await page.goto("/overview");
+      await expect(page.getByTestId("login-page")).toBeVisible();
+      await expect(page.getByText("会话安全")).toHaveCount(0);
+      await expect(page.getByText("HttpOnly Cookie")).toHaveCount(0);
+      await page.screenshot({
+        path: `${screenshotRoot}/00-login-page.png`,
+        fullPage: true,
+        animations: "disabled"
+      });
+
+      await page.getByRole("tab", { name: "验证码登录" }).click();
+      await page.getByTestId("login-phone").fill(requiredLoginEnvironment("E2E_LOCAL_LOGIN_PHONE"));
+      await page.getByTestId("request-login-code").click();
+      const challenge = page.getByTestId("local-demo-code");
+      await expect(challenge).toBeVisible();
+      const code = (await challenge.textContent())?.match(/\b\d{6}\b/u)?.[0];
+      expect(code).toBeTruthy();
+      await page.getByTestId("login-code").fill(code!);
+      await page.getByTestId("login-submit").click();
+      await expect(page.getByTestId("overview-page")).toBeVisible();
+      await expect(page.getByText("林老师").first()).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
   test("logs in with a server session, restores on refresh, and logs out", async ({ browser, baseURL }) => {
     const context = await freshContext(browser, baseURL);
     const page = await context.newPage();

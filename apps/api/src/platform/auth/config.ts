@@ -20,7 +20,18 @@ export interface IdentitySettings {
   sessionSameSite: "lax";
   allowedWebOrigins: readonly string[];
   allowTestIdentityHeaders: boolean;
+  localDemoTeacherCredential: {
+    phoneSha256: string;
+    credentialScrypt: string;
+  };
 }
+
+const defaultLocalDemoTeacherCredential = {
+  phoneSha256:
+    "59a06e055ff23abe75665b51c5de4de3aaef4eca1fdf25570f240664cbfb1f38",
+  credentialScrypt:
+    "624246bfffebdede9630d230c2c55bd5b99f34c21eae505e25ae848fc6f9e4613952648c95e2c12767f67111b6bb913cb06814680ae7ebfa4128f6836445bfc1"
+} as const;
 
 const environments = new Set<ApplicationEnvironment>([
   "local",
@@ -48,6 +59,19 @@ function optionalUrl(value: string | undefined, name: string): URL | undefined {
     throw new Error(`${name} must use HTTPS outside localhost.`);
   }
   return parsed;
+}
+
+function fixedHex(
+  value: string | undefined,
+  fallback: string,
+  bytes: number,
+  name: string
+): string {
+  const selected = value?.trim() || fallback;
+  if (!new RegExp(`^[a-f0-9]{${bytes * 2}}$`, "i").test(selected)) {
+    throw new Error(`${name} must be a ${bytes}-byte hexadecimal digest.`);
+  }
+  return selected.toLowerCase();
 }
 
 export function readIdentitySettings(
@@ -139,6 +163,20 @@ export function readIdentitySettings(
     sessionSecure,
     sessionSameSite: "lax",
     allowedWebOrigins: configuredOrigins,
-    allowTestIdentityHeaders
+    allowTestIdentityHeaders,
+    localDemoTeacherCredential: {
+      phoneSha256: fixedHex(
+        environment.LOCAL_DEMO_TEACHER_PHONE_SHA256,
+        defaultLocalDemoTeacherCredential.phoneSha256,
+        32,
+        "LOCAL_DEMO_TEACHER_PHONE_SHA256"
+      ),
+      credentialScrypt: fixedHex(
+        environment.LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT,
+        defaultLocalDemoTeacherCredential.credentialScrypt,
+        64,
+        "LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT"
+      )
+    }
   };
 }

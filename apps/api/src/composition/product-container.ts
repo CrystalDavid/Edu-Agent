@@ -113,7 +113,10 @@ export function createProductContainer(
     options.identitySettings ?? readIdentitySettings();
   const localIdentityProvider =
     identitySettings.providerMode === "local"
-      ? new LocalIdentityProvider(identitySettings.localProviderEnabled)
+      ? new LocalIdentityProvider(
+          identitySettings.localProviderEnabled,
+          identitySettings.localDemoTeacherCredential
+        )
       : undefined;
   const identityProvider =
     options.identityProvider ??

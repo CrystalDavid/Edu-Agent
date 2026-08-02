@@ -6,6 +6,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../../apps/api/src/app.js";
 import { createProductContainer } from "../../apps/api/src/composition/product-container.js";
+import { createLocalDemoTeacherCredential } from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
+import { readIdentitySettings } from "../../apps/api/src/platform/auth/config.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -13,7 +15,23 @@ import {
 } from "./support/database.js";
 
 const adminPool = poolFor("admin");
-const product = createProductContainer(postgresEnvironment);
+const syntheticLogin = {
+  phone: "13900000001",
+  password: "SyntheticDemo123!"
+} as const;
+const syntheticCredential = createLocalDemoTeacherCredential(
+  syntheticLogin.phone,
+  syntheticLogin.password
+);
+const product = createProductContainer(postgresEnvironment, {
+  identitySettings: readIdentitySettings({
+    APP_ENV: "test",
+    IDENTITY_PROVIDER_MODE: "local",
+    LOCAL_IDENTITY_PROVIDER_ENABLED: "true",
+    LOCAL_DEMO_TEACHER_PHONE_SHA256: syntheticCredential.phoneSha256,
+    LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT: syntheticCredential.credentialScrypt
+  })
+});
 const app = createApp({ product });
 
 beforeEach(async () => {
@@ -59,6 +77,80 @@ async function login(
 }
 
 describe("Gate 2.10A formal identity and organization boundary", () => {
+  it("logs the local teacher in with a password or one-time demo code", async () => {
+    const passwordAgent = request.agent(app);
+    await passwordAgent
+      .post(apiRoutes.authentication.localCredentialLogin)
+      .set("Origin", "http://localhost:5173")
+      .send({
+        method: "password",
+        phone: syntheticLogin.phone,
+        password: syntheticLogin.password,
+        returnTo: "/overview"
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          authenticated: true,
+          user: { displayName: "林老师（合成）" },
+          currentWorkspace: { organizationRef: "tenant:demo-school" }
+        });
+      });
+
+    await request(app)
+      .post(apiRoutes.authentication.localCredentialLogin)
+      .set("Origin", "http://localhost:5173")
+      .send({
+        method: "password",
+        phone: syntheticLogin.phone,
+        password: "not-the-password",
+        returnTo: "/overview"
+      })
+      .expect(401)
+      .expect(({ body }) => {
+        expect(body.message).toBe("手机号或登录凭据不正确。");
+        expect(JSON.stringify(body)).not.toContain(syntheticLogin.phone);
+      });
+
+    const challengeResponse = await request(app)
+      .post(apiRoutes.authentication.localSmsCode)
+      .set("Origin", "http://localhost:5173")
+      .send({ phone: syntheticLogin.phone })
+      .expect(201);
+    expect(challengeResponse.body).toMatchObject({
+      phoneMasked: "139****0001",
+      retryAfterSeconds: 60
+    });
+
+    const smsAgent = request.agent(app);
+    await smsAgent
+      .post(apiRoutes.authentication.localCredentialLogin)
+      .set("Origin", "http://localhost:5173")
+      .send({
+        method: "sms",
+        phone: syntheticLogin.phone,
+        challengeRef: challengeResponse.body.challengeRef,
+        code: challengeResponse.body.demoCode,
+        returnTo: "/overview"
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.user.displayName).toBe("林老师（合成）");
+      });
+
+    await request(app)
+      .post(apiRoutes.authentication.localCredentialLogin)
+      .set("Origin", "http://localhost:5173")
+      .send({
+        method: "sms",
+        phone: syntheticLogin.phone,
+        challengeRef: challengeResponse.body.challengeRef,
+        code: challengeResponse.body.demoCode,
+        returnTo: "/overview"
+      })
+      .expect(401);
+  });
+
   it("creates, refreshes, restores, and revokes an HttpOnly server session", async () => {
     await request(app).get(apiRoutes.teacher.courseRuns).expect(401);
     const agent = request.agent(app);

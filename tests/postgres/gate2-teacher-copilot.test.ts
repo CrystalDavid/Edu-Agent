@@ -50,7 +50,10 @@ const identitySettings = readIdentitySettings({
   IDENTITY_PROVIDER_MODE: "local",
   LOCAL_IDENTITY_PROVIDER_ENABLED: "true"
 });
-const localIdentityProvider = new LocalIdentityProvider(true);
+const localIdentityProvider = new LocalIdentityProvider(
+  true,
+  identitySettings.localDemoTeacherCredential
+);
 const identity = new PostgresIdentityOrganizationService(
   appPool,
   identitySettings,

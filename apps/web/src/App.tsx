@@ -27,8 +27,9 @@ import {
   loadAuthenticationSession,
   loadTeacherWorkbench,
   loadWorkspace,
-  loginWithLocalIdentity,
+  loginWithLocalCredentials,
   logoutAuthenticationSession,
+  requestLocalSmsCode,
   switchAuthenticationWorkspace
 } from "./api";
 import { TeacherSidebar } from "./components/portal/TeacherSidebar";
@@ -145,7 +146,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const initialRequest = useRef<Promise<void> | null>(null);
+  const [authReloadKey, setAuthReloadKey] = useState(0);
   const noticeTimer = useRef<number | null>(null);
 
   const refreshWorkspace = useCallback(async () => {
@@ -153,25 +154,24 @@ export function App() {
     setWorkspace(next);
   }, []);
 
-  const bootstrap = useCallback(() => {
+  useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    initialRequest.current ??= (async () => {
+    void (async () => {
       const [session, provider] = await Promise.all([
         loadAuthenticationSession(),
         loadAuthenticationProvider()
       ]);
+      const nextWorkspace =
+        session.authenticated && session.currentWorkspace
+          ? await loadTeacherWorkbench()
+          : null;
       if (!active) return;
       setAuthSession(session);
       setAuthProvider(provider);
-      if (session.authenticated && session.currentWorkspace) {
-        setWorkspace(await loadTeacherWorkbench());
-      } else {
-        setWorkspace(null);
-      }
-    })();
-    void initialRequest.current
+      setWorkspace(nextWorkspace);
+    })()
       .catch((caught: unknown) => {
         if (active) {
           setError(caught instanceof Error ? caught : new Error("无法加载教师工作空间"));
@@ -183,19 +183,17 @@ export function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authReloadKey]);
 
-  useEffect(() => bootstrap(), [bootstrap]);
   useEffect(() => {
     const expire = () => {
-      initialRequest.current = null;
       setWorkspace(null);
       setAuthSession(null);
-      bootstrap();
+      setAuthReloadKey((current) => current + 1);
     };
     window.addEventListener("edu-agent:session-expired", expire);
     return () => window.removeEventListener("edu-agent:session-expired", expire);
-  }, [bootstrap]);
+  }, []);
   useEffect(() => () => {
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
   }, []);
@@ -207,9 +205,8 @@ export function App() {
   };
 
   const retryBootstrap = () => {
-    initialRequest.current = null;
     setWorkspace(null);
-    bootstrap();
+    setAuthReloadKey((current) => current + 1);
   };
 
   if (loading) {
@@ -260,23 +257,17 @@ export function App() {
     return (
       <LoginPage
         provider={authProvider}
-        session={authSession}
-        onLogin={async (profile) => {
-          setLoading(true);
-          setError(null);
-          try {
-            const session = await loginWithLocalIdentity({
-              profile,
-              returnTo: "/overview"
-            });
-            setAuthSession(session);
-            if (session.authenticated && session.currentWorkspace) {
-              setWorkspace(await loadTeacherWorkbench());
-            }
-          } catch (caught) {
-            setError(caught instanceof Error ? caught : new Error("登录失败。"));
-          } finally {
-            setLoading(false);
+        onRequestSmsCode={requestLocalSmsCode}
+        onLogin={async (input) => {
+          const session = await loginWithLocalCredentials(input);
+          const nextWorkspace =
+            session.authenticated && session.currentWorkspace
+              ? await loadTeacherWorkbench()
+              : null;
+          setAuthSession(session);
+          setWorkspace(nextWorkspace);
+          if (!session.authenticated) {
+            throw new Error("登录会话未能建立。");
           }
         }}
       />
@@ -306,10 +297,9 @@ export function App() {
         }}
         onLogout={async () => {
           await logoutAuthenticationSession();
-          initialRequest.current = null;
           setWorkspace(null);
           setAuthSession(null);
-          bootstrap();
+          setAuthReloadKey((current) => current + 1);
         }}
       />
     );
@@ -351,10 +341,9 @@ export function App() {
         }}
         onLogout={async () => {
           await logoutAuthenticationSession();
-          initialRequest.current = null;
           setWorkspace(null);
           setAuthSession(null);
-          bootstrap();
+          setAuthReloadKey((current) => current + 1);
         }}
         onNavigate={navigate}
       />

@@ -74,7 +74,9 @@ MODEL_DEBUG_CONTENT=false
 
 产品 API 默认要求有效的服务端 Session Cookie。未登录访问教师门户会显示登录页；登录成功后 API 建立随机不透明 Session，浏览器只持有 HttpOnly Cookie，数据库只保存 token hash。刷新和 API 重启后从 PostgreSQL 恢复 User、School、Membership、Role 和 CourseRun access。
 
-本地演示提供四个不含密码的合成身份：普通教师、School Admin、多学校教师和 School B 教师。多学校身份必须选择当前工作空间；切换学校后所有产品读取重新按该 Membership 和 CourseRun access 授权。侧边栏与设置页显示真实 Session 中的姓名、当前学校和角色。
+本地教师登录页提供“手机号 + 密码”和“手机号 + 验证码”两种方式。项目所有者保管的固定演示账号映射到 School A 的林老师；服务端只保存手机号摘要和 `scrypt` 凭据摘要，不把明文凭据写入源码、日志、Audit 或数据库。验证码由 local identity Adapter 临时生成、五分钟过期且只能使用一次；因为本地演示没有短信供应商，验证码只在 local/demo 登录页显示。
+
+School Admin、多学校教师和 School B 教师仍作为隔离测试身份 Fixture，用于权限、工作空间和跨学校回归；普通教师登录页不再把测试身份选择器暴露给教师。多学校身份切换后，所有产品读取仍重新按 Membership 和 CourseRun access 授权。侧边栏与设置页显示真实 Session 中的姓名、当前学校和角色。
 
 `x-demo-tenant` / `x-demo-actor` 只保留在明确的隔离测试 Adapter；普通浏览器和 production 路径不接受它们。只有同时满足以下条件才允许服务端 Demo bypass 注入合成教师身份：
 
@@ -94,18 +96,22 @@ AUTH_SESSION_SECURE=false
 WEB_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ALLOW_TEST_IDENTITY_HEADERS=false
 DEMO_AUTH_BYPASS=false
+LOCAL_DEMO_TEACHER_PHONE_SHA256=
+LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 ```
+
+上面两个可选项只接受单向摘要，用于在本机替换演示凭据；`.env.example` 不包含明文手机号或密码。未设置时使用仓库内置的演示摘要。生产环境禁止 local identity，因此这两个配置不能替代正式 OIDC。
 
 生产 OIDC 使用 `OIDC_ISSUER_URL`、`OIDC_CLIENT_ID`、可选 `OIDC_CLIENT_SECRET`、`OIDC_REDIRECT_URI` 和 `OIDC_SCOPES`。本地文件只放空占位或本机 Secret；不要在文档、日志或命令行输出 Token。
 
 ### Gate 2.10A 身份验收
 
-1. 未登录打开 `/overview`，确认出现登录页；选择普通教师后进入 School A，刷新仍登录；
+1. 未登录打开 `/overview`，确认出现手机号登录页；使用项目所有者提供的固定演示账号进入 School A 的林老师工作空间，刷新仍登录；
 2. 从侧边栏打开“身份与组织设置”，检查当前用户、学校、角色、CourseRun scope 和 active Session；
 3. 登出后确认产品 API 返回 `401`，重新登录可恢复业务数据；
-4. 选择“多学校教师”，在工作空间页分别进入 School A 和 School B，确认 CourseRun/课时数据完全切换且刷新保持；
+4. 运行身份 Playwright/PostgreSQL 回归，确认多学校 Fixture 在 School A 和 School B 间切换后 CourseRun/课时数据完全切换且刷新保持；
 5. 使用 School A Session 修改 URL 请求 School B CourseRun，确认返回不泄漏存在性的 `404`；
-6. 以 School Admin 登录，在设置中预配置合成教师、调整角色/CourseRun access、停用并重新启用；普通教师不显示管理面板；
+6. 运行身份 Playwright/PostgreSQL 回归，确认 School Admin Fixture 可预配置合成教师、调整角色/CourseRun access、停用并重新启用；普通教师不显示管理面板；
 7. 在一个浏览器建立同一用户的第二 Session，从设置撤销它，确认第二 Session 立即失效；
 8. 提交数据导出或去标识请求，确认只登记人工审核流程，不删除 TeachingPlan、Evidence、Assignment、Reflection 或 Audit 历史。
 

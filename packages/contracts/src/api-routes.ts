@@ -74,6 +74,8 @@ export const apiRoutes = {
     session: "/api/v1/auth/session",
     sessionRefresh: "/api/v1/auth/session/refresh",
     localLogin: "/api/v1/auth/local-login",
+    localCredentialLogin: "/api/v1/auth/local-credential-login",
+    localSmsCode: "/api/v1/auth/local-sms-code",
     oidcStart: "/api/v1/auth/oidc/start",
     oidcCallback: "/api/v1/auth/oidc/callback",
     logout: "/api/v1/auth/logout",

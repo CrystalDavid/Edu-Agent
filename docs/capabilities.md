@@ -31,7 +31,7 @@
 
 | 业务闭环 | 状态 | 当前真实能力 | 主要边界 / 限制 |
 |---|---|---|---|
-| 登录和工作空间 | REAL（本地） / PARTIAL（生产） | Local/OIDC Provider Port、HttpOnly Session、CSRF、登录/刷新/登出、多学校选择、Membership/Role/CourseRun access | provider-neutral OIDC 代码已存在；真实云 IdP、域名与生产 Secret 尚未配置 |
+| 登录和工作空间 | REAL（本地） / PARTIAL（生产） | 本地手机号密码/一次性验证码、Local/OIDC Provider Port、HttpOnly Session、CSRF、登录/刷新/登出、多学校选择、Membership/Role/CourseRun access | 固定演示凭据只以摘要存在并映射林老师；provider-neutral OIDC 代码已存在，真实云 IdP、域名与生产 Secret 尚未配置 |
 | 课程与课时 | REAL（最小切片） | CourseRun → CurriculumUnit → Lesson、目标、计划/任务/文件/实施汇总 | 只有合成的一次函数数据；无完整课程维护 |
 | 备课 | REAL | Lesson → lesson_preparation Task → request/context → Proposal → in-review → approved → ready → explicit complete | 不包含完整课程资源树或自动完成 |
 | 豆包模型生成 | REAL（可选） | 单一 `VolcengineArkProvider`、事务外 Worker、结构化校验/一次修复、预算、取消、重试、恢复、Usage | 默认 Mock 不联网；仅合成数据获准 live；无多供应商/模型选择器 |

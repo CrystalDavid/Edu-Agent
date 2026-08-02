@@ -1,5 +1,6 @@
 import { createServer } from "node:net";
 import { spawnSync } from "node:child_process";
+import { createHash, scryptSync } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { childEnvironment } from "../tool-environment.mjs";
@@ -88,6 +89,18 @@ const volumeName = e2eVolumeName(runId);
 const objectStoreRoot = e2eObjectStoreRoot(runId);
 databaseEnvironment.LOCAL_OBJECT_STORE_ROOT = objectStoreRoot;
 const protectedStateBefore = snapshotProtectedLocalState();
+const e2eLocalLoginPhone = "13900000001";
+const e2eLocalLoginPassword = "SyntheticDemo123!";
+databaseEnvironment.E2E_LOCAL_LOGIN_PHONE = e2eLocalLoginPhone;
+databaseEnvironment.E2E_LOCAL_LOGIN_PASSWORD = e2eLocalLoginPassword;
+databaseEnvironment.LOCAL_DEMO_TEACHER_PHONE_SHA256 = createHash("sha256")
+  .update(e2eLocalLoginPhone)
+  .digest("hex");
+databaseEnvironment.LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT = scryptSync(
+  `${e2eLocalLoginPhone}\0${e2eLocalLoginPassword}`,
+  "edu-agent-local-demo-credential-v1",
+  64
+).toString("hex");
 
 if (inspectVolumeIdentity(volumeName)) {
   throw new Error(
