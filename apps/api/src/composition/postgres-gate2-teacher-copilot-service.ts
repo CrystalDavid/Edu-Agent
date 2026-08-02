@@ -23,7 +23,7 @@ import {
 import {
   gate2DemoRefs,
   strategyTeachingPlans
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/demo-fixtures";
 import type { Pool } from "pg";
 
 import {

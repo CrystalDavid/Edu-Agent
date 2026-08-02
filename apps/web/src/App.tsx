@@ -241,7 +241,7 @@ export function App() {
               <details>
                 <summary>查看本地启动指南</summary>
                 <p>运行 <code>corepack pnpm demo:doctor</code>，再运行 <code>corepack pnpm demo:dev</code>。</p>
-                <p>完整说明：<code>docs/demo/LOCAL_DEMO.md</code></p>
+                <p>完整说明：<code>docs/demo/local-demo.md</code></p>
               </details>
             </div>
           }

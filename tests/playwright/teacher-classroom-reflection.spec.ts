@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-const screenshotRoot = "output/playwright/gate-2-9";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-9");
 const lessonRef = "lesson:slope-and-graph-change";
 const headers = {
   "x-demo-tenant": "tenant:demo-school",

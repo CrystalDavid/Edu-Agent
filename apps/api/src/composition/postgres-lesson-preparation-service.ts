@@ -28,7 +28,7 @@ import {
   type LessonPreparationTaskDetail,
   type TaskResourceSelectionRequest
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/demo-fixtures";
 import type { Pool } from "pg";
 
 import {

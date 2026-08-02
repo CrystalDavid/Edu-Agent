@@ -5,7 +5,7 @@ import {
 } from "@edu-agent/contracts";
 import {
   baselineTeachingPlan
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/demo-fixtures";
 import { describe, expect, it } from "vitest";
 
 import {
