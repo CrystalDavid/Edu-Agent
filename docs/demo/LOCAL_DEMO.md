@@ -1,5 +1,7 @@
 # Edu Agent 教师端本地演示
 
+> 状态：CURRENT。对应 `gate-2-10a-verified`；只描述本地合成数据演示，不代表生产部署。
+
 ## 演示边界
 
 本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。

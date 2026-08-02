@@ -1,6 +1,6 @@
 # Gate 2.8 — 日程、待办与教师统一工作台
 
-> 状态：功能分支实现完成，等待产品所有者人工验收。Gate 2.8 尚未合并、未打 verified Tag。
+> 状态：HISTORICAL / VERIFIED。功能 HEAD `996400123fd2433d145ee8056bda639c61208ce4`，PR #8，Merge `44a67ef0ffa519d0ef9c6c2b84e42ab9204561d0`，annotated tag `gate-2-8-verified`。
 
 ## 1. 产品目标
 
