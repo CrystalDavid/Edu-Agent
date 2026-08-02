@@ -123,6 +123,26 @@ class StringSchema extends Schema {
       }
     ]);
   }
+
+  email() {
+    return new StringSchema([
+      ...this.checks,
+      (value, path) => {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value)) {
+          fail(path, "Expected email");
+        }
+      }
+    ]);
+  }
+
+  startsWith(prefix) {
+    return new StringSchema([
+      ...this.checks,
+      (value, path) => {
+        if (!value.startsWith(prefix)) fail(path, `Expected string to start with ${prefix}`);
+      }
+    ]);
+  }
 }
 
 class NumberSchema extends Schema {

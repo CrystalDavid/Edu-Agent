@@ -17,7 +17,7 @@ describe("local demo startup contract", () => {
     expect(packageJson.scripts["demo:down"]).toBeTruthy();
   });
 
-  it("waits for health and bootstrap before presenting the web URL", () => {
+  it("waits for health, formal local identity, and bootstrap before presenting the web URL", () => {
     const runner = source("scripts/demo/run-demo.mjs");
     expect(runner.indexOf("prepareDemo()")).toBeLessThan(
       runner.indexOf('startPackage("@edu-agent/api"')
@@ -25,6 +25,10 @@ describe("local demo startup contract", () => {
     expect(runner.indexOf("apiRoutes.health")).toBeLessThan(
       runner.indexOf('startPackage("@edu-agent/web"')
     );
+    expect(runner.indexOf("apiRoutes.authentication.localLogin")).toBeLessThan(
+      runner.indexOf("apiRoutes.demo.bootstrap")
+    );
+    expect(runner).toContain('authenticationMethod !== "local-identity"');
     expect(runner.indexOf("apiRoutes.demo.bootstrap")).toBeLessThan(
       runner.indexOf('startPackage("@edu-agent/web"')
     );

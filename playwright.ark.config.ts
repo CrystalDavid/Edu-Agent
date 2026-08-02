@@ -5,6 +5,7 @@ const webOrigin = `http://127.0.0.1:${
 }`;
 
 export default defineConfig({
+  globalSetup: "./tests/playwright/global-setup.ts",
   testDir: "./tests/playwright",
   testMatch: "teacher-model-provider.spec.ts",
   outputDir: "./test-results/playwright-ark",
@@ -25,6 +26,7 @@ export default defineConfig({
   ],
   use: {
     baseURL: webOrigin,
+    storageState: "./test-results/playwright/.auth/teacher.json",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
