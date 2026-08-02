@@ -7,7 +7,11 @@ import {
   useState
 } from "react";
 
-import type { TeacherWorkspace } from "@edu-agent/contracts";
+import type {
+  AuthenticationProviderAvailability,
+  AuthenticationSessionStatus,
+  TeacherWorkspace
+} from "@edu-agent/contracts";
 import {
   Button,
   Result,
@@ -19,10 +23,17 @@ import {
 import {
   ApiError,
   type RecoverableCopilotTask,
+  loadAuthenticationProvider,
+  loadAuthenticationSession,
   loadTeacherWorkbench,
-  loadWorkspace
+  loadWorkspace,
+  loginWithLocalIdentity,
+  logoutAuthenticationSession,
+  switchAuthenticationWorkspace
 } from "./api";
 import { TeacherSidebar } from "./components/portal/TeacherSidebar";
+import { LoginPage } from "./pages/LoginPage";
+import { WorkspaceSelectionPage } from "./pages/WorkspaceSelectionPage";
 import { WorkspaceIcon } from "./components/WorkspaceIcon";
 import { cleanDisplayText } from "./presentation";
 import { useAppRoute } from "./route";
@@ -125,12 +136,16 @@ export function App() {
     navigateFiles
   } = useAppRoute();
   const [workspace, setWorkspace] = useState<TeacherWorkspace | null>(null);
+  const [authSession, setAuthSession] =
+    useState<AuthenticationSessionStatus | null>(null);
+  const [authProvider, setAuthProvider] =
+    useState<AuthenticationProviderAvailability | null>(null);
   const [task, setTask] =
     useState<RecoverableCopilotTask | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const initialRequest = useRef<Promise<TeacherWorkspace> | null>(null);
+  const initialRequest = useRef<Promise<void> | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
   const refreshWorkspace = useCallback(async () => {
@@ -142,11 +157,21 @@ export function App() {
     let active = true;
     setLoading(true);
     setError(null);
-    initialRequest.current ??= loadTeacherWorkbench();
+    initialRequest.current ??= (async () => {
+      const [session, provider] = await Promise.all([
+        loadAuthenticationSession(),
+        loadAuthenticationProvider()
+      ]);
+      if (!active) return;
+      setAuthSession(session);
+      setAuthProvider(provider);
+      if (session.authenticated && session.currentWorkspace) {
+        setWorkspace(await loadTeacherWorkbench());
+      } else {
+        setWorkspace(null);
+      }
+    })();
     void initialRequest.current
-      .then((result) => {
-        if (active) setWorkspace(result);
-      })
       .catch((caught: unknown) => {
         if (active) {
           setError(caught instanceof Error ? caught : new Error("无法加载教师工作空间"));
@@ -161,6 +186,16 @@ export function App() {
   }, []);
 
   useEffect(() => bootstrap(), [bootstrap]);
+  useEffect(() => {
+    const expire = () => {
+      initialRequest.current = null;
+      setWorkspace(null);
+      setAuthSession(null);
+      bootstrap();
+    };
+    window.addEventListener("edu-agent:session-expired", expire);
+    return () => window.removeEventListener("edu-agent:session-expired", expire);
+  }, [bootstrap]);
   useEffect(() => () => {
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
   }, []);
@@ -188,7 +223,7 @@ export function App() {
     );
   }
 
-  if (error || !workspace) {
+  if (error) {
     return (
       <div className="portal-boot-screen">
         <Result
@@ -221,10 +256,108 @@ export function App() {
     );
   }
 
+  if (!authSession || !authSession.authenticated) {
+    return (
+      <LoginPage
+        provider={authProvider}
+        session={authSession}
+        onLogin={async (profile) => {
+          setLoading(true);
+          setError(null);
+          try {
+            const session = await loginWithLocalIdentity({
+              profile,
+              returnTo: "/overview"
+            });
+            setAuthSession(session);
+            if (session.authenticated && session.currentWorkspace) {
+              setWorkspace(await loadTeacherWorkbench());
+            }
+          } catch (caught) {
+            setError(caught instanceof Error ? caught : new Error("登录失败。"));
+          } finally {
+            setLoading(false);
+          }
+        }}
+      />
+    );
+  }
+
+  if (!authSession.currentWorkspace) {
+    return (
+      <WorkspaceSelectionPage
+        session={authSession}
+        onSelect={async (membershipRef) => {
+          setLoading(true);
+          try {
+            const session = await switchAuthenticationWorkspace({
+              membershipRef,
+              expectedSessionVersion: authSession.sessionVersion
+            });
+            setAuthSession(session);
+            if (session.authenticated && session.currentWorkspace) {
+              setWorkspace(await loadTeacherWorkbench());
+            }
+          } catch (caught) {
+            setError(caught instanceof Error ? caught : new Error("无法切换学校工作空间。"));
+          } finally {
+            setLoading(false);
+          }
+        }}
+        onLogout={async () => {
+          await logoutAuthenticationSession();
+          initialRequest.current = null;
+          setWorkspace(null);
+          setAuthSession(null);
+          bootstrap();
+        }}
+      />
+    );
+  }
+
+  if (!workspace) {
+    return (
+      <div className="portal-boot-screen">
+        <Result
+          status="info"
+          title="当前学校尚未初始化教师课程工作区"
+          subTitle="身份与学校工作空间已建立，但该学校还没有可用的教师课程数据。"
+          extra={<Button onClick={retryBootstrap}>重新检查</Button>}
+        />
+      </div>
+    );
+  }
+
   const teacherName = cleanDisplayText(workspace.identity.teacherName);
   return (
     <div className="teacher-portal-shell">
-      <TeacherSidebar route={route} teacherName={teacherName} onNavigate={navigate} />
+      <TeacherSidebar
+        route={route}
+        teacherName={authSession.user.displayName || teacherName}
+        schoolName={authSession.currentWorkspace.organizationName}
+        roles={authSession.currentWorkspace.roles}
+        memberships={authSession.memberships}
+        currentMembershipRef={authSession.currentWorkspace.membershipRef}
+        onSwitchWorkspace={async (membershipRef) => {
+          const session = await switchAuthenticationWorkspace({
+            membershipRef,
+            expectedSessionVersion: authSession.sessionVersion
+          });
+          setAuthSession(session);
+          setWorkspace(null);
+          if (session.authenticated && session.currentWorkspace) {
+            setWorkspace(await loadTeacherWorkbench());
+          }
+        }}
+        onLogout={async () => {
+          await logoutAuthenticationSession();
+          initialRequest.current = null;
+          setWorkspace(null);
+          setAuthSession(null);
+          bootstrap();
+        }}
+        onNavigate={navigate}
+      />
       <main className={`teacher-portal-main${route === "/agent" ? " teacher-portal-main--agent" : ""}`}>
         <Suspense fallback={<PageLoading />}>
           {route === "/" || route === "/overview" ? (
@@ -274,7 +407,11 @@ export function App() {
             )
           ) : null}
           {route === "/settings" ? (
-            <TeacherSettingsPage navigate={navigate} onAction={showNotice} />
+            <TeacherSettingsPage
+              navigate={navigate}
+              onAction={showNotice}
+              authSession={authSession}
+            />
           ) : null}
           {route === "/style-guide" ? <TeacherStyleGuidePage /> : null}
 

@@ -45,17 +45,17 @@ async function assertPortAvailable(port, label) {
   });
 }
 
-async function waitForJson(url, validate, timeoutMs = 45_000) {
+async function waitForJson(
+  url,
+  validate,
+  timeoutMs = 45_000,
+  headers = {}
+) {
   const startedAt = Date.now();
   let lastStatus = "尚未收到响应";
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url, {
-        headers: {
-          "x-demo-tenant": "tenant:demo-school",
-          "x-demo-actor": "user:teacher-001"
-        }
-      });
+      const response = await fetch(url, { headers });
       lastStatus = `HTTP ${response.status}`;
       if (response.ok) {
         const payload = await response.json();
@@ -68,6 +68,32 @@ async function waitForJson(url, validate, timeoutMs = 45_000) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   throw new Error(`${url} 启动检查超时：${lastStatus}`);
+}
+
+async function createReadinessSession(localLoginUrl) {
+  const response = await fetch(localLoginUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ profile: "teacher", returnTo: "/overview" })
+  });
+  if (!response.ok) {
+    throw new Error(`本地身份启动检查失败：HTTP ${response.status}`);
+  }
+  const status = await response.json();
+  if (
+    status?.authenticated !== true ||
+    status?.authenticationMethod !== "local-identity"
+  ) {
+    throw new Error("本地身份启动检查未建立服务端会话。");
+  }
+  const cookie = response.headers
+    .getSetCookie()
+    .map((value) => value.split(";", 1)[0])
+    .join("; ");
+  return {
+    cookie,
+    "x-csrf-token": status.csrfToken
+  };
 }
 
 async function waitForHtml(url, timeoutMs = 30_000) {
@@ -135,7 +161,11 @@ try {
   const environment = {
     ...readLocalPostgresEnvironment(),
     APP_ENV: "local",
-    DEMO_AUTH_BYPASS: "true",
+    DEMO_AUTH_BYPASS: process.env.DEMO_AUTH_BYPASS ?? "false",
+    IDENTITY_PROVIDER_MODE:
+      process.env.IDENTITY_PROVIDER_MODE ?? "local",
+    LOCAL_IDENTITY_PROVIDER_ENABLED:
+      process.env.LOCAL_IDENTITY_PROVIDER_ENABLED ?? "true",
     COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
@@ -151,25 +181,32 @@ try {
       payload?.mode === modelProviderMode
   );
   await waitForJson(
+    `${apiOrigin}${apiRoutes.authentication.provider}`,
+    (payload) => payload?.available === true
+  );
+  const readinessHeaders = await createReadinessSession(
+    `${apiOrigin}${apiRoutes.authentication.localLogin}`
+  );
+  await waitForJson(
     `${apiOrigin}${apiRoutes.demo.bootstrap}`,
-    (payload) =>
-      payload?.identity?.dataMode === "synthetic" &&
-      payload?.identity?.modelMode === "mock"
+    (payload) => payload?.identity?.dataMode === "synthetic",
+    45_000,
+    readinessHeaders
   );
   await waitForJson(
     `${apiOrigin}${apiRoutes.teacher.modelProviderAvailability}`,
     (payload) =>
       payload?.activeProvider === expectedActiveProvider &&
-      payload?.fallbackToMock === false
+      payload?.fallbackToMock === false,
+    45_000,
+    readinessHeaders
   );
 
   startPackage("@edu-agent/web", environment);
   await waitForHtml(`${webOrigin}/`);
   await waitForJson(
-    `${webOrigin}${apiRoutes.demo.bootstrap}`,
-    (payload) =>
-      payload?.identity?.dataMode === "synthetic" &&
-      payload?.identity?.modelMode === "mock"
+    `${webOrigin}${apiRoutes.authentication.provider}`,
+    (payload) => payload?.available === true
   );
 
   process.stdout.write(

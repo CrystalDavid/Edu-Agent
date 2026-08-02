@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Avatar, Button, Input, Select, Switch } from "antd";
+import type { AuthenticationSessionStatus } from "@edu-agent/contracts";
 
 import type { AppRoute } from "../route";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
@@ -9,6 +10,12 @@ import {
   SettingsSection
 } from "../components/portal/SettingsSection";
 import { PageHeader, StatusPill } from "../components/portal/PortalPrimitives";
+import { IdentityOrganizationSettings } from "../components/portal/IdentityOrganizationSettings";
+
+type AuthenticatedSession = Extract<
+  AuthenticationSessionStatus,
+  { authenticated: true }
+>;
 
 const sectionLinks = [
   ["profile", "个人信息"],
@@ -26,6 +33,7 @@ const sectionLinks = [
 export function TeacherSettingsPage(props: {
   navigate: (route: AppRoute) => void;
   onAction: (message: string) => void;
+  authSession: AuthenticatedSession;
 }) {
   const [personalization, setPersonalization] = useState(true);
   const [memoryItems, setMemoryItems] = useState([
@@ -64,26 +72,28 @@ export function TeacherSettingsPage(props: {
           <SettingsSection id="profile" title="个人信息" description="这些信息只用于你的教师工作空间。">
             <div className="profile-form">
               <div className="profile-avatar-field">
-                <Avatar size={72} className="teacher-avatar">林</Avatar>
+                <Avatar size={72} className="teacher-avatar">{props.authSession.user.displayName.trim().slice(0, 1) || "师"}</Avatar>
                 <Button onClick={() => props.onAction("更换头像：当前仅预览，不上传图片。")}>更换头像</Button>
               </div>
-              <label>姓名<Input defaultValue="林老师" /></label>
+              <label>姓名<Input value={props.authSession.user.displayName} readOnly /></label>
               <label>学科<Input defaultValue="数学" /></label>
               <label>任教年级<Input defaultValue="八年级" /></label>
               <label className="profile-bio">个人简介<Input.TextArea defaultValue="关注学生如何解释数学概念，而不只看答案是否正确。" rows={3} /></label>
-              <label>联系方式<Input defaultValue="lin.teacher@example.test" /></label>
+              <label>联系方式<Input value={props.authSession.user.email ?? "未提供"} readOnly /></label>
             </div>
           </SettingsSection>
 
-          <SettingsSection id="identity" title="账号和身份" description="当前只启用普通任课教师身份。">
-            <SettingsRow label="演示账号" description="本地短期会话，不连接真实学校账号" control={<StatusPill tone="blue">已登录</StatusPill>} />
-            <SettingsRow label="当前身份" description="普通任课教师" control={<Button onClick={() => props.onAction("查看身份详情")}>查看详情</Button>} />
+          <SettingsSection id="identity" title="账号和身份" description="服务端会话、学校成员关系与数据治理请求。">
+            <IdentityOrganizationSettings
+              session={props.authSession}
+              onAction={props.onAction}
+            />
           </SettingsSection>
 
           <SettingsSection id="workspace" title="角色与工作空间" description="角色决定可见职责，不替代具体数据权限检查。">
-            <SettingsRow label="任课教师" description="当前生效角色" control={<StatusPill tone="success">已启用</StatusPill>} />
-            <SettingsRow label="当前课程" description="八年级数学下册" control={<Button onClick={() => props.onAction("切换课程：本轮仅预览当前普通教师工作空间。")}>切换课程</Button>} />
-            <SettingsRow label="当前班级" description="八年级 3 班、1 班、2 班" control={<Button onClick={() => props.onAction("管理范围：正式数据范围仍由权限策略决定。")}>管理范围</Button>} />
+            <SettingsRow label="当前角色" description={props.authSession.currentWorkspace?.roles.join(" / ") ?? "未选择"} control={<StatusPill tone="success">服务端会话</StatusPill>} />
+            <SettingsRow label="当前学校" description={props.authSession.currentWorkspace?.organizationName ?? "未选择"} control={<StatusPill tone="blue">活动</StatusPill>} />
+            <SettingsRow label="授权课程" description={(props.authSession.currentWorkspace?.courseRunRefs ?? []).join("、") || "尚未授权"} control={<span>{props.authSession.currentWorkspace?.courseRunRefs.length ?? 0} 个</span>} />
             <div className="future-role-note">班主任和科组长角色保留扩展位置，本轮没有启用专属功能。</div>
           </SettingsSection>
 
@@ -147,8 +157,8 @@ export function TeacherSettingsPage(props: {
           </SettingsSection>
 
           <SettingsSection id="privacy" title="隐私与数据" description="演示环境只允许合成数据；启用 Ark 时，仅发送每次重新授权并封存的最小上下文。">
-            <SettingsRow label="导出个人数据" description="导出演示设置、记忆和方法" control={<Button onClick={() => props.onAction("已生成演示导出清单")}>准备导出</Button>} />
-            <SettingsRow label="删除个人数据" description="需要再次确认；当前只重置本地演示状态" control={<Button danger onClick={() => props.onAction("删除操作未执行：本轮仅提供界面预览")}>查看范围</Button>} />
+            <SettingsRow label="导出个人数据" description="登记受控导出请求，不在浏览器拼装业务数据" control={<Button onClick={() => chooseSection("identity")}>前往身份与数据治理</Button>} />
+            <SettingsRow label="删除或去标识" description="先登记人工审核请求，不直接破坏教学与审计历史" control={<Button danger onClick={() => chooseSection("identity")}>查看治理范围</Button>} />
             <SettingsRow label="模型数据外发" description="真实模型默认关闭" control={<StatusPill tone="success">未外发</StatusPill>} />
             <SettingsRow label="权限和日志" description="查看可理解的操作记录" control={<Button onClick={() => props.navigate("/runs")}>打开系统记录</Button>} />
           </SettingsSection>
