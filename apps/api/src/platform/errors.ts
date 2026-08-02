@@ -64,3 +64,12 @@ export class InvalidFileError extends Error {
     this.name = "InvalidFileError";
   }
 }
+
+export class ServiceUnavailableError extends Error {
+  readonly code = "SERVICE_UNAVAILABLE";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "ServiceUnavailableError";
+  }
+}

@@ -14,14 +14,25 @@ export type ModuleOwner = z.infer<typeof ModuleOwnerSchema>;
 
 export const TenantContextSchema = z.object({
   tenantRef: z.string().min(1),
-  dataMode: z.literal("synthetic")
+  dataMode: z.enum(["synthetic", "school"])
 });
 
 export const ActingContextSchema = z.object({
   actorRef: z.string().min(1),
   tenantRef: z.string().min(1),
   roleRefs: z.array(z.string().min(1)).min(1),
-  authenticationMethod: z.literal("demo-token")
+  authenticationMethod: z.enum([
+    "server-session",
+    "local-identity",
+    "oidc",
+    "demo-bypass",
+    "test-fixture",
+    "demo-token"
+  ]),
+  membershipRef: z.string().min(1).optional(),
+  organizationRef: z.string().min(1).optional(),
+  courseRunRefs: z.array(z.string().min(1)).optional(),
+  sessionRef: z.string().min(1).optional()
 });
 
 export const AuthorizationDecisionSchema = z.object({

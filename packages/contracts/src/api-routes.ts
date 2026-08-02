@@ -69,6 +69,39 @@ const teacherReflectionRoute = (reflectionRef: string): string =>
 
 export const apiRoutes = {
   health: "/api/health",
+  authentication: {
+    provider: "/api/v1/auth/provider",
+    session: "/api/v1/auth/session",
+    sessionRefresh: "/api/v1/auth/session/refresh",
+    localLogin: "/api/v1/auth/local-login",
+    oidcStart: "/api/v1/auth/oidc/start",
+    oidcCallback: "/api/v1/auth/oidc/callback",
+    logout: "/api/v1/auth/logout",
+    switchWorkspace: "/api/v1/auth/workspace",
+    activeSessions: "/api/v1/auth/sessions",
+    revokeSessionPattern: "/api/v1/auth/sessions/:sessionRef/revoke",
+    revokeSession: (sessionRef: string): string =>
+      `/api/v1/auth/sessions/${encodeRouteSegment(sessionRef)}/revoke`
+  },
+  organization: {
+    currentSchool: "/api/v1/organization/current",
+    members: "/api/v1/admin/members",
+    memberPattern: "/api/v1/admin/members/:membershipRef",
+    memberStatusPattern: "/api/v1/admin/members/:membershipRef/status",
+    memberStatus: (membershipRef: string): string =>
+      `/api/v1/admin/members/${encodeRouteSegment(membershipRef)}/status`,
+    memberRolesPattern: "/api/v1/admin/members/:membershipRef/roles",
+    memberRoles: (membershipRef: string): string =>
+      `/api/v1/admin/members/${encodeRouteSegment(membershipRef)}/roles`,
+    memberCourseAccessPattern:
+      "/api/v1/admin/members/:membershipRef/course-runs",
+    memberCourseAccess: (membershipRef: string): string =>
+      `/api/v1/admin/members/${encodeRouteSegment(membershipRef)}/course-runs`,
+    securityEvents: "/api/v1/admin/security-events"
+  },
+  userGovernance: {
+    requests: "/api/v1/user-governance/requests"
+  },
   teacher: {
     courseRuns: "/api/v1/teacher/course-runs",
     courseRunPattern: "/api/v1/teacher/course-runs/:courseRunRef",
