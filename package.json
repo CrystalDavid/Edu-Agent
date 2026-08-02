@@ -7,7 +7,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "analyze:bundle": "node scripts/demo/analyze-web-bundle.mjs",
-    "typecheck": "pnpm --filter @edu-agent/contracts build && pnpm --filter @edu-agent/test-fixtures build && tsc -p tsconfig.json --noEmit && pnpm -r typecheck",
+    "typecheck": "pnpm --filter @edu-agent/contracts build && pnpm --filter @edu-agent/demo-fixtures build && pnpm --filter @edu-agent/test-fixtures build && tsc -p tsconfig.json --noEmit && pnpm -r typecheck",
     "verify:version-history": "tsx scripts/verify-version-history.ts",
     "test": "vitest run",
     "test:architecture": "vitest run tests/architecture",

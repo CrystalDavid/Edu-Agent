@@ -8,6 +8,12 @@ export default defineConfig({
       "@edu-agent/contracts": fileURLToPath(
         new URL("./packages/contracts/src/index.ts", import.meta.url)
       ),
+      "@edu-agent/demo-fixtures": fileURLToPath(
+        new URL(
+          "./packages/demo-fixtures/src/index.ts",
+          import.meta.url
+        )
+      ),
       "@edu-agent/test-fixtures": fileURLToPath(
         new URL(
           "./packages/test-fixtures/src/index.ts",

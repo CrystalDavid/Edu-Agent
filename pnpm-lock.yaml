@@ -47,9 +47,9 @@ importers:
       '@edu-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@edu-agent/test-fixtures':
+      '@edu-agent/demo-fixtures':
         specifier: workspace:*
-        version: link:../../packages/test-fixtures
+        version: link:../../packages/demo-fixtures
       docx:
         specifier: ^9.7.1
         version: 9.7.1
@@ -115,6 +115,12 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  packages/demo-fixtures:
+    dependencies:
+      '@edu-agent/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/test-fixtures:
     dependencies:

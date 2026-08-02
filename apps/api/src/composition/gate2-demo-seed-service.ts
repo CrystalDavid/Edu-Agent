@@ -8,7 +8,7 @@ import {
   baselineTeachingPlan,
   gate2DemoRefs,
   gate2SyntheticFixture
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/demo-fixtures";
 import type { Pool } from "pg";
 
 import {
