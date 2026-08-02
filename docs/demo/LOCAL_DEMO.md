@@ -4,7 +4,7 @@
 
 本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
 
-普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业区、学生近期 Evidence、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
+普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业/课堂实施与反思、学生近期 Evidence/confirmed classroom observation、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan 和 Runs 组成 PostgreSQL-backed 业务切片；考试、开放式 Agent 对话和设置仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
 
 ## 前置条件
 
@@ -146,6 +146,19 @@ MODEL_DEBUG_CONTENT=false
 8. 重启 API/Worker/Web，确认 Todo、CalendarEvent、TodoCalendarLink、提醒偏好和来源状态全部恢复。
 
 来源业务提醒是可重建读取投影。置顶、稍后提醒和隐藏只影响当前教师、当前 source version；不会修改备课 Task、Assignment、TeachingPlan、GradeDecision、ModelExecution 或 FileAsset。
+
+### Gate 2.9 课堂实施、反思与教学改进
+
+1. 打开“教学 → 斜率与图像变化”，确认页面同时显示 current approved TeachingPlan 和独立的“课堂实施与课后反思”区域；
+2. 创建本次课堂实施草稿，记录按计划、调整、跳过和新增环节以及实际授课时间；确认前它不是正式实施事实；
+3. 点击教师确认后刷新，确认实施记录仍存在且原 approved TeachingPlan Revision 未改变；如需修改，使用“创建修订”而不是覆盖 confirmed revision；
+4. 创建一个班级或 Objective 范围观察并单独确认；学生页只在选择明确匿名 learner 时显示该教师确认观察，不生成长期标签；
+5. 创建 Reflection draft，选择 confirmed implementation、confirmed observations 和少量 Assignment Evidence；进入 Agent 后检查本次 TaskWorkingSet、AuthorizedContextPlan 和 ContextManifest；
+6. 使用默认 Mock 或显式 Ark 生成 Reflection draft，刷新页面后恢复同一 ModelExecution 与 draft；教师编辑后单独确认；
+7. 从 confirmed Reflection 显式选择创建下一课备课 Task、Assignment draft 或个人 Todo；确认未选择的行动不会自动创建；
+8. 重启 API、Worker 和 Web，确认 Lesson、Reflection Agent、学生页、工作台和后续 Task 仍读取同一 PostgreSQL 真值。
+
+日历事件结束只会提供“记录课堂实施/完成反思”入口，不会自动声称课程已经实施。Agent 不能确认 Delivery、Observation 或 Reflection，也不能修改 approved TeachingPlan。
 
 本地文件设置（均为非敏感服务端配置）：
 

@@ -91,6 +91,9 @@ export const TaskWorkingSetSchema = z.object({
   sourceAssignmentItemRefs: z.array(z.string().min(1)).optional(),
   sourceTodoRef: z.string().min(1).nullable().optional(),
   sourceResourceRefs: z.array(z.string().min(1)).optional(),
+  sourceReflectionRef: z.string().min(1).nullable().optional(),
+  sourceDeliveryRevisionRef: z.string().min(1).nullable().optional(),
+  sourceObservationRevisionRefs: z.array(z.string().min(1)).optional(),
   purpose: z.string().min(1),
   requestedFieldMask: z.array(z.string().min(1)).min(1),
   updatedAt: z.string().datetime()

@@ -4,6 +4,7 @@ import {
   ModelResponseSchema,
   ModelResultSchema,
   PedagogicalStrategySchema,
+  StructuredReflectionOutputSchema,
   StructuredTeachingSuggestionOutputSchema,
   type PedagogicalStrategy,
   type ModelRequest,
@@ -77,6 +78,52 @@ export class MockModelProvider implements LegacyModelProvider {
     const objectiveRefs = [
       ...request.scope.learningObjectiveRefs
     ];
+    if (request.expectedOutputSchema === "lesson-reflection@1") {
+      const userMessage = [...request.messages].reverse().find(
+        (message) => message.role === "user"
+      );
+      const payload = userMessage
+        ? (JSON.parse(userMessage.content) as Record<string, any>)
+        : {};
+      const delivery = (payload["confirmedDelivery"] ?? {}) as Record<string, any>;
+      const plan = (payload["approvedTeachingPlan"] ?? {}) as Record<string, any>;
+      const observations = Array.isArray(payload["confirmedObservations"])
+        ? payload["confirmedObservations"] as Array<Record<string, any>>
+        : [];
+      const output = StructuredReflectionOutputSchema.parse({
+        schemaVersion: "lesson-reflection@1",
+        courseRunRef: request.scope.courseRunRef,
+        lessonRef: request.scope.lessonRef,
+        teachingPlanRevisionRef: String(plan["revisionRef"] ?? ""),
+        deliveryRevisionRef: String(delivery["deliveryRevisionRef"] ?? ""),
+        observationRevisionRefs: observations.map((item) => String(item["observationRevisionRef"])),
+        evidenceRefs,
+        teacherApprovalRequired: true,
+        objectiveAttainment: "根据教师已确认的课堂实施与观察，核心目标得到部分达成；具体迁移表现仍需后续证据确认。",
+        plannedVsImplemented: "课堂保留了核心目标与独立检查，并根据现场节奏调整了活动顺序；这里只描述教师确认的差异。",
+        effectiveMoves: ["对比图像与语言解释相结合的活动得到教师确认"],
+        ineffectiveMoves: ["部分概念辨析耗时超过计划，尚不能确认其长期效果"],
+        observationSummary: observations.map((item) => String(item["content"] ?? "已确认课堂观察")),
+        evidenceAlignment: evidenceRefs.length > 0
+          ? ["所选作业 Evidence 与课堂观察方向基本一致，仍需教师复核。"]
+          : ["本次未选择作业 Evidence，不能形成作业表现结论。"],
+        uncertainties: ["尚缺少下一次独立迁移任务的确认结果"],
+        nextLessonSuggestions: ["下一课用一个新情境检查斜率正负与图像变化方向的迁移"],
+        assignmentSuggestions: ["可由教师决定是否增加一题简短解释题"],
+        teacherNotes: String(payload["teacherNotes"] ?? "")
+      });
+      const outputText = JSON.stringify(output);
+      return ModelResultSchema.parse({
+        status: "succeeded",
+        provider: "mock",
+        modelId: "deterministic-fixture",
+        outputText,
+        inputTokens: JSON.stringify(request).length,
+        outputTokens: outputText.length,
+        latencyMs: 0,
+        finishReason: "stop"
+      });
+    }
     const output = StructuredTeachingSuggestionOutputSchema.parse({
       schemaVersion: "teacher-copilot-suggestions@1",
       suggestions: [

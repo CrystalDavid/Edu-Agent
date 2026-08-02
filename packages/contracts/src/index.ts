@@ -6,6 +6,7 @@ export * from "./gate2-6a.js";
 export * from "./gate2-5b.js";
 export * from "./gate2-7.js";
 export * from "./gate2-8.js";
+export * from "./gate2-9.js";
 export * from "./governance.js";
 export * from "./ingress.js";
 export * from "./records.js";

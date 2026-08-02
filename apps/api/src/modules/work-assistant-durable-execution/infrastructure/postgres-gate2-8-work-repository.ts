@@ -922,6 +922,9 @@ export class PostgresGate28WorkRepository {
       source_lesson_ref: string | null;
       source_assignment_ref: string | null;
       source_assignment_item_refs: string[];
+      source_reflection_ref: string | null;
+      source_delivery_revision_ref: string | null;
+      source_observation_revision_refs: string[];
       context_purpose: string;
       requested_field_mask: string[];
     }>(
@@ -936,6 +939,8 @@ export class PostgresGate28WorkRepository {
                   lesson_ref, learning_objective_refs, evidence_refs,
                   baseline_teaching_plan_ref, source_lesson_ref,
                   source_assignment_ref, source_assignment_item_refs,
+                  source_reflection_ref, source_delivery_revision_ref,
+                  source_observation_revision_refs,
                   context_purpose, requested_field_mask`,
       [input.taskRef, input.expectedWorkingSetVersion, input.todoRef,
         toPostgresJson(input.resourceRefs), input.metadata.actorRef, input.updatedAt]
@@ -949,12 +954,15 @@ export class PostgresGate28WorkRepository {
          learning_objective_refs, evidence_refs, baseline_teaching_plan_ref,
          source_lesson_ref, source_assignment_ref, source_assignment_item_refs,
          source_todo_ref, source_resource_refs, context_purpose,
+         source_reflection_ref, source_delivery_revision_ref,
+         source_observation_revision_refs,
          requested_field_mask,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-         $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
+         $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
+         $23, $24, $25, $26
        )`,
       [input.revisionRef, input.taskRef, row.current_version,
         row.course_run_ref, row.curriculum_unit_ref, row.lesson_ref,
@@ -962,6 +970,8 @@ export class PostgresGate28WorkRepository {
         row.baseline_teaching_plan_ref, row.source_lesson_ref,
         row.source_assignment_ref, toPostgresJson(row.source_assignment_item_refs),
         input.todoRef, toPostgresJson(input.resourceRefs), row.context_purpose,
+        row.source_reflection_ref, row.source_delivery_revision_ref,
+        toPostgresJson(row.source_observation_revision_refs),
         toPostgresJson(row.requested_field_mask), ...formalMetadataValues(input.metadata)]
     );
     return createReceipt({ writeRef: input.revisionRef, recordType: "TaskWorkingSet", metadata: input.metadata });
@@ -985,6 +995,9 @@ export class PostgresGate28WorkRepository {
       source_assignment_item_refs: string[];
       source_todo_ref: string | null;
       source_resource_refs: string[];
+      source_reflection_ref: string | null;
+      source_delivery_revision_ref: string | null;
+      source_observation_revision_refs: string[];
       context_purpose: string;
       requested_field_mask: string[];
       updated_at: Date;
@@ -993,7 +1006,9 @@ export class PostgresGate28WorkRepository {
               curriculum_unit_ref, lesson_ref, learning_objective_refs,
               evidence_refs, baseline_teaching_plan_ref, source_lesson_ref,
               source_assignment_ref, source_assignment_item_refs,
-              source_todo_ref, source_resource_refs, context_purpose,
+              source_todo_ref, source_resource_refs,
+              source_reflection_ref, source_delivery_revision_ref,
+              source_observation_revision_refs, context_purpose,
               requested_field_mask, updated_at
          FROM work.task_working_set
         WHERE task_ref = $1`,
@@ -1015,6 +1030,9 @@ export class PostgresGate28WorkRepository {
           sourceAssignmentItemRefs: row.source_assignment_item_refs,
           sourceTodoRef: row.source_todo_ref,
           sourceResourceRefs: row.source_resource_refs,
+          sourceReflectionRef: row.source_reflection_ref,
+          sourceDeliveryRevisionRef: row.source_delivery_revision_ref,
+          sourceObservationRevisionRefs: row.source_observation_revision_refs,
           purpose: row.context_purpose,
           requestedFieldMask: row.requested_field_mask,
           updatedAt: row.updated_at.toISOString()

@@ -44,6 +44,20 @@ import {
   UpdateAssignmentDraftRequestSchema,
   UpdateTeacherTodoRequestSchema,
   WorkProjectionPreferenceRequestSchema,
+  AmendLessonDeliveryRequestSchema,
+  ConfirmClassroomObservationRequestSchema,
+  ClassroomObservationListQuerySchema,
+  ConfirmLessonDeliveryRequestSchema,
+  ConfirmReflectionRequestSchema,
+  CreateClassroomObservationRequestSchema,
+  CreateLessonDeliveryRequestSchema,
+  CreateReflectionDraftRequestSchema,
+  CreateReflectionFollowUpRequestSchema,
+  GenerateReflectionRequestSchema,
+  SupersedeClassroomObservationRequestSchema,
+  UpdateClassroomObservationDraftRequestSchema,
+  UpdateLessonDeliveryDraftRequestSchema,
+  UpdateReflectionDraftRequestSchema,
   type ActingContext,
   type TenantContext
 } from "@edu-agent/contracts";
@@ -262,6 +276,7 @@ export function createApp(
     const assignments = product.services.assignments;
     const files = product.services.files;
     const workbench = product.services.teacherWorkbench;
+    const classroom = product.services.classroomReflection;
     const modelInvocations =
       product.services.modelInvocations;
     const withProductContext = async (request: Request) =>
@@ -270,6 +285,348 @@ export function createApp(
         product,
         demoIdentity
       );
+
+    app.get(
+      apiRoutes.teacher.pendingReflections,
+      markRoute("product.teacher.reflections.pending"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.getPendingReflectionQueue({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonImplementationSummaryPattern,
+      markRoute("product.teacher.classroom.lesson-summary"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.getLessonSummary({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            lessonRef: routeParameter(request.params["lessonRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.lessonDeliveries,
+      markRoute("product.teacher.classroom.delivery.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await classroom.createDelivery({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateLessonDeliveryRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonDeliveryPattern,
+      markRoute("product.teacher.classroom.delivery.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.getDelivery({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            deliveryRef: routeParameter(request.params["deliveryRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.lessonDeliveryPattern,
+      markRoute("product.teacher.classroom.delivery.update-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.updateDeliveryDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            deliveryRef: routeParameter(request.params["deliveryRef"]),
+            request: UpdateLessonDeliveryDraftRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.lessonDeliveryConfirmPattern,
+      markRoute("product.teacher.classroom.delivery.confirm"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.confirmDelivery({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            deliveryRef: routeParameter(request.params["deliveryRef"]),
+            request: ConfirmLessonDeliveryRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.lessonDeliveryAmendPattern,
+      markRoute("product.teacher.classroom.delivery.amend"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.status(201).json(await classroom.amendDelivery({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            deliveryRef: routeParameter(request.params["deliveryRef"]),
+            request: AmendLessonDeliveryRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.classroomObservations,
+      markRoute("product.teacher.classroom.observation.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await classroom.createObservation({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateClassroomObservationRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.classroomObservations,
+      markRoute("product.teacher.classroom.observation.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.listObservations({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            query: ClassroomObservationListQuerySchema.parse(request.query)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.classroomObservationPattern,
+      markRoute("product.teacher.classroom.observation.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.getObservation({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            observationRef: routeParameter(request.params["observationRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.classroomObservationPattern,
+      markRoute("product.teacher.classroom.observation.update-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.updateObservationDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            observationRef: routeParameter(request.params["observationRef"]),
+            request: UpdateClassroomObservationDraftRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.classroomObservationConfirmPattern,
+      markRoute("product.teacher.classroom.observation.confirm"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.confirmObservation({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            observationRef: routeParameter(request.params["observationRef"]),
+            request: ConfirmClassroomObservationRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.classroomObservationSupersedePattern,
+      markRoute("product.teacher.classroom.observation.supersede"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.status(201).json(await classroom.supersedeObservation({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            observationRef: routeParameter(request.params["observationRef"]),
+            request: SupersedeClassroomObservationRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflections,
+      markRoute("product.teacher.reflections.create-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await classroom.createReflectionDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateReflectionDraftRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.reflectionPattern,
+      markRoute("product.teacher.reflections.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.getReflection({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.reflectionPattern,
+      markRoute("product.teacher.reflections.update-draft"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.updateReflectionDraft({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"]),
+            request: UpdateReflectionDraftRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflectionGeneratePattern,
+      markRoute("product.teacher.reflections.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const reflectionRef = routeParameter(request.params["reflectionRef"]);
+          const parsed = GenerateReflectionRequestSchema.parse(request.body);
+          if (parsed.reflectionRef !== reflectionRef) {
+            throw new DomainConflictError(
+              "REFLECTION_ROUTE_MISMATCH",
+              "Reflection route and request body do not match."
+            );
+          }
+          response.status(202).json(await modelInvocations.createReflectionInvocation({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: parsed
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflectionConfirmPattern,
+      markRoute("product.teacher.reflections.confirm"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroom.confirmReflection({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"]),
+            request: ConfirmReflectionRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflectionFollowUpsPattern,
+      markRoute("product.teacher.reflections.follow-up"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.status(201).json(await classroom.createFollowUp({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"]),
+            request: CreateReflectionFollowUpRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.todos,
@@ -2166,8 +2523,12 @@ export function createApp(
       error: unknown,
       _request: Request,
       response: Response,
-      _next: NextFunction
+      next: NextFunction
     ) => {
+      if (response.headersSent) {
+        next(error);
+        return;
+      }
       if (error instanceof ZodError) {
         (response.locals as RouteResponseLocals).safeErrorCode =
           "INVALID_ENVELOPE";

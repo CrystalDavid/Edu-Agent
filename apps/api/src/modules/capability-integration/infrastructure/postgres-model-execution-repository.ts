@@ -6,7 +6,7 @@ import type {
   ModelFailureCategory,
   ModelProviderName,
   ProviderCapabilities,
-  StructuredTeachingSuggestionOutput
+  StructuredModelOutput
 } from "@edu-agent/contracts";
 
 import type {
@@ -54,7 +54,9 @@ export interface StoredModelExecution {
   safeMessage: string | null;
   outputSchemaVersion: string;
   outputHash: string | null;
-  validatedOutput: StructuredTeachingSuggestionOutput | null;
+  validatedOutput: StructuredModelOutput | null;
+  resultKind: "teaching_proposal" | "lesson_reflection_draft";
+  resultRef: string | null;
   proposalRevisionRef: string | null;
   retryOfExecutionRef: string | null;
   actorRef: string;
@@ -92,6 +94,7 @@ export class PostgresModelExecutionRepository {
         timeoutMs: number;
         maxOutputTokens: number;
         outputSchemaVersion: string;
+        resultKind?: "teaching_proposal" | "lesson_reflection_draft";
         retryOfExecutionRef?: string;
         metadata: CapabilityMetadata;
       };
@@ -152,6 +155,14 @@ export class PostgresModelExecutionRepository {
         ...formalMetadataValues(execution.metadata)
       ]
     );
+    if (execution.resultKind && execution.resultKind !== "teaching_proposal") {
+      await client.query(
+        `UPDATE capability.model_execution
+            SET result_kind = $2
+          WHERE execution_ref = $1`,
+        [execution.executionRef, execution.resultKind]
+      );
+    }
     await this.insertEvent(client, {
       eventRef: input.eventRef,
       executionRef: execution.executionRef,
@@ -297,7 +308,7 @@ export class PostgresModelExecutionRepository {
     client: PostgresClient,
     input: {
       executionRef: string;
-      validatedOutput: StructuredTeachingSuggestionOutput;
+      validatedOutput: StructuredModelOutput;
       outputHash: string;
       inputTokens?: number;
       outputTokens?: number;
@@ -489,6 +500,7 @@ export class PostgresModelExecutionRepository {
       safeErrorCategory?: ModelFailureCategory;
       safeMessage?: string;
       proposalRevisionRef?: string;
+      resultRef?: string;
       providerRequestId?: string;
       inputTokens?: number;
       outputTokens?: number;
@@ -570,6 +582,14 @@ export class PostgresModelExecutionRepository {
         input.metadata.createdAt
       ]
     );
+    if (input.resultRef) {
+      await client.query(
+        `UPDATE capability.model_execution
+            SET result_ref = $2
+          WHERE execution_ref = $1`,
+        [input.executionRef, input.resultRef]
+      );
+    }
     await this.insertEvent(client, {
       eventRef: input.eventRef,
       executionRef: input.executionRef,
@@ -579,7 +599,8 @@ export class PostgresModelExecutionRepository {
       safeDetail: {
         safeErrorCategory: input.safeErrorCategory ?? null,
         proposalRevisionRef:
-          input.proposalRevisionRef ?? null
+          input.proposalRevisionRef ?? null,
+        resultRef: input.resultRef ?? null
       },
       metadata: input.metadata
     });
@@ -969,7 +990,7 @@ const modelExecutionSelect = `
          estimated_cost, latency_ms, provider_request_id,
          finish_reason, safe_error_category, safe_message,
          output_schema_version, output_hash, output,
-         proposal_revision_ref, retry_of_execution_ref,
+         result_kind, result_ref, proposal_revision_ref, retry_of_execution_ref,
          actor_ref, purpose, idempotency_key,
          authorization_decision_ref,
          queued_at, started_at, completed_at,
@@ -1008,6 +1029,8 @@ interface ModelExecutionRow {
   output_schema_version: string;
   output_hash: string | null;
   output: unknown;
+  result_kind: "teaching_proposal" | "lesson_reflection_draft";
+  result_ref: string | null;
   proposal_revision_ref: string | null;
   retry_of_execution_ref: string | null;
   actor_ref: string;
@@ -1041,7 +1064,7 @@ function toStoredExecution(
   }
   const validated =
     row.output && typeof row.output === "object"
-      ? (row.output as StructuredTeachingSuggestionOutput)
+      ? (row.output as StructuredModelOutput)
       : null;
   return {
     executionRef: row.execution_ref,
@@ -1079,6 +1102,8 @@ function toStoredExecution(
     outputSchemaVersion: row.output_schema_version,
     outputHash: row.output_hash,
     validatedOutput: validated,
+    resultKind: row.result_kind,
+    resultRef: row.result_ref,
     proposalRevisionRef: row.proposal_revision_ref,
     retryOfExecutionRef: row.retry_of_execution_ref,
     actorRef: row.actor_ref,

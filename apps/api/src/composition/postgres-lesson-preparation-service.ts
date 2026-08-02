@@ -257,6 +257,26 @@ export class PostgresLessonPreparationService {
     return this.toTaskDetail(input.tenantRef, task);
   }
 
+  async findOpenTaskForLesson(input: {
+    tenantRef: string;
+    actorRef: string;
+    lessonRef: string;
+  }): Promise<LessonPreparationTaskDetail | null> {
+    this.assertDemoActor(input.tenantRef, input.actorRef);
+    const task = await this.work.findOpenTaskForLesson(
+      this.pool,
+      input.tenantRef,
+      input.lessonRef
+    );
+    if (!task) return null;
+    if (task.createdBy !== input.actorRef) {
+      throw new AuthorizationDeniedError(
+        "当前课时的未关闭备课 Task 不属于当前教师。"
+      );
+    }
+    return this.toTaskDetail(input.tenantRef, task);
+  }
+
   async getSummary(input: {
     tenantRef: string;
     actorRef: string;

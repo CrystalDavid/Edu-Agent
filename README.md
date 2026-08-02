@@ -1,6 +1,6 @@
 # Edu Agent
 
-面向学校的教育智能体平台工程仓库。Gate 2.7 作业、学习证据与教学调整闭环已经 verified；当前分支建设 **Gate 2.8 — 日程、待办与教师统一工作台**，把个人 Todo、CalendarEvent 和既有备课/作业/批改/TeachingPlan/模型/文件事实汇入同一可恢复工作入口。
+面向学校的教育智能体平台工程仓库。Gate 2.8 日程、待办与教师统一工作台已经 verified；当前分支建设 **Gate 2.9 — 课堂实施、课后反思与教学改进闭环**，把批准的计划、教师确认的实际实施与课堂观察、可恢复 Reflection 草稿及显式后续行动连接起来。
 
 ## 当前真实能力
 
@@ -18,6 +18,10 @@
 - 备课、Assignment 截止/未交/待批改、active in-review、待处理 Proposal、模型失败和最近文件通过可重建 `TeacherWorkProjection` 汇入工作台，不复制源业务真值；
 - 来源事项只能进入源页面执行真实动作；置顶、稍后和隐藏属于 source-version-bound 的教师个人偏好，不修改源对象；
 - Todo 进入 Agent 只把 Todo 与明确关联资源写入 TaskWorkingSet Revision，每次 Run 仍重新授权；模型不会自动完成 Todo；
+- Education-owned LessonDelivery/DeliveryRevision 区分 approved TeachingPlan 与真实课堂实施；只有教师确认的 revision 是正式事实，确认后不可原地覆盖；
+- ClassroomObservation 支持班级、Objective、活动和明确匿名 learner 范围；只有教师确认的 observation 才进入 Lesson/学生读取模型，修订保留 supersedes 历史且不形成长期能力标签；
+- Artifact-owned LessonReflection 独立于 TeachingPlan；Agent 只基于教师选择并重新授权的实施、观察和 Assignment Evidence 生成可恢复 draft，教师编辑并单独确认；
+- confirmed Reflection 可由教师显式创建下一课备课 Task、Assignment draft 或 TeacherTodo，并保留来源关系；确认 Reflection 不会自动创建行动；
 - 复用 `work.task` 表达 `lesson_preparation`，持久化 `planned → in_progress → awaiting_plan_review → ready_for_use → completed` 状态和历史；
 - TaskWorkingSet 保存教师显式选择；每个 AgentRun 重新生成 AuthorizedContextPlan 并封存 ContextManifest；
 - 教师请求原文及所选课时、目标、Evidence 和 baseline plan 被保存到 TaskRun、Resolved Contract、ContextManifest 和 MockModelProvider 输入；
@@ -90,3 +94,4 @@ Gate 2.6A 的 Provider、事务边界、生命周期、安全与验收见 [GATE_
 Gate 2.5B 的文件所有权、补偿、DOCX 与验收见 [GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md](docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md)。Gate 2.5C 的问题分级、单一真值源与修复证据见 [TEACHER_PRODUCT_STABILIZATION_MATRIX.md](docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)。
 Gate 2.7 的 Assignment、Submission、GradeDecision、Evidence 来源链与调整下一课语义见 [GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md](docs/product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md)。
 Gate 2.8 的 Todo、Calendar、来源投影、提醒偏好与 Agent handoff 语义见 [GATE_2_8_TEACHER_WORKBENCH.md](docs/product/GATE_2_8_TEACHER_WORKBENCH.md)。
+Gate 2.9 的课堂实施事实、课堂观察、Reflection 与后续行动语义见 [GATE_2_9_CLASSROOM_REFLECTION_LOOP.md](docs/product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md)。

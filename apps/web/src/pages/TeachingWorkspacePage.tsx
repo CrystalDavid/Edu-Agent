@@ -37,6 +37,7 @@ import {
 } from "../components/portal/TeachingComponents";
 import { AssignmentWorkspace } from "./AssignmentWorkspace";
 import { PageHeader } from "../components/portal/PortalPrimitives";
+import { ClassroomReflectionPanel } from "../components/portal/ClassroomReflectionPanel";
 import { lessonPreparationStatusLabel } from "../presentation";
 
 const { Paragraph, Text, Title } = Typography;
@@ -51,6 +52,7 @@ export function TeachingWorkspacePage(props: {
     assetRef?: string;
     lessonRef?: string;
   }) => void;
+  navigateReflection: (reflectionRef: string) => void;
   initialLessonRef?: string | null;
   initialTab?: TeachingTab;
   onAction: (message: string) => void;
@@ -100,6 +102,7 @@ export function TeachingWorkspacePage(props: {
         <RealCourseWorkspace
           navigateFiles={props.navigateFiles}
           navigatePreparation={props.navigatePreparation}
+          navigateReflection={props.navigateReflection}
           onOpenAssignments={() => setTab("homework")}
           onAction={props.onAction}
           {...(props.initialLessonRef !== undefined
@@ -132,6 +135,7 @@ function RealCourseWorkspace(props: {
     assetRef?: string;
     lessonRef?: string;
   }) => void;
+  navigateReflection: (reflectionRef: string) => void;
   onAction: (message: string) => void;
   onOpenAssignments: () => void;
   initialLessonRef?: string | null;
@@ -732,6 +736,16 @@ function RealCourseWorkspace(props: {
                     title="文件与 TeachingPlan 状态保持独立"
                     description="参考文件和正式 DOCX 由 Artifact/File 服务持久化；只有 approved Revision 才能导出正式教学成果。"
                   />
+                  {selectedCourse && planState ? (
+                    <ClassroomReflectionPanel
+                      lesson={selectedLesson}
+                      courseRunRef={selectedCourse.courseRunRef}
+                      planState={planState}
+                      assignmentRefs={lessonAssignments.map((item) => item.assignmentRef)}
+                      navigateReflection={props.navigateReflection}
+                      onAction={props.onAction}
+                    />
+                  ) : null}
                 </>
               ) : (
                 <Empty description="请选择课时" />

@@ -34,4 +34,13 @@ describe("teacher product stabilization vocabulary and navigation", () => {
       fileAssetRef: "file-asset:approved-docx"
     });
   });
+
+  it("restores a Reflection Agent workflow from its direct URL", () => {
+    expect(parseAppRoute("/agent/reflections/artifact%3Alesson-reflection%3A1"))
+      .toMatchObject({
+        route: "/agent",
+        reflectionRef: "artifact:lesson-reflection:1",
+        preparationTaskRef: null
+      });
+  });
 });

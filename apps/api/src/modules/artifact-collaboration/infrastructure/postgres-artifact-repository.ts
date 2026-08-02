@@ -24,7 +24,8 @@ export interface PostgresArtifactBundle {
       | "ContentArtifact"
       | "OperationalProposal"
       | "ConfigurationAsset"
-      | "EvidenceAsset";
+      | "EvidenceAsset"
+      | "LessonReflection";
     latestPublishedRevisionRef?: string;
     latestRevisionRef?: string;
     currentApprovedRevisionRef?: string;
@@ -44,7 +45,9 @@ export interface PostgresArtifactBundle {
       | "draft"
       | "proposal"
       | "in_review"
+      | "superseded"
       | "approved"
+      | "confirmed"
       | "published";
     contentHash: string;
     structuredContent?: Record<string, unknown>;
@@ -71,7 +74,9 @@ export interface ArtifactRevisionView {
     | "draft"
     | "proposal"
     | "in_review"
+    | "superseded"
     | "approved"
+    | "confirmed"
     | "published";
   title: string;
   body: string;

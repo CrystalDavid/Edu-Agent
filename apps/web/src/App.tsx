@@ -57,6 +57,11 @@ const AgentWorkspacePage = lazy(() =>
     default: module.AgentWorkspacePage
   }))
 );
+const ReflectionAgentPage = lazy(() =>
+  import("./pages/ReflectionAgentPage").then((module) => ({
+    default: module.ReflectionAgentPage
+  }))
+);
 const TeacherSettingsPage = lazy(() =>
   import("./pages/TeacherSettingsPage").then((module) => ({
     default: module.TeacherSettingsPage
@@ -111,6 +116,8 @@ export function App() {
     navigateProposal,
     preparationTaskRef,
     navigatePreparation,
+    reflectionRef,
+    navigateReflection,
     lessonRef,
     navigateLesson,
     fileAssetRef,
@@ -225,10 +232,10 @@ export function App() {
           ) : null}
           {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
           {route === "/teaching" || route === "/courses" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
           ) : null}
           {route === "/assignments" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} initialTab="homework" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialTab="homework" onAction={showNotice} />
           ) : null}
           {route === "/students" ? (
             <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
@@ -241,7 +248,15 @@ export function App() {
             />
           ) : null}
           {route === "/agent" ? (
-            preparationTaskRef ? (
+            reflectionRef ? (
+              <ReflectionAgentPage
+                reflectionRef={reflectionRef}
+                navigate={navigate}
+                navigateLesson={navigateLesson}
+                navigatePreparation={navigatePreparation}
+                onAction={showNotice}
+              />
+            ) : preparationTaskRef ? (
               <CopilotPage
                 workspace={workspace}
                 task={task}

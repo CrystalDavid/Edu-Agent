@@ -1094,12 +1094,15 @@ export class PostgresTeacherWorkbenchService {
       this.pool.query<{
         execution_ref: string; task_ref: string; status: string;
         attempt_count: number; updated_at: Date; safe_message: string | null;
+        reflection_ref: string | null;
       }>(
         `SELECT execution.execution_ref, execution.task_ref, execution.status,
-                execution.attempt_count, execution.updated_at, execution.safe_message
+                execution.attempt_count, execution.updated_at, execution.safe_message,
+                reflection.reflection_ref
            FROM capability.model_execution AS execution
-           JOIN work.lesson_preparation_task_details AS details ON details.task_ref = execution.task_ref
-          WHERE details.tenant_ref = $1
+           LEFT JOIN work.lesson_preparation_task_details AS details ON details.task_ref = execution.task_ref
+           LEFT JOIN work.lesson_reflection_task_details AS reflection ON reflection.task_ref = execution.task_ref
+          WHERE COALESCE(details.tenant_ref, reflection.tenant_ref) = $1
             AND execution.actor_ref = $2
             AND execution.status IN ('timed_out', 'retryable_failed', 'validation_failed', 'permanently_failed')`,
         [tenantRef, teacherRef]
@@ -1116,6 +1119,81 @@ export class PostgresTeacherWorkbenchService {
           WHERE details.tenant_ref = $1
             AND revision.actor_ref = $2
             AND disposition.disposition_ref IS NULL`,
+        [tenantRef, teacherRef]
+      )
+    ]);
+
+    const [endedLessons, deliveryDrafts, pendingReflections, recentReflections] = await Promise.all([
+      this.pool.query<{
+        lesson_ref: string; title: string; planned_at: Date; updated_at: Date;
+      }>(
+        `SELECT lesson.lesson_ref, lesson.title, lesson.planned_at, lesson.updated_at
+           FROM education.lesson AS lesson
+           JOIN education.curriculum_unit AS unit ON unit.unit_ref = lesson.unit_ref
+           JOIN education.course_run AS course ON course.course_run_ref = unit.course_run_ref
+          WHERE course.tenant_ref = $1
+            AND lesson.planned_at IS NOT NULL
+            AND lesson.planned_at + make_interval(mins => lesson.duration_minutes) < now()
+            AND NOT EXISTS (
+              SELECT 1 FROM education.lesson_delivery AS delivery
+               WHERE delivery.lesson_ref = lesson.lesson_ref
+                 AND delivery.tenant_ref = $1
+                 AND delivery.teacher_ref = $2
+                 AND delivery.current_confirmed_revision_ref IS NOT NULL
+            )`,
+        [tenantRef, teacherRef]
+      ),
+      this.pool.query<{
+        delivery_ref: string; delivery_revision_ref: string; revision_version: number;
+        lesson_ref: string; title: string; updated_at: Date;
+      }>(
+        `SELECT delivery.delivery_ref, revision.delivery_revision_ref,
+                revision.revision_version, delivery.lesson_ref,
+                lesson.title, revision.updated_at
+           FROM education.lesson_delivery AS delivery
+           JOIN education.lesson_delivery_revision AS revision
+             ON revision.delivery_revision_ref = delivery.current_draft_revision_ref
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = delivery.lesson_ref
+          WHERE delivery.tenant_ref = $1 AND delivery.teacher_ref = $2`,
+        [tenantRef, teacherRef]
+      ),
+      this.pool.query<{
+        delivery_ref: string; delivery_revision_ref: string; lesson_ref: string;
+        title: string; confirmed_at: Date; reflection_ref: string | null;
+        reflection_status: string | null;
+      }>(
+        `SELECT delivery.delivery_ref, revision.delivery_revision_ref,
+                delivery.lesson_ref, lesson.title, revision.confirmed_at,
+                scope.artifact_ref AS reflection_ref,
+                scope.lifecycle_status AS reflection_status
+           FROM education.lesson_delivery AS delivery
+           JOIN education.lesson_delivery_revision AS revision
+             ON revision.delivery_revision_ref = delivery.current_confirmed_revision_ref
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = delivery.lesson_ref
+           LEFT JOIN artifact.lesson_reflection_scope AS scope
+             ON scope.delivery_revision_ref = revision.delivery_revision_ref
+            AND scope.lifecycle_status IN ('draft', 'confirmed')
+          WHERE delivery.tenant_ref = $1 AND delivery.teacher_ref = $2
+            AND NOT EXISTS (
+              SELECT 1 FROM artifact.lesson_reflection_scope AS confirmed
+               WHERE confirmed.delivery_revision_ref = revision.delivery_revision_ref
+                 AND confirmed.lifecycle_status = 'confirmed'
+            )`,
+        [tenantRef, teacherRef]
+      ),
+      this.pool.query<{
+        reflection_ref: string; revision_ref: string; revision_number: number;
+        lesson_ref: string; title: string; confirmed_at: Date;
+      }>(
+        `SELECT scope.artifact_ref AS reflection_ref, scope.revision_ref,
+                revision.revision_number, scope.lesson_ref, lesson.title,
+                scope.confirmed_at
+           FROM artifact.lesson_reflection_scope AS scope
+           JOIN artifact.artifact_revision AS revision ON revision.revision_ref = scope.revision_ref
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = scope.lesson_ref
+          WHERE scope.tenant_ref = $1 AND scope.confirmed_by = $2
+            AND scope.lifecycle_status = 'confirmed'
+          ORDER BY scope.confirmed_at DESC LIMIT 6`,
         [tenantRef, teacherRef]
       )
     ]);
@@ -1221,9 +1299,13 @@ export class PostgresTeacherWorkbenchService {
       snapshots.push(this.snapshot({
         tenantRef, teacherRef, kind: "action", module: "capability", type: "model_execution_failure",
         sourceRef: row.execution_ref, sourceVersion: `${row.status}:${row.attempt_count}:${row.updated_at.toISOString()}`,
-        title: "备课助手需要处理", summary: row.safe_message ?? "模型执行未成功，可查看安全原因并人工重试。",
+        title: row.reflection_ref ? "课后反思助手需要处理" : "备课助手需要处理",
+        summary: row.safe_message ?? "模型执行未成功，可查看安全原因并人工重试。",
         displayStatus: row.status, recommendedAction: "查看运行并重试",
-        deepLink: `/runs/tasks/${encodeURIComponent(row.task_ref)}`, priority: "high"
+        deepLink: row.reflection_ref
+          ? `/agent/reflections/${encodeURIComponent(row.reflection_ref)}`
+          : `/runs/tasks/${encodeURIComponent(row.task_ref)}`,
+        priority: "high"
       }));
     }
     for (const row of proposals.rows) {
@@ -1233,6 +1315,58 @@ export class PostgresTeacherWorkbenchService {
         title: "继续审阅教学建议", summary: "Proposal 已持久化，等待教师接受、修改、拒绝或稍后处理。",
         displayStatus: "pending_review", recommendedAction: "继续审阅",
         deepLink: `/copilot/proposals/${encodeURIComponent(row.proposal_revision_ref)}`, priority: "high"
+      }));
+    }
+    for (const row of endedLessons.rows) {
+      snapshots.push(this.snapshot({
+        tenantRef, teacherRef, kind: "action", module: "education", type: "lesson_delivery_pending",
+        sourceRef: row.lesson_ref, sourceVersion: row.updated_at.toISOString(),
+        title: `记录课堂实施：${row.title}`,
+        summary: "课程时间已结束，但系统不会自动声称课堂已经实施。请由教师记录并确认事实。",
+        displayStatus: "implementation_not_recorded", recommendedAction: "记录本节课",
+        deepLink: `/teaching/lessons/${encodeURIComponent(row.lesson_ref)}`,
+        priority: "high"
+      }));
+    }
+    for (const row of deliveryDrafts.rows) {
+      snapshots.push(this.snapshot({
+        tenantRef, teacherRef, kind: "action", module: "education", type: "lesson_delivery_draft",
+        sourceRef: row.delivery_ref,
+        sourceVersion: `${row.delivery_revision_ref}:${row.revision_version}:${row.updated_at.toISOString()}`,
+        title: `待确认课堂记录：${row.title}`,
+        summary: "当前只是草稿，尚未形成正式课堂实施事实。",
+        displayStatus: "draft", recommendedAction: "继续记录并确认",
+        deepLink: `/teaching/lessons/${encodeURIComponent(row.lesson_ref)}`,
+        priority: "high"
+      }));
+    }
+    for (const row of pendingReflections.rows) {
+      snapshots.push(this.snapshot({
+        tenantRef, teacherRef, kind: "action", module: "artifact", type: "lesson_reflection_pending",
+        sourceRef: row.reflection_ref ?? row.delivery_revision_ref,
+        sourceVersion: `${row.delivery_revision_ref}:${row.reflection_status ?? "missing"}`,
+        title: `完成课后反思：${row.title}`,
+        summary: row.reflection_ref
+          ? "反思仍是草稿，需由教师编辑并确认。"
+          : "课堂实施已经确认，尚未创建课后反思草稿。",
+        displayStatus: row.reflection_status ?? "not_started",
+        recommendedAction: row.reflection_ref ? "继续反思" : "创建反思草稿",
+        deepLink: row.reflection_ref
+          ? `/agent/reflections/${encodeURIComponent(row.reflection_ref)}`
+          : `/teaching/lessons/${encodeURIComponent(row.lesson_ref)}`,
+        priority: "high"
+      }));
+    }
+    for (const row of recentReflections.rows) {
+      snapshots.push(this.snapshot({
+        tenantRef, teacherRef, kind: "information", module: "artifact", type: "lesson_reflection_confirmed",
+        sourceRef: row.reflection_ref,
+        sourceVersion: `${row.revision_ref}:${row.revision_number}`,
+        title: `已完成课后反思：${row.title}`,
+        summary: "教师已确认的 Reflection；原 approved TeachingPlan 保持不可变。",
+        displayStatus: "confirmed", recommendedAction: "查看反思与后续行动",
+        deepLink: `/agent/reflections/${encodeURIComponent(row.reflection_ref)}`,
+        priority: "low"
       }));
     }
     return snapshots;
@@ -1364,6 +1498,50 @@ export class PostgresTeacherWorkbenchService {
         deepLink: row.preparation_task_ref
           ? `/teaching-plan/tasks/${encodeURIComponent(row.preparation_task_ref)}`
           : "/teaching-plan"
+      };
+    }
+    if (kind === "lesson_reflection") {
+      const result = await this.pool.query<{ title: string; artifact_ref: string }>(
+        `SELECT lesson.title, scope.artifact_ref
+           FROM artifact.lesson_reflection_scope AS scope
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = scope.lesson_ref
+          WHERE scope.tenant_ref = $1
+            AND (scope.artifact_ref = $2 OR scope.revision_ref = $2)
+          ORDER BY scope.revision_ref DESC LIMIT 1`,
+        [tenantRef, resourceRef]
+      );
+      const row = result.rows[0];
+      if (row) return {
+        label: `${row.title}｜课后反思`,
+        deepLink: `/agent/reflections/${encodeURIComponent(row.artifact_ref)}`
+      };
+    }
+    if (kind === "lesson_delivery") {
+      const result = await this.pool.query<{ lesson_ref: string; title: string }>(
+        `SELECT delivery.lesson_ref, lesson.title
+           FROM education.lesson_delivery AS delivery
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = delivery.lesson_ref
+          WHERE delivery.tenant_ref = $1 AND delivery.delivery_ref = $2`,
+        [tenantRef, resourceRef]
+      );
+      const row = result.rows[0];
+      if (row) return {
+        label: `${row.title}｜课堂实施`,
+        deepLink: `/teaching/lessons/${encodeURIComponent(row.lesson_ref)}`
+      };
+    }
+    if (kind === "classroom_observation") {
+      const result = await this.pool.query<{ lesson_ref: string; title: string }>(
+        `SELECT observation.lesson_ref, lesson.title
+           FROM education.classroom_observation AS observation
+           JOIN education.lesson AS lesson ON lesson.lesson_ref = observation.lesson_ref
+          WHERE observation.tenant_ref = $1 AND observation.observation_ref = $2`,
+        [tenantRef, resourceRef]
+      );
+      const row = result.rows[0];
+      if (row) return {
+        label: `${row.title}｜课堂观察`,
+        deepLink: `/teaching/lessons/${encodeURIComponent(row.lesson_ref)}`
       };
     }
     throw new NotFoundError("关联资源不存在或不在当前教师授权范围内。");

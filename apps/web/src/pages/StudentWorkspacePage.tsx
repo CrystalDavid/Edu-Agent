@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  ClassroomObservationRevision,
   CourseRunEnrollment,
   CourseRunView,
   LearnerRecentEvidence
@@ -10,6 +11,9 @@ import { Alert, Button, Card, Empty, Space, Spin, Tag, Typography } from "antd";
 import {
   loadCourseRunEnrollments,
   loadCourseRuns,
+  loadClassroomObservations,
+  loadCurriculumUnits,
+  loadLessons,
   loadLearnerEvidence
 } from "../api";
 import { PageHeader } from "../components/portal/PortalPrimitives";
@@ -25,6 +29,8 @@ export function StudentWorkspacePage(props: {
   const [enrollments, setEnrollments] = useState<CourseRunEnrollment[]>([]);
   const [selectedLearnerRef, setSelectedLearnerRef] = useState<string | null>(null);
   const [learnerView, setLearnerView] = useState<LearnerRecentEvidence | null>(null);
+  const [lessonRefs, setLessonRefs] = useState<string[]>([]);
+  const [classroomObservations, setClassroomObservations] = useState<ClassroomObservationRevision[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +51,10 @@ export function StudentWorkspacePage(props: {
         const enrollmentResult = await loadCourseRunEnrollments(current.courseRunRef);
         if (!active) return;
         setEnrollments(enrollmentResult.items);
+        const units = await loadCurriculumUnits(current.courseRunRef);
+        const lessonResults = await Promise.all(units.items.map((unit) => loadLessons(unit.unitRef)));
+        if (!active) return;
+        setLessonRefs(lessonResults.flatMap((item) => item.items.map((lesson) => lesson.lessonRef)));
         setSelectedLearnerRef((existing) =>
           existing && enrollmentResult.items.some((item) => item.learnerRef === existing)
             ? existing
@@ -70,9 +80,15 @@ export function StudentWorkspacePage(props: {
     let active = true;
     setLoading(true);
     setError(null);
-    void loadLearnerEvidence(course.courseRunRef, selectedLearnerRef)
-      .then((result) => {
-        if (active) setLearnerView(result);
+    void Promise.all([
+      loadLearnerEvidence(course.courseRunRef, selectedLearnerRef),
+      Promise.all(lessonRefs.map((lessonRef) => loadClassroomObservations({ lessonRef, learnerRef: selectedLearnerRef })))
+    ])
+      .then(([result, observations]) => {
+        if (active) {
+          setLearnerView(result);
+          setClassroomObservations(observations.flatMap((item) => item.items).filter((item) => item.status === "confirmed"));
+        }
       })
       .catch((caught) => {
         if (active) setError(errorMessage(caught));
@@ -83,7 +99,7 @@ export function StudentWorkspacePage(props: {
     return () => {
       active = false;
     };
-  }, [course, selectedLearnerRef]);
+  }, [course, lessonRefs, selectedLearnerRef]);
 
   return (
     <div className="portal-page students-page" data-testid="students-page">
@@ -193,6 +209,24 @@ export function StudentWorkspacePage(props: {
                       </Space>
                     ) : (
                       <Paragraph type="secondary">尚无教师确认后形成的学习 Evidence。</Paragraph>
+                    )}
+                  </section>
+
+                  <section data-testid="learner-classroom-observations">
+                    <Title level={4}>教师确认的课堂观察</Title>
+                    <Paragraph type="secondary">仅显示明确作用于当前匿名学习者的课堂观察；班级观察与作业 Evidence 不在此混为个人结论。</Paragraph>
+                    {classroomObservations.length > 0 ? (
+                      <Space orientation="vertical" size="small">
+                        {classroomObservations.map((observation) => (
+                          <Card key={observation.observationRevisionRef} size="small">
+                            <Space wrap><Tag color="success">教师已确认</Tag><Tag>{observation.observationType}</Tag></Space>
+                            <Paragraph>{observation.content}</Paragraph>
+                            <Text type="secondary">来源 Lesson：{observation.lessonRef} · {new Date(observation.observedAt).toLocaleString("zh-CN")}</Text>
+                          </Card>
+                        ))}
+                      </Space>
+                    ) : (
+                      <Paragraph type="secondary">当前没有教师确认且明确作用于该匿名学习者的课堂观察。</Paragraph>
                     )}
                   </section>
                 </>
