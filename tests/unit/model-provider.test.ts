@@ -30,7 +30,7 @@ import {
 } from "../../apps/api/src/modules/capability-integration/application/model-output-validation.js";
 import {
   ProviderCapabilityProbe
-} from "../../apps/api/src/modules/capability-integration/application/provider-capability-probe.js";
+} from "../../apps/api/src/modules/capability-integration/infrastructure/provider-capability-probe.js";
 import {
   LocalSyntheticModelDebugSink,
   maskProviderRequestId,

@@ -8,7 +8,7 @@ import type {
 
 import type {
   SafeProviderCapabilityProbeCall
-} from "../modules/capability-integration/application/provider-capability-probe.js";
+} from "../modules/capability-integration/application/provider-capability.js";
 
 export interface SafeLiveStructuredProbeCall {
   probe: "structured_teaching_output";

@@ -349,6 +349,9 @@ describe("Gate 2 architecture invariants", () => {
     const localAdapter = source(
       "apps/api/src/modules/capability-integration/infrastructure/local-object-store.ts"
     );
+    const objectStoreFactory = source(
+      "apps/api/src/modules/capability-integration/infrastructure/object-store-factory.ts"
+    );
     const fileService = source(
       "apps/api/src/composition/postgres-file-artifact-service.ts"
     );
@@ -363,7 +366,9 @@ describe("Gate 2 architecture invariants", () => {
     expect(localAdapter).toContain("randomUUID");
     expect(localAdapter).toContain("assertWithinRoot");
     expect(productContainer).toContain("PostgresFileArtifactService");
-    expect(productContainer).toContain("LocalObjectStore");
+    expect(productContainer).toContain("createConfiguredObjectStore");
+    expect(productContainer).not.toContain("LocalObjectStore");
+    expect(objectStoreFactory).toContain("LocalObjectStore");
     expect(productContainer).not.toContain("FileManager");
     expect(fileService).toContain("TEACHING_PLAN_DOCX_TEMPLATE_VERSION");
     expect(fileService).toContain("TEACHING_PLAN_EXPORT_REQUIRES_APPROVED_REVISION");

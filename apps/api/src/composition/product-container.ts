@@ -20,14 +20,11 @@ import {
   LocalCopilotOutboxWorker
 } from "./local-copilot-outbox-worker.js";
 import {
-  MockModelProvider
-} from "../modules/capability-integration/infrastructure/mock-model-provider.js";
-import {
   readModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+  createConfiguredModelProvider
+} from "../modules/capability-integration/infrastructure/model-provider-factory.js";
 import type {
   ModelProvider
 } from "../modules/capability-integration/domain/capability.js";
@@ -44,8 +41,8 @@ import type {
   ObjectStore
 } from "../modules/capability-integration/domain/object-store.js";
 import {
-  LocalObjectStore
-} from "../modules/capability-integration/infrastructure/local-object-store.js";
+  createConfiguredObjectStore
+} from "../modules/capability-integration/infrastructure/object-store-factory.js";
 import {
   readObjectStoreSettings,
   type ObjectStoreSettings
@@ -67,11 +64,8 @@ import type {
   IdentityProvider
 } from "../modules/identity-governance-audit/domain/identity-provider.js";
 import {
-  LocalIdentityProvider
-} from "../modules/identity-governance-audit/infrastructure/local-identity-provider.js";
-import {
-  OidcIdentityProvider
-} from "../modules/identity-governance-audit/infrastructure/oidc-identity-provider.js";
+  createConfiguredIdentityProviders
+} from "../modules/identity-governance-audit/infrastructure/identity-provider-factory.js";
 import {
   PostgresIdentityOrganizationService
 } from "./postgres-identity-organization-service.js";
@@ -99,10 +93,7 @@ export function createProductContainer(
     options.modelSettings ?? readModelProviderSettings();
   const modelProvider =
     options.modelProvider ??
-    (modelSettings.activeProvider === "volcengine-ark" &&
-    modelSettings.ark
-      ? new VolcengineArkProvider(modelSettings.ark)
-      : new MockModelProvider());
+    createConfiguredModelProvider(modelSettings);
   const modelInvocations: ModelInvocationApplicationFacade =
     new PostgresModelInvocationService(
       appPool,
@@ -113,26 +104,19 @@ export function createProductContainer(
     options.objectStoreSettings ?? readObjectStoreSettings();
   const objectStore =
     options.objectStore ??
-    new LocalObjectStore(objectStoreSettings.rootDirectory);
+    createConfiguredObjectStore(objectStoreSettings);
   const identitySettings =
     options.identitySettings ?? readIdentitySettings();
-  const localIdentityProvider =
-    identitySettings.providerMode === "local"
-      ? new LocalIdentityProvider(
-          identitySettings.localProviderEnabled,
-          identitySettings.localDemoTeacherCredential
-        )
-      : undefined;
+  const configuredIdentityProviders =
+    createConfiguredIdentityProviders(identitySettings);
   const identityProvider =
     options.identityProvider ??
-    (identitySettings.providerMode === "oidc" && identitySettings.oidc
-      ? new OidcIdentityProvider(identitySettings.oidc)
-      : localIdentityProvider!);
+    configuredIdentityProviders.identityProvider;
   const identity = new PostgresIdentityOrganizationService(
     appPool,
     identitySettings,
     identityProvider,
-    localIdentityProvider
+    configuredIdentityProviders.localIdentityProvider
   );
   const lessonPreparation = new PostgresLessonPreparationService(appPool);
   const teacherWorkbench = new PostgresTeacherWorkbenchService(

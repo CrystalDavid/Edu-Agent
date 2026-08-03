@@ -12,7 +12,7 @@ import {
 
 import type {
   ProviderCapabilityProbeResult
-} from "./provider-capability-probe.js";
+} from "./provider-capability.js";
 
 export type ReflectionGenerationResult = ReturnType<
   typeof ReflectionGenerationResultSchema.parse

@@ -58,10 +58,9 @@ import {
   lessonReflectionPromptBundle
 } from "../modules/capability-integration/application/lesson-reflection-prompt-bundle.js";
 import { validateReflectionOutput } from "../modules/capability-integration/application/reflection-output-validation.js";
-import {
-  ProviderCapabilityProbe,
-  type ProviderCapabilityProbeResult
-} from "../modules/capability-integration/application/provider-capability-probe.js";
+import type {
+  ProviderCapabilityProbeResult
+} from "../modules/capability-integration/application/provider-capability.js";
 import type {
   ModelInvocationApplicationFacade
 } from "../modules/capability-integration/application/model-invocation-facade.js";
@@ -76,8 +75,8 @@ import type {
   ModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+  createConfiguredProviderCapabilityProbe
+} from "../modules/capability-integration/infrastructure/model-provider-factory.js";
 import {
   PostgresModelExecutionRepository,
   type StoredModelExecution
@@ -299,18 +298,18 @@ export class PostgresModelInvocationService
         "A live capability snapshot requires strict Ark Live mode; Mock and Fake snapshots cannot be marked live."
       );
     }
-    if (!(this.provider instanceof VolcengineArkProvider)) {
+    const probe = createConfiguredProviderCapabilityProbe(
+      this.provider,
+      this.clock,
+      { live: input.live }
+    );
+    if (!probe) {
       throw new DomainConflictError(
         "ARK_PROVIDER_NOT_CONFIGURED",
         "Volcengine Ark must be configured before running the live capability probe."
       );
     }
-    const result =
-      await new ProviderCapabilityProbe(
-        this.provider,
-        this.clock,
-        { live: input.live }
-      ).runDetailed();
+    const result = await probe.runDetailed();
     const capabilities = result.capabilities;
     const now = this.clock().toISOString();
     const writeContext = systemWriteContext(

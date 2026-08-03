@@ -11,6 +11,14 @@ import type {
   IdentityProvider,
   IdentityProviderAvailability
 } from "../domain/identity-provider.js";
+import type {
+  LocalAuthenticationPort,
+  LocalIdentityProfile
+} from "../application/local-authentication-port.js";
+
+export type {
+  LocalIdentityProfile
+} from "../application/local-authentication-port.js";
 
 export interface LocalDemoTeacherCredential {
   phoneSha256: string;
@@ -66,12 +74,6 @@ function maskPhone(phone: string): string {
   return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
 }
 
-export type LocalIdentityProfile =
-  | "teacher"
-  | "admin"
-  | "multi_school"
-  | "school_b_teacher";
-
 const profiles: Record<LocalIdentityProfile, ExternalIdentity> = {
   teacher: {
     provider: "local-development",
@@ -99,7 +101,7 @@ const profiles: Record<LocalIdentityProfile, ExternalIdentity> = {
   }
 };
 
-export class LocalIdentityProvider implements IdentityProvider {
+export class LocalIdentityProvider implements LocalAuthenticationPort {
   readonly mode = "local" as const;
 
   private readonly smsChallenges = new Map<string, StoredSmsChallenge>();

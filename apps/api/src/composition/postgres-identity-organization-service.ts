@@ -28,6 +28,10 @@ import type {
   ResolvedProductIdentity,
   SessionCreationResult
 } from "../modules/identity-governance-audit/application/identity-context-facade.js";
+import type {
+  LocalAuthenticationPort,
+  LocalIdentityProfile
+} from "../modules/identity-governance-audit/application/local-authentication-port.js";
 import type { IdentitySettings } from "../platform/auth/config.js";
 import {
   AuthenticationRequiredError,
@@ -41,10 +45,6 @@ import type {
   IdentityProvider,
   OidcAuthorizationRequest
 } from "../modules/identity-governance-audit/domain/identity-provider.js";
-import {
-  LocalIdentityProvider,
-  type LocalIdentityProfile
-} from "../modules/identity-governance-audit/infrastructure/local-identity-provider.js";
 
 type AuthenticatedStatus = Extract<
   AuthenticationSessionStatus,
@@ -98,7 +98,7 @@ export class PostgresIdentityOrganizationService
     private readonly pool: Pool,
     readonly settings: IdentitySettings,
     private readonly provider: IdentityProvider,
-    private readonly localProvider?: LocalIdentityProvider
+    private readonly localProvider?: LocalAuthenticationPort
   ) {}
 
   async providerAvailability(): Promise<AuthenticationProviderAvailability> {
