@@ -12,7 +12,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `apps/web`：React 19 + Vite 8 + Ant Design 6 的教师门户；
 - `apps/api`：Express 5 API、七个领域/能力模块、Composition Root 和本地 Worker；
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
-- `packages/sample-data`：可选匿名样例和 Gate 2 测试共用的稳定 refs/seed；
+- `packages/sample-data`：显式 Seed 和测试共用的稳定匿名 refs/data；产品 API/Web 不依赖该 package；
 - `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
 - PostgreSQL 18：七个 Schema、43 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；

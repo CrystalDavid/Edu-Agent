@@ -37,7 +37,7 @@ Edu-Agent/
 |---|---|
 | `src/index.ts` | API 进程入口、端口与启动失败处理 |
 | `src/app.ts` | Express application、middleware、auth 和 route 组合 |
-| `src/composition/` | Product Composition Root、Application Service、Worker 组装、可选样例 Seed |
+| `src/composition/` | Product Composition Root、Application Service、Worker 组装；不包含 Sample Seed |
 | `src/database/migrations.ts` | 43 个 Migration 的唯一 registry |
 | `src/platform/` | PostgreSQL、auth、errors、server 等平台 Adapter |
 | `src/modules/` | 七个状态所有者模块 |
@@ -87,15 +87,16 @@ apps/api/src/modules/<module>/
 | Package | 消费者 | 内容边界 |
 |---|---|---|
 | `@edu-agent/contracts` | Web、API、tests | route builder、DTO、enum、Zod Schema；不含 Repository/UI |
-| `@edu-agent/sample-data` | API 本机样例入口、Gate 2 tests | stable anonymous refs/data；无断言或 Fake Provider |
+| `@edu-agent/sample-data` | `scripts/sample`、Gate 2 tests | stable anonymous refs/data；产品 API/Web 不依赖 |
 | `@edu-agent/test-fixtures` | tests | Gate 1A/1B 测试构造器；`apps/*` 不得依赖 |
 
 稳定依赖方向：
 
 ```text
 apps/web -> contracts
-apps/api -> contracts + sample-data
-tests    -> contracts + sample-data + test-fixtures
+apps/api      -> contracts + product SDKs
+scripts/sample -> contracts + sample-data + API repository adapters
+tests         -> contracts + sample-data + test-fixtures
 ```
 
 ## `infra` 与 Migration
@@ -174,7 +175,7 @@ docs/
 - 新领域状态：owning module + 新 Migration + registry；
 - 新模型/存储身份 Adapter：`capability-integration` 或 platform Port/Adapter；
 - 新 Page：`apps/web/src/pages` + `route.ts` + `App.tsx`；
-- 新匿名样例数据：`packages/sample-data`；业务专用 Seed 仍由 API composition 调用；
+- 新匿名样例数据：`packages/sample-data`；业务专用 Seed 只由 `scripts/sample` 显式组合；
 - 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
 - 当前功能说明：`docs/capabilities.md`；
 - 未来计划：`docs/roadmap.md`；
