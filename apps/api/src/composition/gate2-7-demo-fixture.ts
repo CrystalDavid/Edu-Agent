@@ -1,4 +1,4 @@
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 
 import { gate25DemoRefs } from "./gate2-5-demo-fixture.js";
 

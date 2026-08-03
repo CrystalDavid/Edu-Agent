@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   gate2DemoRefs
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/sample-data";
 import { apiRoutes } from "@edu-agent/contracts";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

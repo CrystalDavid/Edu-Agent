@@ -13,6 +13,8 @@ import {
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
   type CreateMemberRequest,
+  type LocalCredentialLoginRequest,
+  type LocalSmsChallenge,
   type OrganizationRole,
   type TenantContext,
   type UpdateMemberCourseAccessRequest,
@@ -347,6 +349,67 @@ export class PostgresIdentityOrganizationService {
       throw new ServiceUnavailableError("Local identity provider is disabled.");
     }
     const external = this.localProvider.authenticate(input.profile);
+    return this.createSessionForExternalIdentity({
+      external,
+      authenticationMethod: "local-identity",
+      clientLabel: input.clientLabel,
+      ...(input.clientFingerprint
+        ? { clientFingerprint: input.clientFingerprint }
+        : {})
+    });
+  }
+
+  async requestLocalSmsCode(phone: string): Promise<LocalSmsChallenge> {
+    if (!this.localProvider || !this.settings.localProviderEnabled) {
+      throw new ServiceUnavailableError("Local identity provider is disabled.");
+    }
+    try {
+      const challenge = this.localProvider.requestSmsCode(phone);
+      await this.recordSecurityEvent({
+        eventType: "LocalSmsCodeIssued",
+        outcome: "success",
+        safeReason: "手机号验证码已发出。"
+      });
+      return challenge;
+    } catch {
+      await this.recordSecurityEvent({
+        eventType: "LocalAuthenticationDenied",
+        outcome: "denied",
+        safeReason: "手机号登录尝试被拒绝。"
+      });
+      throw new AuthenticationRequiredError("手机号或验证码不正确。");
+    }
+  }
+
+  async localCredentialLogin(input: {
+    request: LocalCredentialLoginRequest;
+    clientLabel: string;
+    clientFingerprint?: string;
+  }): Promise<SessionCreationResult> {
+    if (!this.localProvider || !this.settings.localProviderEnabled) {
+      throw new ServiceUnavailableError("Local identity provider is disabled.");
+    }
+    let external: ExternalIdentity;
+    try {
+      external =
+        input.request.method === "password"
+          ? this.localProvider.authenticatePassword(
+              input.request.phone,
+              input.request.password
+            )
+          : this.localProvider.authenticateSms(
+              input.request.phone,
+              input.request.challengeRef,
+              input.request.code
+            );
+    } catch {
+      await this.recordSecurityEvent({
+        eventType: "LocalAuthenticationDenied",
+        outcome: "denied",
+        safeReason: "手机号登录尝试被拒绝。"
+      });
+      throw new AuthenticationRequiredError("手机号或登录凭据不正确。");
+    }
     return this.createSessionForExternalIdentity({
       external,
       authenticationMethod: "local-identity",

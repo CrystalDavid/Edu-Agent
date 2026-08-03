@@ -34,7 +34,7 @@ import {
   type TeacherTodoStatus,
   type TeacherWorkProjectionView
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import { PostgresGovernanceRepository } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import request from "supertest";
 import {
   afterAll,

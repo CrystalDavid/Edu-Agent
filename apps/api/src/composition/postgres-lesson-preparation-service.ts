@@ -28,7 +28,7 @@ import {
   type LessonPreparationTaskDetail,
   type TaskResourceSelectionRequest
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {
@@ -1137,7 +1137,7 @@ export class PostgresLessonPreparationService {
   ): void {
     if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
-        "本地演示身份无权访问该备课上下文。"
+        "当前身份无权访问该备课上下文。"
       );
     }
   }

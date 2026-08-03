@@ -3,8 +3,13 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-const screenshotRoot =
-  "output/playwright/teacher-portal-ui-v1/final";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath(
+  "evidence",
+  "teacher-portal-ui-v1",
+  "final"
+);
 
 const bannedTeacherTerms = [
   "EvidenceObservation",
@@ -19,12 +24,15 @@ const bannedTeacherTerms = [
   "AgentRun",
   "TaskRun",
   "Outbox",
-  "MockModelProvider"
+  "MockModelProvider",
+  "合成",
+  "本地演示",
+  "TEACH WITH",
+  "PostgreSQL"
 ] as const;
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
-  await mkdir("docs/ui/images", { recursive: true });
 });
 
 test("portal bootstrap, sidebar and modular overview use the verified API contract", async ({
@@ -111,8 +119,6 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     "今天需要做什么",
     "学生概况",
     "今日课程",
-    "备课组动态",
-    "学校动态",
     "最近文件"
   ]) {
     await expect(
@@ -126,11 +132,6 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     path: `${screenshotRoot}/01-overview-1440x900.png`,
     animations: "disabled"
   });
-  await page.screenshot({
-    path: "docs/ui/images/teacher-portal-v1-after.png",
-    animations: "disabled"
-  });
-
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.goto("/overview");
   await expect(page.getByRole("heading", { name: "概览" })).toBeVisible();
@@ -203,7 +204,11 @@ test("teaching workspace supports course files, homework and assessment analysis
   await expect(
     page.getByRole("heading", { name: "教学", exact: true })
   ).toBeVisible();
+  await expect(page.getByTestId("unit-list")).toBeVisible();
+  await expect(page.getByTestId("lesson-list")).toHaveCount(0);
+  await page.getByTestId("unit-1").click();
   await expect(page.getByTestId("lesson-list")).toBeVisible();
+  await page.getByTestId("lesson-3").click();
   await expect(page.getByTestId("lesson-detail")).toContainText(
     "斜率与图像变化"
   );
@@ -230,15 +235,10 @@ test("teaching workspace supports course files, homework and assessment analysis
     animations: "disabled"
   });
 
-  await page.getByRole("tab", { name: /考试/ }).click();
-  await expect(page.getByTestId("exam-dashboard")).toBeVisible();
-  await page.getByTestId("exam-list").getByRole("button", { name: /期中阶段测评/ }).click();
-  await expect(page.getByTestId("exam-dashboard")).toContainText(
-    "本次无年级比较数据"
-  );
-  await expect(page.getByTestId("exam-dashboard")).not.toContainText(
-    "年级百分位"
-  );
+  const examTab = page.getByRole("tab", { name: /考试/ });
+  await expect(examTab).toBeDisabled();
+  await expect(examTab).toContainText("暂未开放");
+  await expect(page.getByTestId("exam-dashboard")).toHaveCount(0);
   await page.screenshot({
     path: `${screenshotRoot}/09-exam-analysis.png`,
     fullPage: true,
@@ -287,7 +287,7 @@ test("file manager uploads, restores and versions a real local file", async ({
   await manager.getByTestId("file-upload-input").setInputFiles({
     name: "斜率课堂观察.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# 合成参考资料\n仅用于 Gate 2.5B E2E。", "utf8")
+    buffer: Buffer.from("# 课堂参考资料\n用于验证文件上传和版本管理。", "utf8")
   });
   const fileButton = manager.locator(".file-results").getByRole("button", {
     name: /斜率课堂观察/
@@ -298,7 +298,7 @@ test("file manager uploads, restores and versions a real local file", async ({
   await manager.getByTestId("file-version-input").setInputFiles({
     name: "斜率课堂观察-v2.md",
     mimeType: "text/markdown",
-    buffer: Buffer.from("# 合成参考资料\n第二个不可变版本。", "utf8")
+    buffer: Buffer.from("# 课堂参考资料\n第二个不可变版本。", "utf8")
   });
   await expect(manager.getByTestId("file-version-history")).toContainText("v2", {
     timeout: 20_000
@@ -335,8 +335,8 @@ test("file manager uploads, restores and versions a real local file", async ({
   );
   await manager.getByTestId("file-detail").getByRole("button", { name: "关联教学计划" }).click();
   expect((await planBindingResponse).status()).toBe(201);
-  await expect(manager.getByTestId("file-detail")).toContainText("preparation_task");
-  await expect(manager.getByTestId("file-detail")).toContainText("teaching_plan_revision");
+  await expect(manager.getByTestId("file-detail")).toContainText("关联备课任务");
+  await expect(manager.getByTestId("file-detail")).toContainText("关联教学计划版本");
   await expect(manager.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })).toBeDisabled();
   await manager.getByRole("button", { name: "列表视图" }).click();
   await expect(manager.locator(".file-result-list")).toBeVisible();
@@ -349,48 +349,26 @@ test("file manager uploads, restores and versions a real local file", async ({
   await assertCleanMonitor(monitor);
 });
 
-test("demo Agent workspace does not import Mock Todo business state", async ({
+test("Agent home reads real preparation tasks and has no local conversation copy", async ({
   page
 }) => {
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/agent");
-  await expect(page.getByRole("heading", { name: "有什么可以帮你？" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "从备课任务开始" })).toBeVisible();
+  await expect(page.getByTestId("agent-home-page")).toContainText("选择尚未完成的备课任务");
+  await expect(page.getByRole("button", { name: "新建对话" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "制作 PPT" })).toHaveCount(0);
   await page.screenshot({
     path: `${screenshotRoot}/13-agent-empty.png`,
+    fullPage: true,
     animations: "disabled"
   });
-
-  await page.getByRole("button", { name: "新建对话" }).click();
-  await expect(page.getByRole("heading", { name: "新对话" })).toBeVisible();
-  await page.getByRole("button", { name: "制作 PPT" }).click();
-  await expect(page.getByText("我可以基于当前教案")).toBeVisible();
-  await page.screenshot({
-    path: `${screenshotRoot}/14-agent-conversation.png`,
-    animations: "disabled"
-  });
-
-  const contextPanel = page.getByTestId("agent-context-panel");
-  await expect(contextPanel.locator(".segmented-control").getByRole("button", { name: "待办" })).toHaveCount(0);
-  await expect(contextPanel.getByText("完成一次函数课件")).toHaveCount(0);
-  await page.screenshot({
-    path: `${screenshotRoot}/15-agent-context.png`,
-    animations: "disabled"
-  });
-
-  await page.setViewportSize({ width: 1120, height: 800 });
-  const drawerTrigger = page.getByRole("button", { name: "待办与上下文" });
-  await expect(drawerTrigger).toBeVisible();
-  await drawerTrigger.click();
-  const drawer = page.getByRole("dialog", { name: "待办与上下文" });
-  await expect(drawer).toBeVisible();
-  await expect(drawer.getByText("当前课程")).toBeVisible();
-  await page.keyboard.press("Escape");
   await assertNoInternalTerms(page);
   await assertCleanMonitor(monitor);
 });
 
-test("profile menu opens settings, memory controls and the typography guide", async ({
+test("profile menu opens server-backed account settings and the typography guide", async ({
   page
 }) => {
   const monitor = monitorPage(page);
@@ -398,12 +376,14 @@ test("profile menu opens settings, memory controls and the typography guide", as
   await page.goto("/overview");
   await page.getByTestId("teacher-profile-trigger").click();
   await expect(page.getByRole("menu", { name: "教师设置菜单" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "上下文和记忆" }).click();
+  await page.getByRole("menuitem", { name: "账号和学校" }).click();
   await expect(page).toHaveURL(/\/settings$/);
-  await expect(page.getByRole("heading", { name: "上下文和记忆" })).toBeVisible();
-  await expect(page.getByText("候选推断", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  await expect(page.getByTestId("identity-organization-settings")).toBeVisible();
+  await expect(page.getByText("上下文和记忆")).toHaveCount(0);
+  await expect(page.getByText("候选推断", { exact: true })).toHaveCount(0);
   await page.screenshot({
-    path: `${screenshotRoot}/16-settings-memory.png`,
+    path: `${screenshotRoot}/16-settings-account.png`,
     fullPage: true,
     animations: "disabled"
   });
@@ -431,7 +411,7 @@ test("all new routes and legacy redirects remain reachable", async ({
     ["/teaching", "教学"],
     ["/students", "学生"],
     ["/files", "文件"],
-    ["/agent", "有什么可以帮你？"],
+    ["/agent", "从备课任务开始"],
     ["/settings", "设置"],
     ["/style-guide", "样式指南"]
   ] as const;
@@ -471,7 +451,7 @@ test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rej
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/copilot");
-  await expect(page.getByText("结构化教学建议详情")).toBeVisible();
+  await expect(page.getByText("教学建议详情")).toBeVisible();
   const taskInput = page.getByRole("textbox", { name: "教师助手任务说明" });
   const firstRequest =
     "根据一次函数学习证据，比较明天课堂的两种调整策略";
@@ -573,15 +553,15 @@ test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rej
 
   await page.getByRole("button", { name: "查看教学计划" }).click();
   await expect(page).toHaveURL(/\/teaching-plan$/);
-  await expect(page.getByText(/in_review（尚未成为当前正式计划）/)).toBeVisible({
+  await expect(page.getByText(/待审核（尚未成为当前正式计划）/)).toBeVisible({
     timeout: 20_000
   });
   await expect(
     page.getByText(
       new RegExp(
-        `第 ${initialApproved.revisionNumber} 版.*approved`
+        `第 ${initialApproved.revisionNumber} 版.*已批准`
       )
-    )
+    ).first()
   ).toBeVisible();
 
   const approvalResponse = page.waitForResponse(
@@ -649,7 +629,7 @@ test("Gate 2.4 recovers a teacher request, reviews and approves a plan, then rej
   });
   await page.getByText("查看可审计技术详情").click();
   await page.getByText("固定契约与使用的数据").click();
-  await expect(page.getByText("Evidence refs")).toBeVisible();
+  await expect(page.getByText("证据引用")).toBeVisible();
   await expect(page.getByText("权限检查与后台处理")).toBeVisible();
   await page.getByText("权限检查与后台处理").click();
   await expect(
@@ -672,12 +652,12 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   };
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/teaching");
+  await page.getByTestId("unit-1").click();
   await page.getByTestId("lesson-3").click();
   const lessonDetail = page.getByTestId("lesson-detail");
   await expect(lessonDetail).toContainText("斜率与图像变化");
-  await expect(lessonDetail).toContainText(
-    "当前课时没有未完成的备课任务"
-  );
+  await expect(lessonDetail).toContainText("备课任务");
+  await expect(lessonDetail).toContainText("未开始");
   const initialPlansResponse = await request.get(
     apiRoutes.teacher.lessonTeachingPlans(
       "lesson:slope-and-graph-change"
@@ -709,7 +689,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     "斜率与图像变化"
   );
   await expect(page.getByTestId("task-working-set")).toContainText(
-    "baseline approved plan"
+    "当前已批准教学计划"
   );
   const taskInput = page.getByRole("textbox", {
     name: "教师助手任务说明"
@@ -795,11 +775,11 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   });
   await expect(
     page.getByTestId("teaching-plan-preparation-task")
-  ).toContainText("awaiting_plan_review");
+  ).toContainText("当前状态：待审核");
   await page.getByTestId("approve-teaching-plan").click();
   await expect(
     page.getByTestId("teaching-plan-preparation-task")
-  ).toContainText("ready_for_use", { timeout: 20_000 });
+  ).toContainText("当前状态：已准备，待完成", { timeout: 20_000 });
   const afterApprovalResponse = await request.get(
     apiRoutes.teacher.lessonTeachingPlans(
       "lesson:slope-and-graph-change"
@@ -840,11 +820,11 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByTestId("complete-lesson-preparation").click();
   await expect(
     page.getByTestId("teaching-plan-preparation-task")
-  ).toContainText("completed", { timeout: 20_000 });
+  ).toContainText("备课已完成", { timeout: 20_000 });
   await page.reload();
   await expect(
     page.getByTestId("teaching-plan-preparation-task")
-  ).toContainText("completed", { timeout: 20_000 });
+  ).toContainText("当前状态：已完成", { timeout: 20_000 });
   const summaryResponse = await request.get(
     apiRoutes.teacher.lessonPreparationSummary,
     { headers }
@@ -857,7 +837,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     )
   ).toBe(false);
 
-  await page.getByRole("button", { name: "返回备课 Task" }).click();
+  await page.getByRole("button", { name: "返回备课任务" }).click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   await expect(page.getByTestId("completed-task-review-only")).toBeVisible();
   await taskInput.fill(
@@ -888,9 +868,9 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByRole("button", { name: "查看运行依据" }).click();
   await expect(page).toHaveURL(/\/runs\/tasks\//);
   await page.getByText("查看可审计技术详情").click();
-  await page.getByText("备课 Task 与封存上下文").click();
+  await page.getByText("备课任务与封存上下文").click();
   await expect(
-    page.getByText("AuthorizedContextPlan", { exact: true })
+    page.getByText("授权上下文方案", { exact: true })
   ).toBeVisible();
   await page.screenshot({
     path: `${screenshotRoot}/19-gate2-5-recoverable-lesson-preparation.png`,
@@ -953,7 +933,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     })
   ).toHaveAttribute(
     "title",
-    "正式教案的新版本只能从新的 approved TeachingPlan Revision 导出"
+    "正式教案的新版本只能由新批准的教学计划导出"
   );
   await expect(
     page.getByTestId("file-detail").getByRole("button", { name: /删\s*除/ })
@@ -986,7 +966,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await exportedFile.click();
   await expect(page.getByTestId("file-version-history")).toContainText("v2");
   await expect(page.getByTestId("file-detail")).toContainText(
-    "teaching_plan_revision"
+    "教学计划版本 · 正式导出"
   );
   await page.screenshot({
     path: `${screenshotRoot}/21-gate2-5b-restart-recovery.png`,
@@ -995,6 +975,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   });
 
   await page.goto("/teaching");
+  await page.getByTestId("unit-1").click();
   await page.getByTestId("lesson-3").click();
   await expect(page.getByTestId("lesson-detail")).toContainText("已完成");
   await expect(
@@ -1009,6 +990,8 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
     .getByTestId("lesson-related-files")
     .getByRole("button", { name: /斜率与图像变化 教案/ })
     .click();
+  await expect(page.getByRole("dialog", { name: /斜率与图像变化 教案/ })).toBeVisible();
+  await page.getByRole("button", { name: "在文件库中查看" }).click();
   await expect(page).toHaveURL(
     /\/files\?asset=.*&lesson=lesson(?:%3A|:)slope-and-graph-change/
   );
@@ -1024,6 +1007,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   });
 
   await page.goto("/teaching");
+  await page.getByTestId("unit-1").click();
   await page.getByTestId("lesson-5").click();
   await expect(page.getByTestId("lesson-detail")).toContainText("已计划");
   await page.getByRole("button", { name: "取消备课" }).click();
@@ -1044,7 +1028,7 @@ test("startup failure remains precise and safe", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         code: "BOOTSTRAP_UNAVAILABLE",
-        message: "示例启动服务不可用"
+        message: "应用启动服务不可用"
       })
     });
   });
@@ -1052,12 +1036,12 @@ test("startup failure remains precise and safe", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "教师工作空间未能启动" })).toBeVisible();
   await expect(page.getByText("教师工作台启动数据")).toBeVisible();
   await expect(page.getByText("BOOTSTRAP_UNAVAILABLE")).toBeVisible();
-  await expect(page.getByText("示例启动服务不可用")).toBeVisible();
+  await expect(page.getByText("应用启动服务不可用")).toBeVisible();
   await expect(page.getByRole("button", { name: /重\s*试/ })).toBeVisible();
-  await expect(page.getByText("查看本地启动指南")).toBeVisible();
+  await expect(page.getByText("查看启动指南")).toBeVisible();
 });
 
-test("an incomplete Ark configuration falls back to the local demo assistant without exposing configuration", async ({
+test("an incomplete Ark configuration uses the built-in assistant without exposing configuration", async ({
   page
 }) => {
   const monitor = monitorPage(page);
@@ -1077,7 +1061,7 @@ test("an incomplete Ark configuration falls back to the local demo assistant wit
           apiMode: "chat_completions",
           liveTestsEnabled: false,
           safeReason:
-            "火山方舟配置不完整，已使用本地演示助手。"
+            "在线生成服务暂不可用，当前使用内置教学助手。"
         })
       });
     }
@@ -1085,7 +1069,7 @@ test("an incomplete Ark configuration falls back to the local demo assistant wit
   await page.goto("/copilot");
   await expect(
     page.getByTestId("model-provider-availability")
-  ).toContainText("火山方舟配置不完整");
+  ).toContainText("在线生成服务暂不可用");
   await expect(page.locator("body")).not.toContainText(
     "ARK_API_KEY"
   );

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   gate2DemoRefs
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/sample-data";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -50,7 +50,10 @@ const identitySettings = readIdentitySettings({
   IDENTITY_PROVIDER_MODE: "local",
   LOCAL_IDENTITY_PROVIDER_ENABLED: "true"
 });
-const localIdentityProvider = new LocalIdentityProvider(true);
+const localIdentityProvider = new LocalIdentityProvider(
+  true,
+  identitySettings.localDemoTeacherCredential
+);
 const identity = new PostgresIdentityOrganizationService(
   appPool,
   identitySettings,

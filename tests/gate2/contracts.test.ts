@@ -1,11 +1,13 @@
 import {
+  LocalCredentialLoginRequestSchema,
+  LocalSmsChallengeSchema,
   PedagogicalStrategySchema,
   SuggestionDispositionRequestSchema,
   TeachingPlanSchema
 } from "@edu-agent/contracts";
 import {
   baselineTeachingPlan
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/sample-data";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -17,6 +19,34 @@ import {
 import { appRoutes } from "../../apps/web/src/route.js";
 
 describe("Gate 2 UI and domain contracts", () => {
+  it("keeps local password and SMS login requests explicit and typed", () => {
+    expect(
+      LocalCredentialLoginRequestSchema.parse({
+        method: "password",
+        phone: "13900000001",
+        password: "SyntheticDemo123!",
+        returnTo: "/overview"
+      }).method
+    ).toBe("password");
+    expect(() =>
+      LocalCredentialLoginRequestSchema.parse({
+        method: "sms",
+        phone: "123",
+        challengeRef: "challenge:1",
+        code: "123456"
+      })
+    ).toThrow();
+    expect(
+      LocalSmsChallengeSchema.parse({
+        challengeRef: "challenge:1",
+        phoneMasked: "139****0001",
+        expiresAt: new Date().toISOString(),
+        retryAfterSeconds: 60,
+        demoCode: "123456"
+      }).demoCode
+    ).toBe("123456");
+  });
+
   it("freezes teacher-task routes and preserves detail routes", () => {
     expect(appRoutes).toEqual([
       "/",

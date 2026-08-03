@@ -28,7 +28,7 @@ import {
   type ReflectionDetail,
   type ReflectionRevisionView
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import { PostgresGate2ArtifactRepository } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";

@@ -10,9 +10,80 @@ export function cleanDisplayText(value: string): string {
     .replace(/合成样本/g, "示例样本")
     .replace(/合成数据/g, "示例数据")
     .replace(/合成的/g, "示例的")
+    .replace(/合成/g, "")
+    .replace(/\blearner\b/gi, "学生")
     .replace(/Worked Example/gi, "示例解答")
+    .replace(/TeachingPlan Revision\s*(\d+)/gi, "教学计划第 $1 版")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+export function workProjectionStatusLabel(status: string): string {
+  return {
+    planned: "待开始",
+    not_started: "未开始",
+    in_progress: "进行中",
+    awaiting_plan_review: "待审核",
+    active_in_review: "待审核",
+    ready_for_use: "待完成",
+    draft: "草稿",
+    pending: "待确认",
+    published: "已发布",
+    published_overdue: "已截止",
+    not_submitted: "未提交",
+    confirmed: "已确认",
+    completed: "已完成",
+    cancelled: "已取消",
+    timed_out: "生成超时",
+    validation_failed: "需要重试",
+    retryable_failed: "暂时不可用"
+  }[status] ?? cleanDisplayText(status.replaceAll("_", " "));
+}
+
+export function calendarEventTypeLabel(eventType: string): string {
+  return {
+    class: "上课",
+    meeting: "会议",
+    grading: "批改",
+    lesson_preparation: "备课",
+    custom_reminder: "提醒"
+  }[eventType] ?? "日程";
+}
+
+export function workSourceLabel(source: string): string {
+  return {
+    work: "教学任务",
+    education: "课程",
+    artifact: "教学成果",
+    capability: "教学助手"
+  }[source] ?? "待处理";
+}
+
+export function roleLabel(role: string): string {
+  return {
+    ordinary_teacher: "任课教师",
+    school_admin: "学校管理员",
+    subject_lead: "学科负责人",
+    homeroom_teacher: "班主任"
+  }[role] ?? "学校成员";
+}
+
+export function membershipStatusLabel(status: string): string {
+  return {
+    active: "正常",
+    suspended: "已停用",
+    invited: "待加入"
+  }[status] ?? status;
+}
+
+export function authenticationMethodLabel(method: string): string {
+  return {
+    "local-identity": "手机号登录",
+    oidc: "统一身份登录",
+    "server-session": "安全会话",
+    "demo-bypass": "账号登录",
+    "test-fixture": "账号登录"
+  }[method] ?? "安全会话";
 }
 
 export function teachingPlanStateLabel(

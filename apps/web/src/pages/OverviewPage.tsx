@@ -11,10 +11,6 @@ import type {
 import { Button, Modal } from "antd";
 
 import {
-  preparationGroupUpdates,
-  schoolUpdates
-} from "../teacher-portal-data";
-import {
   createTeacherTodo,
   loadAssignmentOverview,
   loadFiles,
@@ -22,7 +18,12 @@ import {
   loadTeacherWorkbenchOverview
 } from "../api";
 import type { AppRoute } from "../route";
-import { lessonPreparationStatusLabel } from "../presentation";
+import {
+  cleanDisplayText,
+  lessonPreparationStatusLabel,
+  workProjectionStatusLabel,
+  workSourceLabel
+} from "../presentation";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
 import {
   ModuleCard,
@@ -134,7 +135,7 @@ export function OverviewPage(props: {
           title="今天需要做什么"
           description={workbench
             ? `${workbench.todayTodos.length} 项个人待办 · ${workbench.actionItems.length} 项业务提醒 · ${workbench.todayCalendar.length} 项今日日程`
-            : "正在读取 PostgreSQL 教师工作台"}
+            : "正在加载今天的工作安排"}
           className="today-focus-card"
           testId="today-work"
           action={<button type="button" className="text-action" onClick={() => props.navigate("/schedule")}>打开日程与待办</button>}
@@ -150,18 +151,18 @@ export function OverviewPage(props: {
                 <span className="work-kind">个人</span>
                 <div>
                   <strong>{todo.pinned ? "📌 " : ""}{todo.title}</strong>
-                  <small>{todo.description || "教师个人待办"} · v{todo.version}</small>
+                  <small>{todo.description || "教师个人待办"}</small>
                 </div>
-                <StatusPill tone={todo.priority === "high" ? "warning" : "neutral"}>{todo.priority}</StatusPill>
+                <StatusPill tone={todo.priority === "high" ? "warning" : "neutral"}>{priorityLabel(todo.priority)}</StatusPill>
                 <button type="button" onClick={() => props.navigate("/schedule")}>打开待办</button>
               </article>
             ))}
             {workbench?.actionItems.slice(0, 4).map((item) => (
               <article key={item.projectionRef}>
                 <time>{item.dueAt ? new Date(item.dueAt).toLocaleDateString("zh-CN") : "需处理"}</time>
-                <span className="work-kind">{item.sourceModule}</span>
-                <div><strong>{item.title}</strong><small>{item.summary}</small></div>
-                <StatusPill tone={item.priority === "high" ? "warning" : "neutral"}>{item.displayStatus}</StatusPill>
+                <span className="work-kind">{workSourceLabel(item.sourceModule)}</span>
+                <div><strong>{cleanDisplayText(item.title)}</strong><small>{cleanDisplayText(item.summary)}</small></div>
+                <StatusPill tone={item.priority === "high" ? "warning" : "neutral"}>{workProjectionStatusLabel(item.displayStatus)}</StatusPill>
                 <button type="button" onClick={() => openDeepLink(item.deepLink)}>{item.recommendedAction}</button>
               </article>
             ))}
@@ -185,10 +186,9 @@ export function OverviewPage(props: {
 
         <ModuleCard
           title="学生概况"
-          description="来自 Assignment、Submission、GradeDecision 和可重算 Evidence 读取模型"
+          description="汇总近期作业、提交与教师已确认的学习证据"
           action={(
             <span>
-              <StatusPill tone="success">真实数据</StatusPill>{" "}
               <button type="button" className="text-action" onClick={() => props.navigate("/students")}>进入学生页面</button>
             </span>
           )}
@@ -213,7 +213,7 @@ export function OverviewPage(props: {
 
       <ModuleCard
         title="今日课程"
-        description="来自正式数据源的课程、单元与课时"
+        description="查看近期课时与教学准备进度"
         action={<button type="button" className="text-action" onClick={() => props.navigate("/teaching")}>查看全部教学内容</button>}
         testId="today-courses"
       >
@@ -230,7 +230,7 @@ export function OverviewPage(props: {
               <div className="course-status-row">
                 <small>{lessonPreparationStatusLabel(lesson.preparationState)}</small>
                 <small>{lesson.learningObjectives.length} 个教学目标</small>
-                <small>{lesson.currentApprovedPlanRef ? "已有 approved 计划" : "暂无 approved 计划"}</small>
+                <small>{lesson.currentApprovedPlanRef ? "已有批准教案" : "尚无批准教案"}</small>
               </div>
               <footer>
                 <Button type={index === 0 ? "primary" : "default"} onClick={() => props.navigateLesson(lesson.lessonRef)}>打开课时</Button>
@@ -247,42 +247,9 @@ export function OverviewPage(props: {
 
       <section className="overview-quick-row" aria-label="快捷操作">
         <QuickAction icon="lesson" label="开始备课" description="从当前章节继续" onClick={() => props.navigate("/teaching")} />
-        <QuickAction icon="slides" label="制作课件" description="本阶段未实现 PPTX 生成" onClick={() => undefined} disabled disabledReason="当前只支持 approved TeachingPlan 导出 DOCX" />
         <QuickAction icon="assignment" label="查看作业" description={`${assignmentOverview?.notSubmittedCount ?? 0} 人次未交 · ${assignmentOverview?.pendingGradingCount ?? 0} 份待确认`} onClick={() => props.navigate("/assignments")} />
         <QuickAction icon="students" label="查看学生" description={`${assignmentOverview?.recentlyConfirmed.length ?? 0} 条近期确认批改`} onClick={() => props.navigate("/students")} />
       </section>
-
-      <div className="overview-grid overview-grid--middle">
-        <ModuleCard
-          title="备课组动态"
-          description="协作与待办尚未接入正式 API"
-          action={<StatusPill>演示数据</StatusPill>}
-        >
-          <div className="compact-activity-list">
-            {preparationGroupUpdates.map((item) => (
-              <article key={item.title}>
-                <span className="activity-icon"><WorkspaceIcon name="students" /></span>
-                <div><strong>{item.title}</strong><small>{item.time}</small></div>
-                <button type="button" disabled title="协作操作尚未实现">{item.action}</button>
-              </article>
-            ))}
-          </div>
-        </ModuleCard>
-        <ModuleCard
-          title="学校动态"
-          description="通知与日程尚未接入正式 API"
-          action={<StatusPill>只读演示</StatusPill>}
-        >
-          <div className="school-update-list">
-            {schoolUpdates.map((item, index) => (
-              <article key={item.title}>
-                <span>{index + 1}</span>
-                <div><strong>{item.title}</strong><small>{item.meta}</small></div>
-              </article>
-            ))}
-          </div>
-        </ModuleCard>
-      </div>
 
       <ModuleCard
         title="最近文件"
@@ -298,7 +265,7 @@ export function OverviewPage(props: {
             </button>
           ))}
           {fileError ? <p role="alert">最近文件加载失败：{fileError}</p> : null}
-          {!fileError && recentFiles.length === 0 ? <p>暂无真实教学文件。</p> : null}
+          {!fileError && recentFiles.length === 0 ? <p>暂无教学文件。</p> : null}
         </div>
       </ModuleCard>
       <Modal
@@ -349,4 +316,8 @@ export function OverviewPage(props: {
       </Modal>
     </div>
   );
+}
+
+function priorityLabel(priority: "high" | "normal" | "low"): string {
+  return { high: "重要", normal: "普通", low: "稍后" }[priority];
 }

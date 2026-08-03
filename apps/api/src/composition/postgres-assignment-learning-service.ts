@@ -34,7 +34,7 @@ import {
   type SubmissionSummary,
   type TeacherGradeDecisionView
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import { PostgresGate25EducationRepository } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";

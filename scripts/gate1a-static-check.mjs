@@ -207,8 +207,8 @@ for (const schema of [
 }
 
 for (const document of [
-  "教育智能体平台v0.3.2勘误与ADR包.md",
-  "教育智能体平台第一轮工程验证计划.md"
+  "docs/adr/教育智能体平台v0.3.2勘误与adr包.md",
+  "docs/history/research/教育智能体平台第一轮工程验证计划.md"
 ]) {
   const content = readFileSync(join(root, document), "utf8");
   assert(

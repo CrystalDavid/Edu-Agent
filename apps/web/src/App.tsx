@@ -27,8 +27,9 @@ import {
   loadAuthenticationSession,
   loadTeacherWorkbench,
   loadWorkspace,
-  loginWithLocalIdentity,
+  loginWithLocalCredentials,
   logoutAuthenticationSession,
+  requestLocalSmsCode,
   switchAuthenticationWorkspace
 } from "./api";
 import { TeacherSidebar } from "./components/portal/TeacherSidebar";
@@ -145,7 +146,7 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const initialRequest = useRef<Promise<void> | null>(null);
+  const [authReloadKey, setAuthReloadKey] = useState(0);
   const noticeTimer = useRef<number | null>(null);
 
   const refreshWorkspace = useCallback(async () => {
@@ -153,25 +154,24 @@ export function App() {
     setWorkspace(next);
   }, []);
 
-  const bootstrap = useCallback(() => {
+  useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
-    initialRequest.current ??= (async () => {
+    void (async () => {
       const [session, provider] = await Promise.all([
         loadAuthenticationSession(),
         loadAuthenticationProvider()
       ]);
+      const nextWorkspace =
+        session.authenticated && session.currentWorkspace
+          ? await loadTeacherWorkbench()
+          : null;
       if (!active) return;
       setAuthSession(session);
       setAuthProvider(provider);
-      if (session.authenticated && session.currentWorkspace) {
-        setWorkspace(await loadTeacherWorkbench());
-      } else {
-        setWorkspace(null);
-      }
-    })();
-    void initialRequest.current
+      setWorkspace(nextWorkspace);
+    })()
       .catch((caught: unknown) => {
         if (active) {
           setError(caught instanceof Error ? caught : new Error("无法加载教师工作空间"));
@@ -183,19 +183,17 @@ export function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authReloadKey]);
 
-  useEffect(() => bootstrap(), [bootstrap]);
   useEffect(() => {
     const expire = () => {
-      initialRequest.current = null;
       setWorkspace(null);
       setAuthSession(null);
-      bootstrap();
+      setAuthReloadKey((current) => current + 1);
     };
     window.addEventListener("edu-agent:session-expired", expire);
     return () => window.removeEventListener("edu-agent:session-expired", expire);
-  }, [bootstrap]);
+  }, []);
   useEffect(() => () => {
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
   }, []);
@@ -207,9 +205,8 @@ export function App() {
   };
 
   const retryBootstrap = () => {
-    initialRequest.current = null;
     setWorkspace(null);
-    bootstrap();
+    setAuthReloadKey((current) => current + 1);
   };
 
   if (loading) {
@@ -231,7 +228,7 @@ export function App() {
           title={<Typography.Title level={2}>教师工作空间未能启动</Typography.Title>}
           subTitle={
             <div className="startup-diagnostic">
-              <p>{error?.message ?? "请确认本地演示服务已经启动。"}</p>
+              <p>{error?.message ?? "请确认应用服务已经启动。"}</p>
               {error instanceof ApiError ? (
                 <dl>
                   <div><dt>请求服务</dt><dd>{error.service}</dd></div>
@@ -239,9 +236,9 @@ export function App() {
                 </dl>
               ) : null}
               <details>
-                <summary>查看本地启动指南</summary>
-                <p>运行 <code>corepack pnpm demo:doctor</code>，再运行 <code>corepack pnpm demo:dev</code>。</p>
-                <p>完整说明：<code>docs/demo/LOCAL_DEMO.md</code></p>
+                <summary>查看启动指南</summary>
+                <p>运行 <code>corepack pnpm app:doctor</code>，再运行 <code>corepack pnpm app:dev</code>。</p>
+                <p>完整说明：<code>docs/development.md</code></p>
               </details>
             </div>
           }
@@ -260,23 +257,17 @@ export function App() {
     return (
       <LoginPage
         provider={authProvider}
-        session={authSession}
-        onLogin={async (profile) => {
-          setLoading(true);
-          setError(null);
-          try {
-            const session = await loginWithLocalIdentity({
-              profile,
-              returnTo: "/overview"
-            });
-            setAuthSession(session);
-            if (session.authenticated && session.currentWorkspace) {
-              setWorkspace(await loadTeacherWorkbench());
-            }
-          } catch (caught) {
-            setError(caught instanceof Error ? caught : new Error("登录失败。"));
-          } finally {
-            setLoading(false);
+        onRequestSmsCode={requestLocalSmsCode}
+        onLogin={async (input) => {
+          const session = await loginWithLocalCredentials(input);
+          const nextWorkspace =
+            session.authenticated && session.currentWorkspace
+              ? await loadTeacherWorkbench()
+              : null;
+          setAuthSession(session);
+          setWorkspace(nextWorkspace);
+          if (!session.authenticated) {
+            throw new Error("登录会话未能建立。");
           }
         }}
       />
@@ -306,10 +297,9 @@ export function App() {
         }}
         onLogout={async () => {
           await logoutAuthenticationSession();
-          initialRequest.current = null;
           setWorkspace(null);
           setAuthSession(null);
-          bootstrap();
+          setAuthReloadKey((current) => current + 1);
         }}
       />
     );
@@ -329,12 +319,16 @@ export function App() {
   }
 
   const teacherName = cleanDisplayText(workspace.identity.teacherName);
+  const sessionTeacherName = cleanDisplayText(authSession.user.displayName);
+  const schoolName = cleanDisplayText(
+    authSession.currentWorkspace.organizationName
+  );
   return (
     <div className="teacher-portal-shell">
       <TeacherSidebar
         route={route}
-        teacherName={authSession.user.displayName || teacherName}
-        schoolName={authSession.currentWorkspace.organizationName}
+        teacherName={sessionTeacherName || teacherName}
+        schoolName={schoolName}
         roles={authSession.currentWorkspace.roles}
         memberships={authSession.memberships}
         currentMembershipRef={authSession.currentWorkspace.membershipRef}
@@ -351,10 +345,9 @@ export function App() {
         }}
         onLogout={async () => {
           await logoutAuthenticationSession();
-          initialRequest.current = null;
           setWorkspace(null);
           setAuthSession(null);
-          bootstrap();
+          setAuthReloadKey((current) => current + 1);
         }}
         onNavigate={navigate}
       />
@@ -403,7 +396,10 @@ export function App() {
                 initialPrompt=""
               />
             ) : (
-              <AgentWorkspacePage navigate={navigate} onAction={showNotice} />
+              <AgentWorkspacePage
+                navigate={navigate}
+                navigatePreparation={navigatePreparation}
+              />
             )
           ) : null}
           {route === "/settings" ? (
@@ -421,7 +417,7 @@ export function App() {
             <div className="legacy-detail-shell">
               <header>
                 <button type="button" onClick={() => navigate("/agent")}><WorkspaceIcon name="arrowLeft" />返回 Agent</button>
-                <span>结构化教学建议详情 · 保留 Gate 2 语义</span>
+                <span>教学建议详情</span>
               </header>
               <CopilotPage
                 workspace={workspace}

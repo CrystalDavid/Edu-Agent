@@ -14,13 +14,13 @@ export const developmentComposeProject = "edu-agent-dev";
 export const developmentVolumeName =
   "edu-agent-dev-postgres-data";
 export const composeFile = resolve(
-  "infra/docker/compose.postgres.yml"
+  "environments/local/postgres/compose.postgres.yml"
 );
 export const localEnvironmentFile = resolve(
-  "infra/docker/.env.local"
+  "environments/local/postgres/.env.local"
 );
 export const localUploadDirectory = resolve(
-  process.env.LOCAL_UPLOAD_DIRECTORY ?? ".demo/uploads"
+  process.env.LOCAL_UPLOAD_DIRECTORY ?? ".local-data/object-store"
 );
 
 const allowedRunId = /^[a-z0-9][a-z0-9-]{0,47}$/;

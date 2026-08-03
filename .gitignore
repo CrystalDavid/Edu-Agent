@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 .vite/
+# Legacy root-output guards. Current Playwright config writes outside the repo.
 playwright-report/
 playwright-report-ark/
 test-results/
@@ -10,6 +11,7 @@ output/playwright/
 .playwright-cli/
 .pglite/
 .gate1a-data/
+.local-data/
 .demo/
 
 # Local environment and credentials

@@ -217,7 +217,7 @@ export function readModelProviderSettings(
       : "Deterministic MockModelProvider";
   const safeReason =
     raw.MODEL_PROVIDER_MODE === "ark" && !arkConfigured
-      ? `火山方舟配置不完整，已使用本地演示助手：${missing.join("、")}。`
+      ? "在线生成服务暂不可用，当前使用内置教学助手。"
       : null;
   const availability = ProviderAvailabilitySchema.parse({
     requestedMode: raw.MODEL_PROVIDER_MODE,

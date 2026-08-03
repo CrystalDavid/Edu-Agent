@@ -54,7 +54,10 @@ import {
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
   GenerateReflectionRequestSchema,
+  LocalCredentialLoginRequestSchema,
   LocalLoginRequestSchema,
+  LocalSmsChallengeSchema,
+  RequestLocalSmsCodeSchema,
   RefreshSessionRequestSchema,
   SwitchWorkspaceRequestSchema,
   RevokeSessionRequestSchema,
@@ -560,6 +563,42 @@ export function createApp(
             profile: parsed.profile,
             clientLabel: clientLabel(request),
             clientFingerprint: clientFingerprint(request)
+          });
+          setSessionCookies(response, result.sessionToken, result.csrfToken);
+          response.status(201).json(result.status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.localSmsCode,
+      markRoute("authentication.local.sms-code"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const parsed = RequestLocalSmsCodeSchema.parse(request.body);
+          const result = await identity.requestLocalSmsCode(parsed.phone);
+          response.status(201).json(LocalSmsChallengeSchema.parse(result));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.localCredentialLogin,
+      markRoute("authentication.local.credential-login"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const parsed = LocalCredentialLoginRequestSchema.parse(request.body);
+          const fingerprint = clientFingerprint(request);
+          const result = await identity.localCredentialLogin({
+            request: parsed,
+            clientLabel: clientLabel(request),
+            ...(fingerprint ? { clientFingerprint: fingerprint } : {})
           });
           setSessionCookies(response, result.sessionToken, result.csrfToken);
           response.status(201).json(result.status);

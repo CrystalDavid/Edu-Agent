@@ -7,7 +7,10 @@ import {
   CreateDataGovernanceRequestSchema,
   CreateMemberRequestSchema,
   DataGovernanceRequestListSchema,
+  LocalCredentialLoginRequestSchema,
   LocalLoginRequestSchema,
+  LocalSmsChallengeSchema,
+  RequestLocalSmsCodeSchema,
   RefreshSessionRequestSchema,
   RevokeSessionRequestSchema,
   SchoolDetailSchema,
@@ -134,7 +137,9 @@ import {
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
   type CreateMemberRequest,
+  type LocalCredentialLoginRequest,
   type LocalLoginRequest,
+  type LocalSmsChallenge,
   type SwitchWorkspaceRequest,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
@@ -299,7 +304,7 @@ async function request<T>(
     throw new ApiError(
       0,
       "API_UNREACHABLE",
-      "无法连接本地 API；请确认演示服务已启动。",
+      "暂时无法连接应用服务，请确认服务已启动后重试。",
       service,
       requestUrl
     );
@@ -312,7 +317,11 @@ async function request<T>(
       message?: string;
       details?: Record<string, unknown>;
     };
-    if (response.status === 401) {
+    const authenticationAttempt =
+      path === apiRoutes.authentication.localLogin ||
+      path === apiRoutes.authentication.localCredentialLogin ||
+      path === apiRoutes.authentication.localSmsCode;
+    if (response.status === 401 && !authenticationAttempt) {
       activeCsrfToken = null;
       window.dispatchEvent(new CustomEvent("edu-agent:session-expired"));
     }
@@ -400,8 +409,34 @@ export async function loadAuthenticationSession() {
 export async function loginWithLocalIdentity(input: LocalLoginRequest) {
   LocalLoginRequestSchema.parse(input);
   const status = await request(
-    "本地身份登录",
+    "账号登录",
     apiRoutes.authentication.localLogin,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function requestLocalSmsCode(
+  phone: string
+): Promise<LocalSmsChallenge> {
+  const input = RequestLocalSmsCodeSchema.parse({ phone });
+  return request(
+    "获取登录验证码",
+    apiRoutes.authentication.localSmsCode,
+    LocalSmsChallengeSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export async function loginWithLocalCredentials(
+  input: LocalCredentialLoginRequest
+) {
+  LocalCredentialLoginRequestSchema.parse(input);
+  const status = await request(
+    "手机号登录",
+    apiRoutes.authentication.localCredentialLogin,
     AuthenticationSessionStatusSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
@@ -1139,7 +1174,7 @@ export function importSyntheticSubmissions(
 ) {
   SyntheticSubmissionImportRequestSchema.parse(input);
   return request(
-    "载入合成提交",
+    "载入匿名提交",
     apiRoutes.teacher.assignmentSyntheticSubmissions(assignmentRef),
     SyntheticSubmissionImportResultSchema,
     { method: "POST", body: JSON.stringify(input) }

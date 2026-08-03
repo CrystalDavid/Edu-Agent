@@ -153,7 +153,7 @@ export function dockerCompose(
       "--project-name",
       projectName,
       "-f",
-      "infra/docker/compose.postgres.yml",
+      "environments/local/postgres/compose.postgres.yml",
       action,
       service
     ],

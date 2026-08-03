@@ -8,6 +8,12 @@ import type {
 } from "@edu-agent/contracts";
 import { Button, Checkbox, Modal, Select } from "antd";
 
+import {
+  calendarEventTypeLabel,
+  cleanDisplayText,
+  workProjectionStatusLabel,
+  workSourceLabel
+} from "../../presentation";
 import { WorkspaceIcon } from "../WorkspaceIcon";
 import { ModuleCard, StatusPill } from "./PortalPrimitives";
 
@@ -372,8 +378,8 @@ function CalendarEntry(props: {
   const manual = props.item.sourceKind === "manual";
   const title = eventTitle(props.item);
   const status = props.item.sourceKind === "manual"
-    ? props.item.event.eventType
-    : props.item.projection.displayStatus;
+    ? calendarEventTypeLabel(props.item.event.eventType)
+    : workProjectionStatusLabel(props.item.projection.displayStatus);
   const activate = () => {
     if (props.item.sourceKind === "manual") props.onEdit(props.item.event);
     else props.onOpenSource(props.item.deepLink);
@@ -386,7 +392,7 @@ function CalendarEntry(props: {
       title={manual ? "编辑手工日程" : "来源业务日程只读，点击进入源页面"}
     >
       {!props.compact ? <StatusPill tone={manual ? "blue" : "warning"}>{manual ? "手工" : "来源"}</StatusPill> : null}
-      <strong>{title}</strong>
+      <strong>{cleanDisplayText(title)}</strong>
       <span>{formatTime(eventStart(props.item))}–{formatTime(eventEnd(props.item))} · {status}</span>
     </button>
   );
@@ -560,9 +566,9 @@ export function TodoPanel(props: {
           <article key={projection.projectionRef} className="source-work-item">
             <span className="source-work-item__marker"><WorkspaceIcon name="attachment" /></span>
             <div>
-              <strong>{projection.pinned ? "📌 " : ""}{projection.title}</strong>
-              <span>{projection.summary}</span>
-              <small>{projection.sourceModule} · {projection.displayStatus}{projection.dueAt ? ` · ${formatDateTime(projection.dueAt)}` : ""}</small>
+              <strong>{projection.pinned ? "📌 " : ""}{cleanDisplayText(projection.title)}</strong>
+              <span>{cleanDisplayText(projection.summary)}</span>
+              <small>{workSourceLabel(projection.sourceModule)} · {workProjectionStatusLabel(projection.displayStatus)}{projection.dueAt ? ` · ${formatDateTime(projection.dueAt)}` : ""}</small>
             </div>
             <div className="source-work-item__actions">
               <Button size="small" onClick={() => void run(projection.projectionRef, () => props.onPinSource(projection))}>
@@ -800,7 +806,9 @@ function isFuture(value: string | null): boolean {
 }
 
 function eventTitle(item: TeacherCalendarItem): string {
-  return item.sourceKind === "manual" ? item.event.title : item.projection.title;
+  return cleanDisplayText(
+    item.sourceKind === "manual" ? item.event.title : item.projection.title
+  );
 }
 
 function eventStart(item: TeacherCalendarItem): string {

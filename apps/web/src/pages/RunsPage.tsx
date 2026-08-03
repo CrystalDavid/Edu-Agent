@@ -173,7 +173,7 @@ export function RunsPage(props: {
                     {explanation.modelExecution.provider ===
                     "volcengine-ark"
                       ? `Volcengine Ark · ${explanation.modelExecution.modelDisplayName}`
-                      : "本地演示助手"}
+                      : "离线教学助手"}
                   </dd>
                 </div>
                 <div>
@@ -240,7 +240,7 @@ function TechnicalDetails({
         items={[
           {
             key: "lesson-preparation",
-            label: "备课 Task 与封存上下文",
+            label: "备课任务与封存上下文",
             children: explanation.lessonPreparation ? (
               <Descriptions
                 column={1}
@@ -248,22 +248,22 @@ function TechnicalDetails({
                 items={[
                   {
                     key: "lesson",
-                    label: "Lesson",
+                    label: "课时",
                     children: `${explanation.lessonPreparation.lessonTitle} · ${explanation.lessonPreparation.lessonRef}`
                   },
                   {
                     key: "work-status",
-                    label: "Work status",
-                    children: `${lessonPreparationStatusLabel(explanation.lessonPreparation.workStatus)}（${explanation.lessonPreparation.workStatus}） · v${explanation.lessonPreparation.workVersion}`
+                    label: "备课状态",
+                    children: `${lessonPreparationStatusLabel(explanation.lessonPreparation.workStatus)} · 第 ${explanation.lessonPreparation.workVersion} 版`
                   },
                   {
                     key: "working-set",
-                    label: "TaskWorkingSet",
-                    children: `v${explanation.lessonPreparation.workingSet.version} · ${explanation.lessonPreparation.workingSet.evidenceRefs.length} Evidence${explanation.lessonPreparation.workingSet.sourceTodoRef ? ` · Todo ${explanation.lessonPreparation.workingSet.sourceTodoRef}` : ""}${explanation.lessonPreparation.workingSet.sourceResourceRefs?.length ? ` · ${explanation.lessonPreparation.workingSet.sourceResourceRefs.length} 个显式关联资源` : ""}`
+                    label: "本次工作集",
+                    children: `第 ${explanation.lessonPreparation.workingSet.version} 版 · ${explanation.lessonPreparation.workingSet.evidenceRefs.length} 条证据${explanation.lessonPreparation.workingSet.sourceTodoRef ? " · 已关联个人待办" : ""}${explanation.lessonPreparation.workingSet.sourceResourceRefs?.length ? ` · ${explanation.lessonPreparation.workingSet.sourceResourceRefs.length} 个明确关联资源` : ""}`
                   },
                   {
                     key: "authorized-plan",
-                    label: "AuthorizedContextPlan",
+                    label: "授权上下文方案",
                     children:
                       explanation.lessonPreparation
                         .authorizedContextPlan
@@ -271,7 +271,7 @@ function TechnicalDetails({
                   },
                   {
                     key: "plan-status",
-                    label: "Plan status",
+                    label: "教案状态",
                     children:
                       explanation.lessonPreparation.planStatus
                         ? lessonPlanProjectionStatusLabel(
@@ -283,7 +283,7 @@ function TechnicalDetails({
               />
             ) : (
               <Text type="secondary">
-                这是 Gate 2.4 兼容 Run，未绑定 Lesson Preparation Task。
+                这是早期运行记录，尚未绑定课时备课任务。
               </Text>
             )
           },
@@ -297,34 +297,34 @@ function TechnicalDetails({
                 items={[
                   {
                     key: "task",
-                    label: "Task",
+                    label: "业务任务",
                     children: explanation.task.taskRef
                   },
                   {
                     key: "request",
-                    label: "Request text",
+                    label: "教师要求",
                     children:
                       explanation.task.request.requestText
                   },
                   {
                     key: "request-version",
-                    label: "Request version",
+                    label: "要求版本",
                     children:
                       explanation.task.request.requestVersion
                   },
                   {
                     key: "task-run",
-                    label: "TaskRun",
+                    label: "任务执行",
                     children: explanation.taskRun.taskRunRef
                   },
                   {
                     key: "agent-run",
-                    label: "AgentRun",
+                    label: "助手执行",
                     children: explanation.agentRun.agentRunRef
                   },
                   {
                     key: "provider",
-                    label: "Provider",
+                    label: "生成服务",
                     children: explanation.agentRun.modelProfile
                   }
                 ]}
@@ -341,39 +341,39 @@ function TechnicalDetails({
                 items={[
                   {
                     key: "execution",
-                    label: "ModelExecution",
+                    label: "模型执行",
                     children: explanation.modelExecution.executionRef
                   },
                   {
                     key: "provider",
-                    label: "Provider / model",
+                    label: "生成服务 / 模型",
                     children: `${
                       explanation.modelExecution.provider ===
                       "volcengine-ark"
-                        ? "Volcengine Ark"
-                        : "Mock"
+                        ? "火山方舟"
+                        : "内置教学助手"
                     } · ${explanation.modelExecution.modelDisplayName}`
                   },
                   {
                     key: "status",
                     label: "状态",
-                    children: `${modelExecutionStatusLabel(explanation.modelExecution.status)}（${explanation.modelExecution.status}）`
+                    children: modelExecutionStatusLabel(explanation.modelExecution.status)
                   },
                   {
                     key: "prompt-bundle",
-                    label: "PromptBundle",
+                    label: "提示词配置",
                     children: `${explanation.modelExecution.promptBundleRef}@${explanation.modelExecution.promptBundleVersion}`
                   },
                   {
                     key: "sealed-context",
-                    label: "ContextManifest",
+                    label: "封存上下文",
                     children:
                       explanation.modelExecution.contextManifestRef ??
                       "未记录"
                   },
                   {
                     key: "usage",
-                    label: "Token usage",
+                    label: "模型用量",
                     children: explanation.modelExecution.usageLabel
                   },
                   {
@@ -391,25 +391,25 @@ function TechnicalDetails({
                   },
                   {
                     key: "attempt",
-                    label: "Attempt",
+                    label: "尝试次数",
                     children: `${explanation.modelExecution.attemptCount}/${explanation.modelExecution.maxAttempts}`
                   },
                   {
                     key: "finish",
-                    label: "Finish reason",
+                    label: "完成原因",
                     children:
                       explanation.modelExecution.finishReason ?? "未记录"
                   },
                   {
                     key: "safe-error",
-                    label: "Safe error category",
+                    label: "安全错误分类",
                     children:
                       explanation.modelExecution.safeErrorCategory ??
                       "无"
                   },
                   {
                     key: "provider-request",
-                    label: "Provider request ID",
+                    label: "服务请求标识",
                     children:
                       explanation.modelExecution
                         .providerRequestIdMasked ?? "未提供"
@@ -428,42 +428,42 @@ function TechnicalDetails({
                 items={[
                   {
                     key: "contract",
-                    label: "Contract",
+                    label: "输出契约",
                     children: explanation.contract.contractRef
                   },
                   {
                     key: "profile",
-                    label: "Profile version",
+                    label: "助手配置版本",
                     children: `${explanation.contract.profileRef}@${explanation.contract.profileVersion}`
                   },
                   {
                     key: "prompt",
-                    label: "PromptBundle",
+                    label: "提示词配置",
                     children: explanation.contract.promptVersionRef
                   },
                   {
                     key: "context",
-                    label: "ContextManifest",
+                    label: "封存上下文",
                     children:
                       explanation.contextManifest.contextManifestRef
                   },
                   {
                     key: "authorized-context",
-                    label: "AuthorizedContextPlan",
+                    label: "授权上下文方案",
                     children:
                       explanation.contextManifest
-                        .authorizedContextPlanRef ?? "Gate 2.4 兼容 Run"
+                        .authorizedContextPlanRef ?? "早期运行记录"
                   },
                   {
                     key: "request-summary",
-                    label: "Request summary",
+                    label: "教师要求摘要",
                     children:
                       explanation.contextManifest.requestSummary
                         .requestText
                   },
                   {
                     key: "evidence",
-                    label: "Evidence refs",
+                    label: "证据引用",
                     children:
                       explanation.contextManifest.evidenceRefs.join(
                         "；"
@@ -563,8 +563,8 @@ function teacherTimeline(explanation: RunExplanation) {
       title: "生成建议草稿",
       description:
         explanation.modelExecution.provider === "volcengine-ark"
-          ? `Volcengine Ark 在数据库事务外生成建议，经结构、Evidence 与权限校验后才保存。`
-          : "本地演示助手生成确定性建议，没有发起外部模型请求。",
+          ? "豆包教学助手在业务事务外生成建议，经结构、证据与权限校验后才保存。"
+          : "内置教学助手生成建议，没有发起外部模型请求。",
       color: "blue"
     },
     {

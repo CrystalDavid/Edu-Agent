@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-const screenshotRoot = "output/playwright/gate-2-9";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-9");
 const lessonRef = "lesson:slope-and-graph-change";
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
@@ -33,7 +35,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.goto(`/teaching/lessons/${encodeURIComponent(lessonRef)}`);
   await expect(page.getByTestId("lesson-detail")).toContainText("斜率与图像变化");
   const classroom = page.getByTestId("classroom-reflection-panel");
-  await expect(classroom).toContainText("approved TeachingPlan 只是计划");
+  await expect(classroom).toContainText("已批准教学计划仍然只是计划");
 
   await page.getByTestId("create-lesson-delivery").click();
   const deliveryDialog = page.getByRole("dialog").filter({ hasText: "课堂实施草稿" });
@@ -103,7 +105,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
     animations: "disabled"
   });
 
-  await page.getByLabel("本次给 Agent 的补充说明").fill(
+  await page.getByLabel("给教学助手的补充说明").fill(
     "只整理教师确认的课堂事实，并保留证据缺口。"
   );
   const generationCreated = page.waitForResponse(
@@ -123,7 +125,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`/agent/reflections/${encodeURIComponent(reflectionRef)}`));
   await expect(page.getByTestId("reflection-context")).toContainText("已完成", { timeout: 20_000 });
-  await expect(page.getByTestId("reflection-draft-editor")).toContainText("Agent 辅助草稿");
+  await expect(page.getByTestId("reflection-draft-editor")).toContainText("教学助手整理");
   await page.getByLabel("目标达成情况").fill(
     "教师确认：多数学生能解释斜率正负与图像方向，仍需区分截距。"
   );
@@ -139,7 +141,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.getByTestId("confirm-reflection").click();
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await reflectionConfirmed).status()).toBe(200);
-  await expect(page.getByTestId("reflection-draft-editor")).toContainText("教师已确认正式 Reflection");
+  await expect(page.getByTestId("reflection-draft-editor")).toContainText("教师已确认课后反思");
 
   const followUpCreated = page.waitForResponse(
     (response) => response.url().endsWith("/follow-ups") && response.request().method() === "POST"
@@ -149,8 +151,16 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   expect(followUpResponse.status()).toBe(201);
   const followUp = await followUpResponse.json();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
-  await expect(page.getByTestId("task-working-set")).toContainText(reflectionRef);
-  await expect(page.getByTestId("task-working-set")).toContainText(observationRevisionRef);
+  await expect(page.getByTestId("task-working-set")).toContainText("课后反思来源");
+  await expect(page.getByTestId("task-working-set")).toContainText("1 条教师确认观察");
+  const followUpTaskResponse = await request.get(
+    apiRoutes.teacher.preparationTask(followUp.targetRef),
+    { headers }
+  );
+  expect(followUpTaskResponse.status()).toBe(200);
+  const followUpTaskDetail = await followUpTaskResponse.json();
+  expect(followUpTaskDetail.workingSet.sourceReflectionRef).toBe(reflectionRef);
+  expect(followUpTaskDetail.workingSet.sourceObservationRevisionRefs).toContain(observationRevisionRef);
 
   const planAfterResponse = await request.get(
     apiRoutes.teacher.lessonTeachingPlans(lessonRef),
@@ -162,7 +172,22 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   expect(planAfter.currentApproved.content).toEqual(planBefore.currentApproved.content);
 
   await page.goto("/overview");
-  await expect(page.getByTestId("today-work")).toContainText("待定系数法", { timeout: 20_000 });
+  await expect(page.getByTestId("today-work")).toBeVisible();
+  const workbenchResponse = await request.get(apiRoutes.teacher.workbenchOverview, {
+    headers
+  });
+  expect(workbenchResponse.status()).toBe(200);
+  const workbench = await workbenchResponse.json();
+  expect(
+    workbench.actionItems.some(
+      (item: { sourceRef: string }) => item.sourceRef === followUp.targetRef
+    )
+  ).toBe(true);
+  await page.goto("/schedule");
+  await page.getByRole("button", { name: /业务提醒/ }).click();
+  await expect(page.getByTestId("todo-panel")).toContainText("待定系数法", {
+    timeout: 20_000
+  });
   await page.screenshot({
     path: `${screenshotRoot}/02-reflection-follow-up-workbench.png`,
     fullPage: true,

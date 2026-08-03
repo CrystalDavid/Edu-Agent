@@ -662,7 +662,7 @@ export function CopilotPage(props: {
         } catch {
           // Preserve the original structured conflict below.
         }
-        setError(`${errorMessage(caught)}；页面已重新读取 TaskWorkingSet。`);
+        setError(`${errorMessage(caught)}；页面已重新读取本次备课范围。`);
       } else {
         setError(errorMessage(caught));
       }
@@ -708,13 +708,6 @@ export function CopilotPage(props: {
         title="以下内容为教学建议草稿，需由教师判断和修改。"
         description="接受建议只会形成待审核的教学计划版本，不表示课堂已经实施，也不会自动发布。"
       />
-      <Alert
-        type="warning"
-        showIcon
-        title="当前使用本地演示教师身份"
-        description="前端显式发送合成教师身份；这不是正式登录或 SSO。服务端默认不会在缺失身份时自动放行。"
-      />
-
       {error ? (
         <Alert
           type="error"
@@ -734,53 +727,46 @@ export function CopilotPage(props: {
         >
           <div className="section-heading">
             <div>
-              <Text className="section-kicker">
-                TaskWorkingSet · v
-                {preparationTask.workingSet.version}
-              </Text>
+              <Text className="section-kicker">本次备课范围 · 第 {preparationTask.workingSet.version} 版</Text>
               <Title level={3}>{preparationTask.title}</Title>
             </div>
             <Tag color="processing">
               {lessonPreparationStatusLabel(preparationTask.status)}
-              <Text type="secondary">（{preparationTask.status}）</Text>
             </Tag>
           </div>
           <dl className="detail-list">
             <div>
-              <dt>CourseRun</dt>
-              <dd>{preparationTask.courseRunRef}</dd>
+              <dt>课程</dt>
+              <dd>当前课程（已固定）</dd>
             </div>
             <div>
               <dt>单元</dt>
-              <dd>{preparationTask.curriculumUnitRef}</dd>
+              <dd>当前单元（已固定）</dd>
             </div>
             <div>
               <dt>课时</dt>
               <dd>
-                {preparationTask.lessonTitle} ·{" "}
-                {preparationTask.lessonRef}
+                {preparationTask.lessonTitle}
               </dd>
             </div>
             <div>
               <dt>教学目标</dt>
               <dd>
-                {preparationTask.workingSet.learningObjectiveRefs.join(
-                  "，"
-                )}
+                已选择 {preparationTask.workingSet.learningObjectiveRefs.length} 项
               </dd>
             </div>
             <div>
-              <dt>baseline approved plan</dt>
+              <dt>当前已批准教学计划</dt>
               <dd>
                 {preparationTask.workingSet
-                  .baselineTeachingPlanRef ?? "无"}
+                  .baselineTeachingPlanRef ? "已纳入本次范围" : "暂无"}
               </dd>
             </div>
             {preparationTask.workingSet.sourceAssignmentRef ? (
               <div>
-                <dt>作业 Evidence 来源</dt>
+                <dt>作业学习证据</dt>
                 <dd>
-                  {preparationTask.workingSet.sourceAssignmentRef} · 来源课时 {preparationTask.workingSet.sourceLessonRef} · 题目 {preparationTask.workingSet.sourceAssignmentItemRefs?.join("，") || "无"}
+                  来自教师选择的作业，共 {preparationTask.workingSet.sourceAssignmentItemRefs?.length ?? 0} 道题
                 </dd>
               </div>
             ) : null}
@@ -789,9 +775,9 @@ export function CopilotPage(props: {
                 <dt>教师待办上下文</dt>
                 <dd>
                   {sourceTodo?.title ?? preparationTask.workingSet.sourceTodoRef}
-                  {sourceTodo ? ` · ${sourceTodo.status} · ${sourceTodo.description || "无说明"}` : ""}
+                  {sourceTodo ? ` · ${sourceTodo.description || "无补充说明"}` : ""}
                   {preparationTask.workingSet.sourceResourceRefs?.length
-                    ? ` · 明确关联资源 ${preparationTask.workingSet.sourceResourceRefs.join("，")}`
+                    ? ` · ${preparationTask.workingSet.sourceResourceRefs.length} 项关联内容`
                     : " · 无额外关联资源"}
                 </dd>
               </div>
@@ -800,21 +786,19 @@ export function CopilotPage(props: {
               <div>
                 <dt>课后反思来源</dt>
                 <dd>
-                  {preparationTask.workingSet.sourceReflectionRef}
-                  {preparationTask.workingSet.sourceDeliveryRevisionRef
-                    ? ` · 实施 ${preparationTask.workingSet.sourceDeliveryRevisionRef}`
-                    : ""}
+                  已选择一份教师确认的课后反思
+                  {preparationTask.workingSet.sourceDeliveryRevisionRef ? " · 已关联课堂实施记录" : ""}
                   {preparationTask.workingSet.sourceObservationRevisionRefs?.length
-                    ? ` · 教师确认观察 ${preparationTask.workingSet.sourceObservationRevisionRefs.join("，")}`
+                    ? ` · ${preparationTask.workingSet.sourceObservationRevisionRefs.length} 条教师确认观察`
                     : " · 未选择课堂观察"}
                   {preparationTask.workingSet.evidenceRefs.length
-                    ? ` · Assignment Evidence ${preparationTask.workingSet.evidenceRefs.join("，")}`
-                    : " · 未选择 Assignment Evidence"}
+                    ? ` · ${preparationTask.workingSet.evidenceRefs.length} 条作业证据`
+                    : " · 未选择作业证据"}
                 </dd>
               </div>
             ) : null}
           </dl>
-          <Text strong>本次允许使用的 Evidence</Text>
+          <Text strong>本次允许使用的学习证据</Text>
           <Space wrap>
             {preparationTask.workingSet.evidenceRefs.map(
               (reference) => (
@@ -829,7 +813,7 @@ export function CopilotPage(props: {
                     void removeEvidence(reference);
                   }}
                 >
-                  {reference}
+                  {shortEvidenceLabel(reference)}
                 </Tag>
               )
             )}
@@ -837,16 +821,16 @@ export function CopilotPage(props: {
           <Alert
             type="info"
             showIcon
-            title="核心课时与 Purpose 已锁定"
-            description="可以删除可选 Evidence；CourseRun、单元、课时、教学目标、Purpose 和字段掩码不能在此被静默替换。每次 Run 都会重新授权并封存新的 ContextManifest。"
+            title="核心课时与任务用途已锁定"
+            description="可以移除可选的学习依据；课程、单元、课时、教学目标、任务用途和使用字段不会被静默替换。每次生成都会重新确认权限并封存本次上下文。"
           />
         </Card>
       ) : (
         <Alert
           type="warning"
           showIcon
-          title="当前是 Gate 2.4 兼容入口"
-          description="要进入可恢复备课闭环，请先从教学页面选择课时并创建备课 Task。"
+          title="尚未关联备课课时"
+          description="请先从教学页面选择课时并创建备课任务。"
         />
       )}
 
@@ -905,11 +889,11 @@ export function CopilotPage(props: {
             providerAvailability.activeProvider ===
             "volcengine-ark"
               ? `当前生成服务：${providerAvailability.modelDisplayName}`
-              : "当前生成服务：本地演示助手"
+              : "当前生成服务：内置教学助手"
           }
           description={
             providerAvailability.safeReason ??
-            "模型配置只存在于服务端；普通教师页面不会显示密钥、Base URL 或模型选择器。"
+            "教学建议由服务端生成，仍需教师审阅和确认。"
           }
           data-testid="model-provider-availability"
         />
@@ -1034,7 +1018,7 @@ export function CopilotPage(props: {
       {recovering ? (
         <Card className="workspace-card loading-card" variant="borderless">
           <Spin />
-          <Text>正在从 PostgreSQL 恢复建议、请求与证据…</Text>
+          <Text>正在恢复建议、教师请求与学习依据…</Text>
         </Card>
       ) : null}
 
@@ -1395,14 +1379,14 @@ function EvidenceContext({
       <Title level={3}>目标与证据</Title>
       <section>
         <Text type="secondary">当前教学目标</Text>
-        <p>{workspace.goal.title}</p>
+        <p>{cleanDisplayText(workspace.goal.title)}</p>
       </section>
       <section>
         <Text type="secondary">直接观察</Text>
         {evidence.observations.map((observation) => (
           <article key={observation.observationRef}>
             <strong>{cleanDisplayText(observation.learnerLabel)}</strong>
-            <p>{observation.summary}</p>
+            <p>{cleanDisplayText(observation.summary)}</p>
             <small>
               {new Date(observation.observedAt).toLocaleString(
                 "zh-CN"
@@ -1421,15 +1405,16 @@ function EvidenceContext({
               )
             )
           ).map((unknown) => (
-            <li key={unknown}>{unknown}</li>
+            <li key={unknown}>{cleanDisplayText(unknown)}</li>
           ))}
         </ul>
       </section>
       <section>
         <Text type="secondary">辅助情况</Text>
         <p>
-          {evidence.observations[0]?.assistance
-            .description ?? "未记录"}
+          {cleanDisplayText(
+            evidence.observations[0]?.assistance.description ?? "未记录"
+          )}
         </p>
       </section>
       <section>
@@ -1553,18 +1538,18 @@ function CopilotContextPanel(props: {
       <Title level={3}>建议依据与控制边界</Title>
       <dl>
         <div>
-          <dt>备课 Task / Lesson</dt>
+          <dt>备课任务与课时</dt>
           <dd>
             {props.preparationTask
-              ? `${props.preparationTask.taskRef} / ${props.preparationTask.lessonTitle}`
+              ? props.preparationTask.lessonTitle
               : "未绑定"}
           </dd>
         </div>
         <div>
-          <dt>TaskWorkingSet</dt>
+          <dt>本次备课范围</dt>
           <dd>
             {props.preparationTask
-              ? `v${props.preparationTask.workingSet.version} · ${props.preparationTask.workingSet.evidenceRefs.length} 条 Evidence`
+              ? `第 ${props.preparationTask.workingSet.version} 版 · ${props.preparationTask.workingSet.evidenceRefs.length} 条学习证据`
               : "未创建"}
           </dd>
         </div>
@@ -1597,7 +1582,7 @@ function CopilotContextPanel(props: {
             {props.providerAvailability?.activeProvider ===
             "volcengine-ark"
               ? `${props.providerAvailability.modelDisplayName} · 服务端受控调用`
-              : "本地演示助手 · 不发起外部模型请求"}
+              : "内置教学助手 · 服务端受控生成"}
           </dd>
         </div>
         <div>
@@ -1621,30 +1606,27 @@ function CopilotContextPanel(props: {
             children: (
               <dl className="detail-list">
                 <div>
-                  <dt>Contract</dt>
-                  <dd>{props.task?.contractRef ?? "任务创建后生成"}</dd>
+                  <dt>请求范围</dt>
+                  <dd>{props.task?.contractRef ? "已固定" : "任务创建后固定"}</dd>
                 </div>
                 <div>
-                  <dt>AuthorizationDecision</dt>
-                  <dd>
-                    {props.task?.authorizationDecisionRef ??
-                      "任务创建后生成"}
-                  </dd>
+                  <dt>权限检查</dt>
+                  <dd>{props.task?.authorizationDecisionRef ? "已通过" : "任务创建时检查"}</dd>
                 </div>
                 <div>
-                  <dt>ModelProvider</dt>
+                  <dt>教学助手</dt>
                   <dd>
                     {props.modelExecution?.provider ===
                     "volcengine-ark"
-                      ? "Volcengine Ark"
-                      : "MockModelProvider"}
+                      ? "豆包"
+                      : "离线助手"}
                   </dd>
                 </div>
                 <div>
-                  <dt>ModelExecution</dt>
+                  <dt>生成状态</dt>
                   <dd>
                     {props.modelExecution
-                      ? `${props.modelExecution.modelExecutionRef} · ${modelExecutionStatusLabel(props.modelExecution.status)}`
+                      ? modelExecutionStatusLabel(props.modelExecution.status)
                       : "提交任务后创建"}
                   </dd>
                 </div>
@@ -1731,23 +1713,23 @@ function modelStatusDescription(
 ): string {
   return {
     queued:
-      "请求、权限和上下文已经封存；后台 Worker 将在事务外调用模型。",
+      "请求、权限和上下文已经封存；后台正在准备生成。",
     running:
-      "页面关闭不会取消任务；刷新后可继续查看同一 ModelExecution。",
+      "页面关闭不会取消任务；刷新后可继续查看同一次生成。",
     validating:
-      "正在检查 JSON Schema、EvidenceRef、课时目标和教学安全边界。",
+      "正在检查输出结构、学习证据、课时目标和教学安全边界。",
     retryable_failed:
       "遇到临时故障，正在按有限次数与退避策略重试。",
     succeeded:
-      "验证后的建议已保存为待教师审阅 Proposal；没有自动批准教学计划。",
+      "验证后的建议已保存，等待教师审阅；没有自动批准教学计划。",
     cancel_requested:
-      "已请求中止当前网络调用，不会创建 Proposal。",
+      "已请求中止当前生成，不会创建教学建议。",
     cancelled:
       "本次执行已取消；备课任务和当前已批准教学计划未被改写。",
     timed_out:
       "模型在时限内未完成；可以保留失败记录并人工重试。",
     validation_failed:
-      "一次受控修复后仍未通过验证，未创建 Proposal。",
+      "一次受控修复后仍未通过验证，未创建教学建议。",
     permanently_failed:
       "模型服务未能安全完成本次调用，可以稍后人工重试。",
     budget_exceeded:
