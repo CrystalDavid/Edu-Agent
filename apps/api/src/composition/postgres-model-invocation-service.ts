@@ -27,8 +27,17 @@ import {
 import type { Pool } from "pg";
 
 import {
+  RuntimeKernelService
+} from "../modules/agent-runtime-context/application/runtime-kernel-service.js";
+import type {
+  RuntimeKernelEvent
+} from "../modules/agent-runtime-context/domain/runtime-kernel.js";
+import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
+import {
+  PostgresRuntimeCheckpointAdapter
+} from "../modules/agent-runtime-context/infrastructure/postgres-runtime-checkpoint-adapter.js";
 import {
   PostgresRuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-runtime-repository.js";
@@ -111,6 +120,7 @@ import {
   createWriteMetadata,
   type WriteContext
 } from "../platform/postgres/write-context.js";
+import type { PostgresClient } from "../platform/postgres/types.js";
 import { buildDiff } from "./postgres-gate2-teacher-copilot-service.js";
 
 const GENERATE_PURPOSE =
@@ -139,6 +149,7 @@ interface ModelInvocationDependencies {
   gate2Work?: PostgresGate2WorkRepository;
   gate25Work?: PostgresGate25WorkRepository;
   runtime?: PostgresRuntimeRepository;
+  runtimeKernel?: RuntimeKernelService<PostgresClient>;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -161,6 +172,7 @@ export class PostgresModelInvocationService
   private readonly gate2Work: PostgresGate2WorkRepository;
   private readonly gate25Work: PostgresGate25WorkRepository;
   private readonly runtime: PostgresRuntimeRepository;
+  private readonly runtimeKernel: RuntimeKernelService<PostgresClient>;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -198,6 +210,11 @@ export class PostgresModelInvocationService
       new PostgresGate25WorkRepository();
     this.runtime =
       dependencies.runtime ?? new PostgresRuntimeRepository();
+    this.runtimeKernel =
+      dependencies.runtimeKernel ??
+      new RuntimeKernelService(
+        new PostgresRuntimeCheckpointAdapter()
+      );
     this.gate2Runtime =
       dependencies.gate2Runtime ??
       new PostgresGate2RuntimeRepository();
@@ -640,6 +657,31 @@ export class PostgresModelInvocationService
               : 120_000
         }
       });
+      const runtimeCheckpoint =
+        this.runtimeKernel.createLessonPreparationRun({
+          agentRunRef,
+          taskRef: preparationTask.taskRef,
+          tenantRef: input.tenantRef,
+          actorRef: input.actorRef,
+          purpose: input.request.purpose,
+          contextPlanRef: authorizedContextPlanRef,
+          contextPlanHash: authorizedContextPlan.contentHash,
+          contextManifestRef,
+          contextManifestHash: hash({
+            authorizedContextPlanRef,
+            resourceRefs:
+              authorizedContextPlan.authorizedResourceRefs,
+            evidenceRefs,
+            requestedFieldMask:
+              authorizedContextPlan.requestedFieldMask,
+            knownGaps
+          }),
+          tokenBudget: this.settings.budget.maxInputTokens,
+          promptBundleRef:
+            lessonPreparationPromptBundle.promptBundleRef,
+          requestHash,
+          createdAt: now
+        });
       const decision: AuthorizationDecision = {
         decisionRef,
         actorRef: input.actorRef,
@@ -773,7 +815,8 @@ export class PostgresModelInvocationService
             toolName: "none",
             output: {
               proposalOnly: true,
-              rawProviderContentStored: false
+              rawProviderContentStored: false,
+              runtimeCheckpoint
             },
             metadata: createWriteMetadata(
               writeContext,
@@ -813,7 +856,11 @@ export class PostgresModelInvocationService
             aggregateRef: agentRunRef,
             payload: {
               taskRunRef,
-              modelExecutionRef: executionRef
+              modelExecutionRef: executionRef,
+              checkpointRef: runtimeCheckpoint.checkpointRef,
+              checkpointVersion:
+                runtimeCheckpoint.checkpointVersion,
+              checkpointHash: runtimeCheckpoint.contentHash
             },
             metadata: createWriteMetadata(
               writeContext,
@@ -1509,15 +1556,19 @@ export class PostgresModelInvocationService
           status: "cancelled",
           updatedAt: now
         });
-        await this.runtime.updateAgentRunStatus(client, {
-          agentRunRef: execution.agentRunRef,
-          status: "cancelled",
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution,
+          compatibilityStatus: "cancelled",
+          event: { type: "cancelled", at: now },
           output: {
             proposalCreated: false,
             cancellation: "requested-before-provider-call"
           },
-          updatedAt: now
+          operation: "model-cancelled-before-provider"
         });
+        if (runtimeReceipt) {
+          await this.governance.saveAudits(client, [runtimeReceipt]);
+        }
       }
       const refreshed = await this.executions.get(
         client,
@@ -1732,8 +1783,26 @@ export class PostgresModelInvocationService
             "capability",
             "model-retry-outbox"
           )
-        }))
+          }))
       ];
+      if (source.resultKind === "teaching_proposal") {
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution: source,
+          compatibilityStatus: "queued",
+          event: {
+            type: "retry_requested",
+            modelExecutionRef: executionRef,
+            at: now
+          },
+          output: {
+            proposalOnly: true,
+            modelExecutionRef: executionRef,
+            retryOfModelExecutionRef: source.executionRef
+          },
+          operation: "model-retry-runtime-checkpoint"
+        });
+        if (runtimeReceipt) receipts.push(runtimeReceipt);
+      }
       if (source.resultKind === "lesson_reflection_draft") {
         const transitioned = await this.gate29Work.setReflectionTaskStatus(client, {
           taskRef: source.taskRef,
@@ -1810,6 +1879,12 @@ export class PostgresModelInvocationService
     if (execution.status === "cancel_requested") {
       await this.finishCancelled(execution);
       return;
+    }
+    if (
+      execution.status === "running" &&
+      execution.resultKind === "teaching_proposal"
+    ) {
+      await this.recoverAgentRun(execution);
     }
 
     const context = execution.resultKind === "lesson_reflection_draft"
@@ -2469,16 +2544,25 @@ export class PostgresModelInvocationService
         status: "running",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: running.agentRunRef,
-        status: "running",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution: running,
+        compatibilityStatus: "running",
+        event: {
+          type: "model_started",
+          modelExecutionRef: running.executionRef,
+          attempt,
+          at: now
+        },
         output: {
           proposalOnly: true,
           modelExecutionRef: running.executionRef,
           attempt
         },
-        updatedAt: now
+        operation: `model-attempt-${attempt}-runtime-checkpoint`
       });
+      if (runtimeReceipt) {
+        await this.governance.saveAudits(client, [runtimeReceipt]);
+      }
       await client.query("COMMIT");
       return running;
     } catch (error) {
@@ -2487,6 +2571,79 @@ export class PostgresModelInvocationService
     } finally {
       client.release();
     }
+  }
+
+  private async recoverAgentRun(
+    execution: StoredModelExecution
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const now = this.clock().toISOString();
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "queued",
+        event: { type: "recovered", at: now },
+        output: {
+          proposalOnly: true,
+          modelExecutionRef: execution.executionRef,
+          recoveredAfterProcessRestart: true
+        },
+        operation: "model-runtime-recovered"
+      });
+      if (runtimeReceipt) {
+        await this.governance.saveAudits(client, [runtimeReceipt]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async updateAgentRunLifecycle(
+    client: PostgresClient,
+    input: {
+      execution: StoredModelExecution;
+      compatibilityStatus:
+        | "queued"
+        | "running"
+        | "validating"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      event: RuntimeKernelEvent;
+      output: Record<string, unknown>;
+      operation: string;
+    }
+  ): Promise<FormalWriteReceipt | null> {
+    if (input.execution.resultKind === "teaching_proposal") {
+      const transitioned =
+        await this.runtimeKernel.transitionIfPresent(client, {
+          agentRunRef: input.execution.agentRunRef,
+          event: input.event,
+          compatibilityOutputPatch: input.output,
+          outboxRef: `outbox:${randomUUID()}`,
+          metadata: createWriteMetadata(
+            executionWriteContext(
+              input.execution,
+              input.event.at
+            ),
+            "runtime",
+            input.operation
+          )
+        });
+      if (transitioned) return transitioned.receipt;
+    }
+    await this.runtime.updateAgentRunStatus(client, {
+      agentRunRef: input.execution.agentRunRef,
+      status: input.compatibilityStatus,
+      output: input.output,
+      updatedAt: input.event.at
+    });
+    return null;
   }
 
   private async recordBudgetDecision(
@@ -2644,17 +2801,26 @@ export class PostgresModelInvocationService
             "model-output-validating"
           )
         });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "validating",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "validating",
+        event: {
+          type: "validation_started",
+          modelExecutionRef: execution.executionRef,
+          outputHash: hash(output),
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           outputHash: hash(output),
           rawProviderContentStored: false
         },
-        updatedAt: now
+        operation: "model-output-runtime-validating"
       });
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -2715,7 +2881,29 @@ export class PostgresModelInvocationService
               "model-result-reused"
             )
           });
-        await this.governance.saveAudits(client, [receipt]);
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution,
+          compatibilityStatus: "completed",
+          event: {
+            type: "proposal_created",
+            proposalRef: existing.proposalRevisionRef,
+            outputHash:
+              execution.outputHash ?? hash(execution.validatedOutput),
+            at: now
+          },
+          output: {
+            modelExecutionRef: execution.executionRef,
+            proposalRevisionRef: existing.proposalRevisionRef,
+            proposalOnly: true,
+            reusedExistingProposal: true,
+            rawProviderContentStored: false
+          },
+          operation: "model-result-reused-runtime-checkpoint"
+        });
+        await this.governance.saveAudits(client, [
+          receipt,
+          ...(runtimeReceipt ? [runtimeReceipt] : [])
+        ]);
         await client.query("COMMIT");
         return;
       }
@@ -2860,9 +3048,15 @@ export class PostgresModelInvocationService
         status: "completed",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "completed",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "completed",
+        event: {
+          type: "proposal_created",
+          proposalRef: proposalRevisionRef,
+          outputHash: execution.outputHash ?? hash(execution.validatedOutput),
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           proposalRevisionRef,
@@ -2870,8 +3064,9 @@ export class PostgresModelInvocationService
           proposalOnly: true,
           rawProviderContentStored: false
         },
-        updatedAt: now
+        operation: "model-proposal-runtime-checkpoint"
       });
+      if (runtimeReceipt) receipts.push(runtimeReceipt);
       receipts.push(
         await this.executions.markTerminal(client, {
           executionRef,
@@ -3113,15 +3308,20 @@ export class PostgresModelInvocationService
         status: "failed",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "failed",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "failed",
+        event: {
+          type: "failed",
+          safeErrorCategory: input.category,
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           proposalCreated: false,
           safeErrorCategory: input.category
         },
-        updatedAt: now
+        operation: `model-${input.status}-runtime-checkpoint`
       });
       if (execution.resultKind === "lesson_reflection_draft") {
         await this.gate29Work.setReflectionTaskStatus(client, {
@@ -3132,7 +3332,10 @@ export class PostgresModelInvocationService
           updatedAt: now
         });
       }
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -3179,14 +3382,15 @@ export class PostgresModelInvocationService
         status: "cancelled",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: current.agentRunRef,
-        status: "cancelled",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution: current,
+        compatibilityStatus: "cancelled",
+        event: { type: "cancelled", at: now },
         output: {
           modelExecutionRef: current.executionRef,
           proposalCreated: false
         },
-        updatedAt: now
+        operation: "model-cancelled-runtime-checkpoint"
       });
       if (current.resultKind === "lesson_reflection_draft") {
         await this.gate29Work.setReflectionTaskStatus(client, {
@@ -3197,7 +3401,10 @@ export class PostgresModelInvocationService
           updatedAt: now
         });
       }
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");

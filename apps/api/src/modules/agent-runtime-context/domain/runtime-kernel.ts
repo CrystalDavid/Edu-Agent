@@ -118,6 +118,14 @@ export type RuntimeKernelEvent =
       readonly at: string;
     }
   | {
+      readonly type: "tool_retry_requested";
+      readonly at: string;
+    }
+  | {
+      readonly type: "human_intervention_requested";
+      readonly at: string;
+    }
+  | {
       readonly type: "failed";
       readonly safeErrorCategory: string;
       readonly at: string;
@@ -153,6 +161,25 @@ export interface CreateLessonPreparationCheckpointInput {
   readonly tokenBudget: number;
   readonly promptBundleRef: string;
   readonly requestHash: string;
+  readonly createdAt: string;
+}
+
+export interface CreateRuntimeCheckpointInput {
+  readonly definition: AgentDefinition;
+  readonly skillVersion: string;
+  readonly agentRunRef: string;
+  readonly taskRef: string;
+  readonly tenantRef: string;
+  readonly actorRef: string;
+  readonly purpose: string;
+  readonly contextPlan: RuntimeContextReference;
+  readonly contextManifest: RuntimeContextReference;
+  readonly steps: readonly {
+    readonly kind: RunStepKind;
+    readonly inputHash: string;
+    readonly status?: "queued" | "succeeded";
+    readonly outputRef?: string;
+  }[];
   readonly createdAt: string;
 }
 
@@ -244,6 +271,70 @@ export function createLessonPreparationCheckpoint(
   });
 }
 
+export function createRuntimeCheckpoint(
+  input: CreateRuntimeCheckpointInput
+): AgentRunCheckpoint {
+  if (!input.definition.allowedSkillVersions.includes(input.skillVersion)) {
+    throw new RuntimeKernelTransitionError(
+      `Skill ${input.skillVersion} is not allowed by ${input.definition.agentDefinitionId}@${input.definition.version}.`
+    );
+  }
+  if (
+    input.steps.some((step) => step.kind === "invoke_tool") &&
+    input.definition.toolPolicy.mode !== "explicit"
+  ) {
+    throw new RuntimeKernelTransitionError(
+      "A tool step requires an explicit tool policy."
+    );
+  }
+  const steps = input.steps.map((step, index) =>
+    createStep(
+      input.agentRunRef,
+      index + 1,
+      step.kind,
+      step.inputHash,
+      step.status === "succeeded"
+        ? {
+            status: "succeeded",
+            outputRef: step.outputRef ?? null,
+            startedAt: input.createdAt,
+            completedAt: input.createdAt
+          }
+        : {}
+    )
+  );
+  const current = steps.find((step) => step.status === "queued");
+  if (!current) {
+    throw new RuntimeKernelTransitionError(
+      "An AgentRun must contain at least one queued step."
+    );
+  }
+  return sealCheckpoint({
+    schemaVersion: 1,
+    checkpointRef: checkpointRef(input.agentRunRef, 1),
+    checkpointVersion: 1,
+    agentRunRef: input.agentRunRef,
+    taskRef: input.taskRef,
+    tenantRef: input.tenantRef,
+    actorRef: input.actorRef,
+    purpose: input.purpose,
+    agentDefinitionId: input.definition.agentDefinitionId,
+    agentDefinitionVersion: input.definition.version,
+    skillVersion: input.skillVersion,
+    status: "queued",
+    currentStepRef: current.stepRef,
+    steps,
+    contextPlan: input.contextPlan,
+    contextManifest: input.contextManifest,
+    modelExecutionRef: null,
+    proposalRef: null,
+    recoveryCount: 0,
+    lastRecoveredAt: null,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt
+  });
+}
+
 export function transitionRuntimeCheckpoint(
   checkpoint: AgentRunCheckpoint,
   event: RuntimeKernelEvent
@@ -260,6 +351,10 @@ export function transitionRuntimeCheckpoint(
       return waitingForTool(checkpoint, event);
     case "tool_succeeded":
       return toolSucceeded(checkpoint, event);
+    case "tool_retry_requested":
+      return toolRetryRequested(checkpoint, event);
+    case "human_intervention_requested":
+      return humanInterventionRequested(checkpoint, event);
     case "failed":
       return failed(checkpoint, event);
     case "cancelled":
@@ -365,7 +460,7 @@ function validationStarted(
   checkpoint: AgentRunCheckpoint,
   event: Extract<RuntimeKernelEvent, { type: "validation_started" }>
 ): AgentRunCheckpoint {
-  if (checkpoint.status !== "running") {
+  if (!(checkpoint.status === "queued" || checkpoint.status === "running")) {
     throw invalidTransition(checkpoint, event.type);
   }
   const modelStep = requireStep(checkpoint, "invoke_model");
@@ -391,6 +486,44 @@ function validationStarted(
     modelExecutionRef: event.modelExecutionRef,
     updatedAt: event.at,
     steps: replaceSteps(checkpoint.steps, [completedModel, runningValidation])
+  });
+}
+
+function toolRetryRequested(
+  checkpoint: AgentRunCheckpoint,
+  event: Extract<RuntimeKernelEvent, { type: "tool_retry_requested" }>
+): AgentRunCheckpoint {
+  if (checkpoint.status !== "failed") {
+    throw invalidTransition(checkpoint, event.type);
+  }
+  const step = requireCurrentStep(checkpoint);
+  if (step.kind !== "invoke_tool" || step.status !== "failed") {
+    throw invalidTransition(checkpoint, event.type);
+  }
+  return nextCheckpoint(checkpoint, {
+    status: "queued",
+    updatedAt: event.at,
+    steps: replaceStep(checkpoint.steps, step.stepRef, {
+      ...step,
+      status: "queued",
+      outputRef: null,
+      startedAt: null,
+      completedAt: null,
+      safeErrorCategory: null
+    })
+  });
+}
+
+function humanInterventionRequested(
+  checkpoint: AgentRunCheckpoint,
+  event: Extract<RuntimeKernelEvent, { type: "human_intervention_requested" }>
+): AgentRunCheckpoint {
+  if (!(checkpoint.status === "failed" || checkpoint.status === "waiting_for_tool")) {
+    throw invalidTransition(checkpoint, event.type);
+  }
+  return nextCheckpoint(checkpoint, {
+    status: "waiting_for_human",
+    updatedAt: event.at
   });
 }
 
@@ -433,11 +566,11 @@ function waitingForTool(
   checkpoint: AgentRunCheckpoint,
   event: Extract<RuntimeKernelEvent, { type: "waiting_for_tool" }>
 ): AgentRunCheckpoint {
-  if (checkpoint.status !== "running") {
+  if (!(checkpoint.status === "queued" || checkpoint.status === "running")) {
     throw invalidTransition(checkpoint, event.type);
   }
   const step = requireCurrentStep(checkpoint);
-  if (step.kind !== "invoke_tool" || lessonPreparationAgentDefinition.toolPolicy.mode === "disabled") {
+  if (step.kind !== "invoke_tool") {
     throw invalidTransition(checkpoint, event.type);
   }
   return nextCheckpoint(checkpoint, {
@@ -512,7 +645,6 @@ function cancelled(
     : undefined;
   return nextCheckpoint(checkpoint, {
     status: "cancelled",
-    currentStepRef: null,
     updatedAt: event.at,
     steps: current
       ? replaceStep(checkpoint.steps, current.stepRef, {
@@ -528,11 +660,11 @@ function retryRequested(
   checkpoint: AgentRunCheckpoint,
   event: Extract<RuntimeKernelEvent, { type: "retry_requested" }>
 ): AgentRunCheckpoint {
-  if (checkpoint.status !== "failed") {
+  if (!(checkpoint.status === "failed" || checkpoint.status === "cancelled")) {
     throw invalidTransition(checkpoint, event.type);
   }
   const step = requireCurrentStep(checkpoint);
-  if (step.status !== "failed") {
+  if (!(step.status === "failed" || step.status === "cancelled")) {
     throw invalidTransition(checkpoint, event.type);
   }
   return nextCheckpoint(checkpoint, {

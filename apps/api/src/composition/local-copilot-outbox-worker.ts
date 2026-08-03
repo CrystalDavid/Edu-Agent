@@ -39,7 +39,7 @@ const gate24Events = {
     "LessonReflectionTaskCreated",
     "LessonReflectionFollowUpCreated"
   ],
-  runtime: ["AgentRunCompleted"],
+  runtime: ["AgentRunCompleted", "AgentRunCheckpointed"],
   capability: [
     "MockModelExecutionCompleted",
     "ModelInvocationQueued"
