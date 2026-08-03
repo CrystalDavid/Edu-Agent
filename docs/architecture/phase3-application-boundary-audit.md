@@ -71,8 +71,8 @@
 - 正式状态：ToolExecution、ModelExecution/Event、BudgetDecision、ProviderCapabilitySnapshot。
 - 主要表：`tool_execution`、`model_execution`、`model_execution_event`、`model_budget_decision`、`provider_capability_snapshot`。
 - Repository：`PostgresCapabilityRepository`、`PostgresGate2CapabilityRepository`、`PostgresModelExecutionRepository`。
-- Application：PromptBundle、预算、DataManifest、输出校验、Capability Probe、安全日志。
-- Adapter：`VolcengineArkProvider`、`MockModelProvider`、`LocalObjectStore`。
+- Application：PromptBundle、预算、DataManifest、输出校验、Capability Probe 的安全结果类型、安全日志。
+- Adapter：`VolcengineArkProvider`、`MockModelProvider`、`LocalObjectStore` 和 Ark 专用 `ProviderCapabilityProbe`。
 - 发现：业务服务通过 `ModelProvider`/`ObjectStore` Port 调用能力，未直接调用 OpenAI SDK；但 Product Composition Root 直接实例化具体 Adapter，隔离仍可加强。
 
 ### 3.6 Artifact / Collaboration
@@ -187,4 +187,3 @@ Identity 服务只写 governance，但把 Application Service 和 PostgreSQL Ada
 - Product runtime：不依赖 `@edu-agent/sample-data` 或 `@edu-agent/test-fixtures`
 - HTTP Repository import：0
 - 模块间直接 infrastructure import：0
-
