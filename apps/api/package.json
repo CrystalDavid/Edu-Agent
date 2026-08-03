@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@edu-agent/contracts": "workspace:*",
-    "@edu-agent/sample-data": "workspace:*",
     "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",

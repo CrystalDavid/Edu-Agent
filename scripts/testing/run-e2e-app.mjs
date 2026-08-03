@@ -254,7 +254,7 @@ try {
     [
       "exec",
       "tsx",
-      "apps/api/src/composition/gate2-demo-seed-cli.ts"
+      "scripts/sample/seed-cli.ts"
     ],
     databaseEnvironment
   );

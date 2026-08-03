@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@edu-agent/sample-data':
+        specifier: workspace:*
+        version: link:packages/sample-data
       '@electric-sql/pglite':
         specifier: ^0.5.4
         version: 0.5.4
@@ -47,9 +50,6 @@ importers:
       '@edu-agent/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@edu-agent/sample-data':
-        specifier: workspace:*
-        version: link:../../packages/sample-data
       docx:
         specifier: ^9.7.1
         version: 9.7.1
@@ -120,7 +120,7 @@ importers:
     dependencies:
       '@edu-agent/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../contracts
 
   packages/test-fixtures:
     dependencies:

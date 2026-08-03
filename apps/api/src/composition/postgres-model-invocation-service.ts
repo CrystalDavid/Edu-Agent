@@ -321,7 +321,7 @@ export class PostgresModelInvocationService {
           decision: modelActionDecision({
             decisionRef:
               writeContext.authorizationDecisionRef,
-            tenantRef: "tenant:demo-school",
+            tenantRef: "tenant:system-capability-probe",
             actorRef: writeContext.actorRef,
             purpose: writeContext.purpose,
             action: CAPABILITY_PROBE_PURPOSE,
@@ -462,7 +462,7 @@ export class PostgresModelInvocationService {
           input.tenantRef,
           input.request.curriculumUnitRef
         );
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         input.request.goalRef

@@ -28,7 +28,6 @@ import {
   type LessonPreparationTaskDetail,
   type TaskResourceSelectionRequest
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {
@@ -424,11 +423,17 @@ export class PostgresLessonPreparationService {
       if (!courseContext) {
         throw new NotFoundError("课程 Evidence 上下文不存在。");
       }
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const activeGoals = await this.gate2Work.listActiveCasesAndGoals(
         client,
-        input.tenantRef,
-        gate2DemoRefs.goalRef
+        input.tenantRef
       );
+      if (activeGoals.length > 1) {
+        throw new DomainConflictError(
+          "LESSON_PREPARATION_GOAL_SELECTION_REQUIRED",
+          "当前工作空间存在多个活动教学改进 Goal，不能隐式选择。"
+        );
+      }
+      const goal = activeGoals[0];
       if (!goal) {
         throw new NotFoundError("备课 Goal 不存在。");
       }

@@ -11,6 +11,7 @@ import { createApp } from "../../apps/api/src/app.js";
 import {
   createProductContainer
 } from "../../apps/api/src/composition/product-container.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -34,7 +35,7 @@ const demoHeaders = {
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await product.services.seed.seed();
+  await seedSampleData(postgresEnvironment);
 });
 
 afterAll(async () => {

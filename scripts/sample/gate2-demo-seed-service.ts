@@ -9,33 +9,33 @@ import {
   gate2DemoRefs,
   gate2SyntheticFixture
 } from "@edu-agent/sample-data";
-import type { Pool } from "pg";
+import type { Pool } from "../../apps/api/src/platform/postgres/pool.js";
 
 import {
   PostgresGate2ArtifactRepository
-} from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
+} from "../../apps/api/src/modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
 import {
   PostgresGate25EducationRepository
-} from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
+} from "../../apps/api/src/modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
 import {
   PostgresGate27EducationRepository
-} from "../modules/education-domain/infrastructure/postgres-gate2-7-education-repository.js";
+} from "../../apps/api/src/modules/education-domain/infrastructure/postgres-gate2-7-education-repository.js";
 import {
   PostgresEducationRepository
-} from "../modules/education-domain/infrastructure/postgres-education-repository.js";
+} from "../../apps/api/src/modules/education-domain/infrastructure/postgres-education-repository.js";
 import {
   PostgresGovernanceRepository
-} from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
+} from "../../apps/api/src/modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
 import {
   PostgresGate25WorkRepository
-} from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
+} from "../../apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
 import {
   PostgresGate2WorkRepository
-} from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
+} from "../../apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
 import {
   createWriteMetadata,
   type WriteContext
-} from "../platform/postgres/write-context.js";
+} from "../../apps/api/src/platform/postgres/write-context.js";
 import {
   gate25CurriculumFixture,
   gate25DemoRefs
@@ -44,14 +44,22 @@ import {
   gate27DemoRefs,
   gate27SyntheticEnrollments
 } from "./gate2-7-demo-fixture.js";
-import type {
-  PostgresIdentityOrganizationService
-} from "./postgres-identity-organization-service.js";
-
 function hash(value: unknown): string {
   return createHash("sha256")
     .update(JSON.stringify(value))
     .digest("hex");
+}
+
+function externalSubjectHash(provider: string, subject: string): string {
+  return createHash("sha256")
+    .update(`${provider}\u0000${subject}`)
+    .digest("hex");
+}
+
+function maskSubjectHint(value: string): string {
+  return value.length <= 5
+    ? "***"
+    : `${value.slice(0, 2)}***${value.slice(-2)}`;
 }
 
 const schoolBRefs = {
@@ -77,7 +85,6 @@ const schoolBRefs = {
 export class Gate2DemoSeedService {
   constructor(
     private readonly pool: Pool,
-    private readonly identity?: PostgresIdentityOrganizationService,
     private readonly governance =
       new PostgresGovernanceRepository(),
     private readonly work = new PostgresGate2WorkRepository(),
@@ -100,7 +107,7 @@ export class Gate2DemoSeedService {
     goalRef: string;
     teachingPlanArtifactRef: string;
   }> {
-    await this.identity?.seedSyntheticFoundation();
+    await this.seedSyntheticIdentityFoundation();
     const gate24 = await this.seedGate24();
     const schoolB = await this.seedSchoolBIsolationFoundation();
     if (!options.includeGate25) {
@@ -120,6 +127,159 @@ export class Gate2DemoSeedService {
         gate24.replayed && schoolB.replayed && gate25.replayed &&
         gate29Support.replayed && gate27.replayed
     };
+  }
+
+  private async seedSyntheticIdentityFoundation(): Promise<void> {
+    const createdAt = "2026-09-18T07:45:00.000Z";
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const organizations = [
+        [gate2DemoRefs.tenantRef, "明远实验中学"],
+        [schoolBRefs.tenantRef, "远航实验学校（合成）"]
+      ] as const;
+      for (const [organizationRef, name] of organizations) {
+        await client.query(
+          `INSERT INTO governance.organization (
+             organization_ref, organization_type, name, status,
+             timezone, data_source, version, created_at, updated_at
+           ) VALUES ($1, 'school', $2, 'active', 'Asia/Shanghai',
+             'synthetic-demo-seed', 1, $3, $3)
+           ON CONFLICT (organization_ref) DO UPDATE
+             SET name = EXCLUDED.name,
+                 updated_at = EXCLUDED.updated_at`,
+          [organizationRef, name, createdAt]
+        );
+      }
+
+      const users = [
+        {
+          userRef: gate2DemoRefs.teacherRef,
+          displayName: "林老师（合成）",
+          email: "lin.teacher@example.test",
+          subject: "teacher-a"
+        },
+        {
+          userRef: "user:school-admin-001",
+          displayName: "周管理员（合成）",
+          email: "zhou.admin@example.test",
+          subject: "school-admin-a"
+        },
+        {
+          userRef: "user:multi-school-001",
+          displayName: "陈老师（多学校合成）",
+          email: "chen.teacher@example.test",
+          subject: "multi-school-teacher"
+        },
+        {
+          userRef: schoolBRefs.teacherRef,
+          displayName: "王老师（合成）",
+          email: "wang.teacher@example.test",
+          subject: "teacher-b"
+        }
+      ] as const;
+      for (const user of users) {
+        await client.query(
+          `INSERT INTO governance.user_account (
+             user_ref, display_name, email, status, data_source,
+             version, created_at, updated_at
+           ) VALUES ($1, $2, $3, 'active', 'synthetic-demo-seed', 1, $4, $4)
+           ON CONFLICT (user_ref) DO UPDATE
+             SET display_name = EXCLUDED.display_name,
+                 email = EXCLUDED.email,
+                 updated_at = EXCLUDED.updated_at`,
+          [user.userRef, user.displayName, user.email, createdAt]
+        );
+        await client.query(
+          `INSERT INTO governance.external_identity_link (
+             identity_link_ref, user_ref, provider,
+             external_subject_hash, display_hint, linked_at
+           ) VALUES ($1, $2, 'local-development', $3, $4, $5)
+           ON CONFLICT (provider, external_subject_hash) DO NOTHING`,
+          [
+            `identity-link:local:${user.userRef}`,
+            user.userRef,
+            externalSubjectHash("local-development", user.subject),
+            maskSubjectHint(user.subject),
+            createdAt
+          ]
+        );
+      }
+
+      const memberships = [
+        {
+          ref: "membership:demo-school:teacher-001",
+          org: gate2DemoRefs.tenantRef,
+          user: gate2DemoRefs.teacherRef,
+          roles: ["ordinary_teacher"] as const,
+          courses: [gate2DemoRefs.courseRunRef]
+        },
+        {
+          ref: "membership:demo-school:admin-001",
+          org: gate2DemoRefs.tenantRef,
+          user: "user:school-admin-001",
+          roles: ["school_admin", "ordinary_teacher"] as const,
+          courses: [gate2DemoRefs.courseRunRef]
+        },
+        {
+          ref: "membership:demo-school:multi-001",
+          org: gate2DemoRefs.tenantRef,
+          user: "user:multi-school-001",
+          roles: ["ordinary_teacher"] as const,
+          courses: [gate2DemoRefs.courseRunRef]
+        },
+        {
+          ref: "membership:demo-school-b:multi-001",
+          org: schoolBRefs.tenantRef,
+          user: "user:multi-school-001",
+          roles: ["ordinary_teacher"] as const,
+          courses: [schoolBRefs.courseRunRef]
+        },
+        {
+          ref: "membership:demo-school-b:teacher-001",
+          org: schoolBRefs.tenantRef,
+          user: schoolBRefs.teacherRef,
+          roles: ["ordinary_teacher"] as const,
+          courses: [schoolBRefs.courseRunRef]
+        }
+      ] as const;
+      for (const membership of memberships) {
+        await client.query(
+          `INSERT INTO governance.organization_membership (
+             membership_ref, organization_ref, user_ref, status,
+             created_by, activated_at, version, created_at, updated_at
+           ) VALUES ($1, $2, $3, 'active', 'system:synthetic-seed',
+             $4, 1, $4, $4)
+           ON CONFLICT (membership_ref) DO NOTHING`,
+          [membership.ref, membership.org, membership.user, createdAt]
+        );
+        for (const role of membership.roles) {
+          await client.query(
+            `INSERT INTO governance.membership_role_assignment (
+               membership_ref, role_key, assigned_by, assigned_at
+             ) VALUES ($1, $2, 'system:synthetic-seed', $3)
+             ON CONFLICT (membership_ref, role_key) DO NOTHING`,
+            [membership.ref, role, createdAt]
+          );
+        }
+        for (const courseRunRef of membership.courses) {
+          await client.query(
+            `INSERT INTO governance.membership_course_run_access (
+               membership_ref, course_run_ref, granted_by, granted_at
+             ) VALUES ($1, $2, 'system:synthetic-seed', $3)
+             ON CONFLICT (membership_ref, course_run_ref) DO NOTHING`,
+            [membership.ref, courseRunRef, createdAt]
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private async seedSchoolBIsolationFoundation(): Promise<{ replayed: boolean }> {

@@ -12,10 +12,6 @@ import {
   type TeachingPlanStateView,
   type TeacherWorkspace
 } from "@edu-agent/contracts";
-import {
-  gate2DemoRefs,
-  gate2SyntheticFixture
-} from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {
@@ -47,6 +43,7 @@ import {
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
 import {
   AuthorizationDeniedError,
+  DomainConflictError,
   NotFoundError
 } from "../platform/errors.js";
 
@@ -72,18 +69,16 @@ export class PostgresGate2ReadService {
   async getWorkspace(input: {
     tenantRef: string;
     actorRef: string;
-    organizationName?: string;
-    actorDisplayName?: string;
+    organizationName: string;
+    actorDisplayName: string;
     roleRefs?: readonly string[];
     membershipRef?: string;
     demoIdentity?: boolean;
     modelMode?: "mock" | "ark";
-    courseRunRefs?: readonly string[];
+    courseRunRefs: readonly string[];
   }): Promise<TeacherWorkspace> {
     await this.assertDemoActor(input.tenantRef, input.actorRef);
-    const courseRunRef = input.courseRunRefs
-      ? input.courseRunRefs[0]
-      : gate2DemoRefs.courseRunRef;
+    const courseRunRef = input.courseRunRefs[0];
     if (!courseRunRef) {
       throw new NotFoundError(
         "The current teacher has no authorized CourseRun in this workspace."
@@ -96,24 +91,20 @@ export class PostgresGate2ReadService {
       });
     if (!educationContext) {
       throw new NotFoundError(
-        "Gate 2 合成数据尚未初始化。"
+        "当前工作空间没有可用的 CourseRun 数据。"
       );
     }
-    const goal = await this.pool.query<{ goal_ref: string }>(
-      `SELECT goal_ref
-         FROM work.goal_record
-        WHERE tenant_ref = $1 AND status = 'active'
-        ORDER BY created_at, goal_ref
-        LIMIT 1`,
-      [input.tenantRef]
+    const activeGoals = await this.work.listActiveCasesAndGoals(
+      this.pool,
+      input.tenantRef
     );
-    const workContext = goal.rows[0]
-      ? await this.work.getDemoCaseAndGoal(
-          this.pool,
-          input.tenantRef,
-          goal.rows[0].goal_ref
-        )
-      : undefined;
+    if (activeGoals.length > 1) {
+      throw new DomainConflictError(
+        "WORKSPACE_GOAL_SELECTION_REQUIRED",
+        "当前工作空间存在多个活动教学改进 Goal，必须从具体 Task 进入。"
+      );
+    }
+    const workContext = activeGoals[0];
     if (!workContext) {
       throw new NotFoundError(
         "Gate 2 教学改进 Goal 尚未初始化。"
@@ -147,11 +138,9 @@ export class PostgresGate2ReadService {
     return TeacherWorkspaceSchema.parse({
       identity: {
         tenantRef: input.tenantRef,
-        schoolName:
-          input.organizationName ?? gate2SyntheticFixture.identity.schoolName,
+        schoolName: input.organizationName,
         teacherRef: input.actorRef,
-        teacherName:
-          input.actorDisplayName ?? gate2SyntheticFixture.identity.teacherName,
+        teacherName: input.actorDisplayName,
         dataMode: "synthetic",
         modelMode: input.modelMode ?? "mock",
         ...(input.roleRefs ? { roleRefs: [...input.roleRefs] } : {}),
@@ -408,7 +397,7 @@ export class PostgresGate2ReadService {
     if (!work) {
       throw new NotFoundError("Teacher Copilot 运行不存在。");
     }
-    const goal = await this.work.getDemoCaseAndGoal(
+    const goal = await this.work.getCaseAndGoal(
       this.pool,
       input.tenantRef,
       work.goalRef

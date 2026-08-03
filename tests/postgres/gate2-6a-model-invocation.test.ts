@@ -14,7 +14,8 @@ import {
 import { createApp } from "../../apps/api/src/app.js";
 import {
   gate25DemoRefs
-} from "../../apps/api/src/composition/gate2-5-demo-fixture.js";
+} from "../../scripts/sample/gate2-5-demo-fixture.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   createProductContainer,
   type ProductContainer
@@ -50,7 +51,7 @@ const demoHeaders = {
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await product.services.seed.seed({ includeGate25: true });
+  await seedSampleData(postgresEnvironment, { includeGate25: true });
 });
 
 afterAll(async () => {
@@ -365,7 +366,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       { modelSettings: budgetSettings }
     );
     try {
-      await budgetProduct.services.seed.seed({
+      await seedSampleData(postgresEnvironment, {
         includeGate25: true
       });
       const budgetApp = createApp({
@@ -425,7 +426,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
           )
         }
       );
-      await arkProduct.services.seed.seed({
+      await seedSampleData(postgresEnvironment, {
         includeGate25: true
       });
       const arkApp = createApp({ product: arkProduct });
@@ -534,7 +535,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       }
     );
     try {
-      await arkProduct.services.seed.seed({
+      await seedSampleData(postgresEnvironment, {
         includeGate25: true
       });
       const runningApp = createApp({
@@ -714,7 +715,7 @@ async function exerciseFakeArkScenario(
         modelProvider: provider
       }
     );
-    await arkProduct.services.seed.seed({
+    await seedSampleData(postgresEnvironment, {
       includeGate25: true
     });
     const arkApp = createApp({ product: arkProduct });

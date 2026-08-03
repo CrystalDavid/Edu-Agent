@@ -20,10 +20,6 @@ import {
   type TeachingPlanDiff,
   type TeachingPlanDiffChange
 } from "@edu-agent/contracts";
-import {
-  gate2DemoRefs,
-  strategyTeachingPlans
-} from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {
@@ -39,7 +35,8 @@ import {
   PostgresGate2CapabilityRepository
 } from "../modules/capability-integration/infrastructure/postgres-gate2-capability-repository.js";
 import {
-  MockModelProvider
+  MockModelProvider,
+  teachingPlanForMockStrategy
 } from "../modules/capability-integration/infrastructure/mock-model-provider.js";
 import {
   PostgresGate25EducationRepository
@@ -351,7 +348,7 @@ export class PostgresGate2TeacherCopilotService {
           "当前租户下没有可用的合成 CourseRun。"
         );
       }
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         input.request.goalRef
@@ -489,12 +486,7 @@ export class PostgresGate2TeacherCopilotService {
         });
       const diffsByStrategy: Record<string, TeachingPlanDiff> = {};
       for (const strategy of modelResult.strategies) {
-        const plan = strategyTeachingPlans[strategy.strategyId];
-        if (!plan) {
-          throw new Error(
-            `Mock strategy has no TeachingPlan: ${strategy.strategyId}`
-          );
-        }
+        const plan = teachingPlanForMockStrategy(strategy);
         diffsByStrategy[strategy.strategyId] = buildDiff(
           baseline.content,
           plan,
@@ -509,11 +501,7 @@ export class PostgresGate2TeacherCopilotService {
       if (!defaultStrategy) {
         throw new Error("MockModelProvider returned no strategy.");
       }
-      const draftPlan =
-        strategyTeachingPlans[defaultStrategy.strategyId];
-      if (!draftPlan) {
-        throw new Error("Default strategy TeachingPlan is missing.");
-      }
+      const draftPlan = teachingPlanForMockStrategy(defaultStrategy);
 
       const decision: AuthorizationDecision = {
         decisionRef,
@@ -1135,7 +1123,7 @@ export class PostgresGate2TeacherCopilotService {
           taskResult.taskRef,
           input.actorRef
         );
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         taskResult.goalRef
@@ -1282,10 +1270,8 @@ export class PostgresGate2TeacherCopilotService {
         input.request.disposition === "accepted_with_changes"
       ) {
         const strategyPlan =
-          proposal.strategyPlans[
-            selectedStrategy.strategyId
-          ] ??
-          strategyTeachingPlans[selectedStrategy.strategyId];
+          proposal.strategyPlans[selectedStrategy.strategyId] ??
+          teachingPlanForMockStrategy(selectedStrategy);
         if (!strategyPlan) {
           throw new Error("Selected strategy TeachingPlan is missing.");
         }
@@ -1444,6 +1430,7 @@ export class PostgresGate2TeacherCopilotService {
   async approveTeachingPlan(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs: readonly string[];
     inReviewRevisionRef: string;
     request: ApproveTeachingPlanRequest;
   }): Promise<ApproveTeachingPlanResult> {
@@ -1505,26 +1492,12 @@ export class PostgresGate2TeacherCopilotService {
         });
       }
 
-      const educationContext =
-        await this.education.getTeacherCopilotContext(client, {
-          tenantRef: input.tenantRef,
-          courseRunRef: gate2DemoRefs.courseRunRef
-        });
-      if (!educationContext) {
-        throw new NotFoundError(
-          "The tenant TeachingPlan context is not available."
-        );
-      }
       const inReview =
         await this.artifacts.getTeachingPlanRevision(
           client,
           input.inReviewRevisionRef
         );
-      if (
-        !inReview ||
-        inReview.artifactRef !==
-          educationContext.teachingPlanArtifactRef
-      ) {
+      if (!inReview) {
         throw new NotFoundError(
           "The in-review TeachingPlan revision was not found."
         );
@@ -1544,6 +1517,42 @@ export class PostgresGate2TeacherCopilotService {
           client,
           inReview.revisionRef
         );
+      if (revisionScope) {
+        const lesson = await this.gate25Education.getLessonContext(
+          client,
+          input.tenantRef,
+          revisionScope.lessonRef
+        );
+        if (
+          !lesson ||
+          !input.allowedCourseRunRefs.includes(
+            lesson.lesson.courseRunRef
+          )
+        ) {
+          throw new NotFoundError(
+            "The in-review TeachingPlan revision was not found."
+          );
+        }
+      } else {
+        const contexts = await Promise.all(
+          input.allowedCourseRunRefs.map((courseRunRef) =>
+            this.education.getTeacherCopilotContext(client, {
+              tenantRef: input.tenantRef,
+              courseRunRef
+            })
+          )
+        );
+        if (
+          !contexts.some(
+            (context) =>
+              context?.teachingPlanArtifactRef === inReview.artifactRef
+          )
+        ) {
+          throw new NotFoundError(
+            "The in-review TeachingPlan revision was not found."
+          );
+        }
+      }
       let preparationTask:
         | StoredLessonPreparationTask
         | undefined;
@@ -1828,9 +1837,5 @@ export const gate2TeacherCopilotPurposes = {
 export function planForStrategy(
   strategy: PedagogicalStrategy
 ): TeachingPlan {
-  const plan = strategyTeachingPlans[strategy.strategyId];
-  if (!plan) {
-    throw new Error(`Unknown strategy: ${strategy.strategyId}`);
-  }
-  return plan;
+  return teachingPlanForMockStrategy(strategy);
 }

@@ -1,6 +1,5 @@
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
-import { Gate2DemoSeedService } from "./gate2-demo-seed-service.js";
 import {
   PostgresDemoIdentityAuditService
 } from "./postgres-demo-identity-audit-service.js";
@@ -157,7 +156,6 @@ export function createProductContainer(
   );
   return {
     services: {
-      seed: new Gate2DemoSeedService(appPool, identity),
       identity,
       read: new PostgresGate2ReadService(appPool),
       demoIdentityAudit:

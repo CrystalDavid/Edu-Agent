@@ -2766,28 +2766,28 @@ export function createApp(
             product,
             demoIdentity
           );
+          const organizationName =
+            contexts.status.currentWorkspace?.organizationName;
+          if (!organizationName) {
+            throw new NotFoundError(
+              "The authenticated user has no active school workspace."
+            );
+          }
           const result = await product.services.read.getWorkspace({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
             actorDisplayName: contexts.status.user.displayName,
+            organizationName,
             roleRefs: contexts.acting.roleRefs,
             demoIdentity: contexts.status.demoIdentity,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             modelMode:
               product.services.modelInvocations.settings.activeProvider ===
               "volcengine-ark"
                 ? "ark"
                 : "mock",
-            ...(contexts.status.currentWorkspace?.organizationName
-              ? {
-                  organizationName:
-                    contexts.status.currentWorkspace.organizationName
-                }
-              : {}),
             ...(contexts.acting.membershipRef
               ? { membershipRef: contexts.acting.membershipRef }
-              : {}),
-            ...(contexts.acting.courseRunRefs
-              ? { courseRunRefs: contexts.acting.courseRunRefs }
               : {})
           });
           response.json(result);
@@ -2963,6 +2963,7 @@ export function createApp(
             await product.services.teacherCopilot.approveTeachingPlan({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               inReviewRevisionRef: routeParameter(
                 request.params["revisionRef"]
               ),

@@ -8,6 +8,7 @@ import { createApp } from "../../apps/api/src/app.js";
 import { createProductContainer } from "../../apps/api/src/composition/product-container.js";
 import { createLocalDemoTeacherCredential } from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
 import { readIdentitySettings } from "../../apps/api/src/platform/auth/config.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -36,7 +37,10 @@ const app = createApp({ product });
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await product.services.seed.seed({ includeGate25: true, includeGate27: true });
+  await seedSampleData(postgresEnvironment, {
+    includeGate25: true,
+    includeGate27: true
+  });
 });
 
 afterAll(async () => {
