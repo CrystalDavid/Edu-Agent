@@ -95,7 +95,6 @@ flowchart LR
 | `packages/sample-data` | 可选的匿名示例数据 package；不得包含测试行为或生产数据 |
 | `packages/test-fixtures` | 仅供自动化测试的构造器和 Fixture |
 | `infra/local` | 本机 PostgreSQL 与本地运行约定 |
-| `deploy` | 正式部署资源入口；当前仅记录 Gate 2.10B 边界 |
 | `infra` | 数据库 Schema 所有权等基础设施设计说明 |
 | `scripts` | 应用启动、测试、PostgreSQL、安全和质量验证编排 |
 | `tests` | unit、architecture、HTTP E2E、PGlite、PostgreSQL、Playwright、live tests 和专用测试配置 |
@@ -153,7 +152,7 @@ corepack pnpm app:dev
 
 浏览器打开 <http://localhost:5173/>。上面的命令不会自动写入示例数据；已有数据库会直接恢复原工作空间。首次体验若没有学校和课程，可单独执行 `corepack pnpm sample:seed`，随后再次运行 `app:dev`。页面中的新增、修改、审批、上传和恢复都走正式 API 与 PostgreSQL，不是前端预制效果。
 
-只有明确需要匿名示例数据时才使用 `corepack pnpm sample:dev`。正式部署不得执行 `sample:seed`，并应从 `deploy/` 与部署平台配置身份、数据库和对象存储。
+只有明确需要匿名示例数据时才使用 `corepack pnpm sample:dev`。正式部署不得执行 `sample:seed`；身份、数据库和对象存储应由经评审的真实部署资产与部署平台配置。当前差距见 [Gate 2.10B 部署准备](docs/operations/deployment-readiness-gaps.md)。
 
 停止前台进程后，如需关闭数据库容器但保留 Volume：
 

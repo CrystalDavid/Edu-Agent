@@ -1,7 +1,7 @@
 # Edu-Agent 本地运行与运维入口
 
 > 状态：CURRENT LOCAL OPERATIONS
-> 范围：本机运行、开发数据与验证；正式部署资源单独进入 `deploy/`。
+> 范围：本机运行、开发数据与验证；正式部署尚未实施。
 
 ## 本地服务
 
@@ -53,3 +53,5 @@ corepack pnpm app:down     # 关闭容器，保留 Volume
 ## Gate 2.10B 边界
 
 云部署、正式 OIDC、托管 PostgreSQL/ObjectStore、Secret Manager、TLS、监控、告警、备份恢复、远程 E2E、容量和发布 Runbook 尚未开始。详细差距和退出条件见 [部署准备差距](operations/deployment-readiness-gaps.md)，未来顺序见 [后续路线](roadmap.md)。
+
+仓库当前没有可执行的云部署资产，因此不保留 `deploy/` 占位目录。未来只有在出现经过评审、能够被验证的部署清单或基础设施代码时，才根据实际平台建立部署目录；仅有计划和差距说明时继续维护在 `docs/operations/`。

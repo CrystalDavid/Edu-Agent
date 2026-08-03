@@ -16,12 +16,11 @@ Edu-Agent/
 │   └── web/
 ├── packages/
 │   ├── contracts/
+│   ├── sample-data/
 │   └── test-fixtures/
-├── environments/
-│   ├── local/
-│   └── sample-data/
-├── deploy/
 ├── infra/
+│   ├── local/
+│   └── postgres/
 ├── scripts/
 ├── tests/（专用测试配置位于 `tests/config/`）
 ├── docs/

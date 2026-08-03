@@ -45,7 +45,7 @@
 - `packages/sample-data`：可选的匿名示例数据 package；
 - `packages/test-fixtures`：测试专用构造器；产品不得依赖；
 - `infra/local`：本机 PostgreSQL 与运行环境；
-- `deploy`：正式部署资源入口；
+- `docs/operations`：部署准备差距；真实部署资产出现前不建立占位目录；
 - `infra`：数据库所有权等基础设施设计说明；
 - `scripts`：通过根 package scripts 调用的编排器；
 - `tests`：跨 workspace 验证；专用 Playwright/Vitest 配置位于 `tests/config`；

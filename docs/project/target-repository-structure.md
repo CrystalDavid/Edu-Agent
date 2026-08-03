@@ -32,12 +32,10 @@ Edu-Agent/
 │   └── web/                          React/Vite 教师门户
 ├── packages/
 │   ├── contracts/                    Web/API 共享 DTO、路由和 Zod Schema
+│   ├── sample-data/                  可选匿名初始数据，不含测试行为
 │   └── test-fixtures/                只供自动化测试的构造器与 Fixture
-├── environments/
-│   ├── local/                        本机 PostgreSQL 与运行约定
-│   └── sample-data/                  可选匿名初始数据，不含测试行为
-├── deploy/                           正式部署资源入口（Gate 2.10B）
 ├── infra/
+│   ├── local/                        本机 PostgreSQL 与运行约定
 │   └── postgres/                     数据库所有权说明
 ├── scripts/
 │   ├── local/                        本机应用生命周期

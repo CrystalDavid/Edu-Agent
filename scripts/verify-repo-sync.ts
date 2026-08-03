@@ -29,7 +29,6 @@ const requiredFiles = [
   "docs/roadmap.md",
   "docs/validation.md",
   "docs/version-history.md",
-  "deploy/README.md",
   "infra/local/README.md",
   "infra/local/postgres/.env.example",
   "infra/local/postgres/compose.postgres.yml",
@@ -52,7 +51,6 @@ const requiredFiles = [
 const requiredTrackedRoots = [
   "apps/api/",
   "apps/web/",
-  "deploy/",
   "docs/",
   "infra/local/",
   "infra/",
