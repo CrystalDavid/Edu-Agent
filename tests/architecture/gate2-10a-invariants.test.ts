@@ -93,8 +93,8 @@ describe("Gate 2.10A identity and organization invariants", () => {
     expect(invocation).toContain(
       "const tenantRef = await this.executionTenantRef(execution, client);"
     );
-    // The one remaining literal belongs only to the synthetic provider capability probe.
-    expect(invocation.match(/"tenant:demo-school"/gu) ?? []).toHaveLength(1);
+    expect(invocation).not.toContain('"tenant:demo-school"');
+    expect(invocation).toContain('"tenant:system-capability-probe"');
   });
 
   it("scopes teacher proposals and Runs to the authenticated request owner", () => {
