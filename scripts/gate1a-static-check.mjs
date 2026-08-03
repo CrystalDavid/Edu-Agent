@@ -1,4 +1,5 @@
 import {
+  existsSync,
   readFileSync,
   readdirSync,
   statSync
@@ -21,6 +22,31 @@ const modules = {
 };
 const failures = [];
 let assertions = 0;
+
+for (const requiredPath of [
+  "apps",
+  "packages",
+  "packages/sample-data",
+  "infra/local/postgres",
+  "scripts/local",
+  "scripts/testing",
+  "scripts/quality",
+  "tests",
+  "docs"
+]) {
+  assert(
+    existsSync(join(root, requiredPath)) &&
+      statSync(join(root, requiredPath)).isDirectory(),
+    `Canonical repository path is missing: ${requiredPath}`
+  );
+}
+
+for (const forbiddenRoot of ["environments", "deploy"]) {
+  assert(
+    !readdirSync(root).includes(forbiddenRoot),
+    `Premature repository root must not exist: ${forbiddenRoot}`
+  );
+}
 
 // Authentication/organization foundation tables are security infrastructure,
 // not module business-command facts. They carry their own actor/source/time
