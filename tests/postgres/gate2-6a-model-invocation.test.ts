@@ -152,6 +152,38 @@ describe("Gate 2.6A durable ModelExecution", () => {
     );
     expect(modelRow.rows[0]?.results).toBe("1");
 
+    const runtimeRow = await adminPool.query<{
+      status: string;
+      output: Record<string, unknown>;
+      checkpoint_events: string;
+    }>(
+      `SELECT agent_run.status,
+              agent_run.output,
+              (SELECT count(*)::text
+                 FROM runtime.outbox_record
+                WHERE aggregate_ref = agent_run.agent_run_ref
+                  AND event_name = 'AgentRunCheckpointed') AS checkpoint_events
+         FROM runtime.agent_run AS agent_run
+        WHERE agent_run.agent_run_ref = $1`,
+      [queued.body.execution.agentRunRef]
+    );
+    const runtimeCheckpoint = runtimeRow.rows[0]?.output[
+      "runtimeCheckpoint"
+    ] as Record<string, unknown> | undefined;
+    expect(runtimeRow.rows[0]?.status).toBe("completed");
+    expect(runtimeRow.rows[0]?.checkpoint_events).toBe("3");
+    expect(runtimeCheckpoint).toMatchObject({
+      schemaVersion: 1,
+      checkpointVersion: 4,
+      status: "waiting_for_human",
+      modelExecutionRef: queued.body.execution.modelExecutionRef,
+      proposalRef: completed.body.proposalRevisionRef
+    });
+    expect(
+      (runtimeCheckpoint?.["steps"] as Array<Record<string, unknown>>)
+        .every((step) => step["status"] === "succeeded")
+    ).toBe(true);
+
     const replay = await request(app)
       .post(apiRoutes.teacher.modelInvocations)
       .set(demoHeaders)
