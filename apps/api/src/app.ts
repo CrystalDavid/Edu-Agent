@@ -97,7 +97,7 @@ import {
 import type {
   ProductResourceRefs,
   ResolvedProductIdentity
-} from "./composition/postgres-identity-organization-service.js";
+} from "./modules/identity-governance-audit/application/identity-context-facade.js";
 
 type RouteResponseLocals = {
   routeId?: string;

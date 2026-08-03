@@ -8,7 +8,6 @@ import {
   DataGovernanceRequestListSchema,
   SchoolDetailSchema,
   SecurityEventListSchema,
-  type ActingContext,
   type AuthenticationProviderAvailability,
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
@@ -16,7 +15,6 @@ import {
   type LocalCredentialLoginRequest,
   type LocalSmsChallenge,
   type OrganizationRole,
-  type TenantContext,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
   type UpdateMemberStatusRequest,
@@ -24,6 +22,12 @@ import {
 } from "@edu-agent/contracts";
 import type { Pool, PoolClient } from "pg";
 
+import type {
+  IdentityContextFacade,
+  ProductResourceRefs,
+  ResolvedProductIdentity,
+  SessionCreationResult
+} from "../modules/identity-governance-audit/application/identity-context-facade.js";
 import type { IdentitySettings } from "../platform/auth/config.js";
 import {
   AuthenticationRequiredError,
@@ -46,31 +50,6 @@ type AuthenticatedStatus = Extract<
   AuthenticationSessionStatus,
   { authenticated: true }
 >;
-
-export interface ResolvedProductIdentity {
-  tenant: TenantContext;
-  acting: ActingContext;
-  status: AuthenticatedStatus;
-  csrfTokenHash?: string;
-}
-
-export interface SessionCreationResult {
-  sessionToken: string;
-  csrfToken: string;
-  status: AuthenticatedStatus;
-}
-
-export interface ProductResourceRefs {
-  courseRunRefs?: readonly string[];
-  unitRefs?: readonly string[];
-  lessonRefs?: readonly string[];
-  assignmentRefs?: readonly string[];
-  learnerRefs?: readonly string[];
-  deliveryRefs?: readonly string[];
-  observationRefs?: readonly string[];
-  reflectionRefs?: readonly string[];
-  taskRefs?: readonly string[];
-}
 
 interface SessionRow {
   session_ref: string;
@@ -112,7 +91,9 @@ function maskSubjectHint(value: string | null): string | null {
   return `${value.slice(0, 2)}***${value.slice(-2)}`;
 }
 
-export class PostgresIdentityOrganizationService {
+export class PostgresIdentityOrganizationService
+  implements IdentityContextFacade
+{
   constructor(
     private readonly pool: Pool,
     readonly settings: IdentitySettings,

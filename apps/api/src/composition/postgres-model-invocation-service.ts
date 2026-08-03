@@ -62,6 +62,9 @@ import {
   ProviderCapabilityProbe,
   type ProviderCapabilityProbeResult
 } from "../modules/capability-integration/application/provider-capability-probe.js";
+import type {
+  ModelInvocationApplicationFacade
+} from "../modules/capability-integration/application/model-invocation-facade.js";
 import {
   LocalSyntheticModelDebugSink,
   maskProviderRequestId
@@ -73,12 +76,12 @@ import type {
   ModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
+  VolcengineArkProvider
+} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+import {
   PostgresModelExecutionRepository,
   type StoredModelExecution
 } from "../modules/capability-integration/infrastructure/postgres-model-execution-repository.js";
-import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
 import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
@@ -151,7 +154,9 @@ interface ModelInvocationDependencies {
   random?: () => number;
 }
 
-export class PostgresModelInvocationService {
+export class PostgresModelInvocationService
+  implements ModelInvocationApplicationFacade
+{
   private readonly governance: PostgresGovernanceRepository;
   private readonly work: PostgresWorkRepository;
   private readonly gate2Work: PostgresGate2WorkRepository;

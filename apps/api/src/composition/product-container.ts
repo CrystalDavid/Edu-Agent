@@ -1,5 +1,11 @@
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
+import type {
+  TeacherCopilotApplicationFacade
+} from "../modules/agent-runtime-context/application/teacher-copilot-facade.js";
+import type {
+  ModelInvocationApplicationFacade
+} from "../modules/capability-integration/application/model-invocation-facade.js";
 import {
   PostgresDemoIdentityAuditService
 } from "./postgres-demo-identity-audit-service.js";
@@ -97,7 +103,7 @@ export function createProductContainer(
     modelSettings.ark
       ? new VolcengineArkProvider(modelSettings.ark)
       : new MockModelProvider());
-  const modelInvocations =
+  const modelInvocations: ModelInvocationApplicationFacade =
     new PostgresModelInvocationService(
       appPool,
       modelProvider,
@@ -140,6 +146,8 @@ export function createProductContainer(
     assignments,
     teacherWorkbench
   );
+  const teacherCopilot: TeacherCopilotApplicationFacade =
+    new PostgresGate2TeacherCopilotService(appPool);
   const copilotOutbox = new LocalCopilotOutboxWorker(
     workerPool,
     undefined,
@@ -160,8 +168,7 @@ export function createProductContainer(
       read: new PostgresGate2ReadService(appPool),
       demoIdentityAudit:
         new PostgresDemoIdentityAuditService(appPool),
-      teacherCopilot:
-        new PostgresGate2TeacherCopilotService(appPool),
+      teacherCopilot,
       modelInvocations,
       lessonPreparation,
       assignments,

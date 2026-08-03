@@ -22,6 +22,9 @@ import {
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
+import type {
+  TeacherCopilotApplicationFacade
+} from "../modules/agent-runtime-context/application/teacher-copilot-facade.js";
 import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
@@ -144,7 +147,9 @@ function stableDecisionRef(rootKey: string): string {
   return `authorization-decision:${hash(rootKey).slice(0, 32)}`;
 }
 
-export class PostgresGate2TeacherCopilotService {
+export class PostgresGate2TeacherCopilotService
+  implements TeacherCopilotApplicationFacade
+{
   constructor(
     private readonly pool: Pool,
     private readonly governance =
