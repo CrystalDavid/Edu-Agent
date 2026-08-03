@@ -4,6 +4,7 @@ import type {
   AssignmentSummary,
   CourseRunView,
   CurriculumUnitView,
+  FileAssetDetail,
   FileAssetSummary,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
@@ -14,7 +15,9 @@ import {
   Button,
   Card,
   Empty,
+  Modal,
   Popconfirm,
+  Progress,
   Space,
   Spin,
   Tag,
@@ -23,22 +26,22 @@ import {
 
 import {
   createLessonPreparationTask,
+  downloadFile,
   loadAssignments,
   loadCourseRuns,
   loadCurriculumUnits,
   loadLessonPreparationTasks,
   loadLessons,
   loadLessonTeachingPlans,
+  loadFile,
   loadFiles,
   transitionLessonPreparationTask
 } from "../api";
-import {
-  ExamWorkspace
-} from "../components/portal/TeachingComponents";
 import { AssignmentWorkspace } from "./AssignmentWorkspace";
 import { PageHeader } from "../components/portal/PortalPrimitives";
 import { ClassroomReflectionPanel } from "../components/portal/ClassroomReflectionPanel";
-import { lessonPreparationStatusLabel } from "../presentation";
+import { cleanDisplayText, lessonPreparationStatusLabel } from "../presentation";
+import { WorkspaceIcon } from "../components/WorkspaceIcon";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
@@ -60,12 +63,6 @@ export function TeachingWorkspacePage(props: {
   const [tab, setTab] = useState<TeachingTab>(
     props.initialTab ?? "course"
   );
-  const handleReadOnlyAction = (action: string) => {
-    props.onAction(
-      `${action}：考试区域是明确标注的只读演示，本 Gate 不写入考试数据。`
-    );
-  };
-
   return (
     <div
       className="portal-page teaching-page"
@@ -73,7 +70,7 @@ export function TeachingWorkspacePage(props: {
     >
       <PageHeader
         title="教学"
-        subtitle="课程、作业、批改、学习 Evidence 与备课状态来自 PostgreSQL；考试仍为只读演示"
+        subtitle="按课程完成备课、作业、课堂实施与课后反思"
       />
       <div
         className="teaching-tabs"
@@ -81,9 +78,9 @@ export function TeachingWorkspacePage(props: {
         aria-label="教学工作区"
       >
         {([
-          ["course", "课程", "真实单元、课时、目标与备课任务"],
-          ["homework", "作业", "真实创建、发布、批改与分析"],
-          ["exam", "考试", "只读演示"]
+          ["course", "课程", "按单元查看课时与教学准备"],
+          ["homework", "作业", "创建、发布、批改与学习分析"],
+          ["exam", "考试", "暂未开放"]
         ] as const).map(([value, label, description]) => (
           <button
             type="button"
@@ -91,6 +88,8 @@ export function TeachingWorkspacePage(props: {
             key={value}
             aria-selected={tab === value}
             className={tab === value ? "is-active" : ""}
+            disabled={value === "exam"}
+            aria-disabled={value === "exam"}
             onClick={() => setTab(value)}
           >
             <strong>{label}</strong>
@@ -118,9 +117,6 @@ export function TeachingWorkspacePage(props: {
             ? { initialLessonRef: props.initialLessonRef }
             : {})}
         />
-      ) : null}
-      {tab === "exam" ? (
-        <ExamWorkspace onAction={handleReadOnlyAction} />
       ) : null}
     </div>
   );
@@ -156,6 +152,11 @@ function RealCourseWorkspace(props: {
     useState<LessonTeachingPlanState | null>(null);
   const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFile, setPreviewFile] = useState<FileAssetDetail | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +203,7 @@ function RealCourseWorkspace(props: {
       );
       setUnits(unitResult.items);
       const unit = unitResult.items[0];
-      if (unit) {
+      if (unit && props.initialLessonRef) {
         setSelectedUnitRef((current) => current ?? unit.unitRef);
       }
     } catch (caught) {
@@ -217,7 +218,11 @@ function RealCourseWorkspace(props: {
   }, []);
 
   useEffect(() => {
-    if (!selectedUnitRef) return;
+    if (!selectedUnitRef) {
+      setLessons([]);
+      setSelectedLessonRef(null);
+      return;
+    }
     let active = true;
     setLoading(true);
     void loadLessons(selectedUnitRef)
@@ -238,12 +243,7 @@ function RealCourseWorkspace(props: {
           ) {
             return current;
           }
-          return (
-            result.items.find((lesson) => lesson.sequence === 3)
-              ?.lessonRef ??
-            result.items[0]?.lessonRef ??
-            null
-          );
+          return null;
         });
       })
       .catch((caught) => {
@@ -287,6 +287,49 @@ function RealCourseWorkspace(props: {
       active = false;
     };
   }, [selectedLessonRef, tasks]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  async function openFilePreview(file: FileAssetSummary) {
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewFile(null);
+    setPreviewText(null);
+    setError(null);
+    try {
+      const detail = await loadFile(file.assetRef);
+      setPreviewFile(detail);
+      if (["image", "pdf", "text"].includes(detail.currentVersion.previewKind)) {
+        const blob = await downloadFile(detail.assetRef, detail.currentVersion.versionRef);
+        if (detail.currentVersion.previewKind === "text") {
+          setPreviewText(await blob.text());
+        } else {
+          const nextUrl = URL.createObjectURL(blob);
+          setPreviewUrl((current) => {
+            if (current) URL.revokeObjectURL(current);
+            return nextUrl;
+          });
+        }
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closeFilePreview() {
+    setPreviewOpen(false);
+    setPreviewFile(null);
+    setPreviewText(null);
+    setPreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+  }
 
   async function startOrContinue() {
     if (!selectedLesson) return;
@@ -405,7 +448,7 @@ function RealCourseWorkspace(props: {
         )
       );
       props.onAction(
-        "备课任务已取消；已批准教学计划、Proposal 和历史记录均未改变"
+        "备课任务已取消；已批准教案、建议草稿和历史记录均未改变"
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -414,6 +457,56 @@ function RealCourseWorkspace(props: {
       setActing(false);
     }
   }
+
+  const preparationStatus = activeTask?.status ?? selectedLesson?.preparationState;
+  const readinessItems = selectedLesson
+    ? [
+        {
+          key: "objectives",
+          label: "教学目标",
+          complete: selectedLesson.learningObjectives.length > 0,
+          detail: selectedLesson.learningObjectives.length > 0
+            ? `${selectedLesson.learningObjectives.length} 项目标已明确`
+            : "还需要补充教学目标"
+        },
+        {
+          key: "preparation",
+          label: "备课任务",
+          complete: preparationStatus === "completed",
+          detail: preparationStatus
+            ? lessonPreparationStatusLabel(preparationStatus)
+            : "还没有开始备课"
+        },
+        {
+          key: "plan",
+          label: "批准教案",
+          complete: Boolean(planState?.currentApproved),
+          detail: planState?.currentApproved
+            ? `第 ${planState.currentApproved.revisionNumber} 版已批准`
+            : planState?.activeInReview
+              ? `第 ${planState.activeInReview.revisionNumber} 版等待审核`
+              : "还没有已批准教案"
+        },
+        {
+          key: "files",
+          label: "教学材料",
+          complete: lessonFiles.length > 0,
+          detail: lessonFiles.length > 0
+            ? `${lessonFiles.length} 个文件可用`
+            : "还没有关联教学材料"
+        }
+      ]
+    : [];
+  const completedReadinessCount = readinessItems.filter((item) => item.complete).length;
+  const readinessPercent = readinessItems.length > 0
+    ? Math.round((completedReadinessCount / readinessItems.length) * 100)
+    : 0;
+  const teachingFocus = planState?.currentApproved?.content.lessonFocus
+    ?? selectedLesson?.learningObjectives[0]?.title
+    ?? "选择课时后查看教学重点";
+  const teachingDifficulty = planState?.currentApproved?.content.supportStrategy
+    ?? selectedLesson?.learningObjectives[0]?.description
+    ?? "选择课时后查看需要重点突破的内容";
 
   return (
     <Spin spinning={loading}>
@@ -431,186 +524,146 @@ function RealCourseWorkspace(props: {
         {!selectedCourse ? (
           <Empty description="尚无可用课程" />
         ) : (
-          <div className="page-grid">
-            <Card className="workspace-card" variant="borderless">
-              <Text className="section-kicker">当前课程</Text>
-              <Title level={3}>{selectedCourse.title}</Title>
-              <Paragraph>
-                {selectedCourse.gradeLevel} ·{" "}
-                {selectedCourse.subject}
-              </Paragraph>
-              <div className="course-list">
-                {units.map((unit) => (
-                  <button
-                    type="button"
-                    key={unit.unitRef}
-                    className={
-                      unit.unitRef === selectedUnitRef
-                        ? "is-active"
-                        : ""
-                    }
-                    onClick={() =>
-                      setSelectedUnitRef(unit.unitRef)
-                    }
-                    data-testid={`unit-${unit.sequence}`}
-                  >
-                    <strong>
-                      第 {unit.sequence} 单元 · {unit.title}
-                    </strong>
-                    <small>{unit.description}</small>
-                  </button>
-                ))}
-              </div>
-              <div className="course-list" data-testid="lesson-list">
-                {lessons.map((lesson) => (
-                  <button
-                    type="button"
-                    key={lesson.lessonRef}
-                    className={
-                      lesson.lessonRef === selectedLessonRef
-                        ? "is-active"
-                        : ""
-                    }
-                    onClick={() =>
-                      setSelectedLessonRef(lesson.lessonRef)
-                    }
-                    data-testid={`lesson-${lesson.sequence}`}
-                  >
-                    <strong>
-                      {lesson.sequence}. {lesson.title}
-                    </strong>
-                    <Tag>
-                      {lessonPreparationStatusLabel(
-                        lesson.preparationState
-                      )}
-                    </Tag>
-                  </button>
-                ))}
+          <div className="lesson-workspace-layout">
+            <Card className="workspace-card course-browser-card" variant="borderless">
+              <header className="course-browser-heading">
+                <div>
+                  <Text className="section-kicker">当前课程</Text>
+                  <Title level={3}>{selectedCourse.title}</Title>
+                  <Paragraph>{selectedCourse.gradeLevel} · {selectedCourse.subject}</Paragraph>
+                </div>
+                <Tag>{units.length} 个单元</Tag>
+              </header>
+              <div className="unit-accordion" data-testid="unit-list">
+                {units.map((unit) => {
+                  const expanded = unit.unitRef === selectedUnitRef;
+                  return (
+                    <section key={unit.unitRef} className={expanded ? "unit-panel is-expanded" : "unit-panel"}>
+                      <button
+                        type="button"
+                        className="unit-panel__trigger"
+                        aria-expanded={expanded}
+                        onClick={() => {
+                          setSelectedUnitRef((current) => current === unit.unitRef ? null : unit.unitRef);
+                        }}
+                        data-testid={`unit-${unit.sequence}`}
+                      >
+                        <span className="unit-panel__number">{unit.sequence}</span>
+                        <span className="unit-panel__copy">
+                          <strong>{unit.title}</strong>
+                          <small>{unit.description}</small>
+                        </span>
+                        <WorkspaceIcon name="chevron" />
+                      </button>
+                      {expanded ? (
+                        <div className="lesson-list" data-testid="lesson-list">
+                          {lessons.map((lesson) => (
+                            <button
+                              type="button"
+                              key={lesson.lessonRef}
+                              className={lesson.lessonRef === selectedLessonRef ? "is-active" : ""}
+                              onClick={() => setSelectedLessonRef(lesson.lessonRef)}
+                              data-testid={`lesson-${lesson.sequence}`}
+                            >
+                              <span className="lesson-list__sequence">第 {lesson.sequence} 课时</span>
+                              <span className="lesson-list__title">{lesson.title}</span>
+                              <span className="lesson-list__meta">{lesson.durationMinutes} 分钟 · {lessonPreparationStatusLabel(lesson.preparationState)}</span>
+                              <WorkspaceIcon name="arrowRight" />
+                            </button>
+                          ))}
+                          {lessons.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该单元还没有课时" /> : null}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
               </div>
             </Card>
 
             <Card
-              className="workspace-card"
+              className="workspace-card lesson-priority-card"
               variant="borderless"
               data-testid="lesson-detail"
             >
               {selectedLesson ? (
                 <>
-                  <Text className="section-kicker">课时详情</Text>
-                  <Title level={2}>{selectedLesson.title}</Title>
-                  <Space wrap>
-                    <Tag>
-                      {selectedLesson.durationMinutes} 分钟
-                    </Tag>
-                    <Tag color="processing">
-                      {lessonPreparationStatusLabel(
-                        activeTask?.status ??
-                          selectedLesson.preparationState
-                      )}
-                    </Tag>
-                  </Space>
-                  <section>
-                    <Title level={4}>教学目标</Title>
-                    {selectedLesson.learningObjectives.map(
-                      (objective) => (
-                        <Paragraph key={objective.objectiveRef}>
-                          <strong>{objective.title}</strong>
-                          <br />
-                          {objective.description}
-                        </Paragraph>
-                      )
-                    )}
-                  </section>
-                  <section>
-                    <Title level={4}>当前 Evidence</Title>
-                    <Space wrap>
-                      {selectedLesson.currentEvidenceRefs.map(
-                        (reference) => (
-                          <Tag key={reference}>{reference}</Tag>
-                        )
-                      )}
-                    </Space>
-                  </section>
-                  <section>
-                    <Title level={4}>教学计划状态</Title>
-                    <Paragraph>
-                      current approved：
-                      {planState?.currentApproved
-                        ? `第 ${planState.currentApproved.revisionNumber} 版`
-                        : "无"}
-                    </Paragraph>
-                    <Paragraph>
-                      active in-review：
-                      {planState?.activeInReview
-                        ? `第 ${planState.activeInReview.revisionNumber} 版`
-                        : "无"}
-                    </Paragraph>
-                  </section>
-                  <section>
-                    <Title level={4}>关联备课 Task</Title>
-                    {activeTask ? (
-                      <Paragraph>
-                        {activeTask.title} ·{" "}
-                        {lessonPreparationStatusLabel(
-                          activeTask.status
-                        )}{" "}
-                        · v{activeTask.version}
-                      </Paragraph>
-                    ) : (
-                      <Paragraph type="secondary">
-                        当前课时没有未完成的备课任务。
-                      </Paragraph>
-                    )}
-                  </section>
-                  <section data-testid="lesson-related-files">
-                    <Title level={4}>关联教学文件</Title>
-                    {lessonFiles.length > 0 ? (
-                      <Space orientation="vertical" size="small">
-                        {lessonFiles.map((file) => (
-                          <Button
-                            key={file.assetRef}
-                            onClick={() =>
-                              props.navigateFiles({
-                                assetRef: file.assetRef,
-                                lessonRef: selectedLesson.lessonRef
-                              })
-                            }
-                          >
-                            {file.displayName} · v{file.currentVersion.versionNumber}
-                          </Button>
-                        ))}
-                      </Space>
-                    ) : (
-                      <Paragraph type="secondary">
-                        尚无参考文件或已批准教案导出。
-                      </Paragraph>
-                    )}
-                  </section>
-                  <section data-testid="lesson-related-assignments">
-                    <Title level={4}>关联作业与学习 Evidence</Title>
-                    {lessonAssignments.length > 0 ? (
-                      <Space orientation="vertical" size="small">
-                        {lessonAssignments.map((assignment) => (
-                          <Button
-                            key={assignment.assignmentRef}
-                            onClick={props.onOpenAssignments}
-                          >
-                            {assignment.title} · {assignment.status} · {assignment.submittedCount}/{assignment.enrolledCount} 已交
-                          </Button>
-                        ))}
-                      </Space>
-                    ) : (
-                      <Paragraph type="secondary">
-                        当前课时尚无作业；可进入作业工作台创建草稿并显式发布。
-                      </Paragraph>
-                    )}
+                  <header className="lesson-detail-heading">
                     <div>
-                      <Button onClick={props.onOpenAssignments} data-testid="open-lesson-assignments">
-                        {lessonAssignments.length > 0 ? "查看作业、批改与共性错误" : "为本课时创建作业"}
-                      </Button>
+                      <Text className="section-kicker">第 {selectedLesson.sequence} 课时</Text>
+                      <Title level={2}>{selectedLesson.title}</Title>
+                    </div>
+                    <Space wrap>
+                      <Tag>{selectedLesson.durationMinutes} 分钟</Tag>
+                      <Tag color="processing">{lessonPreparationStatusLabel(preparationStatus ?? "not_started")}</Tag>
+                    </Space>
+                  </header>
+
+                  <section className="lesson-readiness" aria-labelledby="lesson-readiness-title">
+                    <header>
+                      <div>
+                        <Text className="section-kicker">本课时准备度</Text>
+                        <Title id="lesson-readiness-title" level={3}>已完成 {completedReadinessCount} 项，还需补齐 {readinessItems.length - completedReadinessCount} 项</Title>
+                      </div>
+                      <Progress type="circle" size={72} percent={readinessPercent} strokeWidth={9} />
+                    </header>
+                    <div className="lesson-readiness-grid">
+                      {readinessItems.map((item) => (
+                        <article key={item.key} className={item.complete ? "is-complete" : "is-pending"}>
+                          <span className="readiness-icon"><WorkspaceIcon name={item.complete ? "check" : "clock"} /></span>
+                          <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="lesson-artifact-actions" data-testid="lesson-related-files">
+                      {activeTask ? (
+                        <Button onClick={() => props.navigatePreparation(activeTask.taskRef, "/teaching-plan")}>查看备课与教案</Button>
+                      ) : null}
+                      {lessonFiles.map((file) => (
+                        <Button
+                          key={file.assetRef}
+                          icon={<WorkspaceIcon name="document" />}
+                          onClick={() => void openFilePreview(file)}
+                          onDoubleClick={() => props.navigateFiles({ assetRef: file.assetRef, lessonRef: selectedLesson.lessonRef })}
+                          title="单击预览，双击进入文件库"
+                        >
+                          {file.displayName} · 第 {file.currentVersion.versionNumber} 版
+                        </Button>
+                      ))}
+                      <Button onClick={() => props.navigateFiles({ lessonRef: selectedLesson.lessonRef })}>打开本课时文件</Button>
                     </div>
                   </section>
-                  <Space wrap>
+
+                  <section className="lesson-focus-section">
+                    <Text className="section-kicker">课堂核心</Text>
+                    <Title level={3}>重点与难点</Title>
+                    <div className="lesson-focus-grid">
+                      <article><span>教学重点</span><strong>{teachingFocus}</strong></article>
+                      <article><span>教学难点</span><strong>{teachingDifficulty}</strong></article>
+                    </div>
+                    <details className="lesson-objectives">
+                      <summary>查看 {selectedLesson.learningObjectives.length} 项教学目标</summary>
+                      {selectedLesson.learningObjectives.map((objective) => (
+                        <Paragraph key={objective.objectiveRef}><strong>{objective.title}</strong><br />{objective.description}</Paragraph>
+                      ))}
+                    </details>
+                  </section>
+
+                  <section className="lesson-linked-work" data-testid="lesson-related-assignments">
+                    <div>
+                      <Text className="section-kicker">课后衔接</Text>
+                      <Title level={4}>作业与学习情况</Title>
+                      <Paragraph type="secondary">
+                        {lessonAssignments.length > 0
+                          ? `${lessonAssignments.length} 份关联作业，可继续查看提交、批改与共性问题。`
+                          : "当前课时还没有作业，可创建草稿后由教师审核发布。"}
+                      </Paragraph>
+                    </div>
+                    <Button onClick={props.onOpenAssignments} data-testid="open-lesson-assignments">
+                      {lessonAssignments.length > 0 ? "查看作业与批改" : "创建本课时作业"}
+                    </Button>
+                  </section>
+
+                  <Space wrap className="lesson-primary-actions">
                     {!activeTask ||
                     ["planned", "in_progress"].includes(
                       activeTask.status
@@ -710,7 +763,7 @@ function RealCourseWorkspace(props: {
                     ].includes(activeTask.status) ? (
                       <Popconfirm
                         title="确认取消这次备课？"
-                        description="只取消 Work 任务，不删除 Proposal、TeachingPlan 或文件历史。"
+                        description="只取消本次备课任务，不删除建议、教案或文件历史。"
                         okText="确认取消"
                         cancelText="保留任务"
                         onConfirm={() => void cancelPreparation()}
@@ -720,39 +773,57 @@ function RealCourseWorkspace(props: {
                         </Button>
                       </Popconfirm>
                     ) : null}
-                    <Button
-                      onClick={() =>
-                        props.navigateFiles({
-                          lessonRef: selectedLesson.lessonRef
-                        })
-                      }
-                    >
-                      打开文件
-                    </Button>
                   </Space>
-                  <Alert
-                    type="info"
-                    showIcon
-                    title="文件与 TeachingPlan 状态保持独立"
-                    description="参考文件和正式 DOCX 由 Artifact/File 服务持久化；只有 approved Revision 才能导出正式教学成果。"
-                  />
                   {selectedCourse && planState ? (
-                    <ClassroomReflectionPanel
-                      lesson={selectedLesson}
-                      courseRunRef={selectedCourse.courseRunRef}
-                      planState={planState}
-                      assignmentRefs={lessonAssignments.map((item) => item.assignmentRef)}
-                      navigateReflection={props.navigateReflection}
-                      onAction={props.onAction}
-                    />
+                    <details className="lesson-reflection-details" open={Boolean(props.initialLessonRef)}>
+                      <summary>课堂实施、观察与课后反思</summary>
+                      <ClassroomReflectionPanel
+                        lesson={selectedLesson}
+                        courseRunRef={selectedCourse.courseRunRef}
+                        planState={planState}
+                        assignmentRefs={lessonAssignments.map((item) => item.assignmentRef)}
+                        navigateReflection={props.navigateReflection}
+                        onAction={props.onAction}
+                      />
+                    </details>
                   ) : null}
                 </>
               ) : (
-                <Empty description="请选择课时" />
+                <div className="lesson-empty-state">
+                  <WorkspaceIcon name="course" />
+                  <Title level={3}>{selectedUnitRef ? "请选择一个课时" : "先选择一个单元"}</Title>
+                  <Paragraph type="secondary">
+                    {selectedUnitRef
+                      ? "选择课时后，即可查看准备进度、教学重点和可用成果。"
+                      : "展开单元后选择课时，即可查看准备进度、教学重点和可用成果。"}
+                  </Paragraph>
+                </div>
               )}
             </Card>
           </div>
         )}
+        <Modal
+          open={previewOpen}
+          title={previewFile?.displayName ?? "文件预览"}
+          onCancel={closeFilePreview}
+          width={760}
+          footer={previewFile && selectedLesson ? [
+            <Button key="library" type="primary" onClick={() => props.navigateFiles({ assetRef: previewFile.assetRef, lessonRef: selectedLesson.lessonRef })}>在文件库中查看</Button>,
+            <Button key="close" onClick={closeFilePreview}>关闭</Button>
+          ] : null}
+        >
+          <Spin spinning={previewLoading}>
+            {previewFile ? (
+              <div className="lesson-file-preview">
+                <p>{previewFile.currentVersion.contentSummary ? cleanDisplayText(previewFile.currentVersion.contentSummary) : "暂无文字摘要"}</p>
+                {previewFile.currentVersion.previewKind === "image" && previewUrl ? <img src={previewUrl} alt={previewFile.displayName} /> : null}
+                {previewFile.currentVersion.previewKind === "pdf" && previewUrl ? <iframe title={`${previewFile.displayName} 预览`} src={previewUrl} /> : null}
+                {previewFile.currentVersion.previewKind === "text" && previewText !== null ? <pre>{previewText}</pre> : null}
+                {previewFile.currentVersion.previewKind === "office" ? <Alert type="info" showIcon title="可查看文件详情并下载" description="办公文档暂不在浏览器内完整渲染，请进入文件库查看版本或下载。" /> : null}
+              </div>
+            ) : null}
+          </Spin>
+        </Modal>
       </div>
     </Spin>
   );

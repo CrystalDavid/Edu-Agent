@@ -13,7 +13,7 @@ corepack pnpm db:down
 
 - Compose Project：`edu-agent-dev`
 - Volume：`edu-agent-dev-postgres-data`
-- `db:env` 只在缺失时创建被 Git 忽略的 `infra/docker/.env.local`
+- `db:env` 只在缺失时创建被 Git 忽略的 `environments/local/postgres/.env.local`
 - `db:down` 停止容器但保留 Volume
 
 删除长期开发 Volume 必须显式授权：
@@ -34,4 +34,4 @@ Remove-Item Env:ALLOW_DESTRUCTIVE_DB_RESET
 - Volume：`edu-agent-e2e-<run-id>-postgres-data`
 - 随机端口和凭据
 
-测试结束后临时 Volume 会被删除；runner 同时核验开发 Volume identity、`infra/docker/.env.local` 和本地上传目录在前后完全一致。
+测试结束后临时 Volume 会被删除；runner 同时核验开发 Volume identity、`environments/local/postgres/.env.local` 和本地上传目录在前后完全一致。

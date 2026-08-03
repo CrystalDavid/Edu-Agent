@@ -368,14 +368,14 @@ export class PostgresIdentityOrganizationService {
       await this.recordSecurityEvent({
         eventType: "LocalSmsCodeIssued",
         outcome: "success",
-        safeReason: "A local demo SMS challenge was issued."
+        safeReason: "手机号验证码已发出。"
       });
       return challenge;
     } catch {
       await this.recordSecurityEvent({
         eventType: "LocalAuthenticationDenied",
         outcome: "denied",
-        safeReason: "A local demo login attempt was denied."
+        safeReason: "手机号登录尝试被拒绝。"
       });
       throw new AuthenticationRequiredError("手机号或验证码不正确。");
     }
@@ -406,7 +406,7 @@ export class PostgresIdentityOrganizationService {
       await this.recordSecurityEvent({
         eventType: "LocalAuthenticationDenied",
         outcome: "denied",
-        safeReason: "A local demo login attempt was denied."
+        safeReason: "手机号登录尝试被拒绝。"
       });
       throw new AuthenticationRequiredError("手机号或登录凭据不正确。");
     }

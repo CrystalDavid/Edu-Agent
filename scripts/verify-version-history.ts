@@ -237,7 +237,7 @@ check(
 );
 check(
   changelog.includes("## Current") &&
-    changelog.includes("普通教师端本地功能型 MVP，已具备正式身份和学校组织基线，尚未达到云端学校试点生产条件。"),
+    changelog.includes("普通教师工作台的可运行产品基线，已具备正式身份和学校组织边界；正式云基础设施和学校试点运维尚未完成。"),
   "CHANGELOG Current positioning or Gate 2.10A product statement is missing"
 );
 check(

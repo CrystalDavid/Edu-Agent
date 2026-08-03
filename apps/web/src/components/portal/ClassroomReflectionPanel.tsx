@@ -151,8 +151,8 @@ function initialReflectionContent(
     observationSummary: summary.observations.length > 0
       ? summary.observations.map((item) => item.content)
       : ["当前尚未选择教师确认的课堂观察。"],
-    evidenceAlignment: ["需与教师明确选择的 Assignment Evidence 对照。"],
-    uncertainties: ["未被课堂观察或作业 Evidence 支持的判断仍保持未知。"],
+    evidenceAlignment: ["需与教师明确选择的作业证据对照。"],
+    uncertainties: ["未被课堂观察或作业证据支持的判断仍保持未知。"],
     nextLessonSuggestions: ["根据本节课实施差异和证据缺口调整下一课。"],
     assignmentSuggestions: ["由教师决定是否创建补充练习草稿。"],
     teacherNotes
@@ -252,7 +252,7 @@ export function ClassroomReflectionPanel(props: {
   async function saveDelivery() {
     const approved = props.planState.currentApproved;
     if (!approved) {
-      setError("必须先批准明确的 TeachingPlan Revision，才能记录课堂实施。");
+      setError("必须先批准一版教学计划，才能记录课堂实施。");
       return;
     }
     if (deliveryForm.steps.some((step) => !step.actualDescription.trim())) {
@@ -316,7 +316,7 @@ export function ClassroomReflectionPanel(props: {
         purpose: "lesson-delivery.confirm",
         idempotencyKey: `ui:delivery:confirm:${crypto.randomUUID()}`
       });
-      props.onAction("课堂实施已由教师确认；原 approved TeachingPlan 未被修改");
+      props.onAction("课堂实施已由教师确认；原教学计划未被修改");
       await refresh();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -436,26 +436,26 @@ export function ClassroomReflectionPanel(props: {
       <Text className="section-kicker">计划之外的真实课堂</Text>
       <Title level={3}>课堂实施、观察与课后反思</Title>
       <Paragraph type="secondary">
-        approved TeachingPlan 只是计划。只有教师确认的课堂记录与观察才是实施事实；Agent 只能生成 Reflection Draft。
+        已批准教学计划仍然只是计划。只有教师确认的课堂记录与观察才是实施事实；教学助手只能生成课后反思草稿。
       </Paragraph>
       {error ? <Alert type="error" showIcon title="课堂闭环操作失败" description={error} closable onClose={() => setError(null)} /> : null}
 
       <div className="classroom-reflection-grid">
         <Card size="small" title="1. 课堂实施" loading={loading} data-testid="lesson-delivery-card">
           {!props.planState.currentApproved ? (
-            <Alert type="warning" showIcon title="尚无 approved TeachingPlan" description="先批准明确 Revision，才能记录本节课实际使用的计划。" />
+            <Alert type="warning" showIcon title="尚无已批准教学计划" description="请先批准一版教学计划，再记录本节课的实际实施情况。" />
           ) : currentConfirmed ? (
             <>
               <Space wrap>
                 <Tag color="success">教师已确认</Tag>
-                <Tag>实施 Revision {currentConfirmed.revisionNumber}</Tag>
-                <Tag>计划 Revision {props.planState.currentApproved.revisionNumber}</Tag>
+                <Tag>实施记录第 {currentConfirmed.revisionNumber} 版</Tag>
+                <Tag>教学计划第 {props.planState.currentApproved.revisionNumber} 版</Tag>
               </Space>
               <Paragraph>{new Date(currentConfirmed.actualStartAt).toLocaleString("zh-CN")} – {new Date(currentConfirmed.actualEndAt).toLocaleTimeString("zh-CN")}</Paragraph>
               {currentConfirmed.steps.map((step) => (
                 <Paragraph key={step.stepKey}><Tag>{dispositionLabels[step.disposition]}</Tag><strong>{step.title}</strong>：{step.actualDescription}</Paragraph>
               ))}
-              {currentDraft ? <Alert type="info" showIcon title="存在待确认修订" description={`草稿 Revision ${currentDraft.revisionNumber} 尚未成为正式事实。`} /> : null}
+              {currentDraft ? <Alert type="info" showIcon title="存在待确认修订" description={`第 ${currentDraft.revisionNumber} 版草稿尚未成为正式事实。`} /> : null}
               <Space wrap>
                 {currentDraft ? <Button onClick={() => openDelivery("edit")}>编辑修订草稿</Button> : <Button onClick={() => openDelivery("amend")}>修订实施记录</Button>}
                 {currentDraft ? (
@@ -470,7 +470,7 @@ export function ClassroomReflectionPanel(props: {
               <Alert type="info" showIcon title="课堂实施草稿" description="当前内容尚未成为正式实施事实。" />
               <Space wrap>
                 <Button onClick={() => openDelivery("edit")}>继续编辑</Button>
-                <Popconfirm title="确认这份课堂实施记录？" description="确认后将形成正式 ObservedPedagogicalMove；原 TeachingPlan 保持不可变。" onConfirm={() => void confirmDeliveryDraft()}>
+                <Popconfirm title="确认这份课堂实施记录？" description="确认后将形成正式课堂实施事实；原教学计划保持不变。" onConfirm={() => void confirmDeliveryDraft()}>
                   <Button type="primary" loading={acting} data-testid="confirm-lesson-delivery">教师确认实施</Button>
                 </Popconfirm>
               </Space>
@@ -509,34 +509,34 @@ export function ClassroomReflectionPanel(props: {
 
         <Card size="small" title="3. 课后反思" loading={loading} data-testid="lesson-reflection-card">
           {!currentConfirmed ? (
-            <Paragraph type="secondary">正式 Reflection 必须基于教师确认的实施记录。</Paragraph>
+            <Paragraph type="secondary">正式课后反思必须基于教师确认的实施记录。</Paragraph>
           ) : summary?.reflection ? (
             <>
               <Space wrap>
                 <Tag color={summary.reflection.currentConfirmed ? "success" : "processing"}>
-                  {summary.reflection.currentConfirmed ? "正式反思已确认" : summary.reflection.generationStatus === "generating" ? "Agent 生成中" : "反思草稿"}
+                  {summary.reflection.currentConfirmed ? "正式反思已确认" : summary.reflection.generationStatus === "generating" ? "教学助手生成中" : "反思草稿"}
                 </Tag>
-                <Tag>{summary.reflection.history.length} 个 Revision</Tag>
+                <Tag>{summary.reflection.history.length} 个版本</Tag>
               </Space>
-              <Paragraph type="secondary">Reflection 独立于 TeachingPlan，确认反思不会修改原计划。</Paragraph>
+              <Paragraph type="secondary">课后反思独立于教学计划，确认反思不会修改原计划。</Paragraph>
               <Button type="primary" onClick={() => props.navigateReflection(summary.reflection!.reflectionRef)} data-testid="continue-reflection">{summary.reflection.currentConfirmed ? "查看反思与后续行动" : "继续完成课后反思"}</Button>
             </>
           ) : (
             <>
-              <Paragraph>选择本次 Reflection 可使用的已确认事实：</Paragraph>
+              <Paragraph>选择本次反思可使用的已确认事实：</Paragraph>
               <Checkbox.Group
                 value={selectedObservationRefs}
                 onChange={(values) => setSelectedObservationRefs(values as string[])}
                 options={confirmedObservations.map((item) => ({ label: item.content, value: item.observationRevisionRef }))}
               />
               <Divider />
-              <Paragraph>可选 Assignment Evidence（仅教师明确勾选的引用进入上下文）：</Paragraph>
+              <Paragraph>可选作业证据（仅教师明确勾选的内容用于本次反思）：</Paragraph>
               {evidenceOptions.length > 0 ? (
                 <Checkbox.Group value={selectedEvidenceRefs} onChange={(values) => setSelectedEvidenceRefs(values as string[])} options={evidenceOptions} />
               ) : (
-                <Paragraph type="secondary">当前课时暂无教师确认的 Assignment Evidence；可以保留为空并明确证据缺口。</Paragraph>
+                <Paragraph type="secondary">当前课时暂无教师确认的作业证据；可以保留为空并明确证据缺口。</Paragraph>
               )}
-              <div><Button type="primary" loading={acting} onClick={() => void startReflection()} data-testid="create-reflection-draft">创建 Reflection Draft</Button></div>
+              <div><Button type="primary" loading={acting} onClick={() => void startReflection()} data-testid="create-reflection-draft">创建反思草稿</Button></div>
             </>
           )}
         </Card>

@@ -163,7 +163,9 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   const workingSet = page.getByTestId("task-working-set");
   await expect(workingSet).toContainText(todoTitle, { timeout: 20_000 });
   await expect(workingSet).toContainText("斜率与图像变化");
-  await expect(workingSet).toContainText("lesson:slope-and-graph-change");
+  expect(handoffBody.workingSet.sourceResourceRefs).toContain(
+    "lesson:slope-and-graph-change"
+  );
 
   const prompt = "请根据当前课时和这条教研待办生成一份可审阅的教学建议。";
   await page.getByRole("textbox", { name: "教师助手任务说明" }).fill(prompt);
@@ -205,7 +207,7 @@ async function createPublishedAssignmentWithSubmissions(request: APIRequestConte
       curriculumUnitRef: "curriculum-unit:linear-functions",
       lessonRef: "lesson:slope-and-graph-change",
       title,
-      instructions: "仅用于合成演示。",
+      instructions: "用于验证教师工作台的作业提醒。",
       dueAt,
       items: [{
         sequence: 1,

@@ -32,13 +32,17 @@ Edu-Agent/
 │   └── web/                          React/Vite 教师门户
 ├── packages/
 │   ├── contracts/                    Web/API 共享 DTO、路由和 Zod Schema
-│   ├── demo-fixtures/                运行时可用、明确 synthetic 的演示数据
 │   └── test-fixtures/                只供自动化测试的构造器与 Fixture
+├── environments/
+│   ├── local/                        本机 PostgreSQL 与运行约定
+│   └── sample-data/                  可选匿名初始数据，不含测试行为
+├── deploy/                           正式部署资源入口（Gate 2.10B）
 ├── infra/
-│   ├── docker/                       本地 PostgreSQL 编排和环境示例
 │   └── postgres/                     数据库所有权说明
 ├── scripts/
-│   ├── demo/                         本地 Demo 与隔离 Playwright 编排
+│   ├── local/                        本机应用生命周期
+│   ├── testing/                      隔离 E2E/Playwright/ObjectStore 编排
+│   ├── quality/                      Bundle 与质量检查
 │   ├── postgres/                     数据库生命周期和集成测试编排
 │   ├── security/                     Secret 扫描
 │   └── *.ts/*.mjs                    仓库级静态和一致性验证
@@ -55,7 +59,6 @@ Edu-Agent/
 │   ├── validation.md                 测试类型、命令和证明范围
 │   ├── operations.md                 本地运行与部署准备入口
 │   ├── adr/                          不可随意重写的长期决策入口
-│   ├── demo/                         本地 Demo 专项指南
 │   ├── operations/                   详细运维/部署差距
 │   ├── project/                      仓库审计、清理和研究记录
 │   └── history/
@@ -70,7 +73,7 @@ Edu-Agent/
 仓库内保留但不进入 Git：
 
 ├── .env.local                        本机 Secret/配置
-├── .demo/                            Demo 日志、报告和 LocalObjectStore
+├── .local-data/                      本机报告、调试内容和 LocalObjectStore
 └── node_modules/、dist/               安装与构建产物
 
 仓库外测试产物：
@@ -87,9 +90,9 @@ Edu-Agent/
 | 各模块 `infrastructure/migrations` | 原地保留 | 43 个历史 Migration 的路径、顺序、checksum 和审计价值不可扰动 |
 | `apps/api/src/composition` | 保留 | 当前服务端 Composition Root；大文件可后续按契约渐进拆分 |
 | `packages/contracts` | 保留 | Web/API 共享协议入口；Gate 增量文件暂不机械合并 |
-| `infra` | 保留 | 本地 Docker/PostgreSQL 职责明确；本轮不开始云部署 |
+| `infra/postgres` | 保留 | 正式 Schema 所有权说明；本机编排已移入 `environments/local` |
 | `tests` | 保留 | 跨包测试不属于任一应用，当前配置和脚本已稳定引用 |
-| `scripts/demo`、`scripts/postgres`、`scripts/security` | 保留 | 已按运行职责分组；根 package scripts 是唯一稳定调用面 |
+| `scripts/local`、`testing`、`quality`、`postgres`、`security` | 保留 | 已按运行职责分组；根 package scripts 是唯一稳定调用面 |
 
 ## 4. 本轮可以安全执行的整理
 
@@ -110,11 +113,11 @@ Edu-Agent/
 - Playwright 产物通过 `tests/config/test-artifacts.ts` 写到仓库外；
 - 旧报告、验收截图和 `.playwright-cli` 状态已从仓库根目录移除；独立复核未发现可验证的外部归档，因此不得把这些可再生产物视为长期验收记录。
 
-### 4.3 Demo 与测试数据
+### 4.3 示例与测试数据
 
-- 新增 `packages/demo-fixtures`，接收当前由产品代码使用的 Gate 2 synthetic refs、教学计划和演示数据；
-- `apps/api` 改为依赖 `@edu-agent/demo-fixtures`；
-- Gate 2 测试可直接复用 demo package，避免复制数据；
+- 新增 `environments/sample-data`，接收本机首次体验可选的匿名 refs、教学计划和样例内容；
+- `apps/api` 改为依赖 `@edu-agent/sample-data`；
+- Gate 2 测试可复用不带测试行为的样例包，避免复制数据；
 - `packages/test-fixtures` 只保留 Gate 1A/1B 测试构造器；
 - Fake Provider 响应、Playwright 行为和断言继续留在测试基础设施，不进入 demo package。
 
@@ -127,7 +130,7 @@ Edu-Agent/
 - 只被旧 Page 使用的 `demo-read-model.ts`；
 - 只会抛错且无调用者的 `run-demo-fresh.mjs`。
 
-现行 `Teacher*Page`、Workspace 页面、`teacher-portal-data.ts` 中仍被使用的显式 Mock、Gate 1A Test Container 和历史文档不删除。
+现行 `Teacher*Page`、Workspace 页面、Gate 1A Test Container 和历史文档不删除。旧门户静态数据文件已在确认零正式引用后移除。
 
 ### 4.4 稳定工程入口
 
@@ -143,10 +146,10 @@ Edu-Agent/
 |---|---|---|
 | `apps/api` | 增加局部 README | 组合根、模块、平台层和数据库入口需要导航，但移动会扩大回归面 |
 | `apps/web` | 增加局部 README | 明确现行路由/Page、API client 和 Mock 标记边界 |
-| `packages` | 增加 README | 解释 contracts/demo/test 三包依赖方向 |
+| `packages` | 增加 README | 解释 contracts 与 test-fixtures 的依赖方向 |
 | `scripts` | 增加 README | 根命令为公共入口，脚本文件不应被直接猜测调用 |
 | `tests` | 增加 README | 说明每类测试证明什么以及数据库隔离语义 |
-| `teacher-portal-data.ts` | 记录剩余 Mock，不整文件移动 | 仍被 Overview、Agent、Exam 和 Sidebar 使用，直接拆分风险高 |
+| 教师门户入口 | 只保留正式 API 读取 | 旧 `teacher-portal-data.ts` 及未路由教学/Agent 演示组件已移除 |
 
 ## 6. 推迟到后续独立重构
 
@@ -155,7 +158,7 @@ Edu-Agent/
 1. `apps/web/src/api.ts` 按领域拆分；需先固定 transport/session/error 契约和 API client 回归测试；
 2. Express `app.ts` 与大型 Composition Service 拆分；需先画依赖图并确保 middleware/route 顺序不变；
 3. `packages/contracts/src/gate*.ts` 合并或重命名；需保持公共 export 和兼容层；
-4. `teacher-portal-data.ts` 按 portal types、read-only demo、exam demo、agent demo 拆分；需逐一替换消费者；
+4. 设置页仍有部分尚未持久化的偏好选项；应在后续产品 Gate 明确状态所有者后接入，而不是恢复前端假写入；
 5. tenant/organization 全局更名、七模块目录重构、Schema 更名；涉及契约、审计和持久化，必须单独 ADR；
 6. 历史 Migration 合并、重写或重排；明确禁止；
 7. 云 CI、正式 OIDC、托管 PostgreSQL/ObjectStore、监控和部署流水线；属于另行审查的仓库治理或 Gate 2.10B 工作；
@@ -168,12 +171,12 @@ Edu-Agent/
 ```text
 apps/web  ───────> packages/contracts
 apps/api  ───────> packages/contracts
-apps/api  ───────> packages/demo-fixtures   （仅本地 synthetic demo/seed）
+apps/api  ───────> environments/sample-data   （仅本机可选样例 Seed）
 tests     ───────> packages/contracts
-tests     ───────> packages/demo-fixtures   （复用 synthetic demo）
+tests     ───────> environments/sample-data   （复用匿名样例）
 tests     ───────> packages/test-fixtures   （测试专用构造器）
 test-fixtures -X-> apps/*
-demo-fixtures -X-> test-fixtures
+sample-data -X-> test-fixtures
 ```
 
 完成本轮整理至少满足：

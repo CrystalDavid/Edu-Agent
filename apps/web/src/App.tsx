@@ -228,7 +228,7 @@ export function App() {
           title={<Typography.Title level={2}>教师工作空间未能启动</Typography.Title>}
           subTitle={
             <div className="startup-diagnostic">
-              <p>{error?.message ?? "请确认本地演示服务已经启动。"}</p>
+              <p>{error?.message ?? "请确认应用服务已经启动。"}</p>
               {error instanceof ApiError ? (
                 <dl>
                   <div><dt>请求服务</dt><dd>{error.service}</dd></div>
@@ -236,9 +236,9 @@ export function App() {
                 </dl>
               ) : null}
               <details>
-                <summary>查看本地启动指南</summary>
-                <p>运行 <code>corepack pnpm demo:doctor</code>，再运行 <code>corepack pnpm demo:dev</code>。</p>
-                <p>完整说明：<code>docs/demo/local-demo.md</code></p>
+                <summary>查看启动指南</summary>
+                <p>运行 <code>corepack pnpm app:doctor</code>，再运行 <code>corepack pnpm app:dev</code>。</p>
+                <p>完整说明：<code>docs/development.md</code></p>
               </details>
             </div>
           }
@@ -319,12 +319,16 @@ export function App() {
   }
 
   const teacherName = cleanDisplayText(workspace.identity.teacherName);
+  const sessionTeacherName = cleanDisplayText(authSession.user.displayName);
+  const schoolName = cleanDisplayText(
+    authSession.currentWorkspace.organizationName
+  );
   return (
     <div className="teacher-portal-shell">
       <TeacherSidebar
         route={route}
-        teacherName={authSession.user.displayName || teacherName}
-        schoolName={authSession.currentWorkspace.organizationName}
+        teacherName={sessionTeacherName || teacherName}
+        schoolName={schoolName}
         roles={authSession.currentWorkspace.roles}
         memberships={authSession.memberships}
         currentMembershipRef={authSession.currentWorkspace.membershipRef}
@@ -392,7 +396,10 @@ export function App() {
                 initialPrompt=""
               />
             ) : (
-              <AgentWorkspacePage navigate={navigate} onAction={showNotice} />
+              <AgentWorkspacePage
+                navigate={navigate}
+                navigatePreparation={navigatePreparation}
+              />
             )
           ) : null}
           {route === "/settings" ? (
@@ -410,7 +417,7 @@ export function App() {
             <div className="legacy-detail-shell">
               <header>
                 <button type="button" onClick={() => navigate("/agent")}><WorkspaceIcon name="arrowLeft" />返回 Agent</button>
-                <span>结构化教学建议详情 · 保留 Gate 2 语义</span>
+                <span>教学建议详情</span>
               </header>
               <CopilotPage
                 workspace={workspace}

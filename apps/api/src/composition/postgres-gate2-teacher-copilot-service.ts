@@ -23,7 +23,7 @@ import {
 import {
   gate2DemoRefs,
   strategyTeachingPlans
-} from "@edu-agent/demo-fixtures";
+} from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {
@@ -1813,7 +1813,7 @@ export class PostgresGate2TeacherCopilotService {
   ): void {
     if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
-        "本地演示身份没有访问该租户或学习者数据的权限。"
+        "当前身份没有访问该学校或学生数据的权限。"
       );
     }
   }

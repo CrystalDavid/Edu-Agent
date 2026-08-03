@@ -1,6 +1,6 @@
 # Security Policy
 
-Edu-Agent 当前是普通教师端本地功能型 MVP，尚未完成生产云安全基线。不要用当前 `main` 或任何本地 Demo 处理真实学校、教师、学生或家长数据。
+Edu-Agent 当前具备可运行、可持久化的应用基线，但尚未完成生产云安全基线。不要在未完成 Gate 2.10B 的环境中处理真实学校、教师、学生或家长数据。
 
 ## 报告安全问题
 
@@ -15,7 +15,7 @@ Edu-Agent 当前是普通教师端本地功能型 MVP，尚未完成生产云安
 
 ## Secret 管理
 
-- Git 只跟踪 `.env.example` 和 `infra/docker/.env.example`；其中只能包含安全占位或空值。
+- Git 只跟踪 `.env.example` 和 `environments/local/postgres/.env.example`；其中只能包含安全占位或空值。
 - 本机 Secret 放在被忽略的 `.env.local`；Ark Key 不得作为命令参数或写入控制台。
 - 不在 Web bundle、测试 Fixture、Migration、文档、截图、Audit detail 或 Git 历史中保存 Secret。
 - 提交前运行 `corepack pnpm test:secrets`，并人工检查新增配置和二进制文件。
@@ -29,15 +29,15 @@ Edu-Agent 当前是普通教师端本地功能型 MVP，尚未完成生产云安
 - Agent 输出默认是 Proposal/Draft，不能自动批准、确认、实施或扩大权限。
 - 每次运行重新授权上下文；Audit、Authorization、Revision 和 Evidence 来源不可绕过。
 - Production 缺少 OIDC、Secure Cookie 或 Provider 配置时必须拒绝启动，不能静默回 Local/Mock/Demo。
-- 上传文件受大小、类型、hash、tenant key 和授权下载边界约束；当前 LocalObjectStore 仅用于本地 synthetic Demo。
+- 上传文件受大小、类型、hash、tenant key 和授权下载边界约束；当前 LocalObjectStore 仅用于本机环境和匿名样例数据。
 
 更完整的当前架构见 [docs/architecture.md](docs/architecture.md)，生产前差距见 [docs/operations/deployment-readiness-gaps.md](docs/operations/deployment-readiness-gaps.md)。
 
 ## 本地数据和测试隔离
 
-- `apps/api/.demo/uploads/objects` 是长期开发 LocalObjectStore，不属于通用缓存清理目标。
+- `.local-data/object-store` 是长期本机 ObjectStore，不属于通用缓存清理目标。
 - PostgreSQL 开发 Volume 与 E2E 临时 Volume 必须使用不同 Compose project/name。
-- 普通测试不得调用 `db:clean` 或 `demo:reset`；破坏性重置要求显式授权保护。
+- 普通测试不得调用 `db:clean` 或 `app:reset`；破坏性重置要求显式授权保护。
 - Playwright 截图、reports、database dumps 和 live model reports 默认被忽略，不作为 Secret 的安全存储位置。
 - 只使用 synthetic 数据；测试结束后清理隔离的 E2E 容器、Volume 和临时对象。
 

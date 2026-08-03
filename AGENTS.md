@@ -10,7 +10,7 @@
 4. [docs/development.md](docs/development.md)：目录、命令和修改路径；
 5. 与任务直接相关的 ADR、Gate 历史或局部 README。
 
-最新产品基线是 Gate 2.10A / `gate-2-10a-verified`。当前是普通教师端本地功能型 MVP，不得把尚未完成的云部署、学生端、考试或多模态写成已有能力。
+最新产品基线是 Gate 2.10A / `gate-2-10a-verified`。当前是可运行、可持久化并可继续部署的普通教师工作台基线；不得把尚未完成的云部署、学生端、考试或多模态写成已有能力。
 
 ## 七模块与状态所有权
 
@@ -42,9 +42,11 @@
 - `apps/api`：API、Composition Root、Worker、模块和 Migration；
 - `apps/web`：当前教师门户、路由和 API client；
 - `packages/contracts`：Web/API 共享协议唯一入口；
-- `packages/demo-fixtures`：本地产品 Demo 的 stable synthetic 数据；
+- `environments/sample-data`：可选的匿名示例数据；
 - `packages/test-fixtures`：测试专用构造器；产品不得依赖；
-- `infra`：本地 PostgreSQL 与所有权说明；
+- `environments/local`：本机 PostgreSQL 与运行环境；
+- `deploy`：正式部署资源入口；
+- `infra`：数据库所有权等基础设施设计说明；
 - `scripts`：通过根 package scripts 调用的编排器；
 - `tests`：跨 workspace 验证；专用 Playwright/Vitest 配置位于 `tests/config`；
 - `docs`：当前权威文档、ADR、运维和历史。
@@ -55,9 +57,9 @@
 
 ```powershell
 corepack pnpm install --frozen-lockfile
-corepack pnpm demo:doctor
-corepack pnpm demo:dev
-corepack pnpm demo:down
+corepack pnpm app:doctor
+corepack pnpm app:dev
+corepack pnpm app:down
 corepack pnpm typecheck
 corepack pnpm test
 corepack pnpm test:unit
@@ -95,13 +97,13 @@ Playwright 报告、结果和截图不得写入仓库根目录。默认 Windows 
 - Gate 命名的历史文件可渐进整理，但不能为了文件名整齐改变公共契约。
 - 修改 Contract 后同时检查 Web、API、tests 和文档消费者。
 
-## Demo 与测试数据
+## 样例与测试数据
 
-- 所有数据必须明确为 synthetic；不得使用真实学校、教师或学生资料。
-- `demo-fixtures` 可被产品本地 Demo 和测试复用，但不得含断言、fake behavior 或 test runner 逻辑。
+- 所有样例和测试数据必须明确为 synthetic；不得使用真实学校、教师或学生资料。
+- `environments/sample-data` 可被本机样例环境和测试复用，但不得含断言、fake behavior 或 test runner 逻辑。
 - `test-fixtures` 只供测试；`apps/*` 不得依赖它。
 - Fake Ark、Mock Provider 响应和 Playwright 专用行为属于 `tests/support` 或测试目录。
-- 不复制两套可能漂移的 Demo 数据；优先共享稳定 refs/values。
+- 不复制两套可能漂移的样例数据；优先共享稳定 refs/values。
 
 ## 测试要求
 
@@ -133,9 +135,9 @@ Playwright 报告、结果和截图不得写入仓库根目录。默认 Windows 
 - Secret 只放 `.env.local`、部署平台 Secret 或其他已批准的本地/外部存储。
 - `.env.example` 只能放空值或安全占位，不得提交 Key、Token、Cookie、真实 DSN 或私钥。
 - 不输出或提交模型完整 Prompt/响应、OIDC Token、API Key、学生资料或数据库备份。
-- 不提交 `.demo/`、LocalObjectStore、`node_modules`、`dist` 或任何测试报告、Trace、Video、截图和临时浏览器状态。
+- 不提交 `.local-data/`、遗留 `.demo/`、LocalObjectStore、`node_modules`、`dist` 或任何测试报告、Trace、Video、截图和临时浏览器状态。
 - 不在仓库根目录生成 `.playwright-cli`、`playwright-report*`、`test-results` 或 `output`；这些内容统一放到外部测试产物目录。
-- 不删除 `.env.local`、长期开发数据库、`apps/api/.demo/uploads/objects` 或用户验收资料；仅在目标明确且用户授权时清理可再生缓存。
+- 不删除 `.env.local`、长期开发数据库、`.local-data/object-store` 或用户验收资料；仅在目标明确且用户授权时清理可再生缓存。
 
 ## 完成任务时更新什么
 

@@ -37,7 +37,7 @@ export default defineConfig({
     }
   },
   webServer: {
-    command: "node scripts/demo/run-e2e-demo.mjs",
+    command: "node scripts/testing/run-e2e-app.mjs",
     url: `${webOrigin}/api/health`,
     reuseExistingServer:
       process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",

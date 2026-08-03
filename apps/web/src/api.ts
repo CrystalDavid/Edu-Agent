@@ -304,7 +304,7 @@ async function request<T>(
     throw new ApiError(
       0,
       "API_UNREACHABLE",
-      "无法连接本地 API；请确认演示服务已启动。",
+      "暂时无法连接应用服务，请确认服务已启动后重试。",
       service,
       requestUrl
     );
@@ -409,7 +409,7 @@ export async function loadAuthenticationSession() {
 export async function loginWithLocalIdentity(input: LocalLoginRequest) {
   LocalLoginRequestSchema.parse(input);
   const status = await request(
-    "本地身份登录",
+    "账号登录",
     apiRoutes.authentication.localLogin,
     AuthenticationSessionStatusSchema,
     { method: "POST", body: JSON.stringify(input) }
@@ -1174,7 +1174,7 @@ export function importSyntheticSubmissions(
 ) {
   SyntheticSubmissionImportRequestSchema.parse(input);
   return request(
-    "载入合成提交",
+    "载入匿名提交",
     apiRoutes.teacher.assignmentSyntheticSubmissions(assignmentRef),
     SyntheticSubmissionImportResultSchema,
     { method: "POST", body: JSON.stringify(input) }

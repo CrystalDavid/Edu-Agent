@@ -49,11 +49,11 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 - `apps/api`、`apps/web`；
 - 七模块和 43 个 SQL Migration；
 - `packages/contracts` 和当时的 `packages/test-fixtures`；
-- `infra/docker`、`infra/postgres`；
+- `environments/local/postgres`、`infra/postgres`；
 - `scripts` 和所有 tests；
 - `docs`、根 README、CHANGELOG；
 - 根/应用/package manifests、`pnpm-lock.yaml`、`pnpm-workspace.yaml`；
-- `.env.example` 和 `infra/docker/.env.example`；
+- `.env.example` 和 `environments/local/postgres/.env.example`；
 - `compose.postgres.yml`、Vitest/Playwright/TypeScript/Drizzle 配置；
 - HarmonyOS Sans SC、Chiron GoRound TC、Nunito 字体、Attribution 和三份许可证；
 - 历史 UI PNG 等正式文档静态资源。
@@ -76,11 +76,11 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | apps/packages 中 `dist`、`node_modules`、`*.tsbuildinfo` | 14,742 文件 / 151.8 MiB | 构建产物，正确 ignored |
 | `.playwright-cli/` | 623 文件 / 49.5 MiB | 浏览器临时状态，正确 ignored |
 | `output/playwright/` | 113 文件 / 18.7 MiB | 本地验收截图，正确 ignored |
-| `.demo/` | 21 个直接审计对象 / 约 1.1 MiB（不含安装链接） | 日志、报告和 LocalObjectStore，正确 ignored |
+| `.local-data/` | 21 个直接审计对象 / 约 1.1 MiB（不含安装链接） | 日志、报告和 LocalObjectStore，正确 ignored |
 | `playwright-report*/`、`test-results/` | 约 1 MiB | 可再生测试报告，正确 ignored |
-| `.env.local`、`infra/docker/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
+| `.env.local`、`environments/local/postgres/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
 
-`apps/api/.demo/uploads/objects` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。根目录测试输出已按可再生产物移出仓库；2026-08-02 独立复核未发现此前文档声称的外部归档，因此不再把它列为可恢复验收证据。
+`.local-data/object-store` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。根目录测试输出已按可再生产物移出仓库；2026-08-02 独立复核未发现此前文档声称的外部归档，因此不再把它列为可恢复验收证据。
 
 ### D. 可疑地被忽略、需人工判断
 
@@ -160,7 +160,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | Repo sync | 397 个跟踪文件、0 个未跟踪文件、43 个历史 Migration 未变、0 个可疑 ignored 文件；最终推送后本地/远程一致 |
 | Git hygiene | `git diff --check` 通过；Web bundle Secret 检查通过 |
 
-真实 PostgreSQL 和 Playwright 使用隔离测试资源；测试结束后临时容器、Volume 和 ObjectStore 已清理。开发 PostgreSQL Volume、`.env.local`、`apps/api/.demo/uploads/objects` 和 ignored 用户验收输出均未删除。
+真实 PostgreSQL 和 Playwright 使用隔离测试资源；测试结束后临时容器、Volume 和 ObjectStore 已清理。开发 PostgreSQL Volume、`.env.local`、`.local-data/object-store` 和 ignored 用户验收输出均未删除。
 
 ## 8. 物理根目录复核与纠正
 

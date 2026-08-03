@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { loadEnvFile } from "node:process";
 
-import { prepareDemo } from "./prepare-demo.mjs";
+import { prepareLocalEnvironment } from "./prepare.mjs";
 import {
   readLocalPostgresEnvironment,
   runPnpm,
@@ -13,6 +13,7 @@ import {
 
 const apiOrigin = "http://localhost:3001";
 const webOrigin = "http://localhost:5173";
+const seedSampleData = process.argv.includes("--sample-data");
 const rootModelEnvironmentPath = resolve(".env.local");
 if (existsSync(rootModelEnvironmentPath)) {
   loadEnvFile(rootModelEnvironmentPath);
@@ -35,7 +36,7 @@ async function assertPortAvailable(port, label) {
     server.once("error", () => {
       reject(
         new Error(
-          `${label} 端口 ${port} 已被占用；请先停止旧的本地演示进程。`
+          `${label} 端口 ${port} 已被占用；请先停止旧的应用进程。`
         )
       );
     });
@@ -148,12 +149,12 @@ async function shutdown(exitCode, reason) {
 }
 
 try {
-  runPnpm(["demo:doctor"]);
+  runPnpm(["app:doctor"]);
   await Promise.all([
     assertPortAvailable(3001, "API"),
     assertPortAvailable(5173, "Web")
   ]);
-  prepareDemo();
+  prepareLocalEnvironment({ seedSampleData });
   runPnpm(["--filter", "@edu-agent/contracts", "build"]);
   const { apiRoutes } = await import(
     "../../packages/contracts/dist/api-routes.js"
@@ -169,10 +170,15 @@ try {
     COPILOT_OUTBOX_WORKER_ENABLED: "true",
     GATE2_DEMO_ENABLED: "true",
     LOCAL_DEMO_DIAGNOSTICS: "true",
+    LOCAL_OBJECT_STORE_ROOT:
+      resolve(
+        process.env.LOCAL_OBJECT_STORE_ROOT ??
+        ".local-data/object-store"
+      ),
     PORT: "3001"
   };
 
-  startPackage("@edu-agent/api", environment, "demo");
+  startPackage("@edu-agent/api", environment, "start:local");
   await waitForJson(
     `${apiOrigin}${apiRoutes.health}`,
     (payload) =>
@@ -184,23 +190,25 @@ try {
     `${apiOrigin}${apiRoutes.authentication.provider}`,
     (payload) => payload?.available === true
   );
-  const readinessHeaders = await createReadinessSession(
-    `${apiOrigin}${apiRoutes.authentication.localLogin}`
-  );
-  await waitForJson(
-    `${apiOrigin}${apiRoutes.demo.bootstrap}`,
-    (payload) => payload?.identity?.dataMode === "synthetic",
-    45_000,
-    readinessHeaders
-  );
-  await waitForJson(
-    `${apiOrigin}${apiRoutes.teacher.modelProviderAvailability}`,
-    (payload) =>
-      payload?.activeProvider === expectedActiveProvider &&
-      payload?.fallbackToMock === false,
-    45_000,
-    readinessHeaders
-  );
+  if (seedSampleData) {
+    const readinessHeaders = await createReadinessSession(
+      `${apiOrigin}${apiRoutes.authentication.localLogin}`
+    );
+    await waitForJson(
+      `${apiOrigin}${apiRoutes.demo.bootstrap}`,
+      (payload) => payload?.identity?.dataMode === "synthetic",
+      45_000,
+      readinessHeaders
+    );
+    await waitForJson(
+      `${apiOrigin}${apiRoutes.teacher.modelProviderAvailability}`,
+      (payload) =>
+        payload?.activeProvider === expectedActiveProvider &&
+        payload?.fallbackToMock === false,
+      45_000,
+      readinessHeaders
+    );
+  }
 
   startPackage("@edu-agent/web", environment);
   await waitForHtml(`${webOrigin}/`);
@@ -210,9 +218,9 @@ try {
   );
 
   process.stdout.write(
-    "\n教师验收入口：http://localhost:5173/\n" +
-      `Model Provider：${expectedActiveProvider}；` +
-      "数据：全部合成。\n"
+    "\n教师工作台：http://localhost:5173/\n" +
+      `生成服务：${expectedActiveProvider}；` +
+      (seedSampleData ? "示例数据已载入。\n" : "使用当前数据库。\n")
   );
 } catch (error) {
   await shutdown(
@@ -222,8 +230,8 @@ try {
 }
 
 process.on("SIGINT", () => {
-  void shutdown(0, "正在停止本地演示进程。");
+  void shutdown(0, "正在停止应用进程。");
 });
 process.on("SIGTERM", () => {
-  void shutdown(0, "正在停止本地演示进程。");
+  void shutdown(0, "正在停止应用进程。");
 });

@@ -29,11 +29,15 @@ const requiredFiles = [
   "docs/roadmap.md",
   "docs/validation.md",
   "docs/version-history.md",
-  "infra/docker/.env.example",
-  "infra/docker/compose.postgres.yml",
+  "deploy/README.md",
+  "environments/README.md",
+  "environments/local/README.md",
+  "environments/local/postgres/.env.example",
+  "environments/local/postgres/compose.postgres.yml",
+  "environments/sample-data/README.md",
   "package.json",
   "packages/contracts/package.json",
-  "packages/demo-fixtures/package.json",
+  "environments/sample-data/package.json",
   "packages/test-fixtures/package.json",
   "playwright.config.ts",
   "pnpm-lock.yaml",
@@ -49,23 +53,25 @@ const requiredFiles = [
 const requiredTrackedRoots = [
   "apps/api/",
   "apps/web/",
+  "deploy/",
   "docs/",
+  "environments/local/",
   "infra/",
   "packages/contracts/",
-  "packages/demo-fixtures/",
+  "environments/sample-data/",
   "packages/test-fixtures/",
   "scripts/",
   "tests/"
 ] as const;
 
 const forbiddenTrackedPath =
-  /(^|\/)(?:node_modules|dist|coverage|\.vite|\.demo|\.playwright-cli|\.pglite|\.gate1a-data|\.pgdata|playwright-report(?:-ark)?|test-results)(?:\/|$)|^output\/playwright\//;
+  /(^|\/)(?:node_modules|dist|coverage|\.vite|\.local-data|\.demo|\.playwright-cli|\.pglite|\.gate1a-data|\.pgdata|playwright-report(?:-ark)?|test-results)(?:\/|$)|^output\/playwright\//;
 const privateEnvironmentFile = /(^|\/)\.env(?:\..+)?$/;
 const forbiddenSecretExtension = /\.(?:key|pem|p12|pfx|jks|keystore)$/i;
 const sourceLikeExtension =
   /\.(?:c?js|mjs|ts|tsx|json|ya?ml|toml|md|mdx|sql|css|scss|html|svg)$/i;
 const knownIgnoredRuntime =
-  /(^|\/)(?:node_modules|dist|coverage|\.vite|\.demo|\.playwright-cli|\.pglite|\.gate1a-data|\.pgdata|playwright-report(?:-ark)?|test-results)(?:\/|$)|^output\/playwright\/|(^|\/)\.env(?:\..+)?$|\.(?:log|tmp|bak|orig|tsbuildinfo)$/i;
+  /(^|\/)(?:node_modules|dist|coverage|\.vite|\.local-data|\.demo|\.playwright-cli|\.pglite|\.gate1a-data|\.pgdata|playwright-report(?:-ark)?|test-results)(?:\/|$)|^output\/playwright\/|(^|\/)\.env(?:\..+)?$|\.(?:log|tmp|bak|orig|tsbuildinfo)$/i;
 const forbiddenPhysicalRootEntries = [
   ".playwright-cli",
   ".vite",

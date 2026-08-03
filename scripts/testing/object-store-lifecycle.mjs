@@ -3,7 +3,7 @@ import { relative, resolve, sep } from "node:path";
 
 import { normalizeE2eRunId } from "../postgres/database-lifecycle.mjs";
 
-const e2eRoot = resolve(".demo/e2e");
+const e2eRoot = resolve(".local-data/e2e");
 
 export function e2eObjectStoreRoot(runId) {
   const normalized = normalizeE2eRunId(runId);
@@ -48,6 +48,6 @@ function assertWithin(target, parent) {
     relativePath === ".." ||
     resolve(parent, relativePath) !== target
   ) {
-    throw new Error("E2E object-store path escapes .demo/e2e.");
+    throw new Error("E2E object-store path escapes .local-data/e2e.");
   }
 }

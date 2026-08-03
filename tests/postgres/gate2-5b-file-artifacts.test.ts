@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/demo-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import JSZip from "jszip";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";

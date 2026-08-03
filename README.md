@@ -1,11 +1,11 @@
 # Edu-Agent
 
-Edu-Agent 是一个面向学校的教育 Agent 平台。当前完成的是**普通教师端本地功能型 MVP**：核心教师流程已经使用类型化 API、PostgreSQL 和可追溯状态运行，但尚未完成云部署、真实学校试点和完整学生/家长产品。
+Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成**可运行、可持久化、可继续部署的普通教师工作台基线**：核心教师流程使用类型化 API、PostgreSQL 和可追溯状态运行；云端基础设施、正式学校试点和学生/家长产品仍属于后续阶段。
 
 - 最新产品 Verified Gate：**Gate 2.10A — 身份、学校组织与权限基线**
 - 固定产品 Tag：`gate-2-10a-verified`
 - 当前形态：Node.js / TypeScript pnpm workspace 模块化单体
-- 默认数据：明确标记的 synthetic 学校、教师、课程与匿名 learner 数据
+- 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
 - 下一产品阶段：Gate 2.10B 云部署与小范围试点准备；本仓库整理不构成新 Gate
 
 详细 Commit、PR、Tag 和 43 个 Migration 的时间线见 [版本历史](docs/version-history.md)。
@@ -14,35 +14,35 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前完成的是**普�
 
 Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进有身份、权限、上下文、Evidence、审批和审计边界的教师工作流。浏览器只通过服务端 API 访问正式状态；模型输出先成为 Proposal 或 Draft，只有教师的显式操作才能形成 TeachingPlan、批改决定、课堂事实、Reflection 或后续行动。
 
-当前 MVP 聚焦普通教师的本地完整体验，同时提供最小 school admin 能力。合成演示数据可以经过真实 Repository/API 持久化，所以“数据是 synthetic”和“实现是 REAL”并不冲突。
+当前产品聚焦普通教师的完整工作体验，同时提供最小学校管理员能力。`environments/sample-data` 只负责可选的匿名初始内容；加载后的一切新增、修改、审批、上传和恢复均通过正式 Repository/API 持久化，不是前端预制页面。
 
 ## 当前可以完成什么
 
 状态口径：
 
 - `REAL`：正式类型化 API、所属模块状态和 PostgreSQL 真值已经存在；
-- `PARTIAL`：核心链路真实，但仍有明确的演示、配置或产品范围限制；
-- `MOCK`：仅由前端演示状态或测试 Adapter 提供，不得解释为正式写入；
+- `PARTIAL`：核心链路真实，但仍有明确的配置或产品范围限制；
+- `DISABLED`：界面明确关闭，当前没有伪造可用结果；
 - `NOT STARTED`：尚未进入产品实现。
 
 | 能力 | 状态 | 当前实现 | 主要限制 |
 |---|---|---|---|
-| 登录与学校工作空间 | REAL（本地）/ PARTIAL（生产） | 本地手机号密码/验证码、Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、多学校选择 | 本地固定演示账号映射林老师；正式 IdP 和云环境尚未配置 |
+| 登录与学校工作空间 | REAL（本机）/ PARTIAL（生产） | 手机号密码/验证码、Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、多学校选择 | 本机账号映射林老师；正式 IdP 和云环境尚未配置 |
 | 教师权限与学校隔离 | REAL | Membership、Role、CourseRun access、服务端 ActingContext、跨校不泄漏 | 角色范围仍是试点最小集合 |
-| 课程与课时 | REAL（最小切片） | CourseRun → Unit → Lesson、目标和实施汇总 | 无课程 CRUD、排课和完整资源树 |
-| 备课任务与授权上下文 | REAL | lesson preparation Task、TaskWorkingSet、重新授权、sealed ContextManifest | 只覆盖当前合成课程切片 |
+| 课程与课时 | REAL（最小切片） | CourseRun → Unit → Lesson、目标、准备度、重点难点、成果预览和实施汇总 | 无课程 CRUD、排课和完整资源树 |
+| 备课任务与授权上下文 | REAL | lesson preparation Task、TaskWorkingSet、重新授权、sealed ContextManifest | 当前内置一组匿名样例课程 |
 | 豆包真实模型生成 | PARTIAL | Volcengine Ark Chat Completions、预算、排队、取消、重试、恢复和验证 | 需本机服务端 Key；当前只有一个真实 Provider |
 | Agent Proposal 与 TeachingPlan 审批 | REAL | Proposal 处置、`draft → in_review → approved`、Revision 历史、显式完成 | Agent 不能自动批准或发布 |
 | 文件、版本与 DOCX | REAL | FileAsset/FileVersion、绑定、软删除/恢复、approved TeachingPlan DOCX | 当前使用本地 ObjectStore，无协作和云同步 |
-| 作业、提交与批改 | REAL（教师端） | Assignment 生命周期、immutable Attempt、批改草稿、确认/重开、统计 | learner 作答由 synthetic 导入，无学生端自行提交 |
+| 作业、提交与批改 | REAL（教师端） | Assignment 生命周期、immutable Attempt、批改草稿、确认/重开、统计 | 当前可载入匿名样例提交，无学生端自行提交 |
 | Evidence | REAL | Observation/Claim 与来源、置信度、unknowns、批改和教学上下文可追溯 | 不形成永久 learner 能力标签 |
 | 调整下一课 | REAL | 从作业/Evidence 生成显式的下一课调整建议和任务关系 | 仍由教师决定是否采用 |
 | Todo 与 Calendar | REAL | 个人 Todo、手工日历、来源业务投影、稍后提醒、工作台 | 无外部日历和复杂重复规则 |
 | 课堂实施与观察 | REAL | LessonDelivery、ClassroomObservation、修订/取代历史 | 无实时课堂、音视频或自动观察 |
 | 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、显式 follow-up | 反思不能倒推伪造课堂事实 |
 | 学校管理员 | REAL（最小） | 成员查看/创建/激活/停用、普通教师角色与 CourseRun access | 无邮件邀请、MFA、SCIM 或完整后台 |
-| 考试 | MOCK / READ ONLY | 可查看明确标记的合成界面 | 无正式考试、提交、批改和持久化 |
-| 开放式 Agent 对话 | PARTIAL / MOCK | Task/Reflection 等受限入口真实；一级页部分内容演示 | 无通用会话平台、多 Agent 或自动化平台 |
+| 考试 | DISABLED | 一级入口明确标记暂未开放 | 无正式考试、提交、批改和持久化 |
+| 教学助手 | REAL（任务入口） | 一级页读取服务器中的备课任务；Task/Reflection 入口使用重新授权和封存上下文 | 无无上下文聊天、多 Agent 或自动化平台 |
 | 学生端、家长端 | NOT STARTED | 无 | 不是当前 MVP 范围 |
 | 多模态、OCR | NOT STARTED | 文件元数据/下载已存在 | 文件理解尚未产品化 |
 
@@ -57,7 +57,7 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 5. **正式状态由所属模块拥有。** 跨模块协作通过 Port/Application Service；禁止跨 Schema 直接写。
 6. **上下文不等于永久授权。** 每次运行重新解析身份、目的、范围和字段；已读取内容不能扩大后续权限。
 7. **失败必须安全且可恢复。** 模型或外部 Provider 失败不能静默回退并伪装成功，也不能损坏已经提交的业务事实。
-8. **所有演示数据都是 synthetic。** 不在本地 Demo、测试、截图或日志中使用真实学校/学生数据。
+8. **示例环境与产品代码分离。** 匿名样例只在 `environments/sample-data`；测试专用数据只在 `packages/test-fixtures`，正式部署不执行样例 Seed。
 
 ## 系统架构
 
@@ -92,14 +92,16 @@ flowchart LR
 | `apps/api` | Express API、Composition Root、Worker、七模块和 Migration registry |
 | `apps/web` | React/Vite 教师门户、路由、Page、API client 和样式 |
 | `packages/contracts` | Web/API 共享路由、DTO 与 Zod Schema |
-| `packages/demo-fixtures` | 产品本地 Demo 使用的稳定 synthetic 数据；不得含测试行为 |
+| `environments/sample-data` | 可选的匿名示例数据；不得包含测试行为或生产数据 |
 | `packages/test-fixtures` | 仅供自动化测试的构造器和 Fixture |
-| `infra` | 本地 Docker/PostgreSQL 配置和数据库所有权说明 |
-| `scripts` | Demo、PostgreSQL、安全、仓库和静态验证编排 |
+| `environments/local` | 本机 PostgreSQL 与本地运行约定 |
+| `deploy` | 正式部署资源入口；当前仅记录 Gate 2.10B 边界 |
+| `infra` | 数据库 Schema 所有权等基础设施设计说明 |
+| `scripts` | 应用启动、测试、PostgreSQL、安全和质量验证编排 |
 | `tests` | unit、architecture、HTTP E2E、PGlite、PostgreSQL、Playwright、live tests 和专用测试配置 |
 | `docs` | 当前权威文档、ADR、运维、项目研究与历史记录 |
 
-仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`infra/docker/.env.local`、`.demo/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
+仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`environments/local/postgres/.env.local`、`.local-data/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
 
 Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。整理前的根目录测试产物属于可再生运行输出，当前仓库与本机均不承诺保留其外部归档。
 
@@ -144,21 +146,24 @@ flowchart TB
 ```powershell
 cd D:\03_Edu-Agent
 corepack pnpm install --frozen-lockfile
-corepack pnpm demo:doctor
-corepack pnpm demo:dev
+corepack pnpm app:doctor
+corepack pnpm app:prepare
+corepack pnpm app:dev
 ```
 
-浏览器打开 <http://localhost:5173/>。`demo:dev` 会复用长期开发 PostgreSQL Volume、运行 43 个 Migration、幂等写入 synthetic Demo、启动 API/Web/Worker，并保留 `apps/api/.demo/uploads/objects` 中的本地文件。
+浏览器打开 <http://localhost:5173/>。上面的命令不会自动写入示例数据；已有数据库会直接恢复原工作空间。首次体验若没有学校和课程，可单独执行 `corepack pnpm sample:seed`，随后再次运行 `app:dev`。页面中的新增、修改、审批、上传和恢复都走正式 API 与 PostgreSQL，不是前端预制效果。
+
+只有明确需要匿名示例数据时才使用 `corepack pnpm sample:dev`。正式部署不得执行 `sample:seed`，并应从 `deploy/` 与部署平台配置身份、数据库和对象存储。
 
 停止前台进程后，如需关闭数据库容器但保留 Volume：
 
 ```powershell
-corepack pnpm demo:down
+corepack pnpm app:down
 ```
 
-`demo:reset` 和 `db:clean` 是显式破坏性入口，不属于普通启动或测试流程。不要删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。
+`app:reset` 和 `db:clean` 是显式破坏性入口，不属于普通启动或测试流程。不要删除 `.env.local`、开发 Volume 或 `.local-data/object-store`。
 
-默认模型是确定性 Mock。要在 synthetic Demo 中调用豆包/火山方舟，只在被忽略的根 `.env.local` 设置 `MODEL_PROVIDER_MODE=ark`、`ARK_API_KEY` 和模型配置；Key 不得进入命令参数、日志、截图、文档或 Git。完整说明见 [本地 Demo 指南](docs/demo/local-demo.md)。
+默认模型是确定性离线 Provider。要调用豆包/火山方舟，只在被忽略的根 `.env.local` 设置 `MODEL_PROVIDER_MODE=ark`、`ARK_API_KEY` 和模型配置；Key 不得进入命令参数、日志、截图、文档或 Git。完整说明见 [本机运行指南](docs/operations/local-environment.md)。
 
 ## 推荐验收顺序
 
@@ -168,8 +173,8 @@ corepack pnpm demo:down
 4. 检查 TaskWorkingSet/授权上下文，用 Mock 或豆包生成 Proposal；
 5. 处置 Proposal，确认 TeachingPlan 的 in-review、approved 和历史 Revision；
 6. 上传文件、创建版本、绑定课时/任务/计划并导出 DOCX；
-7. 创建/发布作业、导入 synthetic 提交、批改并确认 Evidence；
-8. 从 Evidence 显式“调整下一课”；
+7. 创建/发布作业、导入匿名示例提交、批改并确认学习证据；
+8. 从学习证据显式“调整下一课”；
 9. 创建 Todo/Calendar，验证源业务投影只读和稍后提醒；
 10. 确认课堂实施、课堂观察、Reflection Draft、正式 Reflection 与 follow-up 分离；
 11. 以 school admin 验证最小成员权限，并验证跨学校隔离；
@@ -214,7 +219,7 @@ corepack pnpm demo:down
 
 - 尚未云部署，也未达到真实学校生产试点条件；
 - provider-neutral OIDC 代码已存在，但正式 OIDC、域名、HTTPS 和 Secret Manager 未配置；
-- 学生端和家长端未实现，learner 提交仍是 synthetic；
+- 学生端和家长端未实现，当前提交来自可选的匿名样例数据；
 - 完整考试、题库、排课和学校后台未实现；
 - 多模态和 OCR 尚未产品化，文件内容不会自动进入模型；
 - 真实模型当前只支持一个 Volcengine Ark/豆包 Provider；

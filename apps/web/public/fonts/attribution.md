@@ -1,6 +1,6 @@
 # Self-hosted font attribution
 
-Only browser-ready font files used by the demo are committed. No font source
+Only browser-ready font files used by the web application are committed. No font source
 repository, CDN stylesheet, remote runtime request, or Base64 font is
 included.
 
@@ -16,7 +16,7 @@ included.
 - SHA-256:
   `8978E05044E7089AD6A9DE38C505C8148305607983487435A916D2610700A7CA`
 - Delivery decision: the original variable TTF is redistributed unchanged.
-  It covers the 400, 500, 600 and 700 weights used by this demo.
+  It covers the 400, 500, 600 and 700 weights used by the application.
 - Why no WOFF2/subset: the bundled licence prohibits modifying the font.
 - Licence: HarmonyOS Sans Fonts License Agreement
 - Licence copy: `licenses/HarmonyOS-Sans-License.txt`

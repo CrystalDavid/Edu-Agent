@@ -101,7 +101,7 @@ describe("Gate 2 architecture invariants", () => {
       "apps/web/src/pages/OverviewPage.tsx"
     );
     const agent = source(
-      "apps/web/src/components/portal/AgentComponents.tsx"
+      "apps/web/src/pages/AgentWorkspacePage.tsx"
     );
     for (const route of [
       "概览",
@@ -115,13 +115,14 @@ describe("Gate 2 architecture invariants", () => {
     }
     expect(sidebar).not.toContain("学习证据");
     expect(sidebar).not.toContain("运行记录");
-    expect(agent).toContain("有什么可以帮你？");
-    expect(agent).toContain("描述你想完成的教学任务");
+    expect(agent).toContain("从备课任务开始");
+    expect(agent).toContain("loadLessonPreparationTasks");
+    expect(agent).not.toContain("sessionStorage");
     expect(overview).toContain("今天需要做什么");
     expect(overview).toContain("今日课程");
     expect(overview).toContain("学生概况");
-    expect(overview).toContain("备课组动态");
-    expect(overview).toContain("学校动态");
+    expect(overview).not.toContain("备课组动态");
+    expect(overview).not.toContain("学校动态");
     expect(overview).toContain("最近文件");
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
   });
@@ -145,7 +146,7 @@ describe("Gate 2 architecture invariants", () => {
     expect(overview).not.toContain("明日教学重点");
     expect(overview).not.toContain("我的常用");
     expect(overview).toContain("今日课程");
-    expect(overview).toContain("备课组动态");
+    expect(overview).not.toContain("备课组动态");
     expect(overview).toContain("最近文件");
   });
 

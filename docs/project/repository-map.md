@@ -16,8 +16,11 @@ Edu-Agent/
 │   └── web/
 ├── packages/
 │   ├── contracts/
-│   ├── demo-fixtures/
 │   └── test-fixtures/
+├── environments/
+│   ├── local/
+│   └── sample-data/
+├── deploy/
 ├── infra/
 ├── scripts/
 ├── tests/（专用测试配置位于 `tests/config/`）
@@ -35,7 +38,7 @@ Edu-Agent/
 |---|---|
 | `src/index.ts` | API 进程入口、端口与启动失败处理 |
 | `src/app.ts` | Express application、middleware、auth 和 route 组合 |
-| `src/composition/` | Product Composition Root、Application Service、Worker 组装、Demo seed |
+| `src/composition/` | Product Composition Root、Application Service、Worker 组装、可选样例 Seed |
 | `src/database/migrations.ts` | 43 个 Migration 的唯一 registry |
 | `src/platform/` | PostgreSQL、auth、errors、server 等平台 Adapter |
 | `src/modules/` | 七个状态所有者模块 |
@@ -75,7 +78,7 @@ apps/api/src/modules/<module>/
 | `src/pages/` | 当前 `Teacher*Page`、Workspace 和业务详情页 |
 | `src/components/portal/` | 教师门户功能组件 |
 | `src/api.ts` | 当前单一 API client；后续可在保留 transport 契约后按领域拆分 |
-| `src/teacher-portal-data.ts` | 仍被使用的显式 Demo/READ_ONLY Portal 数据 |
+| `public/images/` | 正式界面静态图片；当前包含教师头像 |
 | `public/fonts/` | 正式字体、Attribution 和许可证 |
 
 旧的未路由 Page、Inspector/Student legacy components 和 `demo-read-model.ts` 已在清理分支删除。新增页面必须同时进入 `route.ts`、`App.tsx` 和回归测试，不能只创建文件。
@@ -85,31 +88,31 @@ apps/api/src/modules/<module>/
 | Package | 消费者 | 内容边界 |
 |---|---|---|
 | `@edu-agent/contracts` | Web、API、tests | route builder、DTO、enum、Zod Schema；不含 Repository/UI |
-| `@edu-agent/demo-fixtures` | API local demo、Gate 2 tests | stable synthetic refs/data；无断言或 Fake Provider |
+| `@edu-agent/sample-data` | API 本机样例入口、Gate 2 tests | stable anonymous refs/data；无断言或 Fake Provider |
 | `@edu-agent/test-fixtures` | tests | Gate 1A/1B 测试构造器；`apps/*` 不得依赖 |
 
 稳定依赖方向：
 
 ```text
 apps/web -> contracts
-apps/api -> contracts + demo-fixtures
-tests    -> contracts + demo-fixtures + test-fixtures
+apps/api -> contracts + sample-data
+tests    -> contracts + sample-data + test-fixtures
 ```
 
 ## `infra` 与 Migration
 
-- `infra/docker/compose.postgres.yml`：PostgreSQL 18 本地编排；
-- `infra/docker/.env.example`：无 Secret 模板；
-- `infra/docker/.env.local`：脚本生成的本地凭据，Git ignored；
+- `environments/local/postgres/compose.postgres.yml`：PostgreSQL 18 本地编排；
+- `environments/local/postgres/.env.example`：无 Secret 模板；
+- `environments/local/postgres/.env.local`：脚本生成的本地凭据，Git ignored；
 - `infra/postgres/migration-ownership.md`：Schema owner、app/worker role 和 Migration 规则。
 
 43 个历史 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。历史文件不可修改、合并、重排或重命名。
 
 ## `scripts` 与稳定命令
 
-脚本实现按职责分为 `demo/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](../development.md) 说明。
+脚本实现按职责分为 `local/`、`testing/`、`quality/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](../development.md) 说明。
 
-不要直接恢复或复制已经失效的 `run-demo-fresh.mjs`。安全替代是隔离 `test:playwright`，长期数据重置则必须显式使用受保护的 `demo:reset`。
+不要直接恢复或复制已经失效的旧启动脚本。浏览器测试使用隔离 `test:playwright`，长期数据重置必须显式使用受保护的 `app:reset`。
 
 ## `tests`
 
@@ -157,9 +160,9 @@ docs/
 | 路径 | 用途 | 清理边界 |
 |---|---|---|
 | `.env.local` | 本机模型/身份配置 | 不提交、不自动删除 |
-| `infra/docker/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
-| `apps/api/.demo/uploads/objects` | 长期开发 LocalObjectStore | 不能当缓存删除 |
-| `.demo/*` 其他内容 | 日志、报告、Demo 状态 | 不提交，按用途人工判断 |
+| `environments/local/postgres/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
+| `.local-data/object-store` | 长期开发 LocalObjectStore | 不能当缓存删除 |
+| `.local-data/*` 其他内容 | 日志、报告和本机运行状态 | 不提交，按用途人工判断 |
 | `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |
 | `C:\Code\test\edu-agent\playwright` | Windows 测试报告、结果、Trace、Video 和截图 | 仓库外生成，不提交 |
 | `EDU_AGENT_TEST_OUTPUT_ROOT` | 跨平台自定义测试产物根目录 | 可选环境变量，不提交 |
@@ -172,7 +175,7 @@ docs/
 - 新领域状态：owning module + 新 Migration + registry；
 - 新模型/存储身份 Adapter：`capability-integration` 或 platform Port/Adapter；
 - 新 Page：`apps/web/src/pages` + `route.ts` + `App.tsx`；
-- 新 synthetic Demo 数据：`packages/demo-fixtures` 或 API 领域专用 demo fixture；
+- 新匿名样例数据：`environments/sample-data`；业务专用 Seed 仍由 API composition 调用；
 - 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
 - 当前功能说明：`docs/capabilities.md`；
 - 未来计划：`docs/roadmap.md`；

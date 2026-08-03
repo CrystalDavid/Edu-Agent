@@ -27,7 +27,7 @@ export function readObjectStoreSettings(
     rootDirectory: resolve(
       configuredRoot && configuredRoot.length > 0
         ? configuredRoot
-        : ".demo/uploads/objects"
+        : ".local-data/object-store"
     ),
     maxUploadBytes
   };

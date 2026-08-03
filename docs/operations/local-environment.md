@@ -1,12 +1,12 @@
-# Edu Agent 教师端本地演示
+# Edu-Agent 本机运行与示例数据
 
-> 状态：CURRENT。对应 `gate-2-10a-verified`；只描述本地合成数据演示，不代表生产部署。
+> 状态：CURRENT。对应 `gate-2-10a-verified`；说明如何运行产品代码，以及如何选择性载入匿名示例数据。本机环境不等于生产部署。
 
-## 演示边界
+## 环境边界
 
-本演示只使用合成的“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名 learner、教学目标、Assignment/Submission、Evidence 和 TeachingPlan。默认使用确定性 `MockModelProvider`，不联网；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。任何模式都禁止真实学校或学生数据。
+匿名示例数据包含“八年级 3 班数学 · 当前学期”、一次函数单元、五个课时、12 名匿名学习者、教学目标、作业、提交、学习证据和教学计划。默认使用确定性离线 Provider；只有用户在根目录 `.env.local` 显式选择 Ark 并提供完整服务端配置时，才调用火山方舟。未经正式数据治理配置前禁止使用真实学校或学生数据。
 
-普通教师端七个一级页面中，概览工作台、日程/Todo、教学的课程/课时/作业/课堂实施与反思、学生近期 Evidence/confirmed classroom observation、文件、Task-scoped Agent、Teacher Copilot、Teaching Plan、Runs，以及身份/学校/会话设置组成 PostgreSQL-backed 业务切片；考试和开放式 Agent 对话仍主要是高保真 Mock 或明确禁用。不要把视觉完整度解释为学校生产上线。
+普通教师端七个一级页面中，概览工作台、日程与待办、教学的课程/课时/作业/课堂实施与反思、学生近期学习依据、文件、任务范围内的教学助手、教学计划、运行记录，以及身份/学校/会话设置均读取正式 API 和 PostgreSQL 状态。考试入口明确禁用；通用无上下文对话已移除，教学助手必须从真实任务或明确关联资源开始。
 
 ## 前置条件
 
@@ -15,23 +15,23 @@
 - 主机端口 `55432`、`3001` 和 `5173` 可用；
 - 在正式项目目录 `D:\03_Edu-Agent` 中执行。
 
-## 一条命令启动
+## 首次体验
 
 ```powershell
 cd D:\03_Edu-Agent
-corepack pnpm demo:doctor
-corepack pnpm demo:dev
+corepack pnpm app:doctor
+corepack pnpm sample:dev
 ```
 
 启动链会：
 
 1. 保留并复用长期开发 Volume `edu-agent-dev-postgres-data`；
-2. 创建被 Git 忽略的 `infra/docker/.env.local`（仅在尚不存在时）；
+2. 创建被 Git 忽略的 `environments/local/postgres/.env.local`（仅在尚不存在时）；
 3. 初始化七个 Schema、数据库角色和 migrations；
-4. 幂等 Seed 合成数据；
-5. 显式以 `APP_ENV=local`、`IDENTITY_PROVIDER_MODE=local`、`DEMO_AUTH_BYPASS=false` 启动演示 API；浏览器从登录页建立 HttpOnly Session；
+4. 仅在执行 `sample:dev` 时幂等写入匿名示例数据；
+5. 显式以 `APP_ENV=local`、`IDENTITY_PROVIDER_MODE=local`、`DEMO_AUTH_BYPASS=false` 启动 API；浏览器从登录页建立 HttpOnly Session；
 6. 启动共用 Outbox Worker；模型执行先提交 queued 事实，再在事务外调用 Mock 或 Ark；
-7. 配置值 `.demo/uploads/objects` 在 API package 进程中解析为仓库内 `apps/api/.demo/uploads/objects`，作为 Git ignored 的开发 LocalObjectStore（可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖）；
+7. 将文件保存在仓库根 `.local-data/object-store`，该目录被 Git 忽略并可由 `LOCAL_OBJECT_STORE_ROOT` 覆盖；
 8. 等待 API 和 Web 通过启动检查。
 
 打开：
@@ -40,7 +40,7 @@ corepack pnpm demo:dev
 http://localhost:5173/
 ```
 
-`corepack pnpm dev` 与 `demo:dev` 使用同一启动链。
+已有数据后使用 `corepack pnpm app:dev` 或其别名 `corepack pnpm dev`，不会自动写入示例数据。`sample:seed`、`sample:dev` 只用于明确需要示例学校和课程的本机体验。
 
 ## 模型配置
 
@@ -52,7 +52,7 @@ ENABLE_LIVE_MODEL_TESTS=false
 MODEL_DEBUG_CONTENT=false
 ```
 
-要在合成本地演示中启用 Ark，请自行在被 Git 忽略的 `D:\03_Edu-Agent\.env.local` 设置：
+要在本机环境中启用 Ark，请自行在被 Git 忽略的 `D:\03_Edu-Agent\.env.local` 设置：
 
 ```text
 MODEL_PROVIDER_MODE=ark
@@ -68,13 +68,13 @@ MODEL_MAX_RETRIES=2
 MODEL_DEBUG_CONTENT=false
 ```
 
-请只在本机填写 `ARK_API_KEY`，不要粘贴到终端输出、文档、测试或聊天。Ark 配置不完整时 local/demo 会安全回退到本地演示助手；production 则启动失败。
+请只在本机填写 `ARK_API_KEY`，不要粘贴到终端输出、文档、测试或聊天。Ark 配置不完整时本机环境可使用离线 Provider；production 则启动失败。
 
 ## 本地身份与服务端会话
 
 产品 API 默认要求有效的服务端 Session Cookie。未登录访问教师门户会显示登录页；登录成功后 API 建立随机不透明 Session，浏览器只持有 HttpOnly Cookie，数据库只保存 token hash。刷新和 API 重启后从 PostgreSQL 恢复 User、School、Membership、Role 和 CourseRun access。
 
-本地教师登录页提供“手机号 + 密码”和“手机号 + 验证码”两种方式。项目所有者保管的固定演示账号映射到 School A 的林老师；服务端只保存手机号摘要和 `scrypt` 凭据摘要，不把明文凭据写入源码、日志、Audit 或数据库。验证码由 local identity Adapter 临时生成、五分钟过期且只能使用一次；因为本地演示没有短信供应商，验证码只在 local/demo 登录页显示。
+本机教师登录页提供“手机号 + 密码”和“手机号 + 验证码”两种方式。项目所有者的体验账号映射到 School A 的林老师；服务端只保存手机号摘要和 `scrypt` 凭据摘要，不把明文凭据写入源码、日志、Audit 或数据库。验证码由 local identity Adapter 临时生成、五分钟过期且只能使用一次；本机未配置短信供应商时，验证码在登录页直接提供。
 
 School Admin、多学校教师和 School B 教师仍作为隔离测试身份 Fixture，用于权限、工作空间和跨学校回归；普通教师登录页不再把测试身份选择器暴露给教师。多学校身份切换后，所有产品读取仍重新按 Membership 和 CourseRun access 授权。侧边栏与设置页显示真实 Session 中的姓名、当前学校和角色。
 
@@ -106,7 +106,7 @@ LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 
 ### Gate 2.10A 身份验收
 
-1. 未登录打开 `/overview`，确认出现手机号登录页；使用项目所有者提供的固定演示账号进入 School A 的林老师工作空间，刷新仍登录；
+1. 未登录打开 `/overview`，确认出现手机号登录页；使用项目所有者账号进入林老师工作空间，刷新仍登录；
 2. 从侧边栏打开“身份与组织设置”，检查当前用户、学校、角色、CourseRun scope 和 active Session；
 3. 登出后确认产品 API 返回 `401`，重新登录可恢复业务数据；
 4. 运行身份 Playwright/PostgreSQL 回归，确认多学校 Fixture 在 School A 和 School B 间切换后 CourseRun/课时数据完全切换且刷新保持；
@@ -128,7 +128,7 @@ LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 9. 单独点击“完成备课”；确认 Task 为 `completed`、概览未完成数量减少、课时显示“已完成”；
 10. 进入 Runs 查看 request、Lesson、TaskWorkingSet、AuthorizedContextPlan、ContextManifest、Provider、PromptBundle 版本、Token、延迟、估算费用、脱敏 request ID、Proposal、Plan/Work、Audit 和 Outbox；
 11. 在同一已完成 Task 创建第二 Proposal；确认页面明确标注“仅允许补充审阅”，接受/修改被禁用，拒绝或延后不改变 current approved 和 completed 状态；如需接受修改，必须先显式 reopen 或新建一轮备课；
-12. 执行 `corepack pnpm demo:down` 后重新 `corepack pnpm demo:dev`，确认上述状态仍存在。
+12. 执行 `corepack pnpm app:down` 后重新 `corepack pnpm sample:dev`，确认上述状态仍存在。
 
 ### Gate 2.5B 文件与教学成果
 
@@ -149,7 +149,7 @@ LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 4. 模型为 queued/running/validating/retry/cancel-requested 时，“生成备课建议”必须禁用并说明原因；取消、超时和 retry 后从持久化 ModelExecution 恢复；
 5. Proposal 处置请求发出时接受、编辑、拒绝、延后和策略切换不能并发操作；结构化 409 后页面重新读取最终处置；
 6. 取消一个 planned/in-progress/awaiting/ready Task，确认 Proposal、计划和文件历史没有被删除；再显式 reopen，确认进入原 Task；
-7. 概览中的学生、备课组和学校动态明确标注只读演示；“制作课件”和协作写操作禁用且没有假成功 toast；
+7. 概览只显示真实业务投影；不存在前端备课组/学校动态数组，也没有“制作课件”或协作操作的假成功提示；
 8. Runs 在 active ModelExecution 时自动刷新到 terminal，并同时显示教师可读状态与审计 code。
 
 ### Gate 2.7 作业、学习 Evidence 与调整下一课
@@ -161,7 +161,7 @@ LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 5. 在“学生”页查看同一匿名 learner 的近期 Submission 与已确认 Evidence；页面只给出动态、中性事项，不显示长期能力标签；
 6. 回到作业页选择一组共性错误，点击“调整下一课”；确认进入下一课 `lesson_preparation` Task，TaskWorkingSet 显示来源 Assignment/题目和本次 selected Evidence；
 7. 输入调整要求并生成 Proposal；刷新后恢复同一 Proposal，不重复生成；修改后接受形成 `in_review`，再由教师单独批准为下一课 current approved TeachingPlan；
-8. 执行 `demo:down` 后重新 `demo:dev`，确认 Assignment、Attempt、GradeDecision、Evidence、TaskWorkingSet、Proposal 和 TeachingPlan 仍可读取；
+8. 执行 `app:down` 后重新 `sample:dev`，确认 Assignment、Attempt、GradeDecision、Evidence、TaskWorkingSet、Proposal 和 TeachingPlan 仍可读取；
 9. 文件页可把教师上传参考资料关联到 Assignment 或明确 AssignmentVersion；模型不会自动读取这些附件。
 
 ### Gate 2.8 日程、待办与教师工作台
@@ -193,7 +193,7 @@ LOCAL_DEMO_TEACHER_CREDENTIAL_SCRYPT=
 本地文件设置（均为非敏感服务端配置）：
 
 ```text
-LOCAL_OBJECT_STORE_ROOT=.demo/uploads/objects
+LOCAL_OBJECT_STORE_ROOT=.local-data/object-store
 FILE_MAX_UPLOAD_BYTES=26214400
 ```
 
@@ -211,18 +211,18 @@ Gate 2.5 不实现 `published`。接受建议、进入审核、批准计划和�
 停止服务但保留数据：
 
 ```powershell
-corepack pnpm demo:down
+corepack pnpm app:down
 ```
 
 删除并重建长期开发数据库是破坏性操作，必须显式授权：
 
 ```powershell
 $env:ALLOW_DESTRUCTIVE_DB_RESET = "1"
-corepack pnpm demo:reset
+corepack pnpm app:reset
 Remove-Item Env:ALLOW_DESTRUCTIVE_DB_RESET
 ```
 
-未设置变量时，`db:clean` / `demo:reset` 会在调用 Docker 前 fail closed。该操作只针对已核验的长期开发 Compose Project/Volume；不会删除 Git ignored secret、其他 Docker Volume 或仓库文件。
+未设置变量时，`db:clean` / `app:reset` 会在调用 Docker 前 fail closed。该操作只针对已核验的长期开发 Compose Project/Volume；不会删除 Git ignored secret、其他 Docker Volume 或仓库文件。
 
 ## 测试数据库不会触碰开发数据
 
@@ -235,16 +235,16 @@ corepack pnpm test:playwright:ark-fake
 这些命令每次都使用形如 `edu-agent-e2e-<run-id>` 的独立 Compose Project 和 `edu-agent-e2e-<run-id>-postgres-data` 临时 Volume。默认 Playwright 固定 Mock；Ark Playwright 只连接本机 Fake Ark。结束时自动清理，并比较测试前后的：
 
 - 开发 Volume identity；
-- `infra/docker/.env.local` 内容；
-- `.demo/uploads` 本地目录。
+- `environments/local/postgres/.env.local` 内容；
+- `.local-data/uploads` 本地目录。
 
-Playwright 的文件字节写入独立的 `.demo/e2e/<run-id>/uploads`，测试结束后只清理该精确目录；临时目录残留或开发上传目录变化都会使测试失败。
+Playwright 的文件字节写入独立的 `.local-data/e2e/<run-id>/uploads`，测试结束后只清理该精确目录；临时目录残留或开发上传目录变化都会使测试失败。
 
 任一受保护状态变化或临时 Volume 未清理都会使测试失败。
 
 ## Outbox Worker
 
-`demo:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 还消费 `ModelInvocationQueued`：先用租约领取，事务外调用 Provider，再把验证后的 Proposal 通过应用服务提交。它继续消费备课、作业、TeachingPlan、模型、文件、Todo 和 Calendar 相关事件，并用幂等 upsert 重建 TeacherWorkProjection；Outbox Consumer Effect 负责去重。
+`sample:dev` 和 Playwright 测试显式设置 `COPILOT_OUTBOX_WORKER_ENABLED=true`。Worker 还消费 `ModelInvocationQueued`：先用租约领取，事务外调用 Provider，再把验证后的 Proposal 通过应用服务提交。它继续消费备课、作业、TeachingPlan、模型、文件、Todo 和 Calendar 相关事件，并用幂等 upsert 重建 TeacherWorkProjection；Outbox Consumer Effect 负责去重。
 
 业务事务中的 Task、状态历史、Working Set、AuthorizedContextPlan、ContextManifest、Disposition、TeachingPlan Revision、current 指针、Lesson 投影与 Audit 同步提交；Worker 记录可恢复的异步消费效果，不负责决定业务事务是否成功。Worker 停止不会回滚业务写入，重启后会继续领取 pending/retry 或租约过期事件。本项目不声称 exactly-once。
 
@@ -273,7 +273,7 @@ corepack pnpm test:model:live
 
 ```powershell
 docker version
-corepack pnpm demo:doctor
+corepack pnpm app:doctor
 ```
 
 检查 PostgreSQL `55432`、API `3001`、Web `5173`。
@@ -289,7 +289,7 @@ corepack pnpm demo:doctor
 
 ### 身份错误
 
-确认通过 `demo:dev` 启动且 `IDENTITY_PROVIDER_MODE=local`、`LOCAL_IDENTITY_PROVIDER_ENABLED=true`。清除旧站点 Cookie 后重新登录；不要把测试 Header 或 `DEMO_AUTH_BYPASS` 用在 production。OIDC 模式下检查 issuer、client、callback 和 Provider 可用性，但不要输出 Token。
+确认通过 `sample:dev` 启动且 `IDENTITY_PROVIDER_MODE=local`、`LOCAL_IDENTITY_PROVIDER_ENABLED=true`。清除旧站点 Cookie 后重新登录；不要把测试 Header 或 `DEMO_AUTH_BYPASS` 用在 production。OIDC 模式下检查 issuer、client、callback 和 Provider 可用性，但不要输出 Token。
 
 ### 模型不可用
 
@@ -312,7 +312,7 @@ corepack pnpm demo:doctor
 
 ## 严格 Ark 实机验收
 
-普通本地演示仍默认使用 Mock。只有执行 Gate 2.6A 实机验收时，才在当前进程显式设置：
+普通本机运行仍默认使用离线 Provider。只有执行 Gate 2.6A 实机验收时，才在当前进程显式设置：
 
 ```text
 MODEL_PROVIDER_MODE=ark
@@ -321,4 +321,4 @@ ARK_LIVE_STRICT=true
 MODEL_DEBUG_CONTENT=false
 ```
 
-随后运行 `corepack pnpm model:probe:live`。严格模式不允许 Mock 或 Fake Ark fallback，也不允许把 skipped 计为通过。API Key 只放在根目录 `.env.local`，不得作为命令参数或控制台输出。脱敏逐次报告位于 `.demo/live-model-reports/`；已固化验收状态见 `docs/history/gates/gate-2-6a-live-acceptance.md`。
+随后运行 `corepack pnpm model:probe:live`。严格模式不允许 Mock 或 Fake Ark fallback，也不允许把 skipped 计为通过。API Key 只放在根目录 `.env.local`，不得作为命令参数或控制台输出。脱敏逐次报告位于 `.local-data/live-model-reports/`；已固化验收状态见 `docs/history/gates/gate-2-6a-live-acceptance.md`。

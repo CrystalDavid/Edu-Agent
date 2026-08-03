@@ -66,13 +66,21 @@ test.describe("Gate 2.10A formal identity and organization", () => {
       });
 
       await page.getByRole("tab", { name: "验证码登录" }).click();
-      await page.getByTestId("login-phone").fill(requiredLoginEnvironment("E2E_LOCAL_LOGIN_PHONE"));
+      const phone = requiredLoginEnvironment("E2E_LOCAL_LOGIN_PHONE");
+      await page.getByTestId("login-phone").fill(phone);
+      const challengeResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          new URL(response.url()).pathname === "/api/v1/auth/local-sms-code"
+      );
       await page.getByTestId("request-login-code").click();
-      const challenge = page.getByTestId("local-demo-code");
-      await expect(challenge).toBeVisible();
-      const code = (await challenge.textContent())?.match(/\b\d{6}\b/u)?.[0];
-      expect(code).toBeTruthy();
-      await page.getByTestId("login-code").fill(code!);
+      const challenge = (await (await challengeResponse).json()) as {
+        challengeRef: string;
+        demoCode: string;
+      };
+      await expect(page.getByTestId("login-code-sent")).toBeVisible();
+      await expect(page.getByTestId("login-code-sent")).not.toContainText(/\b\d{6}\b/u);
+      await page.getByTestId("login-code").fill(challenge.demoCode);
       await page.getByTestId("login-submit").click();
       await expect(page.getByTestId("overview-page")).toBeVisible();
       await expect(page.getByText("林老师").first()).toBeVisible();

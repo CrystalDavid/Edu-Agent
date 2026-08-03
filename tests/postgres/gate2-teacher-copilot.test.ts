@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   gate2DemoRefs
-} from "@edu-agent/demo-fixtures";
+} from "@edu-agent/sample-data";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {

@@ -2230,7 +2230,7 @@ time {
     animation-iteration-count: 1 !important;
   }
 }
-/* Local/demo login: product language first, technical session details stay out of teacher UI. */
+/* Local account login: product language first; technical session details stay out of teacher UI. */
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -2607,8 +2607,7 @@ time {
   color: #66758d;
 }
 
-.login-loading-dot,
-.login-demo-dot {
+.login-loading-dot {
   width: 7px;
   height: 7px;
   display: inline-block;
@@ -2618,20 +2617,6 @@ time {
 
 .login-loading-dot {
   animation: login-pulse 1.1s ease-in-out infinite alternate;
-}
-
-.login-demo-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  color: #8a96a8;
-  font-size: 12px;
-}
-
-.login-demo-dot {
-  background: #59b8ac;
 }
 
 @keyframes login-pulse {

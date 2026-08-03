@@ -23,7 +23,7 @@ import {
   type FormalWriteReceipt,
   type TeachingPlanDocxExportRequest
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/demo-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import type { Pool } from "pg";
 
 import {

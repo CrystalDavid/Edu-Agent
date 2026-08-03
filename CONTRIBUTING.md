@@ -13,7 +13,7 @@ Edu-Agent 使用七模块模块化单体和只向前 Migration。贡献的首要
 
 ```powershell
 corepack pnpm install --frozen-lockfile
-corepack pnpm demo:doctor
+corepack pnpm app:doctor
 ```
 
 ## 开发流程
@@ -61,7 +61,7 @@ corepack pnpm verify:markdown-links
 git diff --check
 ```
 
-涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `demo:doctor`。完整矩阵见 [docs/validation.md](docs/validation.md)。
+涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `app:doctor`。完整矩阵见 [docs/validation.md](docs/validation.md)。
 
 ## 文档
 
@@ -84,4 +84,4 @@ git diff --check
 
 ## 不得提交
 
-`.env.local`、真实 Key/Token、数据库数据/备份、`.demo/`、LocalObjectStore、`node_modules/`、`dist/`、构建缓存、测试报告/Trace/Video/截图、个人桌面报告或外部参考仓库副本。Playwright 产物应写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不得散落在仓库根目录。
+`.env.local`、真实 Key/Token、数据库数据/备份、`.local-data/`、LocalObjectStore、`node_modules/`、`dist/`、构建缓存、测试报告/Trace/Video/截图、个人桌面报告或外部参考仓库副本。Playwright 产物应写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不得散落在仓库根目录。

@@ -155,8 +155,8 @@ UI 的演进方向非常清楚：
 - `教育智能体平台v0.3.2勘误与adr包.md`
 - `教育智能体平台第一轮工程验证计划.md`
 - `infra/postgres/migration-ownership.md`
-- `infra/docker/README.md`
-- `docs/demo/local-demo.md`
+- `environments/local/postgres/README.md`
+- `docs/operations/local-environment.md`
 - `docs/ui/teacher-portal-ui-v1.md`
 
 其中 ADR 和工程验证计划仍需以代码是否落地为准。

@@ -7,7 +7,7 @@ import { childEnvironment } from "../tool-environment.mjs";
 function pnpmInvocation(args) {
   if (!process.env.npm_execpath) {
     throw new Error(
-      "Demo scripts must be started through pnpm (for example: pnpm demo:dev)."
+      "Application scripts must be started through pnpm (for example: pnpm app:dev)."
     );
   }
   return {
@@ -35,7 +35,7 @@ export function runPnpm(args, environment = {}) {
 }
 
 export function readLocalPostgresEnvironment() {
-  const path = resolve("infra/docker/.env.local");
+  const path = resolve("environments/local/postgres/.env.local");
   return Object.fromEntries(
     readFileSync(path, "utf8")
       .split(/\r?\n/)

@@ -57,7 +57,7 @@ if (!process.env.npm_execpath) {
   record(
     "Corepack / pnpm",
     "fail",
-    "请通过 corepack pnpm demo:doctor 启动"
+    "请通过 corepack pnpm app:doctor 检查本机环境"
   );
 } else {
   const pnpm = run(process.execPath, [
@@ -98,12 +98,12 @@ record(
 
 record(
   "本地数据库环境",
-  existsSync(resolve("infra/docker/.env.local"))
+  existsSync(resolve("environments/local/postgres/.env.local"))
     ? "pass"
     : "info",
-  existsSync(resolve("infra/docker/.env.local"))
+  existsSync(resolve("environments/local/postgres/.env.local"))
     ? "已存在且被 Git 忽略"
-    : "首次 demo:dev 会生成随机本地凭据"
+    : "首次 app:dev 会生成随机本地凭据"
 );
 
 for (const [label, port] of [
@@ -130,6 +130,6 @@ if (results.some((result) => result.status === "fail")) {
   process.exitCode = 1;
 } else {
   process.stdout.write(
-    "[PASS] Demo Doctor — 本机具备运行 Mock 合成演示的基础条件。\n"
+    "[PASS] Application Doctor — 本机具备运行教师工作台的基础条件。\n"
   );
 }

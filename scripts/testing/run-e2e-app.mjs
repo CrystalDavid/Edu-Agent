@@ -5,7 +5,7 @@ import {
   runPnpm,
   spawnPnpm,
   stopProcessTree
-} from "./process-utils.mjs";
+} from "../local/process-utils.mjs";
 import {
   composeArguments,
   e2eComposeProject,
@@ -323,7 +323,7 @@ try {
   let apiProcess = startPackage(
     "@edu-agent/api",
     applicationEnvironment,
-    "demo"
+    "start:local"
   );
   await waitForJson(
     `${apiOrigin}${apiRoutes.health}`,
@@ -362,7 +362,7 @@ try {
       apiProcess = startPackage(
         "@edu-agent/api",
         applicationEnvironment,
-        "demo"
+        "start:local"
       );
       await waitForJson(
         `${apiOrigin}${apiRoutes.health}`,

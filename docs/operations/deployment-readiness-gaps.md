@@ -14,7 +14,7 @@
 | 域名、HTTPS 与同源边界 | 当前只验证 localhost；Session production 要求 Secure cookie | 正式域名、TLS 自动续期、可信反向代理配置；明确 Web/API 同源或 CORS；验证 Origin/CSRF、callback 和 forwarded headers |
 | Secret 管理 | `.env.local` 仅适合本机；Secret scan 禁止提交 | 使用云 Secret Manager/部署平台 Secret；最小权限、轮换、审计；Ark/OIDC/DB key 不进入 image、bundle、日志或 IaC state 明文 |
 | 托管 PostgreSQL 与受限角色 | 当前 Docker PostgreSQL 18；已区分 app/worker/migration owner | 选定兼容版本；TLS 连接；独立 migration/app/worker roles；连接池上限；两所合成学校远程隔离测试；应用不使用超级用户 |
-| 云 ObjectStore | 当前正式 Adapter 是本地 `apps/api/.demo/uploads/objects` | 实现同一 ObjectStore Port 的云 Adapter；私有 bucket、tenant-scoped key、加密、授权下载、大小/MIME/hash、补偿和 orphan cleanup；迁移/回滚方案 |
+| 云 ObjectStore | 当前 Adapter 是本机 `.local-data/object-store` | 实现同一 ObjectStore Port 的云 Adapter；私有 bucket、tenant-scoped key、加密、授权下载、大小/MIME/hash、补偿和 orphan cleanup；迁移/回滚方案 |
 | Migration 发布机制 | 43 个前向 Migration 在本地 CLI 执行 | 发布前备份；一次性受限 migration job；checksum/owner 验证；并发部署锁；失败停止与 forward-fix runbook；空库与升级库 staging 验证 |
 | 备份与恢复 | 本地 Volume/文件没有生产 RPO/RTO | 定义 RPO/RTO；数据库 PITR/快照；ObjectStore versioning/retention；执行一次隔离恢复演练并验证 DB-object binding 一致性 |
 | 安全日志、指标和告警 | 有业务 Audit、安全事件和安全模型摘要；无生产 metrics/alerting pipeline | 结构化脱敏日志、request/trace correlation、API/Worker/DB/ObjectStore/OIDC/Ark 指标；错误率、租约堆积、登录异常、预算告警；验证 Secret/content 不被采集 |

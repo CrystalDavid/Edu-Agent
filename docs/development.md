@@ -11,10 +11,10 @@
 ```powershell
 cd D:\03_Edu-Agent
 corepack pnpm install --frozen-lockfile
-corepack pnpm demo:doctor
+corepack pnpm app:doctor
 ```
 
-根 `.env.example` 只说明变量；真实本机配置放 `.env.local`。本地 PostgreSQL 环境由脚本生成 `infra/docker/.env.local`，两者都被 Git 忽略。
+根 `.env.example` 只说明变量；真实本机配置放 `.env.local`。本地 PostgreSQL 环境由脚本生成 `environments/local/postgres/.env.local`，两者都被 Git 忽略。
 
 ## 代码与文档定位
 
@@ -27,26 +27,28 @@ corepack pnpm demo:doctor
 | Web 页面 / 路由 | `apps/web/src/App.tsx`、`route.ts`、`pages/` | lazy import、AppRoute、Playwright |
 | Web API client | `apps/web/src/api.ts` | shared transport/error/session、contract、build |
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |
-| 产品 synthetic Demo | `packages/demo-fixtures` 或 API composition 的领域专用 Demo fixture | 不含断言/真实数据 |
+| 匿名示例数据 | `environments/sample-data` 或 API composition 的领域专用 sample fixture | 不含断言/真实学校数据 |
 | 测试构造器 | `packages/test-fixtures`、`tests/fixtures`、`tests/support` | 产品不得依赖 |
 | 专用测试配置 | `tests/config` | 根目录只保留工具自动发现的默认配置 |
-| 本地生命周期 | 根 `package.json` → `scripts/demo` / `scripts/postgres` | 不删除长期 DB/ObjectStore |
+| 本地生命周期 | 根 `package.json` → `scripts/local` / `scripts/postgres` | 不删除长期 DB/ObjectStore |
 | 当前事实文档 | `docs/capabilities.md` / `architecture.md` | 不在历史文档重复维护 |
 
 更细的路径见 [仓库结构地图](project/repository-map.md)。
 
 ## 稳定命令
 
-### 本地 Demo
+### 本机应用与可选示例数据
 
 | 命令 | 作用 |
 |---|---|
-| `corepack pnpm demo:doctor` | 检查 Node/pnpm、Docker、端口和本地环境；只读诊断 |
-| `corepack pnpm demo:up` | 启动 PostgreSQL、迁移并幂等 Seed，不启动 Web/API 常驻进程 |
-| `corepack pnpm demo:dev` | doctor → demo:up → API/Web/Worker；普通开发入口 |
-| `corepack pnpm demo:down` | 关闭开发数据库容器，保留 Volume |
-| `corepack pnpm demo:reset` | 显式重置 Demo 状态；具有破坏性，需理解保护条件 |
-| `corepack pnpm dev` | `demo:dev` 的稳定别名 |
+| `corepack pnpm app:doctor` | 检查 Node/pnpm、Docker、端口和本地环境；只读诊断 |
+| `corepack pnpm app:prepare` | 启动 PostgreSQL并执行 Migration；不写入示例业务数据 |
+| `corepack pnpm app:dev` | 启动当前数据库上的 API/Web/Worker；不自动 Seed |
+| `corepack pnpm sample:seed` | 显式、幂等写入匿名示例学校与课程 |
+| `corepack pnpm sample:dev` | 首次体验入口：准备环境、写入示例数据并启动应用 |
+| `corepack pnpm app:down` | 关闭开发数据库容器，保留 Volume |
+| `corepack pnpm app:reset` | 显式重置本机数据库；具有破坏性，需理解保护条件 |
+| `corepack pnpm dev` | `app:dev` 的稳定别名 |
 
 ### 构建与验证
 
@@ -78,13 +80,13 @@ corepack pnpm demo:doctor
 
 - `db:up` / `db:down` 管理长期开发 PostgreSQL；
 - `db:migrate` 只向前执行 registry 中 Migration；
-- `db:clean` 和 `demo:reset` 是显式破坏性入口；
+- `db:clean` 和 `app:reset` 是显式破坏性入口；
 - `test:postgres` 与 Playwright 使用独立 Compose project、端口和 Volume；
-- `apps/api/.demo/uploads/objects` 是长期开发文件，不随普通测试或清理删除。
+- `.local-data/object-store` 是长期本机文件，不随普通测试或清理删除。
 
 Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test-artifacts.ts` 解析外部路径：Windows 优先 `C:\Code\test\edu-agent\playwright`，也可设置 `EDU_AGENT_TEST_OUTPUT_ROOT`；这些产物不进入仓库根目录。
 
-详细本地流程见 [运维指南](operations.md) 和 [本地 Demo 指南](demo/local-demo.md)。
+详细本地流程见 [运维指南](operations.md) 和 [本机运行指南](operations/local-environment.md)。
 
 ## 新增能力时的路径
 
@@ -104,6 +106,6 @@ Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test
 - `apps/api/src/app.ts`；
 - `apps/api/src/composition/postgres-model-invocation-service.ts`；
 - 大型 Composition Service、Repository、Contract 和页面；
-- `apps/web/src/teacher-portal-data.ts`。
+- `apps/web/src/pages/TeachingWorkspacePage.tsx`。
 
 后续拆分必须先固定公共契约和依赖图，保持 route/middleware 顺序、Schema 单一真值和业务语义，并有回归测试。具体延期见 [目标仓库结构](project/target-repository-structure.md)。

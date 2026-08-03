@@ -41,7 +41,7 @@ export default defineConfig({
     }
   },
   webServer: {
-    command: "node scripts/demo/run-e2e-demo.mjs",
+    command: "node scripts/testing/run-e2e-app.mjs",
     cwd: workspaceRoot,
     url: `${webOrigin}/api/health`,
     reuseExistingServer: false,

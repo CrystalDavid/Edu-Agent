@@ -59,7 +59,7 @@ export async function writeSafeLiveAcceptanceReport(
   report: SafeLiveAcceptanceReport
 ): Promise<string> {
   const directory = resolve(
-    ".demo",
+    ".local-data",
     "live-model-reports"
   );
   await mkdir(directory, { recursive: true });

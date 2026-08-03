@@ -17,6 +17,7 @@ import {
   loadLearnerEvidence
 } from "../api";
 import { PageHeader } from "../components/portal/PortalPrimitives";
+import { cleanDisplayText } from "../presentation";
 import type { AppRoute } from "../route";
 
 const { Paragraph, Text, Title } = Typography;
@@ -105,14 +106,14 @@ export function StudentWorkspacePage(props: {
     <div className="portal-page students-page" data-testid="students-page">
       <PageHeader
         title="学生"
-        subtitle="匿名合成名单、近期提交与教师已确认 Evidence 来自 PostgreSQL；不形成长期能力标签"
+        subtitle="查看当前课程名单、近期提交与教师已确认的学习证据"
         actions={<Button onClick={() => props.navigate("/assignments")}>进入作业与批改</Button>}
       />
       {error ? (
         <Alert
           type="error"
           showIcon
-          title="学生近期 Evidence 加载失败"
+          title="学生近期学习情况加载失败"
           description={error}
           closable
           onClose={() => setError(null)}
@@ -120,14 +121,14 @@ export function StudentWorkspacePage(props: {
       ) : null}
       <Spin spinning={loading}>
         {!course ? (
-          <Empty description="当前没有可用 CourseRun" />
+          <Empty description="当前没有可用课程" />
         ) : (
           <div className="students-workspace">
             <Card className="workspace-card" variant="borderless">
-              <Text className="section-kicker">{course.title}</Text>
-              <Title level={3}>匿名合成学习者</Title>
+              <Text className="section-kicker">{cleanDisplayText(course.title)}</Text>
+              <Title level={3}>当前课程学生</Title>
               <Paragraph type="secondary">
-                {enrollments.length} 名当前选课学习者；“未交”表示缺少 Submission，不按 0 分处理。
+                {enrollments.length} 名当前课程学生；“未交”表示没有收到提交，不按 0 分处理。
               </Paragraph>
               <div className="course-list" data-testid="real-student-list">
                 {enrollments.map((enrollment) => (
@@ -138,8 +139,8 @@ export function StudentWorkspacePage(props: {
                     onClick={() => setSelectedLearnerRef(enrollment.learnerRef)}
                     data-testid={`learner-${enrollment.learnerRef}`}
                   >
-                    <strong>{enrollment.displayName}</strong>
-                    <small>{enrollment.synthetic ? "合成演示数据" : "受控课程名单"}</small>
+                    <strong>{cleanDisplayText(enrollment.displayName)}</strong>
+                    <small>当前课程成员</small>
                   </button>
                 ))}
               </div>
@@ -149,17 +150,17 @@ export function StudentWorkspacePage(props: {
               {selectedEnrollment && learnerView ? (
                 <>
                   <Text className="section-kicker">近期、可追溯、非长期结论</Text>
-                  <Title level={2}>{selectedEnrollment.displayName}</Title>
+                  <Title level={2}>{cleanDisplayText(selectedEnrollment.displayName)}</Title>
                   <Space wrap>
                     <Tag>{learnerView.recentAssignments.length} 条近期作业状态</Tag>
-                    <Tag color="processing">{learnerView.evidence.length} 条当前确认 Evidence</Tag>
+                    <Tag color="processing">{learnerView.evidence.length} 条已确认学习证据</Tag>
                   </Space>
 
                   <section>
                     <Title level={4}>需要教师查看</Title>
                     {learnerView.needsTeacherReview.length > 0 ? (
                       learnerView.needsTeacherReview.map((item) => (
-                        <Alert key={item} type="warning" showIcon title={item} />
+                        <Alert key={item} type="warning" showIcon title={cleanDisplayText(item)} />
                       ))
                     ) : (
                       <Paragraph type="secondary">当前没有由近期作业触发的复核事项。</Paragraph>
@@ -175,7 +176,7 @@ export function StudentWorkspacePage(props: {
                             <strong>{submission.submissionState === "not_submitted" ? "本次作业尚未提交" : "已提交"}</strong>
                             <Paragraph type="secondary">
                               {submission.submissionState === "not_submitted"
-                                ? "没有 SubmissionAttempt，因此不显示 0 分。"
+                                ? "没有提交记录，因此不显示 0 分。"
                                 : submission.gradeStatus === "confirmed"
                                   ? `教师已确认：${submission.score ?? "—"} / ${submission.maxScore ?? "—"}`
                                   : "当前需要教师批改或确认。"}
@@ -189,7 +190,7 @@ export function StudentWorkspacePage(props: {
                   </section>
 
                   <section data-testid="learner-confirmed-evidence">
-                    <Title level={4}>教师已确认 Evidence</Title>
+                    <Title level={4}>教师已确认的学习证据</Title>
                     {learnerView.evidence.length > 0 ? (
                       <Space orientation="vertical" size="small">
                         {learnerView.evidence.map((evidence) => (
@@ -199,39 +200,39 @@ export function StudentWorkspacePage(props: {
                                 {evidence.outcome === "correct" ? "正确" : evidence.outcome === "partial" ? "部分正确" : "错误"}
                               </Tag>
                               <Text>{evidence.awardedScore} / {evidence.maxScore}</Text>
-                              <Text type="secondary">目标 {evidence.objectiveRef}</Text>
+                              <Text type="secondary">已关联教学目标</Text>
                             </Space>
                             <Paragraph type="secondary">
-                              来源：Assignment → Attempt → ItemResponse → GradeDecision；{evidence.isCurrent ? "当前版本" : "历史版本"}
+                              来源：作业 → 提交 → 逐题作答 → 教师批改；{evidence.isCurrent ? "当前版本" : "历史版本"}
                             </Paragraph>
                           </Card>
                         ))}
                       </Space>
                     ) : (
-                      <Paragraph type="secondary">尚无教师确认后形成的学习 Evidence。</Paragraph>
+                      <Paragraph type="secondary">尚无教师确认后形成的学习证据。</Paragraph>
                     )}
                   </section>
 
                   <section data-testid="learner-classroom-observations">
                     <Title level={4}>教师确认的课堂观察</Title>
-                    <Paragraph type="secondary">仅显示明确作用于当前匿名学习者的课堂观察；班级观察与作业 Evidence 不在此混为个人结论。</Paragraph>
+                    <Paragraph type="secondary">仅显示明确作用于当前学生的课堂观察；班级观察与作业证据不会在这里混为个人结论。</Paragraph>
                     {classroomObservations.length > 0 ? (
                       <Space orientation="vertical" size="small">
                         {classroomObservations.map((observation) => (
                           <Card key={observation.observationRevisionRef} size="small">
-                            <Space wrap><Tag color="success">教师已确认</Tag><Tag>{observation.observationType}</Tag></Space>
-                            <Paragraph>{observation.content}</Paragraph>
-                            <Text type="secondary">来源 Lesson：{observation.lessonRef} · {new Date(observation.observedAt).toLocaleString("zh-CN")}</Text>
+                            <Space wrap><Tag color="success">教师已确认</Tag><Tag>{observationTypeLabel(observation.observationType)}</Tag></Space>
+                            <Paragraph>{cleanDisplayText(observation.content)}</Paragraph>
+                            <Text type="secondary">来源：课堂观察 · {new Date(observation.observedAt).toLocaleString("zh-CN")}</Text>
                           </Card>
                         ))}
                       </Space>
                     ) : (
-                      <Paragraph type="secondary">当前没有教师确认且明确作用于该匿名学习者的课堂观察。</Paragraph>
+                      <Paragraph type="secondary">当前没有教师确认且明确作用于该学生的课堂观察。</Paragraph>
                     )}
                   </section>
                 </>
               ) : (
-                <Empty description="请选择一名匿名学习者" />
+                <Empty description="请选择一名学生" />
               )}
             </Card>
           </div>
@@ -239,6 +240,17 @@ export function StudentWorkspacePage(props: {
       </Spin>
     </div>
   );
+}
+
+function observationTypeLabel(type: string): string {
+  return {
+    learning_progress: "学习进展",
+    misconception: "概念混淆",
+    pacing: "课堂节奏",
+    engagement: "课堂参与",
+    activity_effectiveness: "活动效果",
+    follow_up_need: "后续关注"
+  }[type] ?? "课堂观察";
 }
 
 function errorMessage(error: unknown): string {

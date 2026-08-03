@@ -90,13 +90,12 @@ export function LoginPage(props: {
   return (
     <main className="login-page" data-testid="login-page">
       <section className="login-shell">
-        <aside className="login-story" aria-label="Edu-Agent 产品介绍">
+        <aside className="login-story" aria-label="教师工作台介绍">
           <div className="login-logo-row">
             <span className="login-logo-mark">EA</span>
-            <strong>Edu-Agent</strong>
+            <strong>教师工作台</strong>
           </div>
           <div className="login-story-copy">
-            <span className="login-eyebrow">TEACH WITH CLARITY</span>
             <h1>让每一次教学准备，都有清晰依据</h1>
             <p>从备课、课堂实施到课后反思，把教师的真实工作连成一条可恢复的教学闭环。</p>
           </div>
@@ -125,7 +124,7 @@ export function LoginPage(props: {
           </div>
         </aside>
 
-        <section className="login-panel" aria-label="登录 Edu-Agent">
+        <section className="login-panel" aria-label="登录教师工作台">
           <div className="login-panel-inner">
             <div className="login-heading">
               <Typography.Title level={2}>欢迎登录</Typography.Title>
@@ -236,11 +235,11 @@ export function LoginPage(props: {
                       </div>
                       {challenge ? (
                         <Alert
-                          data-testid="local-demo-code"
+                          data-testid="login-code-sent"
                           type="info"
                           showIcon
-                          title={`本地演示验证码：${challenge.demoCode}`}
-                          description={`验证码已为 ${challenge.phoneMasked} 生成，5 分钟内有效。`}
+                          title="验证码已发送"
+                          description={`已发送至 ${challenge.phoneMasked}，5 分钟内有效。`}
                         />
                       ) : null}
                     </>
@@ -270,11 +269,6 @@ export function LoginPage(props: {
                     登录
                   </Button>
                 </form>
-
-                <div className="login-demo-note">
-                  <span className="login-demo-dot" />
-                  当前为本地演示环境，登录后进入林老师工作空间
-                </div>
               </>
             ) : null}
           </div>

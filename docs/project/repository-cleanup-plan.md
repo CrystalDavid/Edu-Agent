@@ -35,13 +35,13 @@
 - `InspectorPanel` 无消费者；
 - `StudentComponents` 的三个导出只在自身和历史 UI 文档中出现；
 - `demo-read-model.ts` 的每个 export 只被八个旧 Page 使用；
-- `run-demo-fresh.mjs` 无调用者且唯一行为是抛错；替代命令是隔离 `test:playwright`，显式重置使用受保护的 `demo:reset`；
+- `run-demo-fresh.mjs` 无调用者且唯一行为是抛错；替代命令是隔离 `test:playwright`，显式重置使用受保护的 `app:reset`；
 - 删除后 typecheck、architecture、static 和 production build 通过；初始 bundle 不变，证明这些文件此前没有进入运行图。
 
 ### Demo 与测试 Fixture
 
-- 新增 `packages/demo-fixtures`，承载产品本地 Demo 使用的 Gate 2 synthetic refs/data；
-- API 和 Gate 2 tests 改为依赖 `@edu-agent/demo-fixtures`；
+- 新增 `environments/sample-data`，承载产品本地 Demo 使用的 Gate 2 synthetic refs/data；
+- API 和 Gate 2 tests 改为依赖 `@edu-agent/sample-data`；
 - `packages/test-fixtures` 只保留 Gate 1A/1B 测试构造器；
 - 数据使用移动而不是复制，避免两套 Fixture 漂移；
 - Fake Ark、Playwright 行为和断言仍在 tests；
@@ -78,7 +78,7 @@
 | 43 个历史 Migration | 只向前、审计和已验证 Schema 事实；内容和路径不得改变 |
 | Audit/Seed Migration | 正式历史与幂等初始化的一部分 |
 | Gate 1A Test Container / in-memory repositories | 仍被 Node smoke、HTTP skeleton 和隔离测试使用；不是产品 fallback |
-| `teacher-portal-data.ts` | Overview read-only、Agent/Exam demo 和 Sidebar types 仍有消费者 |
+| `teacher-portal-data.ts` | 已在教师交付体验收口中删除；概览和 Agent 改读正式 API，考试入口明确禁用 |
 | 字体和许可证/Attribution | 正式静态资源和许可证义务 |
 | ADR、Gate 文档、live acceptance | 审计历史；只归档不删除 |
 | `.env.local`、开发 PostgreSQL、LocalObjectStore | 用户本地长期状态，不是清理目标 |
@@ -93,7 +93,6 @@
 | Express `app.ts` 拆分 | 必须保持 middleware/route/auth 顺序并增加 route composition 回归 |
 | 大型 Composition/Application Service | 需按 use case 和 transaction boundary 拆，不按行数机械切割 |
 | `packages/contracts/src/gate*.ts` 合并 | 需 export/usage 图、兼容 re-export 和 wire format 保护 |
-| `teacher-portal-data.ts` 拆分 | 先逐项区分 portal type、read-only updates、exam demo 和 agent demo |
 | tenant/organization 全局更名 | 已进入 contracts、DB 和历史；需 ADR/compatibility migration |
 | 七模块目录或 Schema 更名 | 状态所有权和测试已固化；不是仓库整理问题 |
 | 历史 Migration 合并/重写 | 明确禁止 |
@@ -102,7 +101,7 @@
 
 ## 本地生成物处理
 
-本轮不删除 `.env.local`、开发 Volume 或 `apps/api/.demo/uploads/objects`。根目录测试报告、结果和浏览器临时状态已移出仓库；2026-08-02 独立复核时未发现此前文档声称的外部归档，因此不能承诺恢复这些可再生产物。以后需要长期保留的验收证据必须写入明确的外部目录并单独核验。`node_modules` 和 `.demo` 仍被开发流程使用，因此保留。
+本轮不删除 `.env.local`、开发 Volume 或 `.local-data/object-store`。根目录测试报告、结果和浏览器临时状态已移出仓库；2026-08-02 独立复核时未发现此前文档声称的外部归档，因此不能承诺恢复这些可再生产物。以后需要长期保留的验收证据必须写入明确的外部目录并单独核验。`node_modules` 和 `.demo` 仍被开发流程使用，因此保留。
 
 ## 完成条件
 

@@ -3,7 +3,7 @@
 根 [项目 README](../README.md) 是项目唯一首要入口。本文只负责说明“接下来读哪一份”和“新事实应该写在哪里”，不重复当前能力或架构正文。
 
 > 最新产品 Verified Gate：Gate 2.10A / `gate-2-10a-verified`
-> 当前定位：普通教师端本地功能型 MVP；尚未开始 Gate 2.10B 云部署。
+> 当前定位：可运行、可持久化并可继续部署的普通教师工作台基线；尚未开始 Gate 2.10B 云基础设施建设。
 
 ## 推荐阅读顺序
 
@@ -20,7 +20,7 @@
 
 1. [根 README](../README.md)；
 2. [当前能力](capabilities.md)；
-3. [本地 Demo](demo/local-demo.md)；
+3. [本机运行环境](operations/local-environment.md)；
 4. [版本历史](version-history.md)；
 5. [后续路线](roadmap.md)。
 
@@ -56,7 +56,7 @@
 - [Claude Code 仓库经验](project/claude-code-repository-lessons.md)；
 - [部署就绪差距明细](operations/deployment-readiness-gaps.md)；
 - [Migration ownership](../infra/postgres/migration-ownership.md)；
-- [Docker/PostgreSQL](../infra/docker/README.md)。
+- [Docker/PostgreSQL](../environments/local/postgres/README.md)。
 
 ## ADR 与历史资料
 

@@ -83,14 +83,14 @@ describe("PostgreSQL lifecycle isolation", () => {
   it("routes Playwright through the isolated runner", () => {
     const packageJson = JSON.parse(source("package.json"));
     expect(packageJson.scripts["test:playwright"]).toBe(
-      "node scripts/demo/run-playwright-isolated.mjs"
+      "node scripts/testing/run-playwright-isolated.mjs"
     );
-    expect(packageJson.scripts["demo:test-server"]).toBe(
-      "node scripts/demo/run-e2e-demo.mjs"
+    expect(packageJson.scripts["test:app-server"]).toBe(
+      "node scripts/testing/run-e2e-app.mjs"
     );
 
     const isolatedRunner = source(
-      "scripts/demo/run-playwright-isolated.mjs"
+      "scripts/testing/run-playwright-isolated.mjs"
     );
     expect(isolatedRunner).toContain(
       "snapshotProtectedLocalState"
@@ -102,7 +102,7 @@ describe("PostgreSQL lifecycle isolation", () => {
     expect(isolatedRunner).toContain('"--volumes"');
     expect(isolatedRunner).not.toContain("db:clean");
 
-    const e2eServer = source("scripts/demo/run-e2e-demo.mjs");
+    const e2eServer = source("scripts/testing/run-e2e-app.mjs");
     expect(e2eServer).toContain("E2E_RUN_ID");
     expect(e2eServer).toContain("LOCAL_OBJECT_STORE_ROOT");
     expect(e2eServer).toContain('"127.0.0.1"');
@@ -127,7 +127,7 @@ describe("PostgreSQL lifecycle isolation", () => {
         "import { mkdir, writeFile } from 'node:fs/promises';",
         "import { resolve } from 'node:path';",
         "import { e2eObjectStoreRoot, removeE2eObjectStore } from",
-        "'./scripts/demo/object-store-lifecycle.mjs';",
+        "'./scripts/testing/object-store-lifecycle.mjs';",
         `const runId = '${runId}';`,
         "const disposable = e2eObjectStoreRoot(runId);",
         "await mkdir(disposable, { recursive: true });",
@@ -142,11 +142,11 @@ describe("PostgreSQL lifecycle isolation", () => {
     ]);
     expect(probe.status).toBe(0);
     const roots = JSON.parse(probe.stdout.trim());
-    expect(roots.first).toContain(".demo");
+    expect(roots.first).toContain(".local-data");
     expect(roots.first).toContain("first-run");
     expect(roots.first).toContain("uploads");
     expect(roots.first).not.toBe(roots.second);
-    expect(roots.first).not.toContain(".demo\\uploads\\objects");
+    expect(roots.first).not.toContain(".local-data\\object-store");
     expect(roots.runDirectoryRemoved).toBe(true);
   });
 
@@ -173,12 +173,12 @@ describe("PostgreSQL lifecycle isolation", () => {
       "--env-file"
     );
     expect(databaseSupport).not.toContain(
-      "infra/docker/.env.local"
+      "environments/local/postgres/.env.local"
     );
   });
 
   it("keeps development Compose identity explicit and protected", () => {
-    const compose = source("infra/docker/compose.postgres.yml");
+    const compose = source("environments/local/postgres/compose.postgres.yml");
     expect(compose).toContain(
       "${COMPOSE_PROJECT_NAME:-edu-agent-dev}"
     );

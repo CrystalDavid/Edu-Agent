@@ -12,7 +12,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `apps/web`：React 19 + Vite 8 + Ant Design 6 的教师门户；
 - `apps/api`：Express 5 API、七个领域/能力模块、Composition Root 和本地 Worker；
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
-- `packages/demo-fixtures`：本地产品 Demo 和 Gate 2 测试共用的稳定 synthetic refs/seed；
+- `environments/sample-data`：可选匿名样例和 Gate 2 测试共用的稳定 refs/seed；
 - `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
 - PostgreSQL 18：七个 Schema、43 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；
@@ -63,7 +63,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 
 Capability 模块定义 `ObjectStore` Port；`LocalObjectStore` 使用服务端生成的 object key 和可配置、Git-ignored 目录。它提供流式 put/get、exists、metadata、delete 和 SHA-256，校验路径、大小、MIME/扩展名与 OOXML 容器。Artifact 模块保存 FileAsset/FileVersion 真值；对象成功而数据库失败时执行补偿，孤儿清理由有界任务处理。
 
-配置默认值是 `.demo/uploads/objects`；在当前 pnpm API package 进程中，从仓库根目录观察的实际目录是 `apps/api/.demo/uploads/objects`。E2E 使用根 `.demo/e2e/<run-id>/uploads`，不会删除开发文件。
+本机编排将 ObjectStore 明确指向仓库根 `.local-data/object-store`。E2E 使用 `.local-data/e2e/<run-id>/uploads` 下的独立目录，并只清理本次运行的精确路径，不会删除长期本机文件。
 
 ### ModelProvider
 
@@ -79,7 +79,7 @@ ModelExecution 在数据库事务外由租约 Worker 执行，经过预算、Mod
 
 Governance 定义 provider-neutral 身份边界：
 
-- `LocalIdentityProvider`：local/demo/test 的合成用户选择，不实现密码；
+- `LocalIdentityProvider`：本机与测试环境的手机号密码、一次性验证码和稳定外部身份映射；production 禁止启用；
 - `OidcIdentityProvider`：基于 `openid-client` 的 Authorization Code + PKCE + state；
 - 外部 Provider 只证明 stable subject，学校、Membership、Role、workspace 和 CourseRun access 由 Edu-Agent 拥有。
 

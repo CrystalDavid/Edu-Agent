@@ -11,6 +11,7 @@ output/playwright/
 .playwright-cli/
 .pglite/
 .gate1a-data/
+.local-data/
 .demo/
 
 # Local environment and credentials
