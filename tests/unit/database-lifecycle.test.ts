@@ -173,12 +173,12 @@ describe("PostgreSQL lifecycle isolation", () => {
       "--env-file"
     );
     expect(databaseSupport).not.toContain(
-      "environments/local/postgres/.env.local"
+      "infra/local/postgres/.env.local"
     );
   });
 
   it("keeps development Compose identity explicit and protected", () => {
-    const compose = source("environments/local/postgres/compose.postgres.yml");
+    const compose = source("infra/local/postgres/compose.postgres.yml");
     expect(compose).toContain(
       "${COMPOSE_PROJECT_NAME:-edu-agent-dev}"
     );

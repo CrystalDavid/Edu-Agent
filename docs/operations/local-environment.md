@@ -26,7 +26,7 @@ corepack pnpm sample:dev
 启动链会：
 
 1. 保留并复用长期开发 Volume `edu-agent-dev-postgres-data`；
-2. 创建被 Git 忽略的 `environments/local/postgres/.env.local`（仅在尚不存在时）；
+2. 创建被 Git 忽略的 `infra/local/postgres/.env.local`（仅在尚不存在时）；
 3. 初始化七个 Schema、数据库角色和 migrations；
 4. 仅在执行 `sample:dev` 时幂等写入匿名示例数据；
 5. 显式以 `APP_ENV=local`、`IDENTITY_PROVIDER_MODE=local`、`DEMO_AUTH_BYPASS=false` 启动 API；浏览器从登录页建立 HttpOnly Session；
@@ -235,7 +235,7 @@ corepack pnpm test:playwright:ark-fake
 这些命令每次都使用形如 `edu-agent-e2e-<run-id>` 的独立 Compose Project 和 `edu-agent-e2e-<run-id>-postgres-data` 临时 Volume。默认 Playwright 固定 Mock；Ark Playwright 只连接本机 Fake Ark。结束时自动清理，并比较测试前后的：
 
 - 开发 Volume identity；
-- `environments/local/postgres/.env.local` 内容；
+- `infra/local/postgres/.env.local` 内容；
 - `.local-data/uploads` 本地目录。
 
 Playwright 的文件字节写入独立的 `.local-data/e2e/<run-id>/uploads`，测试结束后只清理该精确目录；临时目录残留或开发上传目录变化都会使测试失败。

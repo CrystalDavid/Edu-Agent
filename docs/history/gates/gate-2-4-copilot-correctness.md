@@ -178,7 +178,7 @@ Worker 使用 `pending/retry/processing`、租约到期回收、attempt count �
 - 开发 Volume：`edu-agent-dev-postgres-data`；
 - E2E/PG tests：每次独立 `edu-agent-e2e-<run-id>` Project 与 Volume；
 - 临时 Volume 在 `finally` 中清理；
-- runner 对比测试前后开发 Volume identity、`environments/local/postgres/.env.local` 和本地上传目录；
+- runner 对比测试前后开发 Volume identity、`infra/local/postgres/.env.local` 和本地上传目录；
 - 删除长期开发 Volume 必须设置 `ALLOW_DESTRUCTIVE_DB_RESET=1`，否则在 Docker 调用前拒绝。
 
 `git clean -fdx` 不属于任何测试或 Demo 启动链。

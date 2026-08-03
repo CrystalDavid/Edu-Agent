@@ -14,7 +14,7 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm app:doctor
 ```
 
-根 `.env.example` 只说明变量；真实本机配置放 `.env.local`。本地 PostgreSQL 环境由脚本生成 `environments/local/postgres/.env.local`，两者都被 Git 忽略。
+根 `.env.example` 只说明变量；真实本机配置放 `.env.local`。本地 PostgreSQL 环境由脚本生成 `infra/local/postgres/.env.local`，两者都被 Git 忽略。
 
 ## 代码与文档定位
 

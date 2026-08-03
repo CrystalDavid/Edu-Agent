@@ -98,10 +98,10 @@ record(
 
 record(
   "本地数据库环境",
-  existsSync(resolve("environments/local/postgres/.env.local"))
+  existsSync(resolve("infra/local/postgres/.env.local"))
     ? "pass"
     : "info",
-  existsSync(resolve("environments/local/postgres/.env.local"))
+  existsSync(resolve("infra/local/postgres/.env.local"))
     ? "已存在且被 Git 忽略"
     : "首次 app:dev 会生成随机本地凭据"
 );

@@ -31,7 +31,7 @@ if (
 ) {
   const localEnvironmentPath = fileURLToPath(
     new URL(
-      "../../../environments/local/postgres/.env.local",
+      "../../../infra/local/postgres/.env.local",
       import.meta.url
     )
   );

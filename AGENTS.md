@@ -44,7 +44,7 @@
 - `packages/contracts`：Web/API 共享协议唯一入口；
 - `packages/sample-data`：可选的匿名示例数据 package；
 - `packages/test-fixtures`：测试专用构造器；产品不得依赖；
-- `environments/local`：本机 PostgreSQL 与运行环境；
+- `infra/local`：本机 PostgreSQL 与运行环境；
 - `deploy`：正式部署资源入口；
 - `infra`：数据库所有权等基础设施设计说明；
 - `scripts`：通过根 package scripts 调用的编排器；

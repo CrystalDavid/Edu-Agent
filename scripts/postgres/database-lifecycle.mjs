@@ -14,10 +14,10 @@ export const developmentComposeProject = "edu-agent-dev";
 export const developmentVolumeName =
   "edu-agent-dev-postgres-data";
 export const composeFile = resolve(
-  "environments/local/postgres/compose.postgres.yml"
+  "infra/local/postgres/compose.postgres.yml"
 );
 export const localEnvironmentFile = resolve(
-  "environments/local/postgres/.env.local"
+  "infra/local/postgres/.env.local"
 );
 export const localUploadDirectory = resolve(
   process.env.LOCAL_UPLOAD_DIRECTORY ?? ".local-data/object-store"

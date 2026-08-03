@@ -35,7 +35,7 @@ export function runPnpm(args, environment = {}) {
 }
 
 export function readLocalPostgresEnvironment() {
-  const path = resolve("environments/local/postgres/.env.local");
+  const path = resolve("infra/local/postgres/.env.local");
   return Object.fromEntries(
     readFileSync(path, "utf8")
       .split(/\r?\n/)

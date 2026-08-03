@@ -94,14 +94,14 @@ flowchart LR
 | `packages/contracts` | Web/API 共享路由、DTO 与 Zod Schema |
 | `packages/sample-data` | 可选的匿名示例数据 package；不得包含测试行为或生产数据 |
 | `packages/test-fixtures` | 仅供自动化测试的构造器和 Fixture |
-| `environments/local` | 本机 PostgreSQL 与本地运行约定 |
+| `infra/local` | 本机 PostgreSQL 与本地运行约定 |
 | `deploy` | 正式部署资源入口；当前仅记录 Gate 2.10B 边界 |
 | `infra` | 数据库 Schema 所有权等基础设施设计说明 |
 | `scripts` | 应用启动、测试、PostgreSQL、安全和质量验证编排 |
 | `tests` | unit、architecture、HTTP E2E、PGlite、PostgreSQL、Playwright、live tests 和专用测试配置 |
 | `docs` | 当前权威文档、ADR、运维、项目研究与历史记录 |
 
-仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`environments/local/postgres/.env.local`、`.local-data/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
+仓库根目录只保留正式入口、源码和工具默认配置。本机长期状态包括 `.env.local`、`infra/local/postgres/.env.local`、`.local-data/`、本地 ObjectStore 和 `node_modules/`，均被 Git 忽略但仍被开发流程使用，不应当作垃圾删除。
 
 Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。整理前的根目录测试产物属于可再生运行输出，当前仓库与本机均不承诺保留其外部归档。
 

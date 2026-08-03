@@ -49,11 +49,11 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 - `apps/api`、`apps/web`；
 - 七模块和 43 个 SQL Migration；
 - `packages/contracts` 和当时的 `packages/test-fixtures`；
-- `environments/local/postgres`、`infra/postgres`；
+- `infra/local/postgres`、`infra/postgres`；
 - `scripts` 和所有 tests；
 - `docs`、根 README、CHANGELOG；
 - 根/应用/package manifests、`pnpm-lock.yaml`、`pnpm-workspace.yaml`；
-- `.env.example` 和 `environments/local/postgres/.env.example`；
+- `.env.example` 和 `infra/local/postgres/.env.example`；
 - `compose.postgres.yml`、Vitest/Playwright/TypeScript/Drizzle 配置；
 - HarmonyOS Sans SC、Chiron GoRound TC、Nunito 字体、Attribution 和三份许可证；
 - 历史 UI PNG 等正式文档静态资源。
@@ -78,7 +78,7 @@ PR #11 合并时，正式代码/文档基线已经 clean，所有 386 个跟踪�
 | `output/playwright/` | 113 文件 / 18.7 MiB | 本地验收截图，正确 ignored |
 | `.local-data/` | 21 个直接审计对象 / 约 1.1 MiB（不含安装链接） | 日志、报告和 LocalObjectStore，正确 ignored |
 | `playwright-report*/`、`test-results/` | 约 1 MiB | 可再生测试报告，正确 ignored |
-| `.env.local`、`environments/local/postgres/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
+| `.env.local`、`infra/local/postgres/.env.local` | 本机配置 | 正确 ignored，禁止上传 |
 
 `.local-data/object-store` 是长期开发 ObjectStore，不属于通用缓存，本轮未删除。根目录测试输出已按可再生产物移出仓库；2026-08-02 独立复核未发现此前文档声称的外部归档，因此不再把它列为可恢复验收证据。
 

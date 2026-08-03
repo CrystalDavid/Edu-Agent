@@ -15,7 +15,7 @@ Edu-Agent 当前具备可运行、可持久化的应用基线，但尚未完成�
 
 ## Secret 管理
 
-- Git 只跟踪 `.env.example` 和 `environments/local/postgres/.env.example`；其中只能包含安全占位或空值。
+- Git 只跟踪 `.env.example` 和 `infra/local/postgres/.env.example`；其中只能包含安全占位或空值。
 - 本机 Secret 放在被忽略的 `.env.local`；Ark Key 不得作为命令参数或写入控制台。
 - 不在 Web bundle、测试 Fixture、Migration、文档、截图、Audit detail 或 Git 历史中保存 Secret。
 - 提交前运行 `corepack pnpm test:secrets`，并人工检查新增配置和二进制文件。

@@ -101,9 +101,9 @@ tests    -> contracts + sample-data + test-fixtures
 
 ## `infra` 与 Migration
 
-- `environments/local/postgres/compose.postgres.yml`：PostgreSQL 18 本地编排；
-- `environments/local/postgres/.env.example`：无 Secret 模板；
-- `environments/local/postgres/.env.local`：脚本生成的本地凭据，Git ignored；
+- `infra/local/postgres/compose.postgres.yml`：PostgreSQL 18 本地编排；
+- `infra/local/postgres/.env.example`：无 Secret 模板；
+- `infra/local/postgres/.env.local`：脚本生成的本地凭据，Git ignored；
 - `infra/postgres/migration-ownership.md`：Schema owner、app/worker role 和 Migration 规则。
 
 43 个历史 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。历史文件不可修改、合并、重排或重命名。
@@ -160,7 +160,7 @@ docs/
 | 路径 | 用途 | 清理边界 |
 |---|---|---|
 | `.env.local` | 本机模型/身份配置 | 不提交、不自动删除 |
-| `environments/local/postgres/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
+| `infra/local/postgres/.env.local` | 本地数据库凭据 | 不提交，由脚本创建 |
 | `.local-data/object-store` | 长期开发 LocalObjectStore | 不能当缓存删除 |
 | `.local-data/*` 其他内容 | 日志、报告和本机运行状态 | 不提交，按用途人工判断 |
 | `node_modules/`、`dist/` | 安装/构建产物 | 可重建，不提交 |

@@ -31,7 +31,7 @@ corepack pnpm app:down     # 关闭容器，保留 Volume
 必须保留，除非用户明确授权：
 
 - 根 `.env.local`；
-- `environments/local/postgres/.env.local`；
+- `infra/local/postgres/.env.local`；
 - Docker Volume `edu-agent-dev-postgres-data`；
 - `.local-data/object-store`；
 - 用户保留的验收输出。

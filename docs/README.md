@@ -56,7 +56,7 @@
 - [Claude Code 仓库经验](project/claude-code-repository-lessons.md)；
 - [部署就绪差距明细](operations/deployment-readiness-gaps.md)；
 - [Migration ownership](../infra/postgres/migration-ownership.md)；
-- [Docker/PostgreSQL](../environments/local/postgres/README.md)。
+- [Docker/PostgreSQL](../infra/local/postgres/README.md)。
 
 ## ADR 与历史资料
 

@@ -234,7 +234,7 @@ function loadLocalEnvironmentWithoutDisplayingIt(): void {
   ) {
     const localPostgresEnvironmentPath = fileURLToPath(
       new URL(
-        "../../../../environments/local/postgres/.env.local",
+        "../../../../infra/local/postgres/.env.local",
         import.meta.url
       )
     );

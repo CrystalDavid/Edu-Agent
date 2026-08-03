@@ -90,7 +90,7 @@ Edu-Agent/
 | 各模块 `infrastructure/migrations` | 原地保留 | 43 个历史 Migration 的路径、顺序、checksum 和审计价值不可扰动 |
 | `apps/api/src/composition` | 保留 | 当前服务端 Composition Root；大文件可后续按契约渐进拆分 |
 | `packages/contracts` | 保留 | Web/API 共享协议入口；Gate 增量文件暂不机械合并 |
-| `infra/postgres` | 保留 | 正式 Schema 所有权说明；本机编排已移入 `environments/local` |
+| `infra/postgres` | 保留 | 正式 Schema 所有权说明；本机编排位于 `infra/local` |
 | `tests` | 保留 | 跨包测试不属于任一应用，当前配置和脚本已稳定引用 |
 | `scripts/local`、`testing`、`quality`、`postgres`、`security` | 保留 | 已按运行职责分组；根 package scripts 是唯一稳定调用面 |
 
