@@ -4,6 +4,9 @@ import {
   ProviderAvailabilitySchema,
   type ProviderAvailability
 } from "@edu-agent/contracts";
+import type {
+  ModelBudgetConfig
+} from "../application/model-budget-policy.js";
 
 const positiveInteger = (fallback: number) =>
   z.coerce.number().int().positive().default(fallback);
@@ -64,19 +67,6 @@ export interface VolcengineArkConfig {
   timeoutMs: number;
   maxOutputTokens: number;
   maxAttempts: number;
-}
-
-export interface ModelBudgetConfig {
-  maxInputTokens: number;
-  maxOutputTokens: number;
-  maxSingleCost: number;
-  dailyBudget: number;
-  teacherDailyBudget: number;
-  maxConcurrency: number;
-  maxQueueWaitMs: number;
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  allowedModelIds: readonly string[];
 }
 
 export interface ModelProviderSettings {
