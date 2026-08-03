@@ -115,7 +115,7 @@ Edu-Agent/
 
 ### 4.3 示例与测试数据
 
-- 新增 `environments/sample-data`，接收本机首次体验可选的匿名 refs、教学计划和样例内容；
+- 建立 `packages/sample-data`，接收本机首次体验可选的匿名 refs、教学计划和样例内容；
 - `apps/api` 改为依赖 `@edu-agent/sample-data`；
 - Gate 2 测试可复用不带测试行为的样例包，避免复制数据；
 - `packages/test-fixtures` 只保留 Gate 1A/1B 测试构造器；
@@ -171,9 +171,9 @@ Edu-Agent/
 ```text
 apps/web  ───────> packages/contracts
 apps/api  ───────> packages/contracts
-apps/api  ───────> environments/sample-data   （仅本机可选样例 Seed）
+apps/api  ───────> packages/sample-data       （仅本机可选样例 Seed）
 tests     ───────> packages/contracts
-tests     ───────> environments/sample-data   （复用匿名样例）
+tests     ───────> packages/sample-data       （复用匿名样例）
 tests     ───────> packages/test-fixtures   （测试专用构造器）
 test-fixtures -X-> apps/*
 sample-data -X-> test-fixtures

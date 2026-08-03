@@ -40,7 +40,7 @@
 
 ### Demo 与测试 Fixture
 
-- 新增 `environments/sample-data`，承载产品本地 Demo 使用的 Gate 2 synthetic refs/data；
+- 匿名样例 package 调整为 `packages/sample-data`，承载本机 Seed 使用的 Gate 2 synthetic refs/data；
 - API 和 Gate 2 tests 改为依赖 `@edu-agent/sample-data`；
 - `packages/test-fixtures` 只保留 Gate 1A/1B 测试构造器；
 - 数据使用移动而不是复制，避免两套 Fixture 漂移；

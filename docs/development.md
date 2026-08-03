@@ -27,7 +27,7 @@ corepack pnpm app:doctor
 | Web 页面 / 路由 | `apps/web/src/App.tsx`、`route.ts`、`pages/` | lazy import、AppRoute、Playwright |
 | Web API client | `apps/web/src/api.ts` | shared transport/error/session、contract、build |
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |
-| 匿名示例数据 | `environments/sample-data` 或 API composition 的领域专用 sample fixture | 不含断言/真实学校数据 |
+| 匿名示例数据 | `packages/sample-data` 或 API composition 的领域专用 sample fixture | 不含断言/真实学校数据 |
 | 测试构造器 | `packages/test-fixtures`、`tests/fixtures`、`tests/support` | 产品不得依赖 |
 | 专用测试配置 | `tests/config` | 根目录只保留工具自动发现的默认配置 |
 | 本地生命周期 | 根 `package.json` → `scripts/local` / `scripts/postgres` | 不删除长期 DB/ObjectStore |

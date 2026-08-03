@@ -42,7 +42,7 @@
 - `apps/api`：API、Composition Root、Worker、模块和 Migration；
 - `apps/web`：当前教师门户、路由和 API client；
 - `packages/contracts`：Web/API 共享协议唯一入口；
-- `environments/sample-data`：可选的匿名示例数据；
+- `packages/sample-data`：可选的匿名示例数据 package；
 - `packages/test-fixtures`：测试专用构造器；产品不得依赖；
 - `environments/local`：本机 PostgreSQL 与运行环境；
 - `deploy`：正式部署资源入口；
@@ -100,7 +100,7 @@ Playwright 报告、结果和截图不得写入仓库根目录。默认 Windows 
 ## 样例与测试数据
 
 - 所有样例和测试数据必须明确为 synthetic；不得使用真实学校、教师或学生资料。
-- `environments/sample-data` 可被本机样例环境和测试复用，但不得含断言、fake behavior 或 test runner 逻辑。
+- `packages/sample-data` 可被本机 Seed 和测试复用，但不得含断言、fake behavior 或 test runner 逻辑。
 - `test-fixtures` 只供测试；`apps/*` 不得依赖它。
 - Fake Ark、Mock Provider 响应和 Playwright 专用行为属于 `tests/support` 或测试目录。
 - 不复制两套可能漂移的样例数据；优先共享稳定 refs/values。

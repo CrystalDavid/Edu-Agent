@@ -7,7 +7,7 @@
         "./packages/contracts/src/index.ts"
       ],
       "@edu-agent/sample-data": [
-        "./environments/sample-data/src/index.ts"
+        "./packages/sample-data/src/index.ts"
       ],
       "@edu-agent/test-fixtures": [
         "./packages/test-fixtures/src/index.ts"

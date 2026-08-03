@@ -49,7 +49,7 @@ importers:
         version: link:../../packages/contracts
       '@edu-agent/sample-data':
         specifier: workspace:*
-        version: link:../../environments/sample-data
+        version: link:../../packages/sample-data
       docx:
         specifier: ^9.7.1
         version: 9.7.1
@@ -116,7 +116,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  environments/sample-data:
+  packages/sample-data:
     dependencies:
       '@edu-agent/contracts':
         specifier: workspace:*

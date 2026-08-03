@@ -175,7 +175,7 @@ docs/
 - 新领域状态：owning module + 新 Migration + registry；
 - 新模型/存储身份 Adapter：`capability-integration` 或 platform Port/Adapter；
 - 新 Page：`apps/web/src/pages` + `route.ts` + `App.tsx`；
-- 新匿名样例数据：`environments/sample-data`；业务专用 Seed 仍由 API composition 调用；
+- 新匿名样例数据：`packages/sample-data`；业务专用 Seed 仍由 API composition 调用；
 - 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
 - 当前功能说明：`docs/capabilities.md`；
 - 未来计划：`docs/roadmap.md`；

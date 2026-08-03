@@ -14,7 +14,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 
 Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进有身份、权限、上下文、Evidence、审批和审计边界的教师工作流。浏览器只通过服务端 API 访问正式状态；模型输出先成为 Proposal 或 Draft，只有教师的显式操作才能形成 TeachingPlan、批改决定、课堂事实、Reflection 或后续行动。
 
-当前产品聚焦普通教师的完整工作体验，同时提供最小学校管理员能力。`environments/sample-data` 只负责可选的匿名初始内容；加载后的一切新增、修改、审批、上传和恢复均通过正式 Repository/API 持久化，不是前端预制页面。
+当前产品聚焦普通教师的完整工作体验，同时提供最小学校管理员能力。`packages/sample-data` 只负责可选的匿名初始内容；加载后的一切新增、修改、审批、上传和恢复均通过正式 Repository/API 持久化，不是前端预制页面。
 
 ## 当前可以完成什么
 
@@ -57,7 +57,7 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 5. **正式状态由所属模块拥有。** 跨模块协作通过 Port/Application Service；禁止跨 Schema 直接写。
 6. **上下文不等于永久授权。** 每次运行重新解析身份、目的、范围和字段；已读取内容不能扩大后续权限。
 7. **失败必须安全且可恢复。** 模型或外部 Provider 失败不能静默回退并伪装成功，也不能损坏已经提交的业务事实。
-8. **示例环境与产品代码分离。** 匿名样例只在 `environments/sample-data`；测试专用数据只在 `packages/test-fixtures`，正式部署不执行样例 Seed。
+8. **样例数据与产品状态分离。** 匿名样例只在 `packages/sample-data`；测试专用数据只在 `packages/test-fixtures`，正式部署不执行样例 Seed。
 
 ## 系统架构
 
@@ -92,7 +92,7 @@ flowchart LR
 | `apps/api` | Express API、Composition Root、Worker、七模块和 Migration registry |
 | `apps/web` | React/Vite 教师门户、路由、Page、API client 和样式 |
 | `packages/contracts` | Web/API 共享路由、DTO 与 Zod Schema |
-| `environments/sample-data` | 可选的匿名示例数据；不得包含测试行为或生产数据 |
+| `packages/sample-data` | 可选的匿名示例数据 package；不得包含测试行为或生产数据 |
 | `packages/test-fixtures` | 仅供自动化测试的构造器和 Fixture |
 | `environments/local` | 本机 PostgreSQL 与本地运行约定 |
 | `deploy` | 正式部署资源入口；当前仅记录 Gate 2.10B 边界 |

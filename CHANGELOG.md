@@ -20,7 +20,7 @@ Gate 2.10A 之后的仓库治理提交不改变产品状态语义。下一产品
 - **Docs**：根 README 成为唯一入口；当前能力、架构、版本、Roadmap、开发、验证和运维各有单一职责；Gate/UI/研究资料归档但未删除。
 - **Agent DX**：增加 `AGENTS.md`、局部 README、稳定测试/验证命令和 Claude Code 仓库经验记录。
 - **Cleanup**：删除已证明零引用的八个旧 Page、两个旧组件、旧 demo read model 和失效脚本，共 1,743 行；现行路由和业务语义不变。
-- **Environments**：本机运行移入 `environments/local`，匿名样例移入 `environments/sample-data`，正式部署入口独立为 `deploy/`；产品不再依赖 test-only package。
+- **Sample data**：匿名样例从 test-only fixture 分离为 `packages/sample-data` workspace package；产品不再依赖 test-only package。
 - **Repository safety**：增加 Markdown link 和 Git sync verifier；Playwright 不再覆写已跟踪历史 UI 图片。
 - **Database**：未新增、修改、合并或重排 Migration；最新产品基线仍为 43 个 Migration。
 

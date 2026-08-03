@@ -112,7 +112,7 @@ Tool 是否只读、是否可并发、是否具有破坏性、如何中断、如
 | 当前事实与历史分离 | 当前文档固定为 `docs/architecture.md`、`capabilities.md`、`version-history.md` 等；Gate/UI/研究记录进入 `docs/history/` |
 | 稳定命令入口 | 以根 `package.json` 作为命令注册表，补齐 `test:unit`、`test:ark-fake`、`verify:repo-sync`、Markdown 链接检查等可预测名称 |
 | 正式源码与生成物隔离 | 保持 `.local-data/`、ObjectStore、测试报告、截图、构建缓存和本地环境被忽略；增加 Git 同步验证脚本 |
-| 功能边界名称表达真实用途 | 把运行时合成 Demo 数据移到 `environments/sample-data`，让产品不再依赖 `test-fixtures` |
+| 功能边界名称表达真实用途 | 把匿名样例数据独立为 `packages/sample-data`，让产品不再依赖 `test-fixtures` |
 | 复杂区域有局部指南 | 为 API、Web、packages、scripts 和 tests 增加短 README，只解释所有权、入口与禁止事项 |
 | 约束可执行 | 保留并强化 architecture/static/secret/version/repo-sync 验证，不把关键边界只写在文档中 |
 | 高风险工作显式延期 | API、Express app、Contracts、模型服务和七模块目录不因文件大而机械拆分，先记录后续验证条件 |

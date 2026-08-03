@@ -13,7 +13,7 @@ export default defineConfig({
       ),
       "@edu-agent/sample-data": fileURLToPath(
         new URL(
-          "../../environments/sample-data/src/index.ts",
+          "../../packages/sample-data/src/index.ts",
           import.meta.url
         )
       ),
