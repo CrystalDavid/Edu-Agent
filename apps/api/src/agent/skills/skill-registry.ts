@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 
 import type {
-  RuntimeSkillBinding,
-  RuntimeSkillLoaderPort,
   SkillLifecycleStatus,
   SkillManifest,
   SkillVersionBase
 } from "./types.js";
+import type {
+  RuntimeSkillBinding,
+  RuntimeSkillLoaderPort
+} from "../../modules/agent-runtime-context/application/runtime-kernel-service.js";
 
 export class SkillRegistryError extends Error {
   constructor(message: string) {

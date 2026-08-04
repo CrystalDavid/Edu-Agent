@@ -46,8 +46,6 @@ export {
   lessonPreparationSkillV1
 };
 export type {
-  RuntimeSkillBinding,
-  RuntimeSkillLoaderPort,
   SkillLifecycleStatus,
   SkillManifest,
   SkillVersionBase

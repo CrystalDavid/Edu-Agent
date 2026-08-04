@@ -63,17 +63,3 @@ export interface SkillManifest {
 export interface SkillVersionBase {
   readonly manifest: SkillManifest;
 }
-
-export interface RuntimeSkillBinding {
-  readonly skillId: string;
-  readonly skillVersion: string;
-  readonly skillRef: string;
-  readonly contentHash: string;
-  readonly purpose: string;
-  readonly status: SkillLifecycleStatus;
-}
-
-export interface RuntimeSkillLoaderPort {
-  loadPublishedBinding(skillRef: string): RuntimeSkillBinding;
-  loadHistoricalBinding(skillRef: string): RuntimeSkillBinding;
-}

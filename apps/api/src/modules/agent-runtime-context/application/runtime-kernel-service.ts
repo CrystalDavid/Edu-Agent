@@ -3,10 +3,6 @@ import type {
   FormalWriteReceipt
 } from "@edu-agent/contracts";
 
-import type {
-  RuntimeSkillLoaderPort
-} from "../../../agent/skills/types.js";
-
 import {
   compatibilityAgentRunStatus,
   createLessonPreparationCheckpoint,
@@ -19,6 +15,20 @@ import {
 export interface StoredRuntimeCheckpoint {
   readonly compatibilityOutput: Record<string, unknown>;
   readonly checkpoint: AgentRunCheckpoint;
+}
+
+export interface RuntimeSkillBinding {
+  readonly skillId: string;
+  readonly skillVersion: string;
+  readonly skillRef: string;
+  readonly contentHash: string;
+  readonly purpose: string;
+  readonly status: "draft" | "published" | "deprecated";
+}
+
+export interface RuntimeSkillLoaderPort {
+  loadPublishedBinding(skillRef: string): RuntimeSkillBinding;
+  loadHistoricalBinding(skillRef: string): RuntimeSkillBinding;
 }
 
 export interface RuntimeCheckpointStore<TUnitOfWork> {

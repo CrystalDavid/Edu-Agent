@@ -175,9 +175,20 @@ describe("Gate 2.6A durable ModelExecution", () => {
     expect(runtimeCheckpoint).toMatchObject({
       schemaVersion: 1,
       checkpointVersion: 4,
+      skillId: "lesson-preparation",
+      skillVersion: "1",
+      skillRef: "lesson-preparation@1",
       status: "waiting_for_human",
       modelExecutionRef: queued.body.execution.modelExecutionRef,
       proposalRef: completed.body.proposalRevisionRef
+    });
+    expect(String(runtimeCheckpoint?.["skillContentHash"])).toHaveLength(64);
+    expect(runtimeRow.rows[0]?.output["skillEvaluation"]).toMatchObject({
+      policyVersion: "lesson-preparation-evaluation@1",
+      passedBlockingChecks: true,
+      contract: { status: "passed" },
+      policy: { status: "passed" },
+      operation: { status: "recorded" }
     });
     expect(
       (runtimeCheckpoint?.["steps"] as Array<Record<string, unknown>>)

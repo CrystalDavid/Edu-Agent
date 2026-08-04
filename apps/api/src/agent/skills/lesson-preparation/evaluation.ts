@@ -133,10 +133,10 @@ function evaluateOperation(
       estimatedCostUsd: null
     });
   }
-  const latencyMs = positiveOrNull(operation.latencyMs);
-  const inputTokens = positiveOrNull(operation.usage?.inputTokens);
-  const outputTokens = positiveOrNull(operation.usage?.outputTokens);
-  const totalTokens = positiveOrNull(operation.usage?.totalTokens);
+  const latencyMs = nonNegativeOrNull(operation.latencyMs);
+  const inputTokens = nonNegativeOrNull(operation.usage?.inputTokens);
+  const outputTokens = nonNegativeOrNull(operation.usage?.outputTokens);
+  const totalTokens = nonNegativeOrNull(operation.usage?.totalTokens);
   const attemptCount = positiveOrNull(operation.attemptCount);
   return Object.freeze({
     status:
@@ -162,6 +162,14 @@ function evaluateOperation(
 
 function positiveOrNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function nonNegativeOrNull(
+  value: number | null | undefined
+): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : null;
 }
