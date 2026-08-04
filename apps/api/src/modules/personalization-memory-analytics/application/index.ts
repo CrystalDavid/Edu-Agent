@@ -3,3 +3,4 @@ export interface PersonalizationCandidateSink {
 }
 
 export * from "./memory-candidate-service.js";
+export * from "./personalization-context-provider.js";

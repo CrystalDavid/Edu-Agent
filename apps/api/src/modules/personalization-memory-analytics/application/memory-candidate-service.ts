@@ -5,6 +5,7 @@ import {
   expireMemoryCandidate,
   rejectMemoryCandidate,
   revokeTeacherPreference,
+  updateTeacherPreference,
   type MemoryCandidate,
   type MemoryCandidateContent,
   type MemoryCandidateType,
@@ -13,18 +14,21 @@ import {
   type TeacherPreference
 } from "../domain/index.js";
 
-export interface MemoryCandidateRepository {
+export interface MemoryRepository {
   getCandidate(candidateRef: string): Promise<MemoryCandidate | null>;
   saveCandidate(input: {
     readonly candidate: MemoryCandidate;
     readonly expectedPreviousVersion: number | null;
   }): Promise<void>;
-  saveConfirmation(input: {
-    readonly candidate: MemoryCandidate;
-    readonly expectedCandidateVersion: number;
-    readonly preference: TeacherPreference | null;
-  }): Promise<void>;
   listCandidateHistory(candidateRef: string): Promise<readonly MemoryCandidate[]>;
+  listCandidates(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly MemoryCandidate["status"][];
+  }): Promise<readonly MemoryCandidate[]>;
+}
+
+export interface PreferenceRepository {
   getPreference(preferenceRef: string): Promise<TeacherPreference | null>;
   getPreferenceByCandidate(
     candidateRef: string
@@ -36,6 +40,25 @@ export interface MemoryCandidateRepository {
   listPreferenceHistory(
     preferenceRef: string
   ): Promise<readonly TeacherPreference[]>;
+  listPreferences(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly TeacherPreference["status"][];
+  }): Promise<readonly TeacherPreference[]>;
+}
+
+export interface MemoryConfirmationRepository {
+  saveConfirmation(input: {
+    readonly candidate: MemoryCandidate;
+    readonly expectedCandidateVersion: number;
+    readonly preference: TeacherPreference | null;
+  }): Promise<void>;
+}
+
+export interface MemoryCandidateRepository
+  extends MemoryRepository,
+    PreferenceRepository,
+    MemoryConfirmationRepository {
 }
 
 export class MemoryCandidateApplicationError extends Error {
@@ -191,6 +214,54 @@ export class MemoryCandidateService {
       expectedPreviousVersion: current.version
     });
     return revoked;
+  }
+
+  async updatePreference(input: {
+    readonly preferenceRef: string;
+    readonly actorRef: string;
+    readonly tenantRef: string;
+    readonly expectedVersion: number;
+    readonly preferenceValue: string;
+  }): Promise<TeacherPreference> {
+    const current = await this.repository.getPreference(input.preferenceRef);
+    if (
+      !current ||
+      current.owner.tenantRef !== input.tenantRef ||
+      current.owner.teacherRef !== input.actorRef
+    ) {
+      throw new MemoryCandidateApplicationError(
+        "TEACHER_PREFERENCE_NOT_FOUND",
+        "TeacherPreference was not found in the active tenant."
+      );
+    }
+    const updated = updateTeacherPreference({
+      preference: current,
+      actorRef: input.actorRef,
+      expectedVersion: input.expectedVersion,
+      preferenceValue: input.preferenceValue,
+      updatedAt: this.clock().toISOString()
+    });
+    await this.repository.savePreference({
+      preference: updated,
+      expectedPreviousVersion: current.version
+    });
+    return updated;
+  }
+
+  async listCandidates(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly MemoryCandidate["status"][];
+  }): Promise<readonly MemoryCandidate[]> {
+    return this.repository.listCandidates(input);
+  }
+
+  async listPreferences(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly TeacherPreference["status"][];
+  }): Promise<readonly TeacherPreference[]> {
+    return this.repository.listPreferences(input);
   }
 
   async getCandidateHistory(input: {

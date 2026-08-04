@@ -68,6 +68,26 @@ export class InMemoryMemoryCandidateRepository
     return Object.freeze([...(this.#candidateHistory.get(candidateRef) ?? [])]);
   }
 
+  async listCandidates(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly MemoryCandidate["status"][];
+  }): Promise<readonly MemoryCandidate[]> {
+    const statuses = input.statuses ? new Set(input.statuses) : null;
+    return Object.freeze(
+      [...this.#candidateHistory.values()]
+        .map((history) => history.at(-1))
+        .filter((candidate): candidate is MemoryCandidate => Boolean(candidate))
+        .filter(
+          (candidate) =>
+            candidate.owner.tenantRef === input.tenantRef &&
+            candidate.owner.teacherRef === input.teacherRef &&
+            (!statuses || statuses.has(candidate.status))
+        )
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    );
+  }
+
   async getPreference(preferenceRef: string): Promise<TeacherPreference | null> {
     return this.#preferenceHistory.get(preferenceRef)?.at(-1) ?? null;
   }
@@ -96,6 +116,26 @@ export class InMemoryMemoryCandidateRepository
     preferenceRef: string
   ): Promise<readonly TeacherPreference[]> {
     return Object.freeze([...(this.#preferenceHistory.get(preferenceRef) ?? [])]);
+  }
+
+  async listPreferences(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly TeacherPreference["status"][];
+  }): Promise<readonly TeacherPreference[]> {
+    const statuses = input.statuses ? new Set(input.statuses) : null;
+    return Object.freeze(
+      [...this.#preferenceHistory.values()]
+        .map((history) => history.at(-1))
+        .filter((preference): preference is TeacherPreference => Boolean(preference))
+        .filter(
+          (preference) =>
+            preference.owner.tenantRef === input.tenantRef &&
+            preference.owner.teacherRef === input.teacherRef &&
+            (!statuses || statuses.has(preference.status))
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    );
   }
 }
 

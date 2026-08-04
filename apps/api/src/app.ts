@@ -66,6 +66,10 @@ import {
   UpdateMemberRolesRequestSchema,
   UpdateMemberCourseAccessRequestSchema,
   CreateDataGovernanceRequestSchema,
+  CreateMemoryCandidateRequestSchema,
+  ReviewMemoryCandidateRequestSchema,
+  UpdateTeacherPreferenceRequestSchema,
+  RevokeTeacherPreferenceRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
   UpdateLessonDeliveryDraftRequestSchema,
@@ -886,6 +890,7 @@ export function createApp(
     const files = product.services.files;
     const workbench = product.services.teacherWorkbench;
     const classroom = product.services.classroomReflection;
+    const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
     const withProductContext = async (request: Request, response?: Response) => {
@@ -900,6 +905,99 @@ export function createApp(
       }
       return identity;
     };
+
+    app.get(
+      apiRoutes.teacher.personalizationState,
+      markRoute("product.teacher.personalization.state"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.getState({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.memoryCandidates,
+      markRoute("product.teacher.personalization.candidate-create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          const result = await personalization.createCandidate({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateMemoryCandidateRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    for (const action of ["confirm", "reject"] as const) {
+      app.post(
+        action === "confirm"
+          ? apiRoutes.teacher.memoryCandidateConfirmPattern
+          : apiRoutes.teacher.memoryCandidateRejectPattern,
+        markRoute(`product.teacher.personalization.candidate-${action}`),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request, response);
+            response.json(await personalization.reviewCandidate({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              candidateRef: routeParameter(request.params["candidateRef"]),
+              action,
+              request: ReviewMemoryCandidateRequestSchema.parse(request.body)
+            }));
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.put(
+      apiRoutes.teacher.teacherPreferencePattern,
+      markRoute("product.teacher.personalization.preference-update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.updatePreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            preferenceRef: routeParameter(request.params["preferenceRef"]),
+            request: UpdateTeacherPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.teacherPreferenceRevokePattern,
+      markRoute("product.teacher.personalization.preference-revoke"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.revokePreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            preferenceRef: routeParameter(request.params["preferenceRef"]),
+            request: RevokeTeacherPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.pendingReflections,

@@ -70,6 +70,7 @@ import {
 import {
   PostgresIdentityOrganizationService
 } from "./postgres-identity-organization-service.js";
+import { PostgresPersonalizationService } from "./postgres-personalization-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -96,6 +97,7 @@ export function createProductContainer(
     options.modelProvider ??
     createConfiguredModelProvider(modelSettings);
   const skillRegistry = createBuiltInSkillRegistry();
+  const personalization = new PostgresPersonalizationService(appPool);
   const modelInvocations: ModelInvocationApplicationFacade =
     new PostgresModelInvocationService(
       appPool,
@@ -161,6 +163,7 @@ export function createProductContainer(
       assignments,
       teacherWorkbench,
       classroomReflection,
+      personalization,
       files: new PostgresFileArtifactService(
         appPool,
         objectStore,

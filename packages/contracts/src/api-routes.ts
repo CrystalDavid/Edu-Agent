@@ -67,6 +67,12 @@ const teacherClassroomObservationRoute = (observationRef: string): string =>
 const teacherReflectionRoute = (reflectionRef: string): string =>
   `/api/v1/teacher/reflections/${encodeRouteSegment(reflectionRef)}`;
 
+const teacherMemoryCandidateRoute = (candidateRef: string): string =>
+  `/api/v1/teacher/personalization/memory-candidates/${encodeRouteSegment(candidateRef)}`;
+
+const teacherPreferenceRoute = (preferenceRef: string): string =>
+  `/api/v1/teacher/personalization/preferences/${encodeRouteSegment(preferenceRef)}`;
+
 export const apiRoutes = {
   health: "/api/health",
   authentication: {
@@ -105,6 +111,23 @@ export const apiRoutes = {
     requests: "/api/v1/user-governance/requests"
   },
   teacher: {
+    personalizationState: "/api/v1/teacher/personalization",
+    memoryCandidates: "/api/v1/teacher/personalization/memory-candidates",
+    memoryCandidateConfirmPattern:
+      "/api/v1/teacher/personalization/memory-candidates/:candidateRef/confirm",
+    memoryCandidateConfirm: (candidateRef: string): string =>
+      `${teacherMemoryCandidateRoute(candidateRef)}/confirm`,
+    memoryCandidateRejectPattern:
+      "/api/v1/teacher/personalization/memory-candidates/:candidateRef/reject",
+    memoryCandidateReject: (candidateRef: string): string =>
+      `${teacherMemoryCandidateRoute(candidateRef)}/reject`,
+    teacherPreferencePattern:
+      "/api/v1/teacher/personalization/preferences/:preferenceRef",
+    teacherPreference: teacherPreferenceRoute,
+    teacherPreferenceRevokePattern:
+      "/api/v1/teacher/personalization/preferences/:preferenceRef/revoke",
+    teacherPreferenceRevoke: (preferenceRef: string): string =>
+      `${teacherPreferenceRoute(preferenceRef)}/revoke`,
     courseRuns: "/api/v1/teacher/course-runs",
     courseRunPattern: "/api/v1/teacher/course-runs/:courseRunRef",
     courseRun: (courseRunRef: string): string =>

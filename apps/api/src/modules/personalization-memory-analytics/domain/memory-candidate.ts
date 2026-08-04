@@ -68,6 +68,8 @@ export interface TeacherPreference {
   readonly version: number;
   readonly confirmedByRef: string;
   readonly confirmedAt: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
   readonly revokedAt: string | null;
   readonly contentHash: string;
 }
@@ -218,6 +220,50 @@ export function revokeTeacherPreference(input: {
     ...content,
     status: "revoked",
     revokedAt: input.revokedAt,
+    updatedAt: input.revokedAt,
+    version: input.preference.version + 1
+  });
+}
+
+export function updateTeacherPreference(input: {
+  readonly preference: TeacherPreference;
+  readonly actorRef: string;
+  readonly expectedVersion: number;
+  readonly preferenceValue: string;
+  readonly updatedAt: string;
+}): TeacherPreference {
+  assertTeacherPreferenceIntegrity(input.preference);
+  if (input.preference.owner.teacherRef !== input.actorRef) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_OWNER_REQUIRED",
+      "Only the owning teacher can update a TeacherPreference."
+    );
+  }
+  assertVersion(input.preference.version, input.expectedVersion);
+  if (input.preference.status !== "active") {
+    throw new MemoryCandidateDomainError(
+      "TEACHER_PREFERENCE_NOT_ACTIVE",
+      "Only an active TeacherPreference can be updated."
+    );
+  }
+  const preferenceValue = normalizeText(input.preferenceValue);
+  if (!preferenceValue) {
+    throw new MemoryCandidateDomainError(
+      "PREFERENCE_CONTENT_REQUIRED",
+      "TeacherPreference value is required."
+    );
+  }
+  if (!Number.isFinite(Date.parse(input.updatedAt))) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_TIME_INVALID",
+      "TeacherPreference updatedAt must be a valid timestamp."
+    );
+  }
+  const { contentHash: _hash, ...content } = input.preference;
+  return sealPreference({
+    ...content,
+    preferenceValue,
+    updatedAt: input.updatedAt,
     version: input.preference.version + 1
   });
 }
@@ -276,6 +322,8 @@ function createTeacherPreference(input: {
     version: 1,
     confirmedByRef: input.confirmedByRef,
     confirmedAt: input.confirmedAt,
+    createdAt: input.confirmedAt,
+    updatedAt: input.confirmedAt,
     revokedAt: null
   });
 }

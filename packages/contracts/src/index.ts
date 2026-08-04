@@ -10,5 +10,6 @@ export * from "./gate2-9.js";
 export * from "./governance.js";
 export * from "./ingress.js";
 export * from "./identity.js";
+export * from "./personalization.js";
 export * from "./records.js";
 export * from "./walking-skeleton.js";
