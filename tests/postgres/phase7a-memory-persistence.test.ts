@@ -70,6 +70,16 @@ describe("Phase 7A PostgreSQL Memory persistence", () => {
       .expect(200);
 
     const preferenceRef = confirmResponse.body.preference.preferenceRef as string;
+    expect(await product.services.personalization.listConfirmedPreferences({
+      tenantRef: teacherA["x-demo-tenant"],
+      teacherRef: teacherA["x-demo-actor"]
+    })).toEqual([
+      expect.objectContaining({
+        preferenceRef,
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "简洁"
+      })
+    ]);
     expect(await tableCount(adminPool, "personalization.memory_candidate"))
       .toBe(1);
     expect(await tableCount(adminPool, "personalization.teacher_preference"))
