@@ -23,6 +23,7 @@ import {
 } from "../modules/personalization-memory-analytics/application/index.js";
 import {
   MemoryCandidateDomainError,
+  evaluateTeacherPreference,
   type MemoryCandidate,
   type TeacherPreference
 } from "../modules/personalization-memory-analytics/domain/index.js";
@@ -258,6 +259,18 @@ export class PostgresPersonalizationService
       teacherRef: input.teacherRef,
       statuses: ["active"]
     });
+    for (const preference of preferences) {
+      const evaluation = evaluateTeacherPreference({
+        preference,
+        tenantRef: input.tenantRef,
+        teacherRef: input.teacherRef
+      });
+      if (!evaluation.passed) {
+        throw new AuthorizationDeniedError(
+          "教师偏好不满足当前所有者或生命周期策略。"
+        );
+      }
+    }
     return Object.freeze(
       preferences.map((preference) => Object.freeze({
         tenantRef: preference.owner.tenantRef,

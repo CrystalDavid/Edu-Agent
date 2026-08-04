@@ -1,6 +1,8 @@
 import {
   assertCandidateIntegrity,
-  type MemoryCandidate
+  assertTeacherPreferenceIntegrity,
+  type MemoryCandidate,
+  type TeacherPreference
 } from "./memory-candidate.js";
 
 export interface MemoryCandidateEvaluation {
@@ -92,6 +94,73 @@ export function evaluateMemoryCandidate(input: {
         ? "passed" as const
         : "needs_review" as const,
       value: input.candidate.confidence
+    },
+    issues: Object.freeze(issues)
+  });
+}
+
+export interface TeacherPreferenceEvaluation {
+  readonly policyVersion: "teacher-preference-evaluation@1";
+  readonly passed: boolean;
+  readonly owner: {
+    readonly status: "passed" | "failed";
+    readonly issues: readonly string[];
+  };
+  readonly source: {
+    readonly status: "passed" | "failed";
+    readonly issues: readonly string[];
+  };
+  readonly lifecycle: {
+    readonly status: "passed" | "failed";
+    readonly preferenceStatus: TeacherPreference["status"];
+    readonly issues: readonly string[];
+  };
+  readonly issues: readonly string[];
+}
+
+export function evaluateTeacherPreference(input: {
+  readonly preference: TeacherPreference;
+  readonly tenantRef: string;
+  readonly teacherRef: string;
+}): TeacherPreferenceEvaluation {
+  assertTeacherPreferenceIntegrity(input.preference);
+  const ownerIssues: string[] = [];
+  if (input.preference.owner.tenantRef !== input.tenantRef) {
+    ownerIssues.push("preference belongs to another tenant");
+  }
+  if (input.preference.owner.teacherRef !== input.teacherRef) {
+    ownerIssues.push("preference belongs to another teacher");
+  }
+  const sourceIssues: string[] = [];
+  if (!input.preference.sourceCandidateRef.trim()) {
+    sourceIssues.push("source candidate reference is missing");
+  }
+  if (input.preference.sourceCandidateHash.length < 16) {
+    sourceIssues.push("source candidate hash is missing");
+  }
+  const lifecycleIssues: string[] = [];
+  if (
+    input.preference.status !== "active" ||
+    input.preference.revokedAt !== null
+  ) {
+    lifecycleIssues.push("only active, non-revoked preferences are eligible");
+  }
+  const issues = [...ownerIssues, ...sourceIssues, ...lifecycleIssues];
+  return Object.freeze({
+    policyVersion: "teacher-preference-evaluation@1" as const,
+    passed: issues.length === 0,
+    owner: {
+      status: ownerIssues.length === 0 ? "passed" as const : "failed" as const,
+      issues: Object.freeze(ownerIssues)
+    },
+    source: {
+      status: sourceIssues.length === 0 ? "passed" as const : "failed" as const,
+      issues: Object.freeze(sourceIssues)
+    },
+    lifecycle: {
+      status: lifecycleIssues.length === 0 ? "passed" as const : "failed" as const,
+      preferenceStatus: input.preference.status,
+      issues: Object.freeze(lifecycleIssues)
     },
     issues: Object.freeze(issues)
   });

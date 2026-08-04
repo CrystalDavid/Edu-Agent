@@ -8,6 +8,7 @@ import {
   MemoryCandidateDomainError,
   createMemoryCandidate,
   evaluateMemoryCandidate,
+  evaluateTeacherPreference,
   memoryClassOwnership
 } from "../../apps/api/src/modules/personalization-memory-analytics/domain/index.js";
 import {
@@ -192,6 +193,51 @@ describe("Phase 6 Memory Candidate foundation", () => {
       expectedVersion: 1,
       preferenceRef: "teacher-preference:1"
     })).rejects.toThrow(/active tenant/u);
+  });
+
+  it("evaluates confirmed preference source, owner and revocation before Context use", async () => {
+    const repository = new InMemoryMemoryCandidateRepository();
+    const service = serviceAt(repository, "2026-08-04T08:00:00.000Z");
+    const candidate = await service.create(preferenceCandidateInput());
+    const confirmed = await serviceAt(
+      repository,
+      "2026-08-04T09:00:00.000Z"
+    ).confirm({
+      candidateRef: candidate.candidateRef,
+      actorRef: "user:teacher-1",
+      tenantRef: "school:1",
+      expectedVersion: candidate.version,
+      preferenceRef: "teacher-preference:evaluation"
+    });
+    expect(evaluateTeacherPreference({
+      preference: confirmed.preference!,
+      tenantRef: "school:1",
+      teacherRef: "user:teacher-1"
+    })).toMatchObject({
+      passed: true,
+      owner: { status: "passed" },
+      source: { status: "passed" },
+      lifecycle: { status: "passed", preferenceStatus: "active" }
+    });
+
+    const revoked = await serviceAt(
+      repository,
+      "2026-08-04T10:00:00.000Z"
+    ).revokePreference({
+      preferenceRef: "teacher-preference:evaluation",
+      actorRef: "user:teacher-1",
+      tenantRef: "school:1",
+      expectedVersion: 1
+    });
+    expect(evaluateTeacherPreference({
+      preference: revoked,
+      tenantRef: "school:2",
+      teacherRef: "user:teacher-2"
+    })).toMatchObject({
+      passed: false,
+      owner: { status: "failed" },
+      lifecycle: { status: "failed", preferenceStatus: "revoked" }
+    });
   });
 });
 
