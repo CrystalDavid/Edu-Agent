@@ -89,9 +89,31 @@ describe("Phase 6 Context and Memory boundaries", () => {
     expect(productContainer).not.toContain("MemoryCandidateService");
   });
 
-  it("keeps the historical Migration set unchanged", () => {
+  it("keeps 43 historical Migrations and adds exactly one forward Phase 7A Migration", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
-    expect(migrations).toHaveLength(43);
+    const phase7a = migrations.filter((path) =>
+      path.endsWith("0002_phase7a_memory_persistence.sql")
+    );
+    expect(migrations).toHaveLength(44);
+    expect(phase7a).toHaveLength(1);
+    expect(migrations.filter((path) => !phase7a.includes(path))).toHaveLength(43);
+  });
+
+  it("allows only active confirmed preferences through an owner-scoped Context Port", () => {
+    const provider = source(
+      "apps/api/src/modules/personalization-memory-analytics/application/personalization-context-provider.ts"
+    );
+    const service = source(
+      "apps/api/src/composition/postgres-personalization-service.ts"
+    );
+    const personalizedBuilder = source(
+      "apps/api/src/agent/skills/lesson-preparation/personalized-context-builder.ts"
+    );
+    expect(provider).toContain("ConfirmedTeacherPreferenceSnapshot");
+    expect(provider).not.toContain("MemoryCandidate");
+    expect(service).toContain('statuses: ["active"]');
+    expect(personalizedBuilder).toContain("owner_mismatch");
+    expect(personalizedBuilder).not.toMatch(/Repository|postgres|\.query\(/u);
   });
 });

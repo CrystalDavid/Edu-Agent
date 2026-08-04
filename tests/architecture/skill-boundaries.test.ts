@@ -66,6 +66,8 @@ describe("Phase 5 Skill boundaries", () => {
     );
     expect(manifest).toContain('ref: "lesson-preparation@1"');
     expect(manifest).toContain('ref: "lesson-preparation@2"');
+    expect(manifest).toContain('ref: "lesson-preparation@3"');
+    expect(manifest).toContain('mode: "authorized_context_only"');
     expect(manifest).toContain('status: "published"');
     expect(manifest).toContain('mode: "disabled"');
     expect(manifest).toContain("humanApprovalRequired: true");
@@ -86,9 +88,14 @@ describe("Phase 5 Skill boundaries", () => {
     expect(validatorCompatibility).not.toContain("prohibitedFactPatterns");
   });
 
-  it("does not change the 43 historical Migrations", () => {
+  it("does not replace the 43 historical Migrations when Phase 7A adds one", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
-    expect(migrations).toHaveLength(43);
+    const phase7a = migrations.filter((path) =>
+      path.endsWith("0002_phase7a_memory_persistence.sql")
+    );
+    expect(migrations).toHaveLength(44);
+    expect(phase7a).toHaveLength(1);
+    expect(migrations.filter((path) => !phase7a.includes(path))).toHaveLength(43);
   });
 });

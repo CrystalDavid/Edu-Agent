@@ -176,8 +176,8 @@ describe("Gate 2.6A durable ModelExecution", () => {
       schemaVersion: 1,
       checkpointVersion: 4,
       skillId: "lesson-preparation",
-      skillVersion: "2",
-      skillRef: "lesson-preparation@2",
+      skillVersion: "3",
+      skillRef: "lesson-preparation@3",
       status: "waiting_for_human",
       modelExecutionRef: queued.body.execution.modelExecutionRef,
       proposalRef: completed.body.proposalRevisionRef

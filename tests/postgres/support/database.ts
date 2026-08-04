@@ -28,6 +28,10 @@ export async function resetGate1BData(
 ): Promise<void> {
   await adminPool.query(`
     TRUNCATE TABLE
+      personalization.teacher_preference_revision,
+      personalization.teacher_preference,
+      personalization.memory_candidate_revision,
+      personalization.memory_candidate,
       governance.data_governance_request,
       governance.security_event,
       governance.identity_command,
@@ -120,7 +124,7 @@ export async function tableCount(
   qualifiedTable: string
 ): Promise<number> {
   if (
-    !/^(governance|work|runtime|capability|artifact|education)\.[a-z_]+$/.test(
+    !/^(governance|work|runtime|capability|artifact|education|personalization)\.[a-z_]+$/.test(
       qualifiedTable
     )
   ) {
