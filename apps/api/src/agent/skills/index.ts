@@ -1,15 +1,21 @@
 import {
+  LessonPreparationContextBuildError,
   lessonPreparationSkillV1,
+  lessonPreparationSkillV2,
+  type LessonPreparationContextEvaluation,
+  type LessonPreparationEngineeringManifest,
+  type LessonPreparationSkillInput,
   type LessonPreparationSkillEvaluation,
   type LessonPreparationSkillVersion
 } from "./lesson-preparation/index.js";
 import { VersionedSkillRegistry } from "./skill-registry.js";
 
-export const lessonPreparationSkillRef = "lesson-preparation@1";
+export const lessonPreparationSkillRef = "lesson-preparation@2";
 
 export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   const registry = new VersionedSkillRegistry();
   registry.register(lessonPreparationSkillV1);
+  registry.register(lessonPreparationSkillV2);
   return registry;
 }
 
@@ -42,8 +48,10 @@ export function loadHistoricalLessonPreparationSkill(
 }
 
 export {
+  LessonPreparationContextBuildError,
   VersionedSkillRegistry,
-  lessonPreparationSkillV1
+  lessonPreparationSkillV1,
+  lessonPreparationSkillV2
 };
 export type {
   SkillLifecycleStatus,
@@ -51,6 +59,9 @@ export type {
   SkillVersionBase
 } from "./types.js";
 export type {
+  LessonPreparationContextEvaluation,
+  LessonPreparationEngineeringManifest,
+  LessonPreparationSkillInput,
   LessonPreparationSkillEvaluation,
   LessonPreparationSkillVersion
 };

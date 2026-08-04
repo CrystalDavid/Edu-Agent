@@ -31,25 +31,26 @@ describe("Phase 5 versioned Skill Registry", () => {
     expect(Object.isFrozen(loaded.manifest)).toBe(true);
   });
 
-  it("keeps a new version alongside V1 instead of overwriting it", () => {
+  it("keeps a new version alongside published versions instead of overwriting them", () => {
     const registry = createBuiltInSkillRegistry();
-    const version2 = Object.freeze({
+    const version3 = Object.freeze({
       ...lessonPreparationSkillV1,
       manifest: cloneSkillManifest({
         manifest: lessonPreparationSkillV1.manifest,
-        version: "2",
+        version: "3",
         status: "published"
       })
     });
 
-    registry.register(version2);
+    registry.register(version3);
 
     expect(registry.loadPublished("lesson-preparation@1"))
       .toBe(lessonPreparationSkillV1);
-    expect(registry.loadPublished("lesson-preparation@2")).toBe(version2);
+    expect(registry.loadPublished("lesson-preparation@3")).toBe(version3);
     expect(registry.list().map((item) => item.skillRef)).toEqual([
       "lesson-preparation@1",
-      "lesson-preparation@2"
+      "lesson-preparation@2",
+      "lesson-preparation@3"
     ]);
   });
 

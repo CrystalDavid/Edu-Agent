@@ -5,6 +5,12 @@ import type {
 
 import type { SkillVersionBase } from "../types.js";
 import {
+  buildLessonPreparationContext,
+  type LessonPreparationContextBuildResult,
+  type LessonPreparationContextPlan,
+  type LessonPreparationSealedContext
+} from "./context-builder.js";
+import {
   evaluateLessonPreparationOutput,
   type LessonPreparationOperationMetrics,
   type LessonPreparationSkillEvaluation
@@ -13,7 +19,10 @@ import {
   LessonPreparationSkillInputSchema,
   type LessonPreparationSkillInput
 } from "./input-schema.js";
-import { lessonPreparationSkillManifest } from "./manifest.js";
+import {
+  lessonPreparationSkillManifest,
+  lessonPreparationSkillManifestV2
+} from "./manifest.js";
 import {
   LessonPreparationSkillOutputSchema,
   type LessonPreparationSkillOutput
@@ -46,6 +55,12 @@ export interface LessonPreparationSkillVersion extends SkillVersionBase {
     readonly validation: ModelOutputValidationResult;
     readonly operation?: LessonPreparationOperationMetrics;
   }): LessonPreparationSkillEvaluation;
+  buildContext?(input: {
+    readonly contextPlan: LessonPreparationContextPlan;
+    readonly sealedContext: LessonPreparationSealedContext;
+    readonly skillInput: LessonPreparationSkillInput;
+    readonly baselineRevisionRef: string;
+  }): LessonPreparationContextBuildResult;
 }
 
 export const lessonPreparationSkillV1: LessonPreparationSkillVersion =
@@ -60,6 +75,19 @@ export const lessonPreparationSkillV1: LessonPreparationSkillVersion =
     evaluateOutput: evaluateLessonPreparationOutput
   });
 
+export const lessonPreparationSkillV2: LessonPreparationSkillVersion =
+  Object.freeze({
+    manifest: lessonPreparationSkillManifestV2,
+    inputSchema: LessonPreparationSkillInputSchema,
+    outputSchema: LessonPreparationSkillOutputSchema,
+    promptBundle: lessonPreparationPromptBundle,
+    buildContext: buildLessonPreparationContext,
+    assembleRequest: assembleLessonPreparationModelRequest,
+    assembleRepairRequest: assembleRepairModelRequest,
+    validateOutput: validateModelOutput,
+    evaluateOutput: evaluateLessonPreparationOutput
+  });
+
 export type {
   LessonPreparationOperationMetrics,
   LessonPreparationSkillEvaluation,
@@ -67,3 +95,16 @@ export type {
   LessonPreparationSkillOutput,
   ModelOutputValidationResult
 };
+export type {
+  LessonPreparationContextBuildResult,
+  LessonPreparationContextEvaluation,
+  LessonPreparationContextPlan,
+  LessonPreparationEngineeringManifest,
+  LessonPreparationSealedContext
+} from "./context-builder.js";
+export {
+  LessonPreparationContextBuildError,
+  buildLessonPreparationContext,
+  estimateContextTokens,
+  lessonPreparationContextBuilderVersion
+} from "./context-builder.js";

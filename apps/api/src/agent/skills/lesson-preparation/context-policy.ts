@@ -29,6 +29,12 @@ export const lessonPreparationContextPolicy: SkillContextPolicy =
     missingInformationPolicy: "explicit"
   });
 
+export const lessonPreparationContextPolicyV2: SkillContextPolicy =
+  Object.freeze({
+    ...lessonPreparationContextPolicy,
+    version: "lesson-preparation-context-policy@2"
+  });
+
 export function validateLessonPreparationContext(
   input: LessonPreparationSkillInput
 ): readonly string[] {

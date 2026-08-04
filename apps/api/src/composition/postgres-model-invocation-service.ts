@@ -28,10 +28,14 @@ import type { Pool } from "pg";
 
 import {
   createBuiltInSkillRegistry,
+  LessonPreparationContextBuildError,
   lessonPreparationSkillRef,
   loadHistoricalLessonPreparationSkill,
   loadLessonPreparationSkill,
   type LessonPreparationSkillEvaluation,
+  type LessonPreparationContextEvaluation,
+  type LessonPreparationEngineeringManifest,
+  type LessonPreparationSkillInput,
   type LessonPreparationSkillVersion,
   type VersionedSkillRegistry
 } from "../agent/skills/index.js";
@@ -1907,9 +1911,25 @@ export class PostgresModelInvocationService
       ? this.requireExecutionLessonPreparationSkill(execution)
       : null;
 
-    const context = execution.resultKind === "lesson_reflection_draft"
-      ? await this.loadReflectionPromptContext(execution)
-      : await this.loadPromptContext(execution);
+    let context:
+      | Awaited<ReturnType<typeof this.loadReflectionPromptContext>>
+      | Awaited<ReturnType<typeof this.loadPromptContext>>;
+    try {
+      context = execution.resultKind === "lesson_reflection_draft"
+        ? await this.loadReflectionPromptContext(execution)
+        : await this.loadPromptContext(execution);
+    } catch (error) {
+      if (error instanceof LessonPreparationContextBuildError) {
+        await this.finishFailure(execution, {
+          status: "validation_failed",
+          category: "POLICY_BLOCKED",
+          safeMessage:
+            "本次备课上下文未通过授权、完整性或预算校验，未调用模型。"
+        });
+        return;
+      }
+      throw error;
+    }
     let request = context.request;
     const usage = await this.executions.usageSnapshot(
       this.pool,
@@ -1971,7 +1991,13 @@ export class PostgresModelInvocationService
         const attempt = execution.attemptCount + 1;
         execution = await this.beginAttempt(
           executionRef,
-          attempt
+          attempt,
+          (context as {
+            readonly contextEngineering?: {
+              readonly manifest: LessonPreparationEngineeringManifest;
+              readonly evaluation: LessonPreparationContextEvaluation;
+            };
+          }).contextEngineering
         );
         if (execution.status === "cancel_requested") {
           await this.finishCancelled(execution);
@@ -2175,6 +2201,10 @@ export class PostgresModelInvocationService
       artifactRef: string;
       content: TeachingPlan;
     };
+    contextEngineering?: {
+      manifest: LessonPreparationEngineeringManifest;
+      evaluation: LessonPreparationContextEvaluation;
+    };
   }> {
     const tenantRef = await this.executionTenantRef(execution);
     const taskRun = await this.gate25Work.getTaskRun(
@@ -2313,8 +2343,7 @@ export class PostgresModelInvocationService
             ? "prompt_json"
             : "json_object";
     const skill = this.requireExecutionLessonPreparationSkill(execution);
-    return {
-      request: skill.assembleRequest({
+    const skillInput: LessonPreparationSkillInput = {
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
         agentRunRef: execution.agentRunRef,
@@ -2368,12 +2397,52 @@ export class PostgresModelInvocationService
           sourceAssignmentItemRefs:
             preparationTask.workingSet.sourceAssignmentItemRefs ?? []
         }
-      }),
+      };
+    const contextBuild = skill.buildContext?.({
+      contextPlan: {
+        purpose: "lesson_preparation",
+        actorRef: execution.actorRef,
+        tenantRef,
+        resourceTypes:
+          skill.manifest.contextPolicy.requiredResourceKinds,
+        fieldMask: authorizedContextPlan.requestedFieldMask,
+        authorizationDecisionRef:
+          authorizedContextPlan.authorizationDecisionRef,
+        authorizedResourceRefs:
+          authorizedContextPlan.authorizedResourceRefs,
+        authorizedEvidenceRefs:
+          authorizedContextPlan.authorizedEvidenceRefs,
+        tokenBudget: this.settings.budget.maxInputTokens,
+        timeRange: null,
+        workingSetVersion:
+          authorizedContextPlan.workingSetVersion
+      },
+      sealedContext: {
+        contextManifestRef: contextManifest.contextManifestRef,
+        resourceRefs: contextManifest.resourceRefs,
+        evidenceRefs: contextManifest.evidenceRefs,
+        missingInformation: contextManifest.unknowns
+      },
+      skillInput,
+      baselineRevisionRef: baseline.revisionRef
+    });
+    return {
+      request: skill.assembleRequest(
+        contextBuild?.input ?? skillInput
+      ),
       baseline: {
         revisionRef: baseline.revisionRef,
         artifactRef: baseline.artifactRef,
         content: baseline.content
-      }
+      },
+      ...(contextBuild
+        ? {
+            contextEngineering: {
+              manifest: contextBuild.manifest,
+              evaluation: contextBuild.evaluation
+            }
+          }
+        : {})
     };
   }
 
@@ -2560,7 +2629,11 @@ export class PostgresModelInvocationService
 
   private async beginAttempt(
     executionRef: string,
-    attempt: number
+    attempt: number,
+    contextEngineering?: {
+      readonly manifest: LessonPreparationEngineeringManifest;
+      readonly evaluation: LessonPreparationContextEvaluation;
+    }
   ): Promise<StoredModelExecution> {
     const now = this.clock().toISOString();
     const client = await this.pool.connect();
@@ -2606,7 +2679,10 @@ export class PostgresModelInvocationService
         output: {
           proposalOnly: true,
           modelExecutionRef: running.executionRef,
-          attempt
+          attempt,
+          ...(contextEngineering
+            ? { contextEngineering }
+            : {})
         },
         operation: `model-attempt-${attempt}-runtime-checkpoint`
       });
