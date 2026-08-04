@@ -1,5 +1,6 @@
 import {
   lessonPreparationSkillV1,
+  type LessonPreparationSkillEvaluation,
   type LessonPreparationSkillVersion
 } from "./lesson-preparation/index.js";
 import { VersionedSkillRegistry } from "./skill-registry.js";
@@ -25,6 +26,21 @@ export function loadLessonPreparationSkill(
   return skill;
 }
 
+export function loadHistoricalLessonPreparationSkill(
+  registry: VersionedSkillRegistry,
+  skillRef: string
+): LessonPreparationSkillVersion {
+  const skill = registry.loadHistorical<LessonPreparationSkillVersion>(
+    skillRef
+  );
+  if (skill.manifest.id !== "lesson-preparation") {
+    throw new Error(
+      `Skill ${skillRef} cannot explain the lesson preparation workflow.`
+    );
+  }
+  return skill;
+}
+
 export {
   VersionedSkillRegistry,
   lessonPreparationSkillV1
@@ -36,4 +52,7 @@ export type {
   SkillManifest,
   SkillVersionBase
 } from "./types.js";
-export type { LessonPreparationSkillVersion };
+export type {
+  LessonPreparationSkillEvaluation,
+  LessonPreparationSkillVersion
+};

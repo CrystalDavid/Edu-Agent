@@ -27,6 +27,13 @@ function lessonCheckpoint() {
     tokenBudget: 8_000,
     promptBundleRef: "lesson-preparation@1",
     requestHash: "request-hash",
+    skill: {
+      skillId: "lesson-preparation",
+      skillVersion: "1",
+      skillRef: "lesson-preparation@1",
+      contentHash: "skill-content-hash",
+      purpose: "lesson_preparation"
+    },
     createdAt
   });
 }
@@ -39,7 +46,10 @@ describe("Agent Runtime Kernel", () => {
     expect(checkpoint.agentDefinitionId).toBe(
       "lesson-preparation-agent"
     );
-    expect(checkpoint.skillVersion).toBe("lesson-preparation@1");
+    expect(checkpoint.skillId).toBe("lesson-preparation");
+    expect(checkpoint.skillVersion).toBe("1");
+    expect(checkpoint.skillRef).toBe("lesson-preparation@1");
+    expect(checkpoint.skillContentHash).toBe("skill-content-hash");
     expect(checkpoint.steps.map((step) => step.kind)).toEqual([
       "retrieve",
       "plan",
@@ -166,7 +176,13 @@ describe("Agent Runtime Kernel", () => {
     };
     const initial = createRuntimeCheckpoint({
       definition,
-      skillVersion: "tool-skill@1",
+      skill: {
+        skillId: "tool-skill",
+        skillVersion: "1",
+        skillRef: "tool-skill@1",
+        contentHash: "tool-skill-content-hash",
+        purpose: "test-tool-recovery"
+      },
       agentRunRef: "agent-run:tool",
       taskRef: "task:tool",
       tenantRef: "tenant:school-a",

@@ -3,6 +3,10 @@ import type {
   FormalWriteReceipt
 } from "@edu-agent/contracts";
 
+import type {
+  RuntimeSkillLoaderPort
+} from "../../../agent/skills/types.js";
+
 import {
   compatibilityAgentRunStatus,
   createLessonPreparationCheckpoint,
@@ -69,13 +73,26 @@ export interface ToolExecutor {
 
 export class RuntimeKernelService<TUnitOfWork> {
   constructor(
-    private readonly checkpoints: RuntimeCheckpointStore<TUnitOfWork>
+    private readonly checkpoints: RuntimeCheckpointStore<TUnitOfWork>,
+    private readonly skills: RuntimeSkillLoaderPort
   ) {}
 
   createLessonPreparationRun(
-    input: CreateLessonPreparationCheckpointInput
+    input: Omit<CreateLessonPreparationCheckpointInput, "skill"> & {
+      readonly skillRef: string;
+    }
   ): AgentRunCheckpoint {
-    return createLessonPreparationCheckpoint(input);
+    const skill = this.skills.loadPublishedBinding(input.skillRef);
+    return createLessonPreparationCheckpoint({
+      ...input,
+      skill: {
+        skillId: skill.skillId,
+        skillVersion: skill.skillVersion,
+        skillRef: skill.skillRef,
+        contentHash: skill.contentHash,
+        purpose: skill.purpose
+      }
+    });
   }
 
   async transitionIfPresent(

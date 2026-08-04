@@ -72,7 +72,10 @@ export interface AgentRunCheckpoint {
   readonly purpose: string;
   readonly agentDefinitionId: string;
   readonly agentDefinitionVersion: string;
+  readonly skillId?: string;
   readonly skillVersion: string;
+  readonly skillRef?: string;
+  readonly skillContentHash?: string;
   readonly status: AgentRunKernelStatus;
   readonly currentStepRef: string | null;
   readonly steps: readonly RunStep[];
@@ -161,12 +164,21 @@ export interface CreateLessonPreparationCheckpointInput {
   readonly tokenBudget: number;
   readonly promptBundleRef: string;
   readonly requestHash: string;
+  readonly skill: RuntimeSkillIdentity;
   readonly createdAt: string;
+}
+
+export interface RuntimeSkillIdentity {
+  readonly skillId: string;
+  readonly skillVersion: string;
+  readonly skillRef: string;
+  readonly contentHash: string;
+  readonly purpose: string;
 }
 
 export interface CreateRuntimeCheckpointInput {
   readonly definition: AgentDefinition;
-  readonly skillVersion: string;
+  readonly skill: RuntimeSkillIdentity;
   readonly agentRunRef: string;
   readonly taskRef: string;
   readonly tenantRef: string;
@@ -210,6 +222,7 @@ export function createLessonPreparationCheckpoint(
   input: CreateLessonPreparationCheckpointInput
 ): AgentRunCheckpoint {
   const definition = lessonPreparationAgentDefinition;
+  assertAllowedSkill(definition, input.skill, input.purpose);
   const steps: readonly RunStep[] = [
     createStep(input.agentRunRef, 1, "retrieve", input.contextPlanHash, {
       status: "succeeded",
@@ -248,7 +261,10 @@ export function createLessonPreparationCheckpoint(
     purpose: input.purpose,
     agentDefinitionId: definition.agentDefinitionId,
     agentDefinitionVersion: definition.version,
-    skillVersion: definition.allowedSkillVersions[0]!,
+    skillId: input.skill.skillId,
+    skillVersion: input.skill.skillVersion,
+    skillRef: input.skill.skillRef,
+    skillContentHash: input.skill.contentHash,
     status: "queued",
     currentStepRef: steps[2]!.stepRef,
     steps,
@@ -274,11 +290,7 @@ export function createLessonPreparationCheckpoint(
 export function createRuntimeCheckpoint(
   input: CreateRuntimeCheckpointInput
 ): AgentRunCheckpoint {
-  if (!input.definition.allowedSkillVersions.includes(input.skillVersion)) {
-    throw new RuntimeKernelTransitionError(
-      `Skill ${input.skillVersion} is not allowed by ${input.definition.agentDefinitionId}@${input.definition.version}.`
-    );
-  }
+  assertAllowedSkill(input.definition, input.skill, input.purpose);
   if (
     input.steps.some((step) => step.kind === "invoke_tool") &&
     input.definition.toolPolicy.mode !== "explicit"
@@ -320,7 +332,10 @@ export function createRuntimeCheckpoint(
     purpose: input.purpose,
     agentDefinitionId: input.definition.agentDefinitionId,
     agentDefinitionVersion: input.definition.version,
-    skillVersion: input.skillVersion,
+    skillId: input.skill.skillId,
+    skillVersion: input.skill.skillVersion,
+    skillRef: input.skill.skillRef,
+    skillContentHash: input.skill.contentHash,
     status: "queued",
     currentStepRef: current.stepRef,
     steps,
@@ -819,6 +834,28 @@ function invalidTransition(
   return new RuntimeKernelTransitionError(
     `Cannot apply ${eventType} while AgentRun ${checkpoint.agentRunRef} is ${checkpoint.status}.`
   );
+}
+
+function assertAllowedSkill(
+  definition: AgentDefinition,
+  skill: RuntimeSkillIdentity,
+  purpose: string
+): void {
+  if (!definition.allowedSkillVersions.includes(skill.skillRef)) {
+    throw new RuntimeKernelTransitionError(
+      `Skill ${skill.skillRef} is not allowed by ${definition.agentDefinitionId}@${definition.version}.`
+    );
+  }
+  if (skill.purpose !== definition.purpose) {
+    throw new RuntimeKernelTransitionError(
+      `Skill ${skill.skillRef} purpose does not match ${definition.agentDefinitionId}@${definition.version}.`
+    );
+  }
+  if (!purpose.trim() || !skill.contentHash.trim()) {
+    throw new RuntimeKernelTransitionError(
+      `Skill ${skill.skillRef} cannot be bound without a purpose and content hash.`
+    );
+  }
 }
 
 function checkpointRef(agentRunRef: string, version: number): string {

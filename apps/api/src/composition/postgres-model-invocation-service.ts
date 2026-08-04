@@ -27,6 +27,15 @@ import {
 import type { Pool } from "pg";
 
 import {
+  createBuiltInSkillRegistry,
+  lessonPreparationSkillRef,
+  loadHistoricalLessonPreparationSkill,
+  loadLessonPreparationSkill,
+  type LessonPreparationSkillEvaluation,
+  type LessonPreparationSkillVersion,
+  type VersionedSkillRegistry
+} from "../agent/skills/index.js";
+import {
   RuntimeKernelService
 } from "../modules/agent-runtime-context/application/runtime-kernel-service.js";
 import type {
@@ -46,11 +55,6 @@ import {
 } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
 import { PostgresGate29ArtifactRepository } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-9-artifact-repository.js";
 import {
-  assembleLessonPreparationModelRequest,
-  assembleRepairModelRequest,
-  lessonPreparationPromptBundle
-} from "../modules/capability-integration/application/lesson-preparation-prompt-bundle.js";
-import {
   ModelBudgetPolicy,
   estimateCost
 } from "../modules/capability-integration/application/model-budget-policy.js";
@@ -58,9 +62,6 @@ import {
   createModelDataManifest,
   detectProhibitedModelInput
 } from "../modules/capability-integration/application/model-data-manifest.js";
-import {
-  validateModelOutput
-} from "../modules/capability-integration/application/model-output-validation.js";
 import {
   assembleLessonReflectionModelRequest,
   assembleReflectionRepairRequest,
@@ -150,6 +151,7 @@ interface ModelInvocationDependencies {
   gate25Work?: PostgresGate25WorkRepository;
   runtime?: PostgresRuntimeRepository;
   runtimeKernel?: RuntimeKernelService<PostgresClient>;
+  skills?: VersionedSkillRegistry;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -173,6 +175,8 @@ export class PostgresModelInvocationService
   private readonly gate25Work: PostgresGate25WorkRepository;
   private readonly runtime: PostgresRuntimeRepository;
   private readonly runtimeKernel: RuntimeKernelService<PostgresClient>;
+  private readonly skills: VersionedSkillRegistry;
+  private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -210,10 +214,13 @@ export class PostgresModelInvocationService
       new PostgresGate25WorkRepository();
     this.runtime =
       dependencies.runtime ?? new PostgresRuntimeRepository();
+    this.skills = dependencies.skills ?? createBuiltInSkillRegistry();
+    this.lessonPreparationSkill = loadLessonPreparationSkill(this.skills);
     this.runtimeKernel =
       dependencies.runtimeKernel ??
       new RuntimeKernelService(
-        new PostgresRuntimeCheckpointAdapter()
+        new PostgresRuntimeCheckpointAdapter(),
+        this.skills
       );
     this.gate2Runtime =
       dependencies.gate2Runtime ??
@@ -638,14 +645,17 @@ export class PostgresModelInvocationService
       const requestHash = hash({
         taskRunRef,
         requestTextHash: hash(taskRequest.requestText),
+        skillRef: this.lessonPreparationSkill.manifest.ref,
+        skillContentHash:
+          this.lessonPreparationSkill.manifest.contentHash,
         promptBundleVersion:
-          lessonPreparationPromptBundle.version,
+          this.lessonPreparationSkill.promptBundle.version,
         contextManifestHash:
           authorizedContextPlan.contentHash,
         provider,
         modelId,
         outputSchemaVersion:
-          lessonPreparationPromptBundle.outputSchemaVersion,
+          this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
         generationSettings: {
           maxOutputTokens:
             provider === "volcengine-ark"
@@ -678,8 +688,9 @@ export class PostgresModelInvocationService
           }),
           tokenBudget: this.settings.budget.maxInputTokens,
           promptBundleRef:
-            lessonPreparationPromptBundle.promptBundleRef,
+            this.lessonPreparationSkill.promptBundle.promptBundleRef,
           requestHash,
+          skillRef: this.lessonPreparationSkill.manifest.ref,
           createdAt: now
         });
       const decision: AuthorizationDecision = {
@@ -751,7 +762,7 @@ export class PostgresModelInvocationService
         policyVersionRef:
           educationContext.profile.policyVersionRef,
         promptVersionRef:
-          lessonPreparationPromptBundle.promptBundleRef,
+          this.lessonPreparationSkill.promptBundle.promptBundleRef,
         evidenceRuleVersionRef:
           educationContext.profile.evidenceRuleVersionRef,
         participationMode:
@@ -772,7 +783,7 @@ export class PostgresModelInvocationService
           policyVersionRef:
             educationContext.profile.policyVersionRef,
           promptVersionRef:
-            lessonPreparationPromptBundle.promptBundleRef,
+            this.lessonPreparationSkill.promptBundle.promptBundleRef,
           evidenceRuleVersionRef:
             educationContext.profile.evidenceRuleVersionRef,
           participationMode:
@@ -830,7 +841,7 @@ export class PostgresModelInvocationService
             contractRef,
             contextManifestRef,
             promptVersionRef:
-              lessonPreparationPromptBundle.promptBundleRef,
+              this.lessonPreparationSkill.promptBundle.promptBundleRef,
             policyVersionRef: decision.policyVersion,
             capabilityRefs: [this.provider.descriptor.capabilityRef],
             contextRefs: [
@@ -839,8 +850,10 @@ export class PostgresModelInvocationService
             ],
             contentHash: hash({
               contractContentHash,
+              skill:
+                this.lessonPreparationSkill.manifest.contentHash,
               promptBundle:
-                lessonPreparationPromptBundle.contentHash,
+                this.lessonPreparationSkill.promptBundle.contentHash,
               authorizedContextPlan:
                 authorizedContextPlan.contentHash
             }),
@@ -914,9 +927,9 @@ export class PostgresModelInvocationService
             taskRunRef,
             agentRunRef,
             promptBundleRef:
-              lessonPreparationPromptBundle.promptBundleRef,
+              this.lessonPreparationSkill.promptBundle.promptBundleRef,
             promptBundleVersion:
-              lessonPreparationPromptBundle.version,
+              this.lessonPreparationSkill.promptBundle.version,
             contextManifestRef,
             authorizedContextPlanRef,
             modelDataManifestRef:
@@ -934,6 +947,9 @@ export class PostgresModelInvocationService
               requestTextHash: hash(taskRequest.requestText),
               contextManifestHash:
                 authorizedContextPlan.contentHash,
+              skillRef: this.lessonPreparationSkill.manifest.ref,
+              skillContentHash:
+                this.lessonPreparationSkill.manifest.contentHash,
               syntheticData: true
             },
             maxAttempts:
@@ -950,7 +966,7 @@ export class PostgresModelInvocationService
                   this.settings.budget.maxOutputTokens)
                 : this.settings.budget.maxOutputTokens,
             outputSchemaVersion:
-              lessonPreparationPromptBundle.outputSchemaVersion,
+              this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
             resultKind: "teaching_proposal",
             metadata: createWriteMetadata(
               writeContext,
@@ -1004,9 +1020,9 @@ export class PostgresModelInvocationService
         taskRunRef,
         agentRunRef,
         promptBundleRef:
-          lessonPreparationPromptBundle.promptBundleRef,
+          this.lessonPreparationSkill.promptBundle.promptBundleRef,
         promptBundleVersion:
-          lessonPreparationPromptBundle.version,
+          this.lessonPreparationSkill.promptBundle.version,
         contextManifestRef,
         authorizedContextPlanRef,
         attemptCount: 0,
@@ -1024,7 +1040,7 @@ export class PostgresModelInvocationService
         safeErrorCategory: null,
         safeMessage: null,
         outputSchemaVersion:
-          lessonPreparationPromptBundle.outputSchemaVersion,
+          this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
         proposalRevisionRef: null,
         retryOfModelExecutionRef: null,
         queuedAt: now,
@@ -1887,6 +1903,10 @@ export class PostgresModelInvocationService
       await this.recoverAgentRun(execution);
     }
 
+    const lessonSkill = execution.resultKind === "teaching_proposal"
+      ? this.requireExecutionLessonPreparationSkill(execution)
+      : null;
+
     const context = execution.resultKind === "lesson_reflection_draft"
       ? await this.loadReflectionPromptContext(execution)
       : await this.loadPromptContext(execution);
@@ -2054,15 +2074,44 @@ export class PostgresModelInvocationService
                 ? execution.inputSummary["observationRevisionRefs"] as string[]
                 : []
             })
-          : validateModelOutput({
+          : lessonSkill!.validateOutput({
               outputText: result.outputText,
               request
             });
         if (validation.valid) {
+          const skillEvaluation = lessonSkill && "strategies" in validation
+            ? lessonSkill.evaluateOutput({
+                validation,
+                operation: {
+                  latencyMs: result.latencyMs,
+                  ...(result.inputTokens !== undefined &&
+                  result.outputTokens !== undefined
+                    ? {
+                        usage: {
+                          inputTokens: result.inputTokens,
+                          outputTokens: result.outputTokens,
+                          totalTokens:
+                            result.inputTokens + result.outputTokens
+                        }
+                      }
+                    : {}),
+                  attemptCount: execution.attemptCount,
+                  estimatedCostUsd: estimateCost({
+                    inputTokens: result.inputTokens ?? 0,
+                    outputTokens: result.outputTokens ?? 0,
+                    inputPricePerMillion:
+                      this.settings.budget.inputPricePerMillion,
+                    outputPricePerMillion:
+                      this.settings.budget.outputPricePerMillion
+                  })
+                }
+              })
+            : undefined;
           await this.persistValidatedOutput(
             execution,
             validation.output,
-            latestOutput
+            latestOutput,
+            skillEvaluation
           );
           await this.finalizeValidatedExecution(
             execution.executionRef
@@ -2083,7 +2132,7 @@ export class PostgresModelInvocationService
                 invalidOutput: result.outputText,
                 validationIssues: validation.issues
               })
-            : assembleRepairModelRequest({
+            : lessonSkill!.assembleRepairRequest({
             original: context.request,
             invalidOutput: result.outputText,
             validationIssues: validation.issues
@@ -2263,8 +2312,9 @@ export class PostgresModelInvocationService
           : capabilities?.supportsJsonObject === false
             ? "prompt_json"
             : "json_object";
+    const skill = this.requireExecutionLessonPreparationSkill(execution);
     return {
-      request: assembleLessonPreparationModelRequest({
+      request: skill.assembleRequest({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
         agentRunRef: execution.agentRunRef,
@@ -2758,7 +2808,8 @@ export class PostgresModelInvocationService
       latencyMs: number;
       providerRequestId?: string;
       finishReason?: string;
-    }
+    },
+    skillEvaluation?: LessonPreparationSkillEvaluation
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -2813,7 +2864,8 @@ export class PostgresModelInvocationService
         output: {
           modelExecutionRef: execution.executionRef,
           outputHash: hash(output),
-          rawProviderContentStored: false
+          rawProviderContentStored: false,
+          ...(skillEvaluation ? { skillEvaluation } : {})
         },
         operation: "model-output-runtime-validating"
       });
@@ -2911,7 +2963,8 @@ export class PostgresModelInvocationService
       const promptContext = await this.loadPromptContext(
         execution
       );
-      const validation = validateModelOutput({
+      const skill = this.requireExecutionLessonPreparationSkill(execution);
+      const validation = skill.validateOutput({
         outputText: JSON.stringify(execution.validatedOutput),
         request: promptContext.request
       });
@@ -3454,6 +3507,54 @@ export class PostgresModelInvocationService
       throw new Error("The ModelDataManifest scope is missing.");
     }
     return tenantRef;
+  }
+
+  private requireExecutionLessonPreparationSkill(
+    execution: StoredModelExecution
+  ): LessonPreparationSkillVersion {
+    const storedSkillRef = execution.inputSummary["skillRef"];
+    const skillRef = typeof storedSkillRef === "string"
+      ? storedSkillRef
+      : execution.promptBundleRef ===
+          this.lessonPreparationSkill.promptBundle.promptBundleRef &&
+        execution.promptBundleVersion ===
+          this.lessonPreparationSkill.promptBundle.version
+        ? lessonPreparationSkillRef
+        : null;
+    if (!skillRef) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} has no resolvable SkillVersion.`
+      );
+    }
+    const skill = loadHistoricalLessonPreparationSkill(
+      this.skills,
+      skillRef
+    );
+    if (skill.manifest.status === "draft") {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} cannot execute draft Skill ${skillRef}.`
+      );
+    }
+    const storedContentHash = execution.inputSummary["skillContentHash"];
+    if (
+      typeof storedContentHash === "string" &&
+      storedContentHash !== skill.manifest.contentHash
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} Skill manifest hash does not match.`
+      );
+    }
+    if (
+      execution.promptBundleRef !== skill.promptBundle.promptBundleRef ||
+      execution.promptBundleVersion !== skill.promptBundle.version ||
+      execution.outputSchemaVersion !==
+        skill.promptBundle.outputSchemaVersion
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} is not bound to ${skillRef} artifacts.`
+      );
+    }
+    return skill;
   }
 
   private assertInvocationContext(

@@ -1,3 +1,4 @@
+import { createBuiltInSkillRegistry } from "../agent/skills/index.js";
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
 import type {
@@ -94,11 +95,13 @@ export function createProductContainer(
   const modelProvider =
     options.modelProvider ??
     createConfiguredModelProvider(modelSettings);
+  const skillRegistry = createBuiltInSkillRegistry();
   const modelInvocations: ModelInvocationApplicationFacade =
     new PostgresModelInvocationService(
       appPool,
       modelProvider,
-      modelSettings
+      modelSettings,
+      { skills: skillRegistry }
     );
   const objectStoreSettings =
     options.objectStoreSettings ?? readObjectStoreSettings();
