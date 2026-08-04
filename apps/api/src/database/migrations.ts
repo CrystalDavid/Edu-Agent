@@ -213,5 +213,10 @@ export const moduleMigrations = [
     owner: "personalization",
     relativePath:
       "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0001_personalization.sql"
+  },
+  {
+    owner: "personalization",
+    relativePath:
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0002_phase7a_memory_persistence.sql"
   }
 ] as const;
