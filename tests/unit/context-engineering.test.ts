@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   LessonPreparationContextBuildError,
   lessonPreparationSkillV2,
+  lessonPreparationSkillV3,
   type LessonPreparationSkillInput
 } from "../../apps/api/src/agent/skills/lesson-preparation/index.js";
 
@@ -77,7 +78,101 @@ describe("Phase 6 lesson preparation Context Builder", () => {
       /exceed budget/u
     );
   });
+
+  it("adds only confirmed, owner-scoped preferences to the versioned Skill input", () => {
+    const result = buildPersonalized([{
+      tenantRef: "school:1",
+      teacherRef: "user:teacher-1",
+      preferenceRef: "teacher-preference:1",
+      preferenceKey: "lesson_plan_detail",
+      preferenceValue: "concise",
+      version: 2,
+      contentHash: "c".repeat(64),
+      sourceCandidateRef: "memory-candidate:1",
+      confirmedAt: "2026-08-04T09:00:00.000Z",
+      updatedAt: "2026-08-04T10:00:00.000Z"
+    }]);
+
+    expect(result.input.confirmedPreferences).toEqual([
+      expect.objectContaining({
+        preferenceRef: "teacher-preference:1",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "concise",
+        version: 2
+      })
+    ]);
+    expect(result.personalizationManifest.confirmedPreferences).toEqual([
+      expect.objectContaining({
+        preferenceRef: "teacher-preference:1",
+        preferenceKey: "lesson_plan_detail",
+        contentHash: "c".repeat(64)
+      })
+    ]);
+    expect(JSON.stringify(result.personalizationManifest)).not.toContain(
+      "concise"
+    );
+    expect(result.preferenceEvaluation).toMatchObject({
+      passed: true,
+      ownerScope: { status: "passed", rejectedRefs: [] },
+      lifecycle: { inputKind: "confirmed_active_only" }
+    });
+  });
+
+  it("fails closed when a confirmed preference belongs to another tenant", () => {
+    expect(() => buildPersonalized([{
+      tenantRef: "school:2",
+      teacherRef: "user:teacher-1",
+      preferenceRef: "teacher-preference:foreign",
+      preferenceKey: "lesson_plan_detail",
+      preferenceValue: "concise",
+      version: 1,
+      contentHash: "d".repeat(64),
+      sourceCandidateRef: "memory-candidate:foreign",
+      confirmedAt: "2026-08-04T09:00:00.000Z",
+      updatedAt: "2026-08-04T09:00:00.000Z"
+    }])).toThrow(/outside the active owner scope/u);
+  });
 });
+
+function buildPersonalized(
+  confirmedPreferences: Parameters<
+    NonNullable<typeof lessonPreparationSkillV3.buildContext>
+  >[0]["confirmedPreferences"]
+) {
+  const skillInput = lessonPreparationInput();
+  const resourceRefs = [
+    skillInput.courseRun.courseRunRef,
+    skillInput.curriculumUnit.unitRef,
+    skillInput.lesson.lessonRef,
+    ...skillInput.learningObjectives.map((item) => item.objectiveRef),
+    "teaching-plan-revision:approved-1"
+  ];
+  return lessonPreparationSkillV3.buildContext!({
+    contextPlan: {
+      purpose: "lesson_preparation",
+      actorRef: "user:teacher-1",
+      tenantRef: "school:1",
+      resourceTypes:
+        lessonPreparationSkillV3.manifest.contextPolicy.requiredResourceKinds,
+      fieldMask: ["lesson", "evidence"],
+      authorizationDecisionRef: "authorization-decision:1",
+      authorizedResourceRefs: resourceRefs,
+      authorizedEvidenceRefs: ["evidence:observation-1"],
+      tokenBudget: 8_000,
+      timeRange: null,
+      workingSetVersion: 1
+    },
+    sealedContext: {
+      contextManifestRef: "context-manifest:1",
+      resourceRefs,
+      evidenceRefs: ["evidence:observation-1"],
+      missingInformation: []
+    },
+    skillInput,
+    baselineRevisionRef: "teaching-plan-revision:approved-1",
+    confirmedPreferences
+  });
+}
 
 function build(overrides: {
   readonly authorizedEvidenceRefs?: readonly string[];

@@ -10,7 +10,9 @@ import {
 import { validateLessonPreparationContext } from "./context-policy.js";
 import {
   LessonPreparationSkillInputSchema,
-  type LessonPreparationSkillInput
+  LessonPreparationSkillInputSchemaV2,
+  type LessonPreparationSkillInput,
+  type LessonPreparationSkillInputV2
 } from "./input-schema.js";
 
 const systemInstruction = [
@@ -57,6 +59,31 @@ export const lessonPreparationPromptBundle: PromptBundleDescriptor =
     contentHash: sha256({
       ...descriptorPayload,
       systemInstruction
+    })
+  });
+
+const personalizedSystemInstruction = [
+  systemInstruction,
+  "confirmedPreferences 只包含教师已确认且仍有效的偏好。",
+  "偏好只能影响表达与组织方式，不能改变 Evidence、课程事实、审批边界或虚构内容。"
+].join("\n");
+
+const personalizedDescriptorPayload = {
+  ...descriptorPayload,
+  version: 2,
+  inputFields: [
+    ...descriptorPayload.inputFields,
+    "confirmedPreferences"
+  ],
+  createdAt: "2026-08-05T00:00:00.000Z"
+};
+
+export const personalizedLessonPreparationPromptBundle: PromptBundleDescriptor =
+  PromptBundleDescriptorSchema.parse({
+    ...personalizedDescriptorPayload,
+    contentHash: sha256({
+      ...personalizedDescriptorPayload,
+      systemInstruction: personalizedSystemInstruction
     })
   });
 
@@ -136,6 +163,30 @@ export function assembleLessonPreparationModelRequest(
   });
 }
 
+export function assemblePersonalizedLessonPreparationModelRequest(
+  input: LessonPreparationSkillInputV2
+): ModelRequestV2 {
+  const parsed = LessonPreparationSkillInputSchemaV2.parse(input);
+  const base = assembleLessonPreparationModelRequest(parsed);
+  const userMessage = base.messages.find((message) => message.role === "user");
+  if (!userMessage) throw new Error("Lesson Preparation user message is missing.");
+  const basePayload = JSON.parse(userMessage.content) as Record<string, unknown>;
+  return ModelRequestSchemaV2.parse({
+    ...base,
+    promptBundle: personalizedLessonPreparationPromptBundle,
+    messages: [
+      { role: "system", content: personalizedSystemInstruction },
+      {
+        role: "user",
+        content: JSON.stringify({
+          ...basePayload,
+          confirmedPreferences: parsed.confirmedPreferences
+        })
+      }
+    ]
+  });
+}
+
 export { systemInstruction as lessonPreparationSystemInstruction };
 
 export function assembleRepairModelRequest(input: {
@@ -164,6 +215,37 @@ export function assembleRepairModelRequest(input: {
           requiredScope: original.scope,
           requiredSchemaVersion:
             original.expectedOutputSchema
+        })
+      }
+    ]
+  });
+}
+
+export function assemblePersonalizedRepairModelRequest(input: {
+  original: ModelRequestV2;
+  invalidOutput: string;
+  validationIssues: readonly string[];
+}): ModelRequestV2 {
+  const original = ModelRequestSchemaV2.parse(input.original);
+  return ModelRequestSchemaV2.parse({
+    ...original,
+    invocationRef: `${original.invocationRef}:repair`,
+    messages: [
+      {
+        role: "system",
+        content: [
+          personalizedSystemInstruction,
+          "这是同一 ModelExecution 的唯一一次受控修复。",
+          "不得增加偏好、Evidence、资源、权限或任务范围。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          invalidOutput: input.invalidOutput.slice(0, 20_000),
+          validationIssues: [...input.validationIssues],
+          requiredScope: original.scope,
+          requiredSchemaVersion: original.expectedOutputSchema
         })
       }
     ]

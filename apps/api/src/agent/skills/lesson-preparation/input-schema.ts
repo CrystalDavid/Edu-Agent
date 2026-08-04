@@ -7,6 +7,8 @@ import { z } from "zod";
 
 export const lessonPreparationInputSchemaRef =
   "lesson-preparation-input@1";
+export const lessonPreparationInputSchemaRefV2 =
+  "lesson-preparation-input@2";
 
 export const LessonPreparationSkillInputSchema = z.object({
   invocationRef: z.string().min(1),
@@ -69,4 +71,25 @@ export const LessonPreparationSkillInputSchema = z.object({
 
 export type LessonPreparationSkillInput = z.infer<
   typeof LessonPreparationSkillInputSchema
+>;
+
+export const ConfirmedTeacherPreferenceSchema = z.object({
+  preferenceRef: z.string().min(1),
+  preferenceKey: z.string().min(1).max(80),
+  preferenceValue: z.string().min(1).max(240),
+  version: z.number().int().positive(),
+  contentHash: z.string().min(16),
+  sourceCandidateRef: z.string().min(1)
+});
+
+export const LessonPreparationSkillInputSchemaV2 =
+  LessonPreparationSkillInputSchema.extend({
+    confirmedPreferences: z.array(ConfirmedTeacherPreferenceSchema).max(12)
+  });
+
+export type ConfirmedTeacherPreference = z.infer<
+  typeof ConfirmedTeacherPreferenceSchema
+>;
+export type LessonPreparationSkillInputV2 = z.infer<
+  typeof LessonPreparationSkillInputSchemaV2
 >;

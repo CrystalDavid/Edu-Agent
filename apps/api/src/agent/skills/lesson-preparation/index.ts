@@ -4,6 +4,9 @@ import type {
 } from "@edu-agent/contracts";
 
 import type { SkillVersionBase } from "../types.js";
+import type {
+  ConfirmedTeacherPreferenceSnapshot
+} from "../../../modules/personalization-memory-analytics/application/personalization-context-provider.js";
 import {
   buildLessonPreparationContext,
   type LessonPreparationContextBuildResult,
@@ -17,11 +20,13 @@ import {
 } from "./evaluation.js";
 import {
   LessonPreparationSkillInputSchema,
+  LessonPreparationSkillInputSchemaV2,
   type LessonPreparationSkillInput
 } from "./input-schema.js";
 import {
   lessonPreparationSkillManifest,
-  lessonPreparationSkillManifestV2
+  lessonPreparationSkillManifestV2,
+  lessonPreparationSkillManifestV3
 } from "./manifest.js";
 import {
   LessonPreparationSkillOutputSchema,
@@ -30,15 +35,27 @@ import {
 import {
   assembleLessonPreparationModelRequest,
   assembleRepairModelRequest,
-  lessonPreparationPromptBundle
+  assemblePersonalizedLessonPreparationModelRequest,
+  assemblePersonalizedRepairModelRequest,
+  lessonPreparationPromptBundle,
+  personalizedLessonPreparationPromptBundle
 } from "./prompt.js";
+import {
+  buildPersonalizedLessonPreparationContext,
+  type PersonalizedLessonPreparationContextBuildResult
+} from "./personalized-context-builder.js";
 import {
   validateModelOutput,
   type ModelOutputValidationResult
 } from "./validator.js";
 
 export interface LessonPreparationSkillVersion extends SkillVersionBase {
-  readonly inputSchema: typeof LessonPreparationSkillInputSchema;
+  readonly inputSchema: {
+    parse(value: unknown): LessonPreparationSkillInput;
+    safeParse(value: unknown):
+      | { readonly success: true; readonly data: LessonPreparationSkillInput }
+      | { readonly success: false; readonly error: unknown };
+  };
   readonly outputSchema: typeof LessonPreparationSkillOutputSchema;
   readonly promptBundle: PromptBundleDescriptor;
   assembleRequest(input: LessonPreparationSkillInput): ModelRequestV2;
@@ -55,12 +72,17 @@ export interface LessonPreparationSkillVersion extends SkillVersionBase {
     readonly validation: ModelOutputValidationResult;
     readonly operation?: LessonPreparationOperationMetrics;
   }): LessonPreparationSkillEvaluation;
-  buildContext?(input: {
+  buildContext?(input: LessonPreparationContextBuildInput):
+    | LessonPreparationContextBuildResult
+    | PersonalizedLessonPreparationContextBuildResult;
+}
+
+export interface LessonPreparationContextBuildInput {
     readonly contextPlan: LessonPreparationContextPlan;
     readonly sealedContext: LessonPreparationSealedContext;
     readonly skillInput: LessonPreparationSkillInput;
     readonly baselineRevisionRef: string;
-  }): LessonPreparationContextBuildResult;
+    readonly confirmedPreferences?: readonly ConfirmedTeacherPreferenceSnapshot[];
 }
 
 export const lessonPreparationSkillV1: LessonPreparationSkillVersion =
@@ -88,6 +110,25 @@ export const lessonPreparationSkillV2: LessonPreparationSkillVersion =
     evaluateOutput: evaluateLessonPreparationOutput
   });
 
+export const lessonPreparationSkillV3: LessonPreparationSkillVersion =
+  Object.freeze({
+    manifest: lessonPreparationSkillManifestV3,
+    inputSchema: LessonPreparationSkillInputSchemaV2,
+    outputSchema: LessonPreparationSkillOutputSchema,
+    promptBundle: personalizedLessonPreparationPromptBundle,
+    buildContext: (input: LessonPreparationContextBuildInput) => buildPersonalizedLessonPreparationContext({
+      ...input,
+      confirmedPreferences: input.confirmedPreferences ?? []
+    }),
+    assembleRequest: (input: LessonPreparationSkillInput) =>
+      assemblePersonalizedLessonPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV2.parse(input)
+      ),
+    assembleRepairRequest: assemblePersonalizedRepairModelRequest,
+    validateOutput: validateModelOutput,
+    evaluateOutput: evaluateLessonPreparationOutput
+  });
+
 export type {
   LessonPreparationOperationMetrics,
   LessonPreparationSkillEvaluation,
@@ -102,9 +143,17 @@ export type {
   LessonPreparationEngineeringManifest,
   LessonPreparationSealedContext
 } from "./context-builder.js";
+export type {
+  PersonalizedLessonPreparationManifest,
+  PreferenceContextEvaluation
+} from "./personalized-context-builder.js";
 export {
   LessonPreparationContextBuildError,
   buildLessonPreparationContext,
   estimateContextTokens,
   lessonPreparationContextBuilderVersion
 } from "./context-builder.js";
+export {
+  buildPersonalizedLessonPreparationContext,
+  personalizedLessonPreparationContextBuilderVersion
+} from "./personalized-context-builder.js";

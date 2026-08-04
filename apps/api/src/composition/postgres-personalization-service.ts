@@ -26,8 +26,12 @@ import {
   type MemoryCandidate,
   type TeacherPreference
 } from "../modules/personalization-memory-analytics/domain/index.js";
-import { PostgresMemoryCandidateRepository } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-candidate-repository.js";
-import { PostgresGovernanceRepository } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
+import {
+  PostgresMemoryCandidateRepository
+} from "../modules/personalization-memory-analytics/infrastructure/index.js";
+import {
+  PostgresGovernanceRepository
+} from "../modules/identity-governance-audit/infrastructure/index.js";
 import {
   AuthorizationDeniedError,
   DomainConflictError,
@@ -256,6 +260,8 @@ export class PostgresPersonalizationService
     });
     return Object.freeze(
       preferences.map((preference) => Object.freeze({
+        tenantRef: preference.owner.tenantRef,
+        teacherRef: preference.owner.teacherRef,
         preferenceRef: preference.preferenceRef,
         preferenceKey: preference.preferenceKey,
         preferenceValue: preference.preferenceValue,

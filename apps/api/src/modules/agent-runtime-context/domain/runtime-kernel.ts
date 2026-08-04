@@ -198,11 +198,12 @@ export interface CreateRuntimeCheckpointInput {
 export const lessonPreparationAgentDefinition: AgentDefinition =
   deepFreeze({
     agentDefinitionId: "lesson-preparation-agent",
-    version: "2",
+    version: "3",
     purpose: "lesson_preparation",
     allowedSkillVersions: [
       "lesson-preparation@1",
-      "lesson-preparation@2"
+      "lesson-preparation@2",
+      "lesson-preparation@3"
     ],
     toolPolicy: {
       allowedTools: [],

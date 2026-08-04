@@ -103,7 +103,7 @@ export function createProductContainer(
       appPool,
       modelProvider,
       modelSettings,
-      { skills: skillRegistry }
+      { skills: skillRegistry, personalization }
     );
   const objectStoreSettings =
     options.objectStoreSettings ?? readObjectStoreSettings();

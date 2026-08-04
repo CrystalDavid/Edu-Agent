@@ -35,6 +35,16 @@ export const lessonPreparationContextPolicyV2: SkillContextPolicy =
     version: "lesson-preparation-context-policy@2"
   });
 
+export const lessonPreparationContextPolicyV3: SkillContextPolicy =
+  Object.freeze({
+    ...lessonPreparationContextPolicy,
+    version: "lesson-preparation-context-policy@3",
+    allowedFieldGroups: [
+      ...lessonPreparationContextPolicy.allowedFieldGroups,
+      "confirmed_teacher_preferences"
+    ]
+  });
+
 export function validateLessonPreparationContext(
   input: LessonPreparationSkillInput
 ): readonly string[] {

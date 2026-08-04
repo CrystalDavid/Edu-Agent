@@ -35,6 +35,8 @@ import {
   type LessonPreparationSkillEvaluation,
   type LessonPreparationContextEvaluation,
   type LessonPreparationEngineeringManifest,
+  type PersonalizedLessonPreparationManifest,
+  type PreferenceContextEvaluation,
   type LessonPreparationSkillInput,
   type LessonPreparationSkillVersion,
   type VersionedSkillRegistry
@@ -45,6 +47,9 @@ import {
 import type {
   RuntimeKernelEvent
 } from "../modules/agent-runtime-context/domain/runtime-kernel.js";
+import type {
+  PersonalizationContextProvider
+} from "../modules/personalization-memory-analytics/application/personalization-context-provider.js";
 import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
@@ -156,6 +161,7 @@ interface ModelInvocationDependencies {
   runtime?: PostgresRuntimeRepository;
   runtimeKernel?: RuntimeKernelService<PostgresClient>;
   skills?: VersionedSkillRegistry;
+  personalization?: PersonalizationContextProvider;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -170,6 +176,13 @@ interface ModelInvocationDependencies {
   random?: () => number;
 }
 
+type LessonPreparationContextEngineering = {
+  readonly manifest: LessonPreparationEngineeringManifest;
+  readonly evaluation: LessonPreparationContextEvaluation;
+  readonly personalizationManifest?: PersonalizedLessonPreparationManifest;
+  readonly preferenceEvaluation?: PreferenceContextEvaluation;
+};
+
 export class PostgresModelInvocationService
   implements ModelInvocationApplicationFacade
 {
@@ -181,6 +194,7 @@ export class PostgresModelInvocationService
   private readonly runtimeKernel: RuntimeKernelService<PostgresClient>;
   private readonly skills: VersionedSkillRegistry;
   private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
+  private readonly personalization: PersonalizationContextProvider;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -220,6 +234,11 @@ export class PostgresModelInvocationService
       dependencies.runtime ?? new PostgresRuntimeRepository();
     this.skills = dependencies.skills ?? createBuiltInSkillRegistry();
     this.lessonPreparationSkill = loadLessonPreparationSkill(this.skills);
+    this.personalization = dependencies.personalization ?? {
+      async listConfirmedPreferences() {
+        return [];
+      }
+    };
     this.runtimeKernel =
       dependencies.runtimeKernel ??
       new RuntimeKernelService(
@@ -2003,10 +2022,7 @@ export class PostgresModelInvocationService
           executionRef,
           attempt,
           (context as {
-            readonly contextEngineering?: {
-              readonly manifest: LessonPreparationEngineeringManifest;
-              readonly evaluation: LessonPreparationContextEvaluation;
-            };
+            readonly contextEngineering?: LessonPreparationContextEngineering;
           }).contextEngineering
         );
         if (execution.status === "cancel_requested") {
@@ -2211,10 +2227,7 @@ export class PostgresModelInvocationService
       artifactRef: string;
       content: TeachingPlan;
     };
-    contextEngineering?: {
-      manifest: LessonPreparationEngineeringManifest;
-      evaluation: LessonPreparationContextEvaluation;
-    };
+    contextEngineering?: LessonPreparationContextEngineering;
   }> {
     const tenantRef = await this.executionTenantRef(execution);
     const taskRun = await this.gate25Work.getTaskRun(
@@ -2353,6 +2366,13 @@ export class PostgresModelInvocationService
             ? "prompt_json"
             : "json_object";
     const skill = this.requireExecutionLessonPreparationSkill(execution);
+    const confirmedPreferences =
+      skill.manifest.memoryPolicy.mode === "authorized_context_only"
+        ? await this.personalization.listConfirmedPreferences({
+            tenantRef,
+            teacherRef: execution.actorRef
+          })
+        : [];
     const skillInput: LessonPreparationSkillInput = {
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
@@ -2434,7 +2454,8 @@ export class PostgresModelInvocationService
         missingInformation: contextManifest.unknowns
       },
       skillInput,
-      baselineRevisionRef: baseline.revisionRef
+      baselineRevisionRef: baseline.revisionRef,
+      confirmedPreferences
     });
     return {
       request: skill.assembleRequest(
@@ -2449,7 +2470,15 @@ export class PostgresModelInvocationService
         ? {
             contextEngineering: {
               manifest: contextBuild.manifest,
-              evaluation: contextBuild.evaluation
+              evaluation: contextBuild.evaluation,
+              ...("personalizationManifest" in contextBuild
+                ? {
+                    personalizationManifest:
+                      contextBuild.personalizationManifest,
+                    preferenceEvaluation:
+                      contextBuild.preferenceEvaluation
+                  }
+                : {})
             }
           }
         : {})
@@ -2640,10 +2669,7 @@ export class PostgresModelInvocationService
   private async beginAttempt(
     executionRef: string,
     attempt: number,
-    contextEngineering?: {
-      readonly manifest: LessonPreparationEngineeringManifest;
-      readonly evaluation: LessonPreparationContextEvaluation;
-    }
+    contextEngineering?: LessonPreparationContextEngineering
   ): Promise<StoredModelExecution> {
     const now = this.clock().toISOString();
     const client = await this.pool.connect();

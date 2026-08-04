@@ -1,4 +1,6 @@
 export interface ConfirmedTeacherPreferenceSnapshot {
+  readonly tenantRef: string;
+  readonly teacherRef: string;
   readonly preferenceRef: string;
   readonly preferenceKey: string;
   readonly preferenceValue: string;
