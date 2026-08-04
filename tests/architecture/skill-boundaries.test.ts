@@ -65,6 +65,7 @@ describe("Phase 5 Skill boundaries", () => {
       /capability-integration[\/]application[\/](?:lesson-preparation-prompt-bundle|model-output-validation)/u
     );
     expect(manifest).toContain('ref: "lesson-preparation@1"');
+    expect(manifest).toContain('ref: "lesson-preparation@2"');
     expect(manifest).toContain('status: "published"');
     expect(manifest).toContain('mode: "disabled"');
     expect(manifest).toContain("humanApprovalRequired: true");

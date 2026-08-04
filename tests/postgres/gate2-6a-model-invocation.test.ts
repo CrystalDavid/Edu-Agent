@@ -176,8 +176,8 @@ describe("Gate 2.6A durable ModelExecution", () => {
       schemaVersion: 1,
       checkpointVersion: 4,
       skillId: "lesson-preparation",
-      skillVersion: "1",
-      skillRef: "lesson-preparation@1",
+      skillVersion: "2",
+      skillRef: "lesson-preparation@2",
       status: "waiting_for_human",
       modelExecutionRef: queued.body.execution.modelExecutionRef,
       proposalRef: completed.body.proposalRevisionRef
@@ -190,6 +190,33 @@ describe("Gate 2.6A durable ModelExecution", () => {
       policy: { status: "passed" },
       operation: { status: "recorded" }
     });
+    const contextEngineering = runtimeRow.rows[0]?.output[
+      "contextEngineering"
+    ] as Record<string, unknown> | undefined;
+    expect(contextEngineering?.["evaluation"]).toMatchObject({
+      policyVersion: "lesson-preparation-context-evaluation@1",
+      passed: true,
+      authorization: { status: "passed", unauthorizedRefs: [] },
+      completeness: { status: "passed", missingResourceKinds: [] },
+      budget: { status: "passed" },
+      value: { status: "passed", hitRate: 1 }
+    });
+    expect(contextEngineering?.["manifest"]).toMatchObject({
+      schemaVersion: 1,
+      builderVersion: "lesson-preparation-context-builder@1",
+      purpose: "lesson_preparation",
+      contextManifestRef: queued.body.execution.contextManifestRef
+    });
+    expect(
+      String(
+        (contextEngineering?.["manifest"] as Record<string, unknown>)[
+          "contentHash"
+        ]
+      )
+    ).toHaveLength(64);
+    expect(JSON.stringify(contextEngineering)).not.toContain(
+      command.requestText
+    );
     expect(
       (runtimeCheckpoint?.["steps"] as Array<Record<string, unknown>>)
         .every((step) => step["status"] === "succeeded")
