@@ -3,7 +3,8 @@
 > 审计基线：`codex/phase5-versioned-skill-registry`，基线提交
 > `397f08ff60b8bbeb125d7d4e3a2b2016e847195a`。
 >
-> 本文只记录 Phase 5 开始时的代码事实；目标设计在下一份 Phase 5 文档中固化。
+> 本文只记录 Phase 5 开始时的代码事实；目标设计见
+> [skill-system-design.md](./skill-system-design.md)。
 
 ## 1. 当前 Agent 能力定义在哪里
 
