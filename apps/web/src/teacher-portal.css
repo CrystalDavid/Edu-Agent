@@ -4015,6 +4015,33 @@ textarea:focus-visible,
   font-size: 12px;
 }
 
+.teacher-preference-settings {
+  display: grid;
+  gap: 24px;
+}
+
+.teacher-preference-settings > section {
+  display: grid;
+  gap: 10px;
+}
+
+.teacher-preference-settings > section > h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.teacher-preference-settings .settings-list {
+  padding: 0;
+}
+
+.teacher-preference-settings .settings-row > div {
+  justify-content: flex-end;
+}
+
+.teacher-preference-settings .settings-row .ant-input {
+  width: min(280px, 42vw);
+}
+
 .profile-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

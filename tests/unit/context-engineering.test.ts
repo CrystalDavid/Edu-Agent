@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   LessonPreparationContextBuildError,
+  buildPersonalizedLessonPreparationContext,
   lessonPreparationSkillV2,
   lessonPreparationSkillV3,
+  type PersonalizedLessonPreparationContextBuildResult,
   type LessonPreparationSkillInput
 } from "../../apps/api/src/agent/skills/lesson-preparation/index.js";
+import type {
+  ConfirmedTeacherPreferenceSnapshot
+} from "../../apps/api/src/modules/personalization-memory-analytics/application/personalization-context-provider.js";
 
 describe("Phase 6 lesson preparation Context Builder", () => {
   it("builds a deterministic, explainable manifest from authorized snapshots", () => {
@@ -135,10 +140,8 @@ describe("Phase 6 lesson preparation Context Builder", () => {
 });
 
 function buildPersonalized(
-  confirmedPreferences: Parameters<
-    NonNullable<typeof lessonPreparationSkillV3.buildContext>
-  >[0]["confirmedPreferences"]
-) {
+  confirmedPreferences: readonly ConfirmedTeacherPreferenceSnapshot[]
+): PersonalizedLessonPreparationContextBuildResult {
   const skillInput = lessonPreparationInput();
   const resourceRefs = [
     skillInput.courseRun.courseRunRef,
@@ -147,7 +150,7 @@ function buildPersonalized(
     ...skillInput.learningObjectives.map((item) => item.objectiveRef),
     "teaching-plan-revision:approved-1"
   ];
-  return lessonPreparationSkillV3.buildContext!({
+  return buildPersonalizedLessonPreparationContext({
     contextPlan: {
       purpose: "lesson_preparation",
       actorRef: "user:teacher-1",

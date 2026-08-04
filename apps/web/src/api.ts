@@ -16,6 +16,13 @@ import {
   SchoolDetailSchema,
   SecurityEventListSchema,
   SwitchWorkspaceRequestSchema,
+  CreateMemoryCandidateRequestSchema,
+  MemoryCandidateMutationResultSchema,
+  ReviewMemoryCandidateRequestSchema,
+  TeacherPersonalizationStateSchema,
+  TeacherPreferenceMutationResultSchema,
+  UpdateTeacherPreferenceRequestSchema,
+  RevokeTeacherPreferenceRequestSchema,
   UpdateMemberCourseAccessRequestSchema,
   UpdateMemberRolesRequestSchema,
   UpdateMemberStatusRequestSchema,
@@ -141,6 +148,11 @@ import {
   type LocalLoginRequest,
   type LocalSmsChallenge,
   type SwitchWorkspaceRequest,
+  type CreateMemoryCandidateRequest,
+  type ReviewMemoryCandidateRequest,
+  type TeacherPersonalizationState,
+  type UpdateTeacherPreferenceRequest,
+  type RevokeTeacherPreferenceRequest,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
   type UpdateMemberStatusRequest,
@@ -495,6 +507,66 @@ export async function logoutAuthenticationSession(): Promise<void> {
       requestUrl
     );
   }
+}
+
+export function loadTeacherPersonalization(): Promise<TeacherPersonalizationState> {
+  return request(
+    "教师偏好",
+    apiRoutes.teacher.personalizationState,
+    TeacherPersonalizationStateSchema
+  );
+}
+
+export function createMemoryCandidate(input: CreateMemoryCandidateRequest) {
+  CreateMemoryCandidateRequestSchema.parse(input);
+  return request(
+    "记录偏好候选",
+    apiRoutes.teacher.memoryCandidates,
+    MemoryCandidateMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function reviewMemoryCandidate(
+  candidateRef: string,
+  action: "confirm" | "reject",
+  input: ReviewMemoryCandidateRequest
+) {
+  ReviewMemoryCandidateRequestSchema.parse(input);
+  return request(
+    action === "confirm" ? "确认偏好" : "忽略偏好候选",
+    action === "confirm"
+      ? apiRoutes.teacher.memoryCandidateConfirm(candidateRef)
+      : apiRoutes.teacher.memoryCandidateReject(candidateRef),
+    MemoryCandidateMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateTeacherPreference(
+  preferenceRef: string,
+  input: UpdateTeacherPreferenceRequest
+) {
+  UpdateTeacherPreferenceRequestSchema.parse(input);
+  return request(
+    "修改教师偏好",
+    apiRoutes.teacher.teacherPreference(preferenceRef),
+    TeacherPreferenceMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function revokeTeacherPreference(
+  preferenceRef: string,
+  input: RevokeTeacherPreferenceRequest
+) {
+  RevokeTeacherPreferenceRequestSchema.parse(input);
+  return request(
+    "撤销教师偏好",
+    apiRoutes.teacher.teacherPreferenceRevoke(preferenceRef),
+    TeacherPreferenceMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
 }
 
 export function loadActiveSessions() {

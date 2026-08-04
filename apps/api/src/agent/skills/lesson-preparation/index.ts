@@ -144,6 +144,7 @@ export type {
   LessonPreparationSealedContext
 } from "./context-builder.js";
 export type {
+  PersonalizedLessonPreparationContextBuildResult,
   PersonalizedLessonPreparationManifest,
   PreferenceContextEvaluation
 } from "./personalized-context-builder.js";

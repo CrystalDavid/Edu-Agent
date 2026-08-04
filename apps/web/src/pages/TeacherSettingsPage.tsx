@@ -4,6 +4,7 @@ import type { AuthenticationSessionStatus } from "@edu-agent/contracts";
 import { Button, Input } from "antd";
 
 import { IdentityOrganizationSettings } from "../components/portal/IdentityOrganizationSettings";
+import { TeacherPreferenceSettings } from "../components/portal/TeacherPreferenceSettings";
 import { PageHeader, StatusPill } from "../components/portal/PortalPrimitives";
 import { SettingsRow, SettingsSection } from "../components/portal/SettingsSection";
 import { TeacherAvatar } from "../components/portal/TeacherAvatar";
@@ -20,6 +21,7 @@ const sectionLinks = [
   ["profile", "个人信息"],
   ["identity", "账号和学校"],
   ["workspace", "角色与课程"],
+  ["personalization", "Agent 偏好"],
   ["privacy", "隐私与数据"],
   ["system", "系统状态"]
 ] as const;
@@ -102,6 +104,14 @@ export function TeacherSettingsPage(props: {
               description="只显示学校管理员分配给当前成员的课程"
               control={<span>{workspace?.courseRunRefs.length ?? 0} 门</span>}
             />
+          </SettingsSection>
+
+          <SettingsSection
+            id="personalization"
+            title="Agent 偏好"
+            description="查看并管理您明确确认、允许 Agent 在后续备课中使用的长期偏好。"
+          >
+            <TeacherPreferenceSettings onAction={props.onAction} />
           </SettingsSection>
 
           <SettingsSection id="privacy" title="隐私与数据" description="数据请求会登记到服务端，不在浏览器拼装或删除业务历史。">
