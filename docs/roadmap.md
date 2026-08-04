@@ -37,7 +37,7 @@ Gate 2.10B 尚未开始。进入实施前需要产品所有者确认试点范围
 - 完整考试、题库和教师评测流程；
 - 多模态文件理解、OCR 和受控文件入模；
 - 第二模型 Provider、Provider routing 和故障切换；
-- Phase 6 已建立 MemoryCandidate、过期/拒绝/撤销和教师确认边界；在试点启用前仍需前向 Migration、PostgreSQL Adapter、明确同意交互和数据治理；
+- 更丰富但仍由教师控制的偏好类型与效果评估；Phase 7A 已完成持久化、确认 UI 和备课 Context 接入，不扩展学生画像；
 - 更完整 school admin、邀请、MFA/SCIM 和治理 Worker。
 
 ## 明确不做的“捷径”

@@ -22,7 +22,7 @@
 | Agent / Copilot | REAL | 封存 TaskWorkingSet/授权上下文；创建可恢复 ModelExecution；Mock 或 Ark 生成 Proposal；取消、重试、恢复；教师处置 | Work/Runtime/Capability/Artifact PostgreSQL；task context、model invocation、proposal API | 2.4、2.5、2.6A | Ark 需服务端配置；默认本地/测试为 Mock；不能自动批准、完成任务或扩大上下文 |
 | Teaching Plan | REAL | 查看 current approved、active in-review、draft、superseded/history；处置 Proposal；单独批准；显式完成备课；导出 DOCX | Artifact/Work PostgreSQL；lesson teaching-plan reads、proposal disposition、approve、export | Artifact / Work；2.4、2.5、2.5B | `published` 未实现；approved Revision immutable；正式导出只允许 current approved |
 | Runs | REAL / READ_ONLY | 查看请求、安全上下文、ModelExecution、Usage、延迟、脱敏 provider request ID、Proposal、Audit 与 Outbox 状态 | Runtime/Capability/Governance/Work PostgreSQL；run/model detail API | 2.4、2.6A | 调试信息只读且不显示 Key、完整 Prompt/响应或隐藏推理 |
-| 设置 | PARTIAL | 查看用户、学校、角色、CourseRun scope、活跃 Session；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance PostgreSQL；auth/session/workspace、organization/admin、governance request API | Governance；2.10A | 已移除无后端真值的偏好/通知设置；无邮件邀请、MFA、SCIM 或完整学校后台 |
+| 设置 | REAL（当前范围） | 查看用户、学校、角色、CourseRun scope、活跃 Session；管理教师确认的 Agent 偏好；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance / Personalization PostgreSQL；auth/session/workspace、personalization、organization/admin、governance request API | Governance / Personalization；2.10A、Phase 7A | 无通知设置、邮件邀请、MFA、SCIM 或完整学校后台；偏好只影响建议表达，不成为教学事实 |
 | 管理员入口 | REAL（最小） | school admin 查看成员、安全事件，创建/激活/停用成员，分配 ordinary_teacher 和 CourseRun access | Governance PostgreSQL；`/api/v1/admin/*` | Governance；2.10A | 只在当前学校生效；不授予修改教学事实的超级权限；subject lead/homeroom 仅保留边界 |
 
 `DEAD = 0` 的 Gate 2.5C 固化证据见历史 [教师门户功能矩阵](history/gates/teacher-portal-function-matrix.md)。未实现入口必须禁用，不能显示成功写入提示。
@@ -46,6 +46,7 @@
 | 课后反思 | REAL | selected context → Agent draft → teacher confirm → explicit follow-up | Reflection 不覆盖 TeachingPlan，也不自动创建行动 |
 | 学校成员管理 | REAL（最小） | Organization、Membership、Role、CourseRun access、suspend/reactivate、安全 Audit | 无完整组织树、人事系统或跨学校管理员 |
 | 数据治理请求 | PARTIAL | 记录 export、de-identification/deletion 请求与状态基础 | 未实现导出/去标识执行 Worker、审批门户或 SLA |
+| 教师偏好与个性化 | REAL（最小） | 候选 draft、教师确认/修改/拒绝/撤销、不可变 revision、跨重启恢复；仅 active confirmed preference 进入 lesson preparation Context | 无学生画像、向量检索、自动人格分析或未确认 Memory 入模 |
 | 考试 | DISABLED | 无伪造展示 | 正式领域、API、Persistence 均未开始 |
 | 多模态 | NOT_STARTED（产品） | Ark capability probe 可探测 image URL | 文件/图片未进入正式模型上下文；无 OCR |
 | 学生端 | NOT_STARTED | 无 | 当前只有教师查看匿名样例学习者 |
@@ -58,6 +59,6 @@
 
 当前最强证据是：核心状态均来自七个 PostgreSQL Schema，写入经过服务端 Session → ActingContext → Authorization → owning Application Service，刷新与服务重启可恢复；当前最大缺口不是再增加教师页面，而是完成云基础设施、安全加固、运维、数据治理执行和小规模试点验证。
 
-Phase 6 已为 lesson preparation 增加 Skill-aware Context Builder、可解释 Context Evaluation，以及 MemoryCandidate/TeacherPreference 领域基础。这些是 Agent 工程能力，不新增教师页面：Context manifest 摘要随 AgentRun 持久化；Memory/Preference 因未新增 Migration 仍未作为产品持久化能力启用，不能标记为普通教师端 REAL 功能。
+Phase 7A 已将 Phase 6 的 MemoryCandidate/TeacherPreference 边界产品化：新增前向 Migration、PostgreSQL Adapter、服务端会话授权 API 和教师设置界面。Context manifest 摘要随 AgentRun 持久化，只使用当前 tenant/teacher 的 active confirmed preference；撤销即时生效，历史 revision 保留。
 
 相关文档：[完整版本历史](version-history.md) · [当前架构](architecture.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)

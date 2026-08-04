@@ -154,22 +154,23 @@ SubmissionAttempt 和已发布 Assignment 内容不原地覆盖；批改修订�
 
 ## 9. Skill-aware Context Engineering 与 Memory 边界
 
-新 lesson preparation 运行绑定 `lesson-preparation@2`。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，但在 ModelProvider 调用前增加纯 Context Builder：
+新 lesson preparation 运行绑定 `lesson-preparation@3`。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，但在 ModelProvider 调用前增加纯 Context Builder，并只通过 owner-scoped Personalization Context Port 读取已确认且未撤销的教师偏好：
 
 ```mermaid
 flowchart LR
     WS["TaskWorkingSet"] --> AUTH["AuthorizedContextPlan"]
     AUTH --> SNAP["Authorized Platform snapshots"]
-    SNAP --> CB["lesson-preparation@2 Context Builder"]
+    SNAP --> CB["lesson-preparation@3 Context Builder"]
+    PREF["Confirmed active TeacherPreference"] --> CB
     CB --> CM["Engineering manifest + Evaluation"]
     CM --> MODEL["ModelProvider"]
 ```
 
 Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifest 和实际 snapshot refs，执行确定性排序/压缩，并记录 resource version/hash/provenance、排除原因、missing information 和分段 token 估算。授权、关键资源、Evidence 命中或预算检查失败时不调用模型；纯预算失败保持现有 `budget_exceeded` API 语义。安全 manifest/evaluation 摘要写入 AgentRun output，不保存完整 Prompt 或 Evidence。
 
-历史 `lesson-preparation@1` 保留在 Registry，可继续恢复；新版本没有覆盖已发布 v1。
+历史 `lesson-preparation@1`、`@2` 保留在 Registry，可继续恢复；新版本没有覆盖已发布版本。
 
-Personalization 当前实现可执行的 `MemoryCandidate` 和 `TeacherPreference` 领域/应用边界：Agent 只能提出 draft，只有 owning teacher 能确认，拒绝、过期、撤销和 revision history 不可静默覆盖。由于本阶段明确禁止 Migration，内存 Adapter 仅供测试和领域验证，Product Composition Root 不装配它。跨重启持久化和确认 UI 需要未来前向 Migration；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
+Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision。Agent 只能提出 draft；候选在教师确认前不能进入 Context；只有 owning teacher 能确认、修改、拒绝或撤销。设置页提供最小治理界面，active preference 可跨 Run/Session/重启使用，revoked preference 立即从 Context 查询中消失。Context manifest 只记录 preference ref/key/version/hash 和 Token 估算，不复制偏好值；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
 
 ## 10. Worker、Outbox 与恢复
 

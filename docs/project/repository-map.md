@@ -38,7 +38,7 @@ Edu-Agent/
 | `src/index.ts` | API 进程入口、端口与启动失败处理 |
 | `src/app.ts` | Express application、middleware、auth 和 route 组合 |
 | `src/composition/` | Product Composition Root、Application Service、Worker 组装；不包含 Sample Seed |
-| `src/database/migrations.ts` | 43 个 Migration 的唯一 registry |
+| `src/database/migrations.ts` | 43 个历史 Migration + Phase 7A 前向 Migration 的唯一 registry |
 | `src/platform/` | PostgreSQL、auth、errors、server 等平台 Adapter |
 | `src/modules/` | 七个状态所有者模块 |
 

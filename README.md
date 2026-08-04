@@ -8,7 +8,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 - 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
 - 下一产品阶段：Gate 2.10B 云部署与小范围试点准备；本仓库整理不构成新 Gate
 
-详细 Commit、PR、Tag 和 43 个 Migration 的时间线见 [版本历史](docs/version-history.md)。
+详细 Commit、PR、Tag 和 43 个历史 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A 另增 1 个前向 Personalization Migration，当前合计 44 个。
 
 ## 项目定位
 
@@ -41,6 +41,7 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 | 课堂实施与观察 | REAL | LessonDelivery、ClassroomObservation、修订/取代历史 | 无实时课堂、音视频或自动观察 |
 | 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、显式 follow-up | 反思不能倒推伪造课堂事实 |
 | 学校管理员 | REAL（最小） | 成员查看/创建/激活/停用、普通教师角色与 CourseRun access | 无邮件邀请、MFA、SCIM 或完整后台 |
+| 教师偏好与个性化 | REAL（最小） | 查看 MemoryCandidate，确认、修改、拒绝或撤销 TeacherPreference；跨重启恢复；已确认偏好受控进入备课 Context | 无学生长期画像、向量数据库或自动人格分析 |
 | 考试 | DISABLED | 一级入口明确标记暂未开放 | 无正式考试、提交、批改和持久化 |
 | 教学助手 | REAL（任务入口） | 一级页读取服务器中的备课任务；Task/Reflection 入口使用重新授权和封存上下文 | 无无上下文聊天、多 Agent 或自动化平台 |
 | 学生端、家长端 | NOT STARTED | 无 | 不是当前 MVP 范围 |
@@ -133,7 +134,7 @@ flowchart TB
 | Workspace | Node.js 24（本轮验证 24.14.0）、Corepack、pnpm 11.9.0、TypeScript 7 |
 | Web | React 19、Vite 8、Ant Design 6、原生 history router |
 | API | Express 5、Zod 4、OpenAI-compatible client、openid-client |
-| 数据 | PostgreSQL 18、Drizzle ORM、43 个只向前 SQL Migration |
+| 数据 | PostgreSQL 18、Drizzle ORM、43 个历史 Migration + 1 个 Phase 7A 前向 Migration |
 | 文件 | LocalObjectStore、`docx`、JSZip |
 | 测试 | Vitest 4、PGlite、Supertest、Node test runner、Playwright 1.62 |
 | 本地环境 | Docker Desktop / Docker Compose |

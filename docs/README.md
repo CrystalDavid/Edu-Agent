@@ -53,6 +53,7 @@
 - [仓库清理计划](project/repository-cleanup-plan.md)；
 - [GitHub 同步审计](project/github-sync-audit.md)；
 - [目标仓库结构](project/target-repository-structure.md)；
+- [Phase 7A Memory 产品化报告](architecture/phase7a-memory-product-report.md)；
 - [Claude Code 仓库经验](project/claude-code-repository-lessons.md)；
 - [部署就绪差距明细](operations/deployment-readiness-gaps.md)；
 - [Migration ownership](../infra/postgres/migration-ownership.md)；
