@@ -1920,11 +1920,21 @@ export class PostgresModelInvocationService
         : await this.loadPromptContext(execution);
     } catch (error) {
       if (error instanceof LessonPreparationContextBuildError) {
+        const budgetOnly =
+          error.evaluation.budget.status === "failed" &&
+          error.evaluation.authorization.status === "passed" &&
+          error.evaluation.completeness.status === "passed" &&
+          error.evaluation.value.status === "passed";
         await this.finishFailure(execution, {
-          status: "validation_failed",
-          category: "POLICY_BLOCKED",
-          safeMessage:
-            "本次备课上下文未通过授权、完整性或预算校验，未调用模型。"
+          status: budgetOnly
+            ? "budget_exceeded"
+            : "validation_failed",
+          category: budgetOnly
+            ? "BUDGET_EXCEEDED"
+            : "POLICY_BLOCKED",
+          safeMessage: budgetOnly
+            ? "本次模型请求超过输入预算，未调用模型。"
+            : "本次备课上下文未通过授权或完整性校验，未调用模型。"
         });
         return;
       }
