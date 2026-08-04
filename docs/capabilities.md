@@ -58,4 +58,6 @@
 
 当前最强证据是：核心状态均来自七个 PostgreSQL Schema，写入经过服务端 Session → ActingContext → Authorization → owning Application Service，刷新与服务重启可恢复；当前最大缺口不是再增加教师页面，而是完成云基础设施、安全加固、运维、数据治理执行和小规模试点验证。
 
+Phase 6 已为 lesson preparation 增加 Skill-aware Context Builder、可解释 Context Evaluation，以及 MemoryCandidate/TeacherPreference 领域基础。这些是 Agent 工程能力，不新增教师页面：Context manifest 摘要随 AgentRun 持久化；Memory/Preference 因未新增 Migration 仍未作为产品持久化能力启用，不能标记为普通教师端 REAL 功能。
+
 相关文档：[完整版本历史](version-history.md) · [当前架构](architecture.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)

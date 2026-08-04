@@ -71,7 +71,7 @@ Edu-Agent 是一个部署单元内的七模块模块化单体。每个模块拥�
 | `capability-integration` | `capability` | ModelProvider/Execution、Prompt/预算、ObjectStore Port、外部能力调用 |
 | `artifact-collaboration` | `artifact` | Proposal、TeachingPlan/Revision、Reflection/Revision、文件与版本 |
 | `education-domain` | `education` | Course/Lesson/Objective、Assignment/Submission/Grade/Evidence、课堂实施与观察 |
-| `personalization-memory-analytics` | `personalization` | 当前仅保留 Schema/Port 骨架；长期 learner profile 尚未产品化 |
+| `personalization-memory-analytics` | `personalization` | MemoryCandidate、教师确认 Preference 与 Evaluation 基础；尚未接成产品持久化能力，不维护 learner profile |
 
 ```mermaid
 flowchart LR
@@ -223,7 +223,7 @@ corepack pnpm app:down
 - 多模态和 OCR 尚未产品化，文件内容不会自动进入模型；
 - 真实模型当前只支持一个 Volcengine Ark/豆包 Provider；
 - 文件保存在本地 ObjectStore，无云存储、分享和协作；
-- personalization Schema 仍是骨架，不维护永久 learner 能力画像；
+- personalization 已有候选/教师确认领域基础，但本轮未新增表或产品入口；不维护永久 learner 能力画像；
 - 没有生产监控、备份恢复、远程 E2E、容量基线和发布/回滚 Runbook。
 
 ## 下一步计划

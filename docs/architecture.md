@@ -30,7 +30,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 | `capability-integration` | `capability` | ModelProvider、ModelExecution、PromptBundle、Budget/Data Manifest、Provider capability、ObjectStore Port 和外部能力执行 |
 | `artifact-collaboration` | `artifact` | Proposal/Disposition、TeachingPlan/Revision、LessonReflection/Revision、FileAsset/FileVersion/Binding、正式教学成果 |
 | `education-domain` | `education` | CourseRun/Unit/Lesson/Objective、Enrollment、Assignment/Submission/Grade/Evidence、LessonDelivery、ClassroomObservation |
-| `personalization-memory-analytics` | `personalization` | 当前仅保留 Schema/Port 骨架；没有长期 learner profile 或自动能力结论产品化 |
+| `personalization-memory-analytics` | `personalization` | MemoryCandidate、TeacherPreference 确认/拒绝/过期/撤销与 Evaluation 基础；当前无 PostgreSQL Adapter 或产品入口，不维护 learner profile |
 
 模块边界并不意味着七个独立进程。当前是一个部署单元中的模块化单体；Schema ownership、Repository Port、架构测试和数据库角色约束写入边界。
 
@@ -152,7 +152,26 @@ flowchart LR
 
 SubmissionAttempt 和已发布 Assignment 内容不原地覆盖；批改修订以替代关系保留历史；“未交”是缺少 attempt 而不是 0 分；班级指标是可重算读取结果，不成为不可追溯的长期 learner 结论。
 
-## 9. Worker、Outbox 与恢复
+## 9. Skill-aware Context Engineering 与 Memory 边界
+
+新 lesson preparation 运行绑定 `lesson-preparation@2`。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，但在 ModelProvider 调用前增加纯 Context Builder：
+
+```mermaid
+flowchart LR
+    WS["TaskWorkingSet"] --> AUTH["AuthorizedContextPlan"]
+    AUTH --> SNAP["Authorized Platform snapshots"]
+    SNAP --> CB["lesson-preparation@2 Context Builder"]
+    CB --> CM["Engineering manifest + Evaluation"]
+    CM --> MODEL["ModelProvider"]
+```
+
+Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifest 和实际 snapshot refs，执行确定性排序/压缩，并记录 resource version/hash/provenance、排除原因、missing information 和分段 token 估算。授权、关键资源、Evidence 命中或预算检查失败时不调用模型；纯预算失败保持现有 `budget_exceeded` API 语义。安全 manifest/evaluation 摘要写入 AgentRun output，不保存完整 Prompt 或 Evidence。
+
+历史 `lesson-preparation@1` 保留在 Registry，可继续恢复；新版本没有覆盖已发布 v1。
+
+Personalization 当前实现可执行的 `MemoryCandidate` 和 `TeacherPreference` 领域/应用边界：Agent 只能提出 draft，只有 owning teacher 能确认，拒绝、过期、撤销和 revision history 不可静默覆盖。由于本阶段明确禁止 Migration，内存 Adapter 仅供测试和领域验证，Product Composition Root 不装配它。跨重启持久化和确认 UI 需要未来前向 Migration；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
+
+## 10. Worker、Outbox 与恢复
 
 应用级 Worker 使用数据库租约、重试和 Consumer Effect 幂等：
 
@@ -161,10 +180,10 @@ SubmissionAttempt 和已发布 Assignment 内容不原地覆盖；批改修订�
 - 同数据库必须同步提交的正式状态仍由 owning Application Service 更新，不为了“使用事件”强行异步化；
 - Worker 停止不回滚已提交的业务事实，恢复后继续追赶；系统明确采用 at-least-once 处理，不宣称 exactly-once。
 
-## 10. Audit、数据最小化与安全日志
+## 11. Audit、数据最小化与安全日志
 
 Audit 记录 actor/organization、intent、decision、资源 refs、版本、状态和幂等信息。模型日志只保留 provider/model、hash、Usage、延迟、finish reason、安全错误类别和脱敏 request ID；不记录 Secret、Authorization header、完整 Prompt、完整响应或隐藏推理。身份系统不保存 OIDC access/refresh/id token。
 
-## 11. 当前部署边界
+## 12. 当前部署边界
 
 当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](operations/deployment-readiness-gaps.md)。
