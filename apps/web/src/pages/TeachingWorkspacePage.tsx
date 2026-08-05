@@ -6,6 +6,7 @@ import type {
   CurriculumUnitView,
   FileAssetDetail,
   FileAssetSummary,
+  LessonJourneyProjection,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
   LessonView
@@ -31,6 +32,7 @@ import {
   loadCourseRuns,
   loadCurriculumUnits,
   loadLessonPreparationTasks,
+  loadLessonJourney,
   loadLessons,
   loadLessonTeachingPlans,
   loadFile,
@@ -42,6 +44,11 @@ import { PageHeader } from "../components/portal/PortalPrimitives";
 import { ClassroomReflectionPanel } from "../components/portal/ClassroomReflectionPanel";
 import { cleanDisplayText, lessonPreparationStatusLabel } from "../presentation";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
+import {
+  LessonContextHeader,
+  LessonJourney,
+  LessonNextBestActionCard
+} from "../components/teaching/LessonJourney";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
@@ -150,6 +157,8 @@ function RealCourseWorkspace(props: {
   >(null);
   const [planState, setPlanState] =
     useState<LessonTeachingPlanState | null>(null);
+  const [journey, setJourney] =
+    useState<LessonJourneyProjection | null>(null);
   const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -162,6 +171,8 @@ function RealCourseWorkspace(props: {
   const [error, setError] = useState<string | null>(null);
 
   const selectedCourse = courses[0] ?? null;
+  const selectedUnit =
+    units.find((unit) => unit.unitRef === selectedUnitRef) ?? null;
   const selectedLesson =
     lessons.find(
       (lesson) => lesson.lessonRef === selectedLessonRef
@@ -260,6 +271,7 @@ function RealCourseWorkspace(props: {
   useEffect(() => {
     if (!selectedLessonRef) {
       setPlanState(null);
+      setJourney(null);
       return;
     }
     let active = true;
@@ -271,13 +283,15 @@ function RealCourseWorkspace(props: {
         targetType: "lesson",
         targetRef: selectedLessonRef
       }),
-      loadAssignments(selectedLessonRef)
+      loadAssignments(selectedLessonRef),
+      loadLessonJourney(selectedLessonRef)
     ])
-      .then(([result, files, assignments]) => {
+      .then(([result, files, assignments, journeyResult]) => {
         if (active) {
           setPlanState(result);
           setLessonFiles(files.items);
           setLessonAssignments(assignments.items);
+          setJourney(journeyResult);
         }
       })
       .catch((caught) => {
@@ -373,6 +387,44 @@ function RealCourseWorkspace(props: {
       await loadRoot();
     } finally {
       setActing(false);
+    }
+  }
+
+  async function runJourneyAction() {
+    if (!journey || !selectedLesson) return;
+    switch (journey.nextBestAction.kind) {
+      case "start_preparation":
+      case "continue_preparation":
+        await startOrContinue();
+        return;
+      case "review_proposal":
+        if (activeTask) props.navigatePreparation(activeTask.taskRef, "/copilot");
+        return;
+      case "review_teaching_plan":
+        if (activeTask) props.navigatePreparation(activeTask.taskRef, "/teaching-plan");
+        return;
+      case "view_agent_run":
+      case "recover_agent_run":
+        if (activeTask) props.navigatePreparation(activeTask.taskRef, "/runs");
+        return;
+      case "prepare_materials":
+        props.navigateFiles({ lessonRef: selectedLesson.lessonRef });
+        return;
+      case "record_delivery":
+      case "confirm_delivery":
+      case "start_reflection":
+      case "review_reflection":
+      case "choose_follow_up":
+        document
+          .getElementById("classroom-implementation")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      case "review_lesson_context":
+      case "view_completed_journey":
+        document
+          .getElementById("lesson-readiness-title")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
     }
   }
 
@@ -587,16 +639,30 @@ function RealCourseWorkspace(props: {
             >
               {selectedLesson ? (
                 <>
-                  <header className="lesson-detail-heading">
-                    <div>
-                      <Text className="section-kicker">第 {selectedLesson.sequence} 课时</Text>
-                      <Title level={2}>{selectedLesson.title}</Title>
-                    </div>
-                    <Space wrap>
-                      <Tag>{selectedLesson.durationMinutes} 分钟</Tag>
-                      <Tag color="processing">{lessonPreparationStatusLabel(preparationStatus ?? "not_started")}</Tag>
-                    </Space>
-                  </header>
+                  {journey ? (
+                    <>
+                      <LessonContextHeader
+                        courseTitle={selectedCourse.title}
+                        unitTitle={selectedUnit?.title ?? null}
+                        lesson={selectedLesson}
+                        journey={journey}
+                      />
+                      <LessonNextBestActionCard
+                        journey={journey}
+                        loading={acting}
+                        onAction={() => void runJourneyAction()}
+                      />
+                      <LessonJourney journey={journey} />
+                    </>
+                  ) : (
+                    <header className="lesson-detail-heading">
+                      <div>
+                        <Text className="section-kicker">第 {selectedLesson.sequence} 课时</Text>
+                        <Title level={2}>{selectedLesson.title}</Title>
+                      </div>
+                      <Tag color="processing">正在整理本课进度</Tag>
+                    </header>
+                  )}
 
                   <section className="lesson-readiness" aria-labelledby="lesson-readiness-title">
                     <header>
@@ -775,7 +841,11 @@ function RealCourseWorkspace(props: {
                     ) : null}
                   </Space>
                   {selectedCourse && planState ? (
-                    <details className="lesson-reflection-details" open={Boolean(props.initialLessonRef)}>
+                    <details
+                      id="classroom-implementation"
+                      className="lesson-reflection-details"
+                      open={Boolean(props.initialLessonRef)}
+                    >
                       <summary>课堂实施、观察与课后反思</summary>
                       <ClassroomReflectionPanel
                         lesson={selectedLesson}

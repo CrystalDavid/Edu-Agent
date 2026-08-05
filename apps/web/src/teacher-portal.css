@@ -2643,6 +2643,217 @@ textarea:focus-visible,
   gap: 20px;
 }
 
+.lesson-context-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 2px 2px 0;
+}
+
+.lesson-context-header h2,
+.lesson-context-header p {
+  margin-bottom: 0 !important;
+}
+
+.lesson-context-header h2 {
+  margin-top: 5px;
+}
+
+.lesson-context-header p {
+  margin-top: 7px;
+}
+
+.journey-status-tag {
+  margin: 3px 0 0;
+  padding: 5px 11px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+  font-weight: 650;
+}
+
+.journey-status-tag.is-needs_attention {
+  color: #9a5e0d;
+  background: #fff2cf;
+}
+
+.journey-status-tag.is-completed {
+  color: #14765f;
+  background: #e8f7f1;
+}
+
+.lesson-next-action {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid #bfd0fb;
+  border-radius: 22px;
+  background: linear-gradient(135deg, #f4f7ff 0%, #fff 76%);
+}
+
+.lesson-next-action.is-needs_attention {
+  border-color: #eed39d;
+  background: linear-gradient(135deg, #fff8e8 0%, #fff 76%);
+}
+
+.lesson-next-action__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 16px;
+  color: var(--color-brand);
+  background: #fff;
+  box-shadow: 0 8px 22px rgb(48 91 188 / 10%);
+}
+
+.lesson-next-action__icon .workspace-icon {
+  width: 23px;
+  height: 23px;
+}
+
+.lesson-next-action__copy {
+  min-width: 0;
+}
+
+.lesson-next-action__copy h3,
+.lesson-next-action__copy p {
+  margin-bottom: 0 !important;
+}
+
+.lesson-next-action__copy h3 {
+  margin-top: 4px;
+}
+
+.lesson-next-action__copy p {
+  margin-top: 5px;
+  color: var(--color-text-secondary);
+}
+
+.lesson-next-action__copy ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin: 9px 0 0;
+  padding-left: 18px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.lesson-journey {
+  padding: 20px 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: #fff;
+}
+
+.lesson-journey > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lesson-journey h4 {
+  margin: 3px 0 0 !important;
+}
+
+.lesson-journey ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lesson-journey li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 7px;
+  border-radius: 13px;
+}
+
+.lesson-journey li::after {
+  position: absolute;
+  top: 24px;
+  right: -7px;
+  width: 8px;
+  height: 1px;
+  background: var(--color-divider);
+  content: "";
+}
+
+.lesson-journey li:last-child::after {
+  display: none;
+}
+
+.lesson-journey li:nth-child(3)::after {
+  display: none;
+}
+
+.lesson-journey li.is-current {
+  background: var(--color-brand-soft);
+}
+
+.lesson-journey__marker {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  color: var(--color-text-muted);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lesson-journey li.is-complete .lesson-journey__marker {
+  border-color: transparent;
+  color: #14765f;
+  background: #e8f7f1;
+}
+
+.lesson-journey li.is-current .lesson-journey__marker {
+  border-color: transparent;
+  color: #fff;
+  background: var(--color-brand);
+}
+
+.lesson-journey__marker .workspace-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.lesson-journey li > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.lesson-journey li strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lesson-journey li small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lesson-readiness,
 .lesson-focus-section,
 .lesson-linked-work,
@@ -2779,6 +2990,10 @@ textarea:focus-visible,
 
 .lesson-reflection-details[open] > summary {
   margin-bottom: 18px;
+}
+
+#classroom-implementation {
+  scroll-margin-top: 28px;
 }
 
 .lesson-empty-state {
