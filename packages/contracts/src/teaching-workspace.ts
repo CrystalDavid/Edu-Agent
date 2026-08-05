@@ -34,6 +34,7 @@ export const LessonJourneyActionKindSchema = z.enum([
   "review_lesson_context",
   "generate_lesson_brief",
   "review_lesson_brief",
+  "generate_teaching_plan",
   "start_preparation",
   "continue_preparation",
   "view_agent_run",

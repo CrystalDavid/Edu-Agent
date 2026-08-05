@@ -301,15 +301,20 @@ export function projectLessonJourney(
   }
 
   if (!approvedPlan && !confirmedDelivery) {
+    const briefAdopted = input.lessonBrief?.status === "adopted";
     return parseProjection({
       ...common,
       currentStage: "plan",
       status: activeTask?.status === "planned" ? "ready" : "in_progress",
       nextBestAction: action(
-        "continue_preparation",
-        "继续形成方案",
-        "本课还没有已批准的教学计划。",
-        common.detailLinks.preparationTask ?? common.detailLinks.lesson
+        briefAdopted ? "generate_teaching_plan" : "continue_preparation",
+        briefAdopted ? "生成教学方案" : "继续形成方案",
+        briefAdopted
+          ? "已确认的教学关注点会进入本次授权上下文，Agent 将生成可比较的方案候选。"
+          : "本课还没有已批准的教学计划。",
+        briefAdopted
+          ? `${common.detailLinks.lesson}#preparation-proposal`
+          : common.detailLinks.preparationTask ?? common.detailLinks.lesson
       ),
       blockingReasons: []
     });

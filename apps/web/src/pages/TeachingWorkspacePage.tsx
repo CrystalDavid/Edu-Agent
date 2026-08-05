@@ -8,9 +8,11 @@ import type {
   FileAssetSummary,
   LessonBriefSnapshot,
   LessonJourneyProjection,
+  ModelExecutionView,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
-  LessonView
+  LessonView,
+  ProposalReviewDetail
 } from "@edu-agent/contracts";
 import {
   Alert,
@@ -27,8 +29,11 @@ import {
 } from "antd";
 
 import {
+  approveTeachingPlan,
+  createModelInvocation,
   createLessonPreparationTask,
   decideLessonBrief,
+  disposeSuggestion,
   downloadFile,
   loadAssignments,
   loadCourseRuns,
@@ -39,6 +44,9 @@ import {
   loadLessonJourney,
   loadLessons,
   loadLessonTeachingPlans,
+  loadModelInvocation,
+  loadProposalDetail,
+  loadWorkspace,
   generateLessonBrief,
   loadFile,
   loadFiles,
@@ -55,9 +63,19 @@ import {
   LessonNextBestActionCard
 } from "../components/teaching/LessonJourney";
 import { LessonBriefPanel } from "../components/teaching/LessonBriefPanel";
+import { PreparationProposalPanel } from "../components/teaching/PreparationProposalPanel";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
+const terminalModelExecutionStatuses = new Set<ModelExecutionView["status"]>([
+  "succeeded",
+  "retryable_failed",
+  "permanently_failed",
+  "timed_out",
+  "budget_exceeded",
+  "validation_failed",
+  "cancelled"
+]);
 
 export function TeachingWorkspacePage(props: {
   navigatePreparation: (
@@ -167,6 +185,12 @@ function RealCourseWorkspace(props: {
     useState<LessonJourneyProjection | null>(null);
   const [lessonBrief, setLessonBrief] =
     useState<LessonBriefSnapshot | null>(null);
+  const [preparationProposal, setPreparationProposal] =
+    useState<ProposalReviewDetail | null>(null);
+  const [modelExecution, setModelExecution] =
+    useState<ModelExecutionView | null>(null);
+  const [modelExecutionRef, setModelExecutionRef] =
+    useState<string | null>(null);
   const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -281,9 +305,15 @@ function RealCourseWorkspace(props: {
       setPlanState(null);
       setJourney(null);
       setLessonBrief(null);
+      setPreparationProposal(null);
+      setModelExecution(null);
+      setModelExecutionRef(null);
       return;
     }
     let active = true;
+    setPreparationProposal(null);
+    setModelExecution(null);
+    setModelExecutionRef(null);
     void Promise.all([
       loadLessonTeachingPlans(selectedLessonRef),
       loadFiles({
@@ -296,13 +326,20 @@ function RealCourseWorkspace(props: {
       loadLessonJourney(selectedLessonRef),
       loadLessonBrief(selectedLessonRef)
     ])
-      .then(([result, files, assignments, journeyResult, briefState]) => {
+      .then(async ([result, files, assignments, journeyResult, briefState]) => {
+        const proposalRef = journeyResult.sourceRefs.find(
+          (source) => source.kind === "proposal"
+        )?.ref;
+        const proposal = proposalRef
+          ? await loadProposalDetail(proposalRef)
+          : null;
         if (active) {
           setPlanState(result);
           setLessonFiles(files.items);
           setLessonAssignments(assignments.items);
           setJourney(journeyResult);
           setLessonBrief(briefState.current);
+          setPreparationProposal(proposal);
         }
       })
       .catch((caught) => {
@@ -312,6 +349,38 @@ function RealCourseWorkspace(props: {
       active = false;
     };
   }, [selectedLessonRef, tasks]);
+
+  useEffect(() => {
+    if (!modelExecutionRef || !selectedLessonRef) return;
+    let active = true;
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const execution = await loadModelInvocation(modelExecutionRef);
+        if (!active) return;
+        setModelExecution(execution);
+        if (execution.status === "succeeded" && execution.proposalRevisionRef) {
+          const proposal = await loadProposalDetail(execution.proposalRevisionRef);
+          if (!active) return;
+          setPreparationProposal(proposal);
+          await refreshLessonPlanState();
+          await loadRoot();
+          props.onAction("教学方案已生成，请比较后决定");
+          return;
+        }
+        if (!terminalModelExecutionStatuses.has(execution.status)) {
+          timer = window.setTimeout(refresh, 500);
+        }
+      } catch (caught) {
+        if (active) setError(errorMessage(caught));
+      }
+    };
+    void refresh();
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [modelExecutionRef, selectedLessonRef]);
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -412,6 +481,9 @@ function RealCourseWorkspace(props: {
           .getElementById("lesson-brief")
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
+      case "generate_teaching_plan":
+        await generateTeachingPlan(null);
+        return;
       case "start_preparation":
       case "continue_preparation":
         await startOrContinue();
@@ -455,6 +527,199 @@ function RealCourseWorkspace(props: {
     ]);
     setLessonBrief(briefState.current);
     setJourney(journeyState);
+  }
+
+  async function refreshLessonPlanState() {
+    if (!selectedLesson) return;
+    const [plans, journeyState] = await Promise.all([
+      loadLessonTeachingPlans(selectedLesson.lessonRef),
+      loadLessonJourney(selectedLesson.lessonRef)
+    ]);
+    setPlanState(plans);
+    setJourney(journeyState);
+    const proposalRef = journeyState.sourceRefs.find(
+      (source) => source.kind === "proposal"
+    )?.ref;
+    setPreparationProposal(
+      proposalRef ? await loadProposalDetail(proposalRef) : null
+    );
+  }
+
+  async function ensurePreparationTaskForGeneration() {
+    if (!selectedLesson) throw new Error("请先选择课时。");
+    let task = activeTask
+      ? await loadLessonPreparationTask(activeTask.taskRef)
+      : (await createLessonPreparationTask({
+          lessonRef: selectedLesson.lessonRef,
+          dueAt: selectedLesson.plannedAt,
+          priority: "normal",
+          purpose: "lesson-preparation.create",
+          idempotencyKey: `ui:lesson-preparation:create:${crypto.randomUUID()}`
+        })).task;
+    if (task.status === "planned") {
+      task = (await transitionLessonPreparationTask(task.taskRef, "start", {
+        expectedVersion: task.version,
+        purpose: "lesson-preparation.start",
+        idempotencyKey: `ui:lesson-preparation:start:${crypto.randomUUID()}`
+      })).task;
+    }
+    if (task.status !== "in_progress") {
+      throw new Error(
+        `当前备课任务为“${lessonPreparationStatusLabel(task.status)}”，请先完成当前审核或显式重新打开。`
+      );
+    }
+    return task;
+  }
+
+  async function queueTeachingPlan(
+    requestText: string | null,
+    taskInput?: Awaited<ReturnType<typeof ensurePreparationTaskForGeneration>>
+  ) {
+    const task = taskInput ?? await ensurePreparationTaskForGeneration();
+    const workspace = await loadWorkspace();
+    const queued = await createModelInvocation({
+      requestText: requestText ?? preparationRequestFromBrief(lessonBrief),
+      courseRunRef: task.workingSet.courseRunRef,
+      goalRef: workspace.goal.goalRef,
+      learningObjectiveRefs: task.workingSet.learningObjectiveRefs,
+      selectedEvidenceRefs: task.workingSet.evidenceRefs,
+      requestVersion: 1,
+      purpose: "teacher-copilot.adjust-next-lesson",
+      idempotencyKey: `ui:lesson-journey:plan:${crypto.randomUUID()}`,
+      preparationTaskRef: task.taskRef,
+      curriculumUnitRef: task.curriculumUnitRef,
+      lessonRef: task.lessonRef,
+      workingSetVersion: task.workingSet.version,
+      expectedPreparationTaskVersion: task.version
+    });
+    setPreparationProposal(null);
+    setModelExecution(queued.execution);
+    setModelExecutionRef(queued.execution.modelExecutionRef);
+    setJourney(await loadLessonJourney(task.lessonRef));
+  }
+
+  async function generateTeachingPlan(requestText: string | null) {
+    if (!selectedLesson || lessonBrief?.status !== "adopted") {
+      setError("请先采用本课教学洞察，再生成教学方案。");
+      return;
+    }
+    setActing(true);
+    setError(null);
+    try {
+      await queueTeachingPlan(requestText);
+      props.onAction("已提交教学方案生成任务");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function acceptPreparationProposal(strategyId: string) {
+    if (!preparationProposal) return;
+    setActing(true);
+    setError(null);
+    try {
+      await disposeSuggestion(preparationProposal.proposalRevisionRef, {
+        purpose: "teacher-copilot.review-suggestion",
+        idempotencyKey: `ui:lesson-journey:accept:${crypto.randomUUID()}`,
+        disposition: "accepted",
+        selectedStrategyId: strategyId,
+        teacherEdits: {},
+        expectedProposalRevisionNumber:
+          preparationProposal.proposalRevisionNumber
+      });
+      setPreparationProposal(
+        await loadProposalDetail(preparationProposal.proposalRevisionRef)
+      );
+      await refreshLessonPlanState();
+      props.onAction("方案已采用并进入教学计划审核，尚未批准");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function rejectPreparationProposal(strategyId: string) {
+    if (!preparationProposal) return;
+    setActing(true);
+    setError(null);
+    try {
+      await disposeSuggestion(preparationProposal.proposalRevisionRef, {
+        purpose: "teacher-copilot.review-suggestion",
+        idempotencyKey: `ui:lesson-journey:reject:${crypto.randomUUID()}`,
+        disposition: "rejected",
+        selectedStrategyId: strategyId,
+        teacherEdits: {},
+        expectedProposalRevisionNumber:
+          preparationProposal.proposalRevisionNumber
+      });
+      setPreparationProposal(null);
+      await loadRoot();
+      await refreshLessonPlanState();
+      props.onAction("已拒绝本次方案，未创建教学计划 Revision");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function adjustPreparationProposal(
+    strategyId: string,
+    adjustment: string
+  ) {
+    if (!preparationProposal) return;
+    setActing(true);
+    setError(null);
+    try {
+      await disposeSuggestion(preparationProposal.proposalRevisionRef, {
+        purpose: "teacher-copilot.review-suggestion",
+        idempotencyKey: `ui:lesson-journey:adjust:${crypto.randomUUID()}`,
+        disposition: "deferred",
+        selectedStrategyId: strategyId,
+        teacherEdits: {},
+        note: `教师要求调整：${adjustment}`,
+        expectedProposalRevisionNumber:
+          preparationProposal.proposalRevisionNumber
+      });
+      const task = activeTask
+        ? await loadLessonPreparationTask(activeTask.taskRef)
+        : await ensurePreparationTaskForGeneration();
+      await queueTeachingPlan(adjustment, task);
+      props.onAction("已保留上一版方案，并按你的说明重新生成");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function approveInReviewPlan() {
+    const inReview = planState?.activeInReview;
+    if (!inReview || !activeTask) return;
+    setActing(true);
+    setError(null);
+    try {
+      const task = await loadLessonPreparationTask(activeTask.taskRef);
+      await approveTeachingPlan(inReview.revisionRef, {
+        purpose: "teacher-copilot.approve-plan",
+        idempotencyKey: `ui:lesson-journey:approve:${crypto.randomUUID()}`,
+        expectedInReviewRevisionRef: inReview.revisionRef,
+        preparationTaskRef: task.taskRef,
+        expectedTaskVersion: task.version
+      });
+      setModelExecution(null);
+      setModelExecutionRef(null);
+      await loadRoot();
+      await refreshLessonPlanState();
+      props.onAction("教学计划已由教师批准；备课任务仍需显式完成");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
   }
 
   async function generateBrief(teacherAdjustment: string | null) {
@@ -779,6 +1044,24 @@ function RealCourseWorkspace(props: {
                           onDefer={() => void deferBrief()}
                         />
                       ) : null}
+                      {journey.currentStage === "plan" ? (
+                        <PreparationProposalPanel
+                          proposal={preparationProposal}
+                          execution={modelExecution}
+                          inReviewRevision={planState?.activeInReview ?? null}
+                          loading={acting}
+                          onAccept={(strategyId) =>
+                            void acceptPreparationProposal(strategyId)
+                          }
+                          onReject={(strategyId) =>
+                            void rejectPreparationProposal(strategyId)
+                          }
+                          onAdjust={(strategyId, adjustment) =>
+                            void adjustPreparationProposal(strategyId, adjustment)
+                          }
+                          onApprove={() => void approveInReviewPlan()}
+                        />
+                      ) : null}
                       <LessonJourney journey={journey} />
                     </>
                   ) : (
@@ -1028,4 +1311,25 @@ function RealCourseWorkspace(props: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "未知错误";
+}
+
+function preparationRequestFromBrief(
+  brief: LessonBriefSnapshot | null
+): string {
+  if (!brief || brief.status !== "adopted") {
+    return "请基于当前课时已授权上下文生成可比较的教学方案。";
+  }
+  const selected = new Set(brief.disposition?.selectedCandidateIds ?? []);
+  const titles = [
+    ...brief.teachingFocusCandidates,
+    ...brief.difficultyCandidates,
+    ...brief.suggestedAttentionPoints
+  ]
+    .filter((candidate) => selected.has(candidate.candidateId))
+    .map((candidate) => candidate.title);
+  return [
+    "请基于教师已确认的 Lesson Brief 生成可比较的教学方案。",
+    titles.length > 0 ? `重点关注：${titles.join("、")}。` : "",
+    "方案需要明确目标、课堂流程、活动、练习与风险，并保留信息缺口。"
+  ].filter(Boolean).join(" ");
 }
