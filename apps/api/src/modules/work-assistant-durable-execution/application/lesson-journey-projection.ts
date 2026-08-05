@@ -217,12 +217,7 @@ export function projectLessonJourney(
     });
   }
 
-  if (
-    (!input.lessonBrief || input.lessonBrief.status === "deferred") &&
-    !activeTask &&
-    !approvedPlan &&
-    !confirmedDelivery
-  ) {
+  if (!input.lessonBrief && !activeTask && !confirmedDelivery) {
     return parseProjection({
       ...common,
       currentStage: "understand",

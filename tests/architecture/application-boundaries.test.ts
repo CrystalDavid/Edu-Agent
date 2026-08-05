@@ -118,6 +118,7 @@ describe("Phase 3 application boundaries", () => {
       "postgres-gate2-read-service.ts",
       "postgres-gate2-teacher-copilot-service.ts",
       "postgres-interaction-contract-service.ts",
+      "postgres-lesson-brief-store.ts",
       "postgres-lesson-preparation-service.ts",
       "postgres-model-invocation-service.ts",
       "postgres-teacher-workbench-service.ts"

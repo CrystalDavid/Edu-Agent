@@ -1,5 +1,6 @@
 import type {
   FileAssetSummary,
+  LessonBriefSnapshot,
   LessonImplementationSummary,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
@@ -22,9 +23,66 @@ describe("LessonJourneyProjection", () => {
     expect(projection).toMatchObject({
       currentStage: "understand",
       status: "ready",
-      nextBestAction: { kind: "start_preparation" }
+      nextBestAction: { kind: "generate_lesson_brief" }
     });
     expect(projection.completedMilestones).toEqual(["lesson_context_ready"]);
+  });
+
+  it("waits for teacher judgment after a Lesson Brief candidate is generated", () => {
+    const projection = projectLessonJourney(input({
+      lessonBrief: brief("waiting_for_teacher")
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "understand",
+      status: "waiting_for_teacher",
+      nextBestAction: { kind: "review_lesson_brief" }
+    });
+    expect(projection.completedMilestones).not.toContain("lesson_brief_adopted");
+  });
+
+  it("offers a Brief before materials even when an approved plan already exists", () => {
+    const projection = projectLessonJourney(input({
+      teachingPlans: plans({ approved: true })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "understand",
+      status: "ready",
+      nextBestAction: { kind: "generate_lesson_brief" }
+    });
+    expect(projection.completedMilestones).toContain("teaching_plan_approved");
+  });
+
+  it("continues the formal workflow after the teacher defers a Brief", () => {
+    const projection = projectLessonJourney(input({
+      lessonBrief: brief("deferred"),
+      teachingPlans: plans({ approved: true })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "materials",
+      status: "ready",
+      nextBestAction: { kind: "prepare_materials" }
+    });
+  });
+
+  it("uses an adopted Brief as a milestone without turning it into Lesson truth", () => {
+    const projection = projectLessonJourney(input({
+      lessonBrief: brief("adopted"),
+      tasks: [task("planned")]
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "plan",
+      status: "ready",
+      nextBestAction: { kind: "continue_preparation" }
+    });
+    expect(projection.completedMilestones).toContain("lesson_brief_adopted");
+    expect(projection.sourceRefs).toContainEqual(expect.objectContaining({
+      kind: "lesson_brief_run",
+      ref: "agent-run:brief-1"
+    }));
   });
 
   it("waits for teacher review when a Proposal is ready", () => {
@@ -196,6 +254,42 @@ function proposal(): PendingProposalList["items"][number] {
     status: "pending",
     createdAt: now
   } as PendingProposalList["items"][number];
+}
+
+function brief(status: LessonBriefSnapshot["status"]): LessonBriefSnapshot {
+  return {
+    lessonRef: "lesson:1",
+    sourceRefs: [{
+      kind: "lesson",
+      ref: "lesson:1",
+      version: "1",
+      contentHash: "a".repeat(64),
+      provenance: "education.lesson",
+      included: true
+    }],
+    sourceVersionVector: { "lesson:lesson:1": "1" },
+    objectiveSummaries: [],
+    teachingFocusCandidates: [],
+    difficultyCandidates: [],
+    classEvidenceSummary: [],
+    suggestedAttentionPoints: [],
+    knownGaps: ["尚未接入教材知识源"],
+    generatedBySkillRef: "lesson-analysis@1",
+    agentRunRef: "agent-run:brief-1",
+    contextManifestRef: "context-manifest:brief-1",
+    contextManifestHash: "b".repeat(64),
+    contentHash: "c".repeat(64),
+    teacherAdjustment: null,
+    disposition: status === "waiting_for_teacher" ? null : {
+      action: status,
+      selectedCandidateIds: [],
+      teacherRef: "teacher:1",
+      taskRef: status === "adopted" ? "task:1" : null,
+      decidedAt: now
+    },
+    status,
+    generatedAt: now
+  };
 }
 
 function file(): FileAssetSummary {

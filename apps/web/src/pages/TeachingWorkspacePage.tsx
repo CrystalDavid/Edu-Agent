@@ -767,7 +767,9 @@ function RealCourseWorkspace(props: {
                         loading={acting}
                         onAction={() => void runJourneyAction()}
                       />
-                      {journey.currentStage === "understand" ? (
+                      {journey.currentStage === "understand" &&
+                      (journey.nextBestAction.kind === "generate_lesson_brief" ||
+                        journey.nextBestAction.kind === "review_lesson_brief") ? (
                         <LessonBriefPanel
                           brief={lessonBrief}
                           loading={acting}

@@ -92,6 +92,10 @@ export class LessonBriefService {
   ) {}
 
   async get(context: LessonBriefContext): Promise<LessonBriefState> {
+    // Authorize the Lesson through the same source facade used for generation.
+    // The Runtime store alone can only prove ownership of an existing Run; it
+    // must not turn an arbitrary resource ref into an observable empty state.
+    await this.sources.load(context);
     return LessonBriefStateSchema.parse({
       lessonRef: context.lessonRef,
       current: await this.runs.getLatest(context)
