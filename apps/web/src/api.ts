@@ -81,6 +81,7 @@ import {
   LessonDeliveryDetailSchema,
   LessonDeliveryMutationResultSchema,
   LessonImplementationSummarySchema,
+  LessonJourneyProjectionSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
   LessonPreparationTaskDetailSchema,
@@ -739,6 +740,14 @@ export function loadLessons(unitRef: string) {
     "课时列表",
     apiRoutes.teacher.unitLessons(unitRef),
     LessonListSchema
+  );
+}
+
+export function loadLessonJourney(lessonRef: string) {
+  return request(
+    "课时教学旅程",
+    apiRoutes.teacher.lessonJourney(lessonRef),
+    LessonJourneyProjectionSchema
   );
 }
 

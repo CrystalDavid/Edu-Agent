@@ -71,6 +71,8 @@ import {
   PostgresIdentityOrganizationService
 } from "./postgres-identity-organization-service.js";
 import { PostgresPersonalizationService } from "./postgres-personalization-service.js";
+import { LessonJourneyReadAdapter } from "./lesson-journey-read-adapter.js";
+import { LessonJourneyReadService } from "../modules/work-assistant-durable-execution/application/lesson-journey-read-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -124,6 +126,7 @@ export function createProductContainer(
     configuredIdentityProviders.localIdentityProvider
   );
   const lessonPreparation = new PostgresLessonPreparationService(appPool);
+  const read = new PostgresGate2ReadService(appPool);
   const teacherWorkbench = new PostgresTeacherWorkbenchService(
     appPool,
     lessonPreparation
@@ -134,6 +137,19 @@ export function createProductContainer(
     lessonPreparation,
     assignments,
     teacherWorkbench
+  );
+  const files = new PostgresFileArtifactService(
+    appPool,
+    objectStore,
+    objectStoreSettings
+  );
+  const lessonJourney = new LessonJourneyReadService(
+    new LessonJourneyReadAdapter(
+      lessonPreparation,
+      read,
+      files,
+      classroomReflection
+    )
   );
   const teacherCopilot: TeacherCopilotApplicationFacade =
     new PostgresGate2TeacherCopilotService(appPool);
@@ -154,7 +170,7 @@ export function createProductContainer(
   return {
     services: {
       identity,
-      read: new PostgresGate2ReadService(appPool),
+      read,
       demoIdentityAudit:
         new PostgresDemoIdentityAuditService(appPool),
       teacherCopilot,
@@ -163,12 +179,9 @@ export function createProductContainer(
       assignments,
       teacherWorkbench,
       classroomReflection,
+      lessonJourney,
       personalization,
-      files: new PostgresFileArtifactService(
-        appPool,
-        objectStore,
-        objectStoreSettings
-      )
+      files
     },
     infrastructure: {
       objectStore,

@@ -148,6 +148,10 @@ export const apiRoutes = {
     lessonPattern: "/api/v1/teacher/lessons/:lessonRef",
     lesson: (lessonRef: string): string =>
       `/api/v1/teacher/lessons/${encodeRouteSegment(lessonRef)}`,
+    lessonJourneyPattern:
+      "/api/v1/teacher/lessons/:lessonRef/journey",
+    lessonJourney: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/journey`,
     lessonPreparationSummary:
       "/api/v1/teacher/lesson-preparation/summary",
     preparationTasks:

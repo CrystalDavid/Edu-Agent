@@ -890,6 +890,7 @@ export function createApp(
     const files = product.services.files;
     const workbench = product.services.teacherWorkbench;
     const classroom = product.services.classroomReflection;
+    const lessonJourney = product.services.lessonJourney;
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
@@ -2127,6 +2128,26 @@ export function createApp(
               lessonRef: routeParameter(
                 request.params["lessonRef"]
               )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonJourneyPattern,
+      markRoute("product.teacher.lessons.journey"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonJourney.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+              lessonRef: routeParameter(request.params["lessonRef"])
             })
           );
         } catch (error) {
