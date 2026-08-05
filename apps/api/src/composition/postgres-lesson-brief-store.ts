@@ -14,6 +14,7 @@ import type {
   LessonBriefContext,
   LessonBriefRunStore
 } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
+import type { ConfirmedLessonBriefContextProvider } from "../modules/agent-runtime-context/application/confirmed-lesson-brief-provider.js";
 import { PostgresRuntimeRepository } from "../modules/agent-runtime-context/infrastructure/postgres-runtime-repository.js";
 import { PostgresGate2RuntimeRepository } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
 import { PostgresGovernanceRepository } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
@@ -30,7 +31,9 @@ import {
   type WriteContext
 } from "../platform/postgres/write-context.js";
 
-export class PostgresLessonBriefStore implements LessonBriefRunStore {
+export class PostgresLessonBriefStore
+  implements LessonBriefRunStore, ConfirmedLessonBriefContextProvider
+{
   constructor(
     private readonly pool: Pool,
     private readonly governance = new PostgresGovernanceRepository(),
@@ -55,6 +58,42 @@ export class PostgresLessonBriefStore implements LessonBriefRunStore {
     );
     const value = result.rows[0]?.lesson_brief;
     return value ? LessonBriefSnapshotSchema.parse(value) : null;
+  }
+
+  async loadAdopted(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly lessonRef: string;
+    readonly briefRef: string;
+  }): Promise<LessonBriefSnapshot | null> {
+    const prefix = "lesson-brief-run:";
+    if (!input.briefRef.startsWith(prefix)) return null;
+    const agentRunRef = input.briefRef.slice(prefix.length);
+    if (!agentRunRef) return null;
+    const result = await this.pool.query<{ lesson_brief: unknown }>(
+      `SELECT output -> 'lessonBrief' AS lesson_brief
+         FROM runtime.agent_run
+        WHERE agent_run_ref = $1
+          AND actor_ref = $2
+          AND output ->> 'kind' = 'lesson_brief_candidate'
+          AND output ->> 'tenantRef' = $3
+          AND output ->> 'lessonRef' = $4
+        LIMIT 1`,
+      [agentRunRef, input.teacherRef, input.tenantRef, input.lessonRef]
+    );
+    const value = result.rows[0]?.lesson_brief;
+    if (!value) return null;
+    const brief = LessonBriefSnapshotSchema.parse(value);
+    if (
+      brief.status !== "adopted" ||
+      brief.disposition?.action !== "adopted" ||
+      brief.disposition.teacherRef !== input.teacherRef ||
+      brief.lessonRef !== input.lessonRef ||
+      brief.agentRunRef !== agentRunRef
+    ) {
+      return null;
+    }
+    return brief;
   }
 
   async saveGenerated(

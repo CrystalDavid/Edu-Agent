@@ -1,4 +1,6 @@
 import {
+  LessonBriefCandidateItemSchema,
+  LessonBriefEvidenceSummarySchema,
   ModelRequestSchemaV2,
   TeacherTaskRequestSchema,
   TeachingPlanSchema
@@ -9,6 +11,8 @@ export const lessonPreparationInputSchemaRef =
   "lesson-preparation-input@1";
 export const lessonPreparationInputSchemaRefV2 =
   "lesson-preparation-input@2";
+export const lessonPreparationInputSchemaRefV3 =
+  "lesson-preparation-input@3";
 
 export const LessonPreparationSkillInputSchema = z.object({
   invocationRef: z.string().min(1),
@@ -87,9 +91,41 @@ export const LessonPreparationSkillInputSchemaV2 =
     confirmedPreferences: z.array(ConfirmedTeacherPreferenceSchema).max(12)
   });
 
+export const ConfirmedLessonBriefContextSchema = z.object({
+  briefRef: z.string().startsWith("lesson-brief-run:"),
+  agentRunRef: z.string().min(1),
+  lessonRef: z.string().min(1),
+  contentHash: z.string().min(16),
+  contextManifestRef: z.string().min(1),
+  contextManifestHash: z.string().min(16),
+  generatedBySkillRef: z.literal("lesson-analysis@1"),
+  selectedCandidateIds: z.array(z.string().min(1)).min(1),
+  teachingFocus: z.array(LessonBriefCandidateItemSchema),
+  difficultyFocus: z.array(LessonBriefCandidateItemSchema),
+  attentionPoints: z.array(LessonBriefCandidateItemSchema),
+  classEvidenceSummary: z.array(LessonBriefEvidenceSummarySchema),
+  knownGaps: z.array(z.string().min(1)),
+  sourceVersionVector: z.record(z.string().min(1), z.string().min(1))
+});
+
+export const LessonPreparationSkillInputSchemaV3 =
+  LessonPreparationSkillInputSchemaV2.extend({
+    taskWorkingSet:
+      LessonPreparationSkillInputSchema.shape.taskWorkingSet.extend({
+        sourceResourceRefs: z.array(z.string().min(1))
+      }),
+    confirmedLessonBrief: ConfirmedLessonBriefContextSchema
+  });
+
 export type ConfirmedTeacherPreference = z.infer<
   typeof ConfirmedTeacherPreferenceSchema
 >;
 export type LessonPreparationSkillInputV2 = z.infer<
   typeof LessonPreparationSkillInputSchemaV2
+>;
+export type ConfirmedLessonBriefContext = z.infer<
+  typeof ConfirmedLessonBriefContextSchema
+>;
+export type LessonPreparationSkillInputV3 = z.infer<
+  typeof LessonPreparationSkillInputSchemaV3
 >;

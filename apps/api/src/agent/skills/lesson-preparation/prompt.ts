@@ -11,8 +11,10 @@ import { validateLessonPreparationContext } from "./context-policy.js";
 import {
   LessonPreparationSkillInputSchema,
   LessonPreparationSkillInputSchemaV2,
+  LessonPreparationSkillInputSchemaV3,
   type LessonPreparationSkillInput,
-  type LessonPreparationSkillInputV2
+  type LessonPreparationSkillInputV2,
+  type LessonPreparationSkillInputV3
 } from "./input-schema.js";
 
 const systemInstruction = [
@@ -84,6 +86,34 @@ export const personalizedLessonPreparationPromptBundle: PromptBundleDescriptor =
     contentHash: sha256({
       ...personalizedDescriptorPayload,
       systemInstruction: personalizedSystemInstruction
+    })
+  });
+
+const lessonBriefSystemInstruction = [
+  personalizedSystemInstruction,
+  "confirmedLessonBrief 只包含教师已经明确采用的教学洞察候选。",
+  "必须优先围绕教师采用的重点、难点、班级关注点与 knownGaps 形成方案，不得恢复被教师排除的候选。",
+  "Lesson Brief 是可解释候选，不是教材、课程标准或考点权威知识；缺失知识必须保留为 knownGaps。",
+  "在上下文足够时生成最多三个定位清晰且有实质差异的方案，便于教师比较；不得只改标题而复制相同内容。"
+].join("\n");
+
+const lessonBriefDescriptorPayload = {
+  ...descriptorPayload,
+  version: 3,
+  inputFields: [
+    ...descriptorPayload.inputFields,
+    "confirmedPreferences",
+    "confirmedLessonBrief"
+  ],
+  createdAt: "2026-08-05T00:00:00.000Z"
+};
+
+export const lessonBriefPreparationPromptBundle: PromptBundleDescriptor =
+  PromptBundleDescriptorSchema.parse({
+    ...lessonBriefDescriptorPayload,
+    contentHash: sha256({
+      ...lessonBriefDescriptorPayload,
+      systemInstruction: lessonBriefSystemInstruction
     })
   });
 
@@ -187,6 +217,30 @@ export function assemblePersonalizedLessonPreparationModelRequest(
   });
 }
 
+export function assembleLessonBriefPreparationModelRequest(
+  input: LessonPreparationSkillInputV3
+): ModelRequestV2 {
+  const parsed = LessonPreparationSkillInputSchemaV3.parse(input);
+  const base = assemblePersonalizedLessonPreparationModelRequest(parsed);
+  const userMessage = base.messages.find((message) => message.role === "user");
+  if (!userMessage) throw new Error("Lesson Preparation user message is missing.");
+  const basePayload = JSON.parse(userMessage.content) as Record<string, unknown>;
+  return ModelRequestSchemaV2.parse({
+    ...base,
+    promptBundle: lessonBriefPreparationPromptBundle,
+    messages: [
+      { role: "system", content: lessonBriefSystemInstruction },
+      {
+        role: "user",
+        content: JSON.stringify({
+          ...basePayload,
+          confirmedLessonBrief: parsed.confirmedLessonBrief
+        })
+      }
+    ]
+  });
+}
+
 export { systemInstruction as lessonPreparationSystemInstruction };
 
 export function assembleRepairModelRequest(input: {
@@ -237,6 +291,37 @@ export function assemblePersonalizedRepairModelRequest(input: {
           personalizedSystemInstruction,
           "这是同一 ModelExecution 的唯一一次受控修复。",
           "不得增加偏好、Evidence、资源、权限或任务范围。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          invalidOutput: input.invalidOutput.slice(0, 20_000),
+          validationIssues: [...input.validationIssues],
+          requiredScope: original.scope,
+          requiredSchemaVersion: original.expectedOutputSchema
+        })
+      }
+    ]
+  });
+}
+
+export function assembleLessonBriefRepairModelRequest(input: {
+  original: ModelRequestV2;
+  invalidOutput: string;
+  validationIssues: readonly string[];
+}): ModelRequestV2 {
+  const original = ModelRequestSchemaV2.parse(input.original);
+  return ModelRequestSchemaV2.parse({
+    ...original,
+    invocationRef: `${original.invocationRef}:repair`,
+    messages: [
+      {
+        role: "system",
+        content: [
+          lessonBriefSystemInstruction,
+          "这是同一 ModelExecution 的唯一一次受控修复。",
+          "不得增加 Lesson Brief 候选、偏好、Evidence、资源、权限或任务范围。"
         ].join("\n")
       },
       {

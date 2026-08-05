@@ -103,12 +103,17 @@ export function createProductContainer(
     createConfiguredModelProvider(modelSettings);
   const skillRegistry = createBuiltInSkillRegistry();
   const personalization = new PostgresPersonalizationService(appPool);
+  const lessonBriefStore = new PostgresLessonBriefStore(appPool);
   const modelInvocations: ModelInvocationApplicationFacade =
     new PostgresModelInvocationService(
       appPool,
       modelProvider,
       modelSettings,
-      { skills: skillRegistry, personalization }
+      {
+        skills: skillRegistry,
+        personalization,
+        lessonBriefs: lessonBriefStore
+      }
     );
   const objectStoreSettings =
     options.objectStoreSettings ?? readObjectStoreSettings();
@@ -152,7 +157,7 @@ export function createProductContainer(
       read,
       personalization
     ),
-    new PostgresLessonBriefStore(appPool),
+    lessonBriefStore,
     skillRegistry
   );
   const lessonJourney = new LessonJourneyReadService(

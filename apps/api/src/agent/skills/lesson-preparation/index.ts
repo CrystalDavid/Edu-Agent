@@ -21,12 +21,14 @@ import {
 import {
   LessonPreparationSkillInputSchema,
   LessonPreparationSkillInputSchemaV2,
+  LessonPreparationSkillInputSchemaV3,
   type LessonPreparationSkillInput
 } from "./input-schema.js";
 import {
   lessonPreparationSkillManifest,
   lessonPreparationSkillManifestV2,
-  lessonPreparationSkillManifestV3
+  lessonPreparationSkillManifestV3,
+  lessonPreparationSkillManifestV4
 } from "./manifest.js";
 import {
   LessonPreparationSkillOutputSchema,
@@ -34,16 +36,23 @@ import {
 } from "./output-schema.js";
 import {
   assembleLessonPreparationModelRequest,
+  assembleLessonBriefPreparationModelRequest,
+  assembleLessonBriefRepairModelRequest,
   assembleRepairModelRequest,
   assemblePersonalizedLessonPreparationModelRequest,
   assemblePersonalizedRepairModelRequest,
   lessonPreparationPromptBundle,
+  lessonBriefPreparationPromptBundle,
   personalizedLessonPreparationPromptBundle
 } from "./prompt.js";
 import {
   buildPersonalizedLessonPreparationContext,
   type PersonalizedLessonPreparationContextBuildResult
 } from "./personalized-context-builder.js";
+import {
+  buildLessonBriefPreparationContext,
+  type LessonBriefPreparationContextBuildResult
+} from "./lesson-brief-context-builder.js";
 import {
   validateModelOutput,
   type ModelOutputValidationResult
@@ -74,7 +83,8 @@ export interface LessonPreparationSkillVersion extends SkillVersionBase {
   }): LessonPreparationSkillEvaluation;
   buildContext?(input: LessonPreparationContextBuildInput):
     | LessonPreparationContextBuildResult
-    | PersonalizedLessonPreparationContextBuildResult;
+    | PersonalizedLessonPreparationContextBuildResult
+    | LessonBriefPreparationContextBuildResult;
 }
 
 export interface LessonPreparationContextBuildInput {
@@ -129,6 +139,26 @@ export const lessonPreparationSkillV3: LessonPreparationSkillVersion =
     evaluateOutput: evaluateLessonPreparationOutput
   });
 
+export const lessonPreparationSkillV4: LessonPreparationSkillVersion =
+  Object.freeze({
+    manifest: lessonPreparationSkillManifestV4,
+    inputSchema: LessonPreparationSkillInputSchemaV3,
+    outputSchema: LessonPreparationSkillOutputSchema,
+    promptBundle: lessonBriefPreparationPromptBundle,
+    buildContext: (input: LessonPreparationContextBuildInput) =>
+      buildLessonBriefPreparationContext({
+        ...input,
+        confirmedPreferences: input.confirmedPreferences ?? []
+      }),
+    assembleRequest: (input: LessonPreparationSkillInput) =>
+      assembleLessonBriefPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV3.parse(input)
+      ),
+    assembleRepairRequest: assembleLessonBriefRepairModelRequest,
+    validateOutput: validateModelOutput,
+    evaluateOutput: evaluateLessonPreparationOutput
+  });
+
 export type {
   LessonPreparationOperationMetrics,
   LessonPreparationSkillEvaluation,
@@ -144,6 +174,11 @@ export type {
   LessonPreparationSealedContext
 } from "./context-builder.js";
 export type {
+  LessonBriefContextEvaluation,
+  LessonBriefPreparationContextBuildResult,
+  LessonBriefPreparationManifest
+} from "./lesson-brief-context-builder.js";
+export type {
   PersonalizedLessonPreparationContextBuildResult,
   PersonalizedLessonPreparationManifest,
   PreferenceContextEvaluation
@@ -154,6 +189,10 @@ export {
   estimateContextTokens,
   lessonPreparationContextBuilderVersion
 } from "./context-builder.js";
+export {
+  buildLessonBriefPreparationContext,
+  lessonBriefPreparationContextBuilderVersion
+} from "./lesson-brief-context-builder.js";
 export {
   buildPersonalizedLessonPreparationContext,
   personalizedLessonPreparationContextBuilderVersion

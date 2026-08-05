@@ -15,6 +15,7 @@ import {
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
   type FormalWriteReceipt,
+  type LessonBriefSnapshot,
   type ModelExecutionView,
   type ModelFailureCategory,
   type ModelProviderName,
@@ -29,15 +30,17 @@ import type { Pool } from "pg";
 import {
   createBuiltInSkillRegistry,
   LessonPreparationContextBuildError,
+  legacyLessonPreparationSkillRef,
   lessonPreparationSkillRef,
   loadHistoricalLessonPreparationSkill,
   loadLessonPreparationSkill,
   type LessonPreparationSkillEvaluation,
   type LessonPreparationContextEvaluation,
   type LessonPreparationEngineeringManifest,
+  type LessonBriefContextEvaluation,
+  type LessonBriefPreparationManifest,
   type PersonalizedLessonPreparationManifest,
   type PreferenceContextEvaluation,
-  type LessonPreparationSkillInput,
   type LessonPreparationSkillVersion,
   type VersionedSkillRegistry
 } from "../agent/skills/index.js";
@@ -47,6 +50,7 @@ import {
 import type {
   RuntimeKernelEvent
 } from "../modules/agent-runtime-context/domain/runtime-kernel.js";
+import type { ConfirmedLessonBriefContextProvider } from "../modules/agent-runtime-context/application/confirmed-lesson-brief-provider.js";
 import type {
   PersonalizationContextProvider
 } from "../modules/personalization-memory-analytics/application/personalization-context-provider.js";
@@ -132,6 +136,7 @@ import {
 } from "../platform/postgres/write-context.js";
 import type { PostgresClient } from "../platform/postgres/types.js";
 import { buildDiff } from "./postgres-gate2-teacher-copilot-service.js";
+import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
 
 const GENERATE_PURPOSE =
   "teacher-copilot.adjust-next-lesson";
@@ -162,6 +167,7 @@ interface ModelInvocationDependencies {
   runtimeKernel?: RuntimeKernelService<PostgresClient>;
   skills?: VersionedSkillRegistry;
   personalization?: PersonalizationContextProvider;
+  lessonBriefs?: ConfirmedLessonBriefContextProvider;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -181,6 +187,8 @@ type LessonPreparationContextEngineering = {
   readonly evaluation: LessonPreparationContextEvaluation;
   readonly personalizationManifest?: PersonalizedLessonPreparationManifest;
   readonly preferenceEvaluation?: PreferenceContextEvaluation;
+  readonly lessonBriefManifest?: LessonBriefPreparationManifest;
+  readonly lessonBriefEvaluation?: LessonBriefContextEvaluation;
 };
 
 export class PostgresModelInvocationService
@@ -195,6 +203,7 @@ export class PostgresModelInvocationService
   private readonly skills: VersionedSkillRegistry;
   private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
   private readonly personalization: PersonalizationContextProvider;
+  private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -239,6 +248,8 @@ export class PostgresModelInvocationService
         return [];
       }
     };
+    this.lessonBriefs =
+      dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
     this.runtimeKernel =
       dependencies.runtimeKernel ??
       new RuntimeKernelService(
@@ -495,6 +506,36 @@ export class PostgresModelInvocationService
           input.actorRef
         );
       this.assertInvocationContext(preparationTask, input.request);
+      const lessonBriefRefs = (
+        preparationTask.workingSet.sourceResourceRefs ?? []
+      ).filter((reference) => reference.startsWith("lesson-brief-run:"));
+      if (lessonBriefRefs.length > 1) {
+        throw new DomainConflictError(
+          "LESSON_BRIEF_SELECTION_AMBIGUOUS",
+          "The TaskWorkingSet contains more than one adopted Lesson Brief."
+        );
+      }
+      const lessonBriefRef = lessonBriefRefs[0] ?? null;
+      const lessonPreparationSkill = loadLessonPreparationSkill(
+        this.skills,
+        lessonBriefRef
+          ? lessonPreparationSkillRef
+          : legacyLessonPreparationSkillRef
+      );
+      const adoptedLessonBrief = lessonBriefRef
+        ? await this.lessonBriefs.loadAdopted({
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
+            lessonRef: preparationTask.lessonRef,
+            briefRef: lessonBriefRef
+          })
+        : null;
+      if (lessonBriefRef && !adoptedLessonBrief) {
+        throw new DomainConflictError(
+          "LESSON_BRIEF_CONTEXT_INVALID",
+          "The Lesson Brief selected by the Task is not an adopted, authorized snapshot."
+        );
+      }
 
       const educationContext =
         await this.education.getTeacherCopilotContext(client, {
@@ -668,17 +709,18 @@ export class PostgresModelInvocationService
       const requestHash = hash({
         taskRunRef,
         requestTextHash: hash(taskRequest.requestText),
-        skillRef: this.lessonPreparationSkill.manifest.ref,
+        skillRef: lessonPreparationSkill.manifest.ref,
         skillContentHash:
-          this.lessonPreparationSkill.manifest.contentHash,
+          lessonPreparationSkill.manifest.contentHash,
         promptBundleVersion:
-          this.lessonPreparationSkill.promptBundle.version,
+          lessonPreparationSkill.promptBundle.version,
+        lessonBriefContentHash: adoptedLessonBrief?.contentHash ?? null,
         contextManifestHash:
           authorizedContextPlan.contentHash,
         provider,
         modelId,
         outputSchemaVersion:
-          this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
+          lessonPreparationSkill.promptBundle.outputSchemaVersion,
         generationSettings: {
           maxOutputTokens:
             provider === "volcengine-ark"
@@ -711,9 +753,9 @@ export class PostgresModelInvocationService
           }),
           tokenBudget: this.settings.budget.maxInputTokens,
           promptBundleRef:
-            this.lessonPreparationSkill.promptBundle.promptBundleRef,
+            lessonPreparationSkill.promptBundle.promptBundleRef,
           requestHash,
-          skillRef: this.lessonPreparationSkill.manifest.ref,
+          skillRef: lessonPreparationSkill.manifest.ref,
           createdAt: now
         });
       const decision: AuthorizationDecision = {
@@ -785,7 +827,7 @@ export class PostgresModelInvocationService
         policyVersionRef:
           educationContext.profile.policyVersionRef,
         promptVersionRef:
-          this.lessonPreparationSkill.promptBundle.promptBundleRef,
+          lessonPreparationSkill.promptBundle.promptBundleRef,
         evidenceRuleVersionRef:
           educationContext.profile.evidenceRuleVersionRef,
         participationMode:
@@ -806,7 +848,7 @@ export class PostgresModelInvocationService
           policyVersionRef:
             educationContext.profile.policyVersionRef,
           promptVersionRef:
-            this.lessonPreparationSkill.promptBundle.promptBundleRef,
+            lessonPreparationSkill.promptBundle.promptBundleRef,
           evidenceRuleVersionRef:
             educationContext.profile.evidenceRuleVersionRef,
           participationMode:
@@ -864,7 +906,7 @@ export class PostgresModelInvocationService
             contractRef,
             contextManifestRef,
             promptVersionRef:
-              this.lessonPreparationSkill.promptBundle.promptBundleRef,
+              lessonPreparationSkill.promptBundle.promptBundleRef,
             policyVersionRef: decision.policyVersion,
             capabilityRefs: [this.provider.descriptor.capabilityRef],
             contextRefs: [
@@ -874,9 +916,9 @@ export class PostgresModelInvocationService
             contentHash: hash({
               contractContentHash,
               skill:
-                this.lessonPreparationSkill.manifest.contentHash,
+                lessonPreparationSkill.manifest.contentHash,
               promptBundle:
-                this.lessonPreparationSkill.promptBundle.contentHash,
+                lessonPreparationSkill.promptBundle.contentHash,
               authorizedContextPlan:
                 authorizedContextPlan.contentHash
             }),
@@ -950,9 +992,9 @@ export class PostgresModelInvocationService
             taskRunRef,
             agentRunRef,
             promptBundleRef:
-              this.lessonPreparationSkill.promptBundle.promptBundleRef,
+              lessonPreparationSkill.promptBundle.promptBundleRef,
             promptBundleVersion:
-              this.lessonPreparationSkill.promptBundle.version,
+              lessonPreparationSkill.promptBundle.version,
             contextManifestRef,
             authorizedContextPlanRef,
             modelDataManifestRef:
@@ -970,9 +1012,18 @@ export class PostgresModelInvocationService
               requestTextHash: hash(taskRequest.requestText),
               contextManifestHash:
                 authorizedContextPlan.contentHash,
-              skillRef: this.lessonPreparationSkill.manifest.ref,
+              skillRef: lessonPreparationSkill.manifest.ref,
               skillContentHash:
-                this.lessonPreparationSkill.manifest.contentHash,
+                lessonPreparationSkill.manifest.contentHash,
+              ...(lessonBriefRef && adoptedLessonBrief
+                ? {
+                    lessonBriefRef,
+                    lessonBriefAgentRunRef: adoptedLessonBrief.agentRunRef,
+                    lessonBriefContentHash: adoptedLessonBrief.contentHash,
+                    lessonBriefContextManifestHash:
+                      adoptedLessonBrief.contextManifestHash
+                  }
+                : {}),
               syntheticData: true
             },
             maxAttempts:
@@ -989,7 +1040,7 @@ export class PostgresModelInvocationService
                   this.settings.budget.maxOutputTokens)
                 : this.settings.budget.maxOutputTokens,
             outputSchemaVersion:
-              this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
+              lessonPreparationSkill.promptBundle.outputSchemaVersion,
             resultKind: "teaching_proposal",
             metadata: createWriteMetadata(
               writeContext,
@@ -1043,9 +1094,9 @@ export class PostgresModelInvocationService
         taskRunRef,
         agentRunRef,
         promptBundleRef:
-          this.lessonPreparationSkill.promptBundle.promptBundleRef,
+          lessonPreparationSkill.promptBundle.promptBundleRef,
         promptBundleVersion:
-          this.lessonPreparationSkill.promptBundle.version,
+          lessonPreparationSkill.promptBundle.version,
         contextManifestRef,
         authorizedContextPlanRef,
         attemptCount: 0,
@@ -1063,7 +1114,7 @@ export class PostgresModelInvocationService
         safeErrorCategory: null,
         safeMessage: null,
         outputSchemaVersion:
-          this.lessonPreparationSkill.promptBundle.outputSchemaVersion,
+          lessonPreparationSkill.promptBundle.outputSchemaVersion,
         proposalRevisionRef: null,
         retryOfModelExecutionRef: null,
         queuedAt: now,
@@ -2366,6 +2417,31 @@ export class PostgresModelInvocationService
             ? "prompt_json"
             : "json_object";
     const skill = this.requireExecutionLessonPreparationSkill(execution);
+    const storedLessonBriefRef = execution.inputSummary["lessonBriefRef"];
+    const lessonBriefRef = typeof storedLessonBriefRef === "string"
+      ? storedLessonBriefRef
+      : null;
+    const adoptedLessonBrief = lessonBriefRef
+      ? await this.lessonBriefs.loadAdopted({
+          tenantRef,
+          teacherRef: execution.actorRef,
+          lessonRef: preparationTask.lessonRef,
+          briefRef: lessonBriefRef
+        })
+      : null;
+    if (skill.manifest.ref === lessonPreparationSkillRef) {
+      if (!lessonBriefRef || !adoptedLessonBrief) {
+        throw new Error(
+          "lesson-preparation@4 requires an adopted Lesson Brief bound to the sealed TaskWorkingSet."
+        );
+      }
+      if (
+        execution.inputSummary["lessonBriefContentHash"] !==
+        adoptedLessonBrief.contentHash
+      ) {
+        throw new Error("The adopted Lesson Brief hash no longer matches the bound ModelExecution.");
+      }
+    }
     const confirmedPreferences =
       skill.manifest.memoryPolicy.mode === "authorized_context_only"
         ? await this.personalization.listConfirmedPreferences({
@@ -2373,7 +2449,7 @@ export class PostgresModelInvocationService
             teacherRef: execution.actorRef
           })
         : [];
-    const skillInput: LessonPreparationSkillInput = {
+    const skillInput = skill.inputSchema.parse({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
         agentRunRef: execution.agentRunRef,
@@ -2425,9 +2501,20 @@ export class PostgresModelInvocationService
           sourceAssignmentRef:
             preparationTask.workingSet.sourceAssignmentRef ?? null,
           sourceAssignmentItemRefs:
-            preparationTask.workingSet.sourceAssignmentItemRefs ?? []
-        }
-      };
+            preparationTask.workingSet.sourceAssignmentItemRefs ?? [],
+          sourceResourceRefs:
+            preparationTask.workingSet.sourceResourceRefs ?? []
+        },
+        ...(lessonBriefRef && adoptedLessonBrief
+          ? {
+              confirmedLessonBrief: toConfirmedLessonBriefContext({
+                briefRef: lessonBriefRef,
+                brief: adoptedLessonBrief,
+                authorizedEvidenceRefs: contextManifest.evidenceRefs
+              })
+            }
+          : {})
+      });
     const contextBuild = skill.buildContext?.({
       contextPlan: {
         purpose: "lesson_preparation",
@@ -2477,6 +2564,12 @@ export class PostgresModelInvocationService
                       contextBuild.personalizationManifest,
                     preferenceEvaluation:
                       contextBuild.preferenceEvaluation
+                  }
+                : {}),
+              ...("lessonBriefManifest" in contextBuild
+                ? {
+                    lessonBriefManifest: contextBuild.lessonBriefManifest,
+                    lessonBriefEvaluation: contextBuild.lessonBriefEvaluation
                   }
                 : {})
             }
@@ -3851,6 +3944,38 @@ function createTaskRequest(
       : {}),
     createdAt,
     requestVersion: request.requestVersion
+  };
+}
+
+function toConfirmedLessonBriefContext(input: {
+  readonly briefRef: string;
+  readonly brief: LessonBriefSnapshot;
+  readonly authorizedEvidenceRefs: readonly string[];
+}) {
+  const selected = new Set(
+    input.brief.disposition?.selectedCandidateIds ?? []
+  );
+  const onlySelected = <T extends { candidateId: string }>(
+    candidates: readonly T[]
+  ) => candidates.filter((candidate) => selected.has(candidate.candidateId));
+  const authorizedEvidence = new Set(input.authorizedEvidenceRefs);
+  return {
+    briefRef: input.briefRef,
+    agentRunRef: input.brief.agentRunRef,
+    lessonRef: input.brief.lessonRef,
+    contentHash: input.brief.contentHash,
+    contextManifestRef: input.brief.contextManifestRef,
+    contextManifestHash: input.brief.contextManifestHash,
+    generatedBySkillRef: input.brief.generatedBySkillRef,
+    selectedCandidateIds: [...selected],
+    teachingFocus: onlySelected(input.brief.teachingFocusCandidates),
+    difficultyFocus: onlySelected(input.brief.difficultyCandidates),
+    attentionPoints: onlySelected(input.brief.suggestedAttentionPoints),
+    classEvidenceSummary: input.brief.classEvidenceSummary.filter(
+      (summary) => authorizedEvidence.has(summary.evidenceRef)
+    ),
+    knownGaps: [...input.brief.knownGaps],
+    sourceVersionVector: input.brief.sourceVersionVector
   };
 }
 
