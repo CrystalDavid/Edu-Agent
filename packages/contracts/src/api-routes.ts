@@ -152,6 +152,18 @@ export const apiRoutes = {
       "/api/v1/teacher/lessons/:lessonRef/journey",
     lessonJourney: (lessonRef: string): string =>
       `${teacherLessonRoute(lessonRef)}/journey`,
+    lessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief",
+    lessonBrief: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief`,
+    generateLessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief/generate",
+    generateLessonBrief: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief/generate`,
+    decideLessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief/:agentRunRef/disposition",
+    decideLessonBrief: (lessonRef: string, agentRunRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief/${encodeRouteSegment(agentRunRef)}/disposition`,
     lessonPreparationSummary:
       "/api/v1/teacher/lesson-preparation/summary",
     preparationTasks:

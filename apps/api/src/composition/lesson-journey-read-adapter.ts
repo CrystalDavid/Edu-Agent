@@ -8,6 +8,7 @@ import type { PostgresClassroomReflectionService } from "./postgres-classroom-re
 import type { PostgresFileArtifactService } from "./postgres-file-artifact-service.js";
 import type { PostgresGate2ReadService } from "./postgres-gate2-read-service.js";
 import type { PostgresLessonPreparationService } from "./postgres-lesson-preparation-service.js";
+import type { LessonBriefService } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
 
 export class LessonJourneyReadAdapter
   implements LessonJourneySourceReader
@@ -16,14 +17,15 @@ export class LessonJourneyReadAdapter
     private readonly preparation: PostgresLessonPreparationService,
     private readonly read: PostgresGate2ReadService,
     private readonly files: PostgresFileArtifactService,
-    private readonly classroom: PostgresClassroomReflectionService
+    private readonly classroom: PostgresClassroomReflectionService,
+    private readonly lessonBrief: LessonBriefService
   ) {}
 
   async loadAuthorizedSnapshot(
     context: LessonJourneyReadContext
   ): Promise<LessonJourneySourceSnapshot> {
     const lesson = await this.preparation.getLesson(context);
-    const [taskList, teachingPlans, fileList, implementation, proposals] =
+    const [taskList, teachingPlans, fileList, implementation, proposals, briefState] =
       await Promise.all([
         this.preparation.listTasks({
           tenantRef: context.tenantRef,
@@ -45,6 +47,11 @@ export class LessonJourneyReadAdapter
         this.read.listPendingProposals({
           tenantRef: context.tenantRef,
           actorRef: context.actorRef
+        }),
+        this.lessonBrief.get({
+          tenantRef: context.tenantRef,
+          actorRef: context.actorRef,
+          lessonRef: context.lessonRef
         })
       ]);
     const tasks = taskList.items.filter(
@@ -69,7 +76,8 @@ export class LessonJourneyReadAdapter
       ),
       agentExecution: activeTask
         ? await this.loadAgentExecution(context, activeTask.taskRef)
-        : null
+        : null,
+      lessonBrief: briefState.current
     };
   }
 
@@ -101,4 +109,3 @@ export class LessonJourneyReadAdapter
     }
   }
 }
-

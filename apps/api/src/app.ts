@@ -70,6 +70,8 @@ import {
   ReviewMemoryCandidateRequestSchema,
   UpdateTeacherPreferenceRequestSchema,
   RevokeTeacherPreferenceRequestSchema,
+  GenerateLessonBriefRequestSchema,
+  DecideLessonBriefRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
   UpdateLessonDeliveryDraftRequestSchema,
@@ -891,6 +893,7 @@ export function createApp(
     const workbench = product.services.teacherWorkbench;
     const classroom = product.services.classroomReflection;
     const lessonJourney = product.services.lessonJourney;
+    const lessonBrief = product.services.lessonBrief;
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
@@ -2148,6 +2151,70 @@ export function createApp(
               actorRef: contexts.acting.actorRef,
               allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonBriefPattern,
+      markRoute("product.teacher.lessons.brief"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonBrief.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.generateLessonBriefPattern,
+      markRoute("product.teacher.lessons.brief.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.status(201).json(
+            await lessonBrief.generate({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              request: GenerateLessonBriefRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.decideLessonBriefPattern,
+      markRoute("product.teacher.lessons.brief.decide"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonBrief.decide({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              agentRunRef: routeParameter(request.params["agentRunRef"]),
+              request: DecideLessonBriefRequestSchema.parse(request.body)
             })
           );
         } catch (error) {

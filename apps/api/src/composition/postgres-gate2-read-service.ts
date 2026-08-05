@@ -227,6 +227,77 @@ export class PostgresGate2ReadService {
     });
   }
 
+  async getAuthorizedLessonEvidence(input: {
+    tenantRef: string;
+    actorRef: string;
+    courseRunRef: string;
+    requestedEvidenceRefs: readonly string[];
+  }): Promise<{
+    items: Array<{
+      evidenceRef: string;
+      evidenceType: "observation" | "claim";
+      summary: string;
+      observedAt: string | null;
+      status: string;
+      sourceRefs: string[];
+    }>;
+    excludedRefs: string[];
+  }> {
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
+    const context = await this.education.getTeacherCopilotContext(this.pool, {
+      tenantRef: input.tenantRef,
+      courseRunRef: input.courseRunRef
+    });
+    if (!context) {
+      throw new NotFoundError("当前课程没有可读取的教学 Evidence 上下文。");
+    }
+    const observations = new Map(
+      context.observations.map((item) => [item.observationRef, item] as const)
+    );
+    const claims = new Map(
+      context.claims.map((item) => [item.claimRef, item] as const)
+    );
+    const items: Array<{
+      evidenceRef: string;
+      evidenceType: "observation" | "claim";
+      summary: string;
+      observedAt: string | null;
+      status: string;
+      sourceRefs: string[];
+    }> = [];
+    const excludedRefs: string[] = [];
+    for (const reference of [...new Set(input.requestedEvidenceRefs)]) {
+      const observation = observations.get(reference);
+      if (observation) {
+        items.push({
+          evidenceRef: observation.observationRef,
+          evidenceType: "observation",
+          summary: observation.summary,
+          observedAt: observation.observedAt,
+          status: "observed",
+          sourceRefs: [observation.sourceRef]
+        });
+        continue;
+      }
+      const claim = claims.get(reference);
+      if (claim) {
+        items.push({
+          evidenceRef: claim.claimRef,
+          evidenceType: "claim",
+          summary: claim.summary,
+          observedAt: claim.validFrom,
+          status: claim.status,
+          sourceRefs: claim.supportingObservationRefs.length > 0
+            ? [...claim.supportingObservationRefs]
+            : [claim.claimRef]
+        });
+        continue;
+      }
+      excludedRefs.push(reference);
+    }
+    return { items, excludedRefs };
+  }
+
   async getProposalDetail(input: {
     tenantRef: string;
     actorRef: string;

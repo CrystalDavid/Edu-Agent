@@ -536,6 +536,107 @@ export class PostgresGate25WorkRepository {
     };
   }
 
+  async replaceWorkingSetSourceResources(
+    client: PostgresClient,
+    input: {
+      taskRef: string;
+      expectedVersion: number;
+      sourceResourceRefs: readonly string[];
+      revisionRef: string;
+      metadata: WorkMetadata;
+    }
+  ): Promise<{
+    workingSet: TaskWorkingSet;
+    receipt: FormalWriteReceipt;
+  }> {
+    const current = await client.query<WorkingSetRow>(
+      `SELECT task_ref, current_version, course_run_ref,
+              curriculum_unit_ref, lesson_ref,
+              learning_objective_refs, evidence_refs,
+              baseline_teaching_plan_ref, source_lesson_ref,
+              source_assignment_ref, source_assignment_item_refs,
+              source_todo_ref, source_resource_refs,
+              source_reflection_ref, source_delivery_revision_ref,
+              source_observation_revision_refs,
+              context_purpose,
+              requested_field_mask, updated_at
+         FROM work.task_working_set
+        WHERE task_ref = $1
+        FOR UPDATE`,
+      [input.taskRef]
+    );
+    const row = current.rows[0];
+    if (!row || row.current_version !== input.expectedVersion) {
+      throw new Error("TASK_WORKING_SET_VERSION_CONFLICT");
+    }
+    const nextVersion = input.expectedVersion + 1;
+    const revisionInput = {
+      courseRunRef: row.course_run_ref,
+      curriculumUnitRef: row.curriculum_unit_ref,
+      lessonRef: row.lesson_ref,
+      learningObjectiveRefs: row.learning_objective_refs,
+      evidenceRefs: row.evidence_refs,
+      baselineTeachingPlanRef: row.baseline_teaching_plan_ref,
+      sourceLessonRef: row.source_lesson_ref,
+      sourceAssignmentRef: row.source_assignment_ref,
+      sourceAssignmentItemRefs: row.source_assignment_item_refs,
+      sourceTodoRef: row.source_todo_ref,
+      sourceResourceRefs: [...new Set(input.sourceResourceRefs)],
+      sourceReflectionRef: row.source_reflection_ref,
+      sourceDeliveryRevisionRef: row.source_delivery_revision_ref,
+      sourceObservationRevisionRefs: row.source_observation_revision_refs,
+      purpose: row.context_purpose,
+      requestedFieldMask: row.requested_field_mask
+    };
+    await this.insertWorkingSetRevision(client, {
+      revisionRef: input.revisionRef,
+      taskRef: input.taskRef,
+      version: nextVersion,
+      workingSet: revisionInput,
+      metadata: input.metadata
+    });
+    await client.query(
+      `UPDATE work.task_working_set
+          SET current_version = $2,
+              source_resource_refs = $3,
+              updated_by = $4,
+              updated_at = $5,
+              actor_ref = $6,
+              purpose = $7,
+              owner_module = $8,
+              idempotency_key = $9,
+              authorization_decision_ref = $10,
+              audit_ref = $11
+        WHERE task_ref = $1`,
+      [
+        input.taskRef,
+        nextVersion,
+        toPostgresJson(revisionInput.sourceResourceRefs),
+        input.metadata.actorRef,
+        input.metadata.createdAt,
+        input.metadata.actorRef,
+        input.metadata.purpose,
+        input.metadata.owner,
+        input.metadata.idempotencyKey,
+        input.metadata.authorizationDecisionRef,
+        input.metadata.auditRef
+      ]
+    );
+    return {
+      workingSet: TaskWorkingSetSchema.parse({
+        taskRef: input.taskRef,
+        version: nextVersion,
+        ...revisionInput,
+        updatedAt: input.metadata.createdAt
+      }),
+      receipt: createReceipt({
+        writeRef: input.revisionRef,
+        recordType: "TaskWorkingSet",
+        metadata: input.metadata
+      })
+    };
+  }
+
   async replaceBaselineTeachingPlan(
     client: PostgresClient,
     input: {

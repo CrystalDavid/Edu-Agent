@@ -1,6 +1,7 @@
 import {
   LessonJourneyProjectionSchema,
   type FileAssetSummary,
+  type LessonBriefSnapshot,
   type LessonImplementationSummary,
   type LessonJourneyMilestone,
   type LessonJourneyProjection,
@@ -27,6 +28,7 @@ export interface LessonJourneyProjectionInput {
   readonly implementation: LessonImplementationSummary;
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;
+  readonly lessonBrief?: LessonBriefSnapshot | null;
   readonly generatedAt?: string;
 }
 
@@ -83,6 +85,17 @@ export function projectLessonJourney(
     ref: input.lesson.lessonRef,
     version: lessonVersion(input.lesson)
   });
+
+  if (input.lessonBrief) {
+    addSource(sourceRefs, sourceVersionVector, {
+      kind: "lesson_brief_run",
+      ref: input.lessonBrief.agentRunRef,
+      version: `${input.lessonBrief.generatedBySkillRef}:${input.lessonBrief.contentHash}`
+    });
+    if (input.lessonBrief.status === "adopted") {
+      milestones.push("lesson_brief_adopted");
+    }
+  }
 
   if (activeTask) {
     milestones.push("preparation_task_created");
@@ -189,16 +202,36 @@ export function projectLessonJourney(
     });
   }
 
-  if (!activeTask && !approvedPlan && !confirmedDelivery) {
+  if (input.lessonBrief?.status === "waiting_for_teacher") {
+    return parseProjection({
+      ...common,
+      currentStage: "understand",
+      status: "waiting_for_teacher",
+      nextBestAction: action(
+        "review_lesson_brief",
+        "判断本课教学洞察",
+        "系统已基于当前课时、目标和已授权 Evidence 生成候选，正在等待教师采用或调整。",
+        `${common.detailLinks.lesson}#lesson-brief`
+      ),
+      blockingReasons: []
+    });
+  }
+
+  if (
+    (!input.lessonBrief || input.lessonBrief.status === "deferred") &&
+    !activeTask &&
+    !approvedPlan &&
+    !confirmedDelivery
+  ) {
     return parseProjection({
       ...common,
       currentStage: "understand",
       status: "ready",
       nextBestAction: action(
-        "start_preparation",
-        "开始准备本课",
-        "课时上下文已经就绪，下一步由教师确认备课意图。",
-        common.detailLinks.lesson
+        "generate_lesson_brief",
+        "先看懂这节课",
+        "系统可以先基于现有目标、已授权 Evidence 和已确认偏好整理教学洞察候选。",
+        `${common.detailLinks.lesson}#lesson-brief`
       ),
       blockingReasons: []
     });

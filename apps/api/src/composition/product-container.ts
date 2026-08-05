@@ -73,6 +73,9 @@ import {
 import { PostgresPersonalizationService } from "./postgres-personalization-service.js";
 import { LessonJourneyReadAdapter } from "./lesson-journey-read-adapter.js";
 import { LessonJourneyReadService } from "../modules/work-assistant-durable-execution/application/lesson-journey-read-service.js";
+import { LessonBriefService } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
+import { LessonBriefSourceAdapter } from "./lesson-brief-source-adapter.js";
+import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -143,12 +146,22 @@ export function createProductContainer(
     objectStore,
     objectStoreSettings
   );
+  const lessonBrief = new LessonBriefService(
+    new LessonBriefSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization
+    ),
+    new PostgresLessonBriefStore(appPool),
+    skillRegistry
+  );
   const lessonJourney = new LessonJourneyReadService(
     new LessonJourneyReadAdapter(
       lessonPreparation,
       read,
       files,
-      classroomReflection
+      classroomReflection,
+      lessonBrief
     )
   );
   const teacherCopilot: TeacherCopilotApplicationFacade =
@@ -180,6 +193,7 @@ export function createProductContainer(
       teacherWorkbench,
       classroomReflection,
       lessonJourney,
+      lessonBrief,
       personalization,
       files
     },

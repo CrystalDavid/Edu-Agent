@@ -6,6 +6,7 @@ import type {
   CurriculumUnitView,
   FileAssetDetail,
   FileAssetSummary,
+  LessonBriefSnapshot,
   LessonJourneyProjection,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
@@ -27,14 +28,18 @@ import {
 
 import {
   createLessonPreparationTask,
+  decideLessonBrief,
   downloadFile,
   loadAssignments,
   loadCourseRuns,
   loadCurriculumUnits,
   loadLessonPreparationTasks,
+  loadLessonPreparationTask,
+  loadLessonBrief,
   loadLessonJourney,
   loadLessons,
   loadLessonTeachingPlans,
+  generateLessonBrief,
   loadFile,
   loadFiles,
   transitionLessonPreparationTask
@@ -49,6 +54,7 @@ import {
   LessonJourney,
   LessonNextBestActionCard
 } from "../components/teaching/LessonJourney";
+import { LessonBriefPanel } from "../components/teaching/LessonBriefPanel";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
@@ -159,6 +165,8 @@ function RealCourseWorkspace(props: {
     useState<LessonTeachingPlanState | null>(null);
   const [journey, setJourney] =
     useState<LessonJourneyProjection | null>(null);
+  const [lessonBrief, setLessonBrief] =
+    useState<LessonBriefSnapshot | null>(null);
   const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -272,6 +280,7 @@ function RealCourseWorkspace(props: {
     if (!selectedLessonRef) {
       setPlanState(null);
       setJourney(null);
+      setLessonBrief(null);
       return;
     }
     let active = true;
@@ -284,14 +293,16 @@ function RealCourseWorkspace(props: {
         targetRef: selectedLessonRef
       }),
       loadAssignments(selectedLessonRef),
-      loadLessonJourney(selectedLessonRef)
+      loadLessonJourney(selectedLessonRef),
+      loadLessonBrief(selectedLessonRef)
     ])
-      .then(([result, files, assignments, journeyResult]) => {
+      .then(([result, files, assignments, journeyResult, briefState]) => {
         if (active) {
           setPlanState(result);
           setLessonFiles(files.items);
           setLessonAssignments(assignments.items);
           setJourney(journeyResult);
+          setLessonBrief(briefState.current);
         }
       })
       .catch((caught) => {
@@ -393,6 +404,14 @@ function RealCourseWorkspace(props: {
   async function runJourneyAction() {
     if (!journey || !selectedLesson) return;
     switch (journey.nextBestAction.kind) {
+      case "generate_lesson_brief":
+        await generateBrief(null);
+        return;
+      case "review_lesson_brief":
+        document
+          .getElementById("lesson-brief")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
       case "start_preparation":
       case "continue_preparation":
         await startOrContinue();
@@ -425,6 +444,102 @@ function RealCourseWorkspace(props: {
           .getElementById("lesson-readiness-title")
           ?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
+    }
+  }
+
+  async function refreshBriefAndJourney() {
+    if (!selectedLesson) return;
+    const [briefState, journeyState] = await Promise.all([
+      loadLessonBrief(selectedLesson.lessonRef),
+      loadLessonJourney(selectedLesson.lessonRef)
+    ]);
+    setLessonBrief(briefState.current);
+    setJourney(journeyState);
+  }
+
+  async function generateBrief(teacherAdjustment: string | null) {
+    if (!selectedLesson) return;
+    setActing(true);
+    setError(null);
+    try {
+      const result = await generateLessonBrief(selectedLesson.lessonRef, {
+        purpose: "lesson-brief.generate",
+        idempotencyKey: `ui:lesson-brief:generate:${crypto.randomUUID()}`,
+        teacherAdjustment
+      });
+      setLessonBrief(result.brief);
+      setJourney(await loadLessonJourney(selectedLesson.lessonRef));
+      props.onAction(teacherAdjustment ? "已按你的说明重新生成教学洞察" : "教学洞察候选已生成");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function adoptBrief(candidateIds: string[]) {
+    if (!selectedLesson || !lessonBrief) return;
+    setActing(true);
+    setError(null);
+    try {
+      const task = activeTask
+        ? await loadLessonPreparationTask(activeTask.taskRef)
+        : (await createLessonPreparationTask({
+            lessonRef: selectedLesson.lessonRef,
+            dueAt: selectedLesson.plannedAt,
+            priority: "normal",
+            purpose: "lesson-preparation.create",
+            idempotencyKey: `ui:lesson-preparation:create:${crypto.randomUUID()}`
+          })).task;
+      const result = await decideLessonBrief(
+        selectedLesson.lessonRef,
+        lessonBrief.agentRunRef,
+        {
+          purpose: "lesson-brief.decide",
+          idempotencyKey: `ui:lesson-brief:adopt:${crypto.randomUUID()}`,
+          expectedContentHash: lessonBrief.contentHash,
+          action: "adopt",
+          selectedCandidateIds: candidateIds,
+          preparationTaskRef: task.taskRef,
+          expectedWorkingSetVersion: task.workingSet.version
+        }
+      );
+      setLessonBrief(result.brief);
+      await loadRoot();
+      await refreshBriefAndJourney();
+      props.onAction("已采用教学洞察，并加入本课备课上下文");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function deferBrief() {
+    if (!selectedLesson || !lessonBrief) return;
+    setActing(true);
+    setError(null);
+    try {
+      const result = await decideLessonBrief(
+        selectedLesson.lessonRef,
+        lessonBrief.agentRunRef,
+        {
+          purpose: "lesson-brief.decide",
+          idempotencyKey: `ui:lesson-brief:defer:${crypto.randomUUID()}`,
+          expectedContentHash: lessonBrief.contentHash,
+          action: "defer",
+          selectedCandidateIds: [],
+          preparationTaskRef: null,
+          expectedWorkingSetVersion: null
+        }
+      );
+      setLessonBrief(result.brief);
+      setJourney(await loadLessonJourney(selectedLesson.lessonRef));
+      props.onAction("已保留候选，暂不采用");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
     }
   }
 
@@ -652,6 +767,16 @@ function RealCourseWorkspace(props: {
                         loading={acting}
                         onAction={() => void runJourneyAction()}
                       />
+                      {journey.currentStage === "understand" ? (
+                        <LessonBriefPanel
+                          brief={lessonBrief}
+                          loading={acting}
+                          onGenerate={() => void generateBrief(null)}
+                          onAdjust={(adjustment) => void generateBrief(adjustment)}
+                          onAdopt={(candidateIds) => void adoptBrief(candidateIds)}
+                          onDefer={() => void deferBrief()}
+                        />
+                      ) : null}
                       <LessonJourney journey={journey} />
                     </>
                   ) : (

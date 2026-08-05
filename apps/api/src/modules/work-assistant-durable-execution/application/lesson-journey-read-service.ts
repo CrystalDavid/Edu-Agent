@@ -1,6 +1,7 @@
 import type {
   FileAssetSummary,
   LessonImplementationSummary,
+  LessonBriefSnapshot,
   LessonJourneyProjection,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
@@ -30,6 +31,7 @@ export interface LessonJourneySourceSnapshot {
   readonly implementation: LessonImplementationSummary;
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;
+  readonly lessonBrief: LessonBriefSnapshot | null;
 }
 
 export interface LessonJourneySourceReader {

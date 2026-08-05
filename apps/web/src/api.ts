@@ -82,6 +82,11 @@ import {
   LessonDeliveryMutationResultSchema,
   LessonImplementationSummarySchema,
   LessonJourneyProjectionSchema,
+  LessonBriefStateSchema,
+  GenerateLessonBriefRequestSchema,
+  GenerateLessonBriefResultSchema,
+  DecideLessonBriefRequestSchema,
+  DecideLessonBriefResultSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
   LessonPreparationTaskDetailSchema,
@@ -196,6 +201,8 @@ import {
   type SaveGradeDraftRequest,
   type ScheduleTodoRequest,
   type LessonPreparationSummary,
+  type GenerateLessonBriefRequest,
+  type DecideLessonBriefRequest,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
   type LessonTeachingPlanState,
@@ -748,6 +755,41 @@ export function loadLessonJourney(lessonRef: string) {
     "课时教学旅程",
     apiRoutes.teacher.lessonJourney(lessonRef),
     LessonJourneyProjectionSchema
+  );
+}
+
+export function loadLessonBrief(lessonRef: string) {
+  return request(
+    "课时教学洞察",
+    apiRoutes.teacher.lessonBrief(lessonRef),
+    LessonBriefStateSchema
+  );
+}
+
+export function generateLessonBrief(
+  lessonRef: string,
+  input: GenerateLessonBriefRequest
+) {
+  GenerateLessonBriefRequestSchema.parse(input);
+  return request(
+    "生成课时教学洞察",
+    apiRoutes.teacher.generateLessonBrief(lessonRef),
+    GenerateLessonBriefResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function decideLessonBrief(
+  lessonRef: string,
+  agentRunRef: string,
+  input: DecideLessonBriefRequest
+) {
+  DecideLessonBriefRequestSchema.parse(input);
+  return request(
+    "处理课时教学洞察",
+    apiRoutes.teacher.decideLessonBrief(lessonRef, agentRunRef),
+    DecideLessonBriefResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
   );
 }
 
