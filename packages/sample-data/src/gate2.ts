@@ -158,7 +158,7 @@ export const gate2SyntheticFixture = {
     tenantRef: gate2DemoRefs.tenantRef,
     schoolName: "明远实验中学（合成）",
     teacherRef: gate2DemoRefs.teacherRef,
-    teacherName: "林老师（合成）"
+    teacherName: "林老师"
   },
   courseRun: {
     courseRunRef: gate2DemoRefs.courseRunRef,

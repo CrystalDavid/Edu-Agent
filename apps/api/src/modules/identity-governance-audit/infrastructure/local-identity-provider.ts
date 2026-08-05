@@ -78,7 +78,7 @@ const profiles: Record<LocalIdentityProfile, ExternalIdentity> = {
   teacher: {
     provider: "local-development",
     subject: "teacher-a",
-    displayName: "林老师（合成）",
+    displayName: "林老师",
     email: "lin.teacher@example.test"
   },
   admin: {

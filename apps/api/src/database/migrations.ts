@@ -75,6 +75,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0009_gate2_9_reflection_workflow.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0010_calendar_event_categories.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"

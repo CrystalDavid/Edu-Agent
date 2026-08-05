@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import type {
   AuthorizationDecision,
+  CalendarEventType,
   FormalWriteReceipt
 } from "@edu-agent/contracts";
 import {
@@ -29,6 +30,9 @@ import {
 import {
   PostgresGate25WorkRepository
 } from "../../apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-gate2-5-work-repository.js";
+import {
+  PostgresGate28WorkRepository
+} from "../../apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-gate2-8-work-repository.js";
 import {
   PostgresGate2WorkRepository
 } from "../../apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
@@ -60,6 +64,28 @@ function maskSubjectHint(value: string): string {
   return value.length <= 5
     ? "***"
     : `${value.slice(0, 2)}***${value.slice(-2)}`;
+}
+
+function shanghaiDateText(value = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function addCalendarDays(dateText: string, days: number): string {
+  const date = new Date(`${dateText}T12:00:00+08:00`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return shanghaiDateText(date);
+}
+
+function localIso(dateText: string, time: string): string {
+  return new Date(`${dateText}T${time}:00+08:00`).toISOString();
 }
 
 const schoolBRefs = {
@@ -96,7 +122,9 @@ export class Gate2DemoSeedService {
     private readonly gate27Education =
       new PostgresGate27EducationRepository(),
     private readonly gate25Work =
-      new PostgresGate25WorkRepository()
+      new PostgresGate25WorkRepository(),
+    private readonly gate28Work =
+      new PostgresGate28WorkRepository()
   ) {}
 
   async seed(
@@ -121,11 +149,12 @@ export class Gate2DemoSeedService {
     const gate27 = options.includeGate27
       ? await this.seedGate27()
       : { replayed: true };
+    const gate28 = await this.seedGate28TeacherCalendar();
     return {
       ...gate24,
       replayed:
         gate24.replayed && schoolB.replayed && gate25.replayed &&
-        gate29Support.replayed && gate27.replayed
+        gate29Support.replayed && gate27.replayed && gate28.replayed
     };
   }
 
@@ -155,7 +184,7 @@ export class Gate2DemoSeedService {
       const users = [
         {
           userRef: gate2DemoRefs.teacherRef,
-          displayName: "林老师（合成）",
+          displayName: "林老师",
           email: "lin.teacher@example.test",
           subject: "teacher-a"
         },
@@ -1259,6 +1288,285 @@ export class Gate2DemoSeedService {
           }
         ))
       );
+
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: createdAt
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async seedGate28TeacherCalendar(): Promise<{ replayed: boolean }> {
+    const requestedReferenceDate =
+      process.env.EDU_AGENT_SAMPLE_REFERENCE_DATE ?? shanghaiDateText();
+    const referenceDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedReferenceDate)
+      ? requestedReferenceDate
+      : shanghaiDateText();
+    const monthKey = referenceDate.slice(0, 7);
+    const rootIdempotencyKey = `gate2-8:teacher-calendar:${monthKey}:v1`;
+    const rootKey = [
+      gate2DemoRefs.tenantRef,
+      gate2DemoRefs.teacherRef,
+      "gate2-8.teacher-calendar.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const decisionRef =
+      `authorization-decision:gate2-8-calendar-seed:${monthKey}`;
+    const createdAt = localIso(referenceDate, "06:30");
+    const writeContext: WriteContext = {
+      actorRef: gate2DemoRefs.teacherRef,
+      purpose: "gate2-8.teacher-calendar.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const result = { replayed: false };
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:gate2-8-calendar-seed:${monthKey}`,
+        rootKey,
+        requestFingerprint: hash({
+          fixture: "lin-teacher-calendar@1",
+          monthKey
+        }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "gate2-8-calendar-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: gate2DemoRefs.teacherRef,
+        tenantRef: gate2DemoRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "gate2-8.teacher-calendar.seed",
+        resourceRef: gate2DemoRefs.courseRunRef,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["explicit-local-sample-seed"],
+        policyVersion: "policy:gate2-8-local-sample-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "gate2-8-calendar-authorization"
+          )
+        })
+      ];
+      const workMetadata = (suffix: string) =>
+        createWriteMetadata(writeContext, "work", suffix);
+      const events: Array<{
+        key: string;
+        date: string;
+        title: string;
+        description: string;
+        start: string;
+        end: string;
+        type: CalendarEventType;
+        allDay?: boolean;
+      }> = [];
+
+      let cursor = `${monthKey}-01`;
+      while (cursor.startsWith(monthKey)) {
+        const weekday = new Date(`${cursor}T12:00:00+08:00`).getUTCDay();
+        if (weekday >= 1 && weekday <= 5) {
+          events.push({
+            key: "class-primary",
+            date: cursor,
+            title: weekday % 2 === 0
+              ? "八年级3班数学·待定系数法"
+              : "八年级3班数学·一次函数",
+            description: "按当前课时与已批准教学计划开展课堂教学。",
+            start: "08:30",
+            end: "09:15",
+            type: "class"
+          });
+          if ([1, 3, 4].includes(weekday)) {
+            events.push({
+              key: "class-secondary",
+              date: cursor,
+              title: "八年级2班数学课",
+              description: "完成课堂教学并记录需要跟进的问题。",
+              start: "10:20",
+              end: "11:05",
+              type: "class"
+            });
+          }
+          if (weekday === 3 || weekday === 5) {
+            events.push({
+              key: "duty",
+              date: cursor,
+              title: weekday === 3 ? "午间巡班" : "早读值班",
+              description: "年级日常巡班与秩序检查。",
+              start: weekday === 3 ? "12:20" : "07:30",
+              end: weekday === 3 ? "12:50" : "08:00",
+              type: "duty"
+            });
+          }
+          if ([2, 3, 4].includes(weekday)) {
+            events.push({
+              key: "preparation",
+              date: cursor,
+              title: "下一课集体备课",
+              description: "整理课堂证据并完善下一课教学活动。",
+              start: "14:00",
+              end: "15:10",
+              type: "lesson_preparation"
+            });
+          }
+          if (weekday === 2) {
+            events.push({
+              key: "meeting",
+              date: cursor,
+              title: "八年级数学备课组会议",
+              description: "同步本周教学进度与共性问题。",
+              start: "15:30",
+              end: "16:20",
+              type: "meeting"
+            });
+          }
+          if ([1, 3, 4].includes(weekday)) {
+            events.push({
+              key: "grading",
+              date: cursor,
+              title: "作业批改与反馈确认",
+              description: "处理待批改提交并确认教师反馈。",
+              start: "16:20",
+              end: "17:30",
+              type: "grading"
+            });
+          }
+          if (weekday === 5) {
+            events.push({
+              key: "school-affair",
+              date: cursor,
+              title: "年级教学周总结",
+              description: "整理本周教学进度和下周重点。",
+              start: "15:30",
+              end: "16:20",
+              type: "school_affair"
+            });
+          }
+          if (weekday === 1) {
+            events.push({
+              key: "personal",
+              date: cursor,
+              title: "整理个人教学资料",
+              description: "归档本周教案和课堂记录。",
+              start: "18:00",
+              end: "18:30",
+              type: "custom_reminder"
+            });
+          }
+        }
+        cursor = addCalendarDays(cursor, 1);
+      }
+      events.push({
+        key: "monthly-school-day",
+        date: `${monthKey}-15`,
+        title: "校园教学开放日",
+        description: "学校教学活动安排。",
+        start: "00:00",
+        end: "00:00",
+        type: "school_affair",
+        allDay: true
+      });
+
+      for (const event of events) {
+        const safeDate = event.date.replaceAll("-", "");
+        const eventRef = `calendar-event:lin:${safeDate}:${event.key}`;
+        const endDate = event.allDay
+          ? addCalendarDays(event.date, 1)
+          : event.date;
+        receipts.push(...await this.gate28Work.insertCalendarEvent(client, {
+          eventRef,
+          tenantRef: gate2DemoRefs.tenantRef,
+          teacherRef: gate2DemoRefs.teacherRef,
+          title: event.title,
+          description: event.description,
+          startAt: localIso(event.date, event.start),
+          endAt: localIso(endDate, event.end),
+          timezone: "Asia/Shanghai",
+          allDay: event.allDay ?? false,
+          eventType: event.type,
+          relatedTodoRef: null,
+          createdBy: gate2DemoRefs.teacherRef,
+          metadata: workMetadata(`calendar-${safeDate}-${event.key}`),
+          historyMetadata: workMetadata(`calendar-history-${safeDate}-${event.key}`),
+          outboxMetadata: workMetadata(`calendar-outbox-${safeDate}-${event.key}`),
+          historyRef: `calendar-history:lin:${safeDate}:${event.key}`,
+          outboxRef: `outbox:calendar:lin:${safeDate}:${event.key}`
+        }));
+      }
+
+      const todoSeeds = [
+        { key: "lesson-examples", title: "完善一次函数例题讲解", priority: "high" as const, dueOffset: 0, completed: false },
+        { key: "research-materials", title: "准备周五教研材料", priority: "normal" as const, dueOffset: 2, completed: false },
+        { key: "assignment-feedback", title: "确认八年级3班作业反馈", priority: "high" as const, dueOffset: 1, completed: false },
+        { key: "projector", title: "检查教室投影设备", priority: "low" as const, dueOffset: 0, completed: false },
+        { key: "attendance", title: "登记本周课堂观察", priority: "normal" as const, dueOffset: -1, completed: true },
+        { key: "plan-review", title: "审核下一课教学计划", priority: "high" as const, dueOffset: -2, completed: true },
+        { key: "file-archive", title: "归档已批准教案", priority: "low" as const, dueOffset: -3, completed: true }
+      ];
+      for (const todo of todoSeeds) {
+        const todoRef = `teacher-todo:lin:${monthKey}:${todo.key}`;
+        receipts.push(...await this.gate28Work.insertTodo(client, {
+          todoRef,
+          tenantRef: gate2DemoRefs.tenantRef,
+          teacherRef: gate2DemoRefs.teacherRef,
+          title: todo.title,
+          description: "林老师个人教学待办",
+          priority: todo.priority,
+          dueAt: localIso(addCalendarDays(referenceDate, todo.dueOffset), "17:30"),
+          createdBy: gate2DemoRefs.teacherRef,
+          metadata: workMetadata(`todo-${todo.key}`),
+          historyMetadata: workMetadata(`todo-history-${todo.key}`),
+          outboxMetadata: workMetadata(`todo-outbox-${todo.key}`),
+          historyRef: `todo-history:lin:${monthKey}:${todo.key}:created`,
+          outboxRef: `outbox:todo:lin:${monthKey}:${todo.key}:created`
+        }));
+        if (todo.completed) {
+          const transition = await this.gate28Work.transitionTodo(client, {
+            tenantRef: gate2DemoRefs.tenantRef,
+            teacherRef: gate2DemoRefs.teacherRef,
+            todoRef,
+            expectedVersion: 1,
+            fromStatuses: ["active"],
+            toStatus: "completed",
+            occurredAt: localIso(referenceDate, "06:31"),
+            reason: "教师已完成待办",
+            metadata: workMetadata(`todo-complete-${todo.key}`),
+            historyMetadata: workMetadata(`todo-complete-history-${todo.key}`),
+            outboxMetadata: workMetadata(`todo-complete-outbox-${todo.key}`),
+            historyRef: `todo-history:lin:${monthKey}:${todo.key}:completed`,
+            outboxRef: `outbox:todo:lin:${monthKey}:${todo.key}:completed`
+          });
+          if (transition) receipts.push(...transition);
+        }
+      }
 
       await this.governance.completeIdempotency(client, {
         rootKey,
