@@ -217,6 +217,12 @@ test("teaching workspace supports course files, homework and assessment analysis
   await expect(page.getByTestId("lesson-detail")).toContainText(
     "斜率与图像变化"
   );
+  await expect(page.getByTestId("lesson-context-header")).toContainText(
+    "斜率与图像变化"
+  );
+  await expect(page.getByTestId("lesson-next-best-action")).toBeVisible();
+  await expect(page.getByTestId("lesson-journey")).toContainText("看懂本课");
+  await expect(page.getByTestId("lesson-journey")).toContainText("推动下一课");
   await page.screenshot({
     path: `${screenshotRoot}/06-teaching-course-tree.png`,
     animations: "disabled"
