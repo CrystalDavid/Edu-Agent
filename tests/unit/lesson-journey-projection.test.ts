@@ -76,13 +76,30 @@ describe("LessonJourneyProjection", () => {
     expect(projection).toMatchObject({
       currentStage: "plan",
       status: "ready",
-      nextBestAction: { kind: "continue_preparation" }
+      nextBestAction: { kind: "generate_teaching_plan" }
     });
     expect(projection.completedMilestones).toContain("lesson_brief_adopted");
     expect(projection.sourceRefs).toContainEqual(expect.objectContaining({
       kind: "lesson_brief_run",
       ref: "agent-run:brief-1"
     }));
+  });
+
+  it("offers a new Proposal when an adopted Brief starts a revision of an approved plan", () => {
+    const projection = projectLessonJourney(input({
+      lessonBrief: brief("adopted"),
+      tasks: [task("in_progress")],
+      teachingPlans: plans({ approved: true })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "plan",
+      status: "in_progress",
+      nextBestAction: { kind: "generate_teaching_plan" }
+    });
+    expect(projection.completedMilestones).toContain("teaching_plan_approved");
+    expect(projection.completedMilestones).toContain("lesson_brief_adopted");
+    expect(projection.completedMilestones).not.toContain("delivery_confirmed");
   });
 
   it("waits for teacher review when a Proposal is ready", () => {

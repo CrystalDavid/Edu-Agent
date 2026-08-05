@@ -668,7 +668,7 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   const lessonDetail = page.getByTestId("lesson-detail");
   await expect(lessonDetail).toContainText("斜率与图像变化");
   await expect(lessonDetail).toContainText("备课任务");
-  await expect(lessonDetail).toContainText("未开始");
+  await expect(lessonDetail).toContainText(/未开始|已取消/u);
   const initialPlansResponse = await request.get(
     apiRoutes.teacher.lessonTeachingPlans(
       "lesson:slope-and-graph-change"

@@ -2505,6 +2505,7 @@ export class PostgresModelInvocationService
           sourceResourceRefs:
             preparationTask.workingSet.sourceResourceRefs ?? []
         },
+        confirmedPreferences,
         ...(lessonBriefRef && adoptedLessonBrief
           ? {
               confirmedLessonBrief: toConfirmedLessonBriefContext({

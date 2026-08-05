@@ -220,12 +220,13 @@ function RealCourseWorkspace(props: {
         ),
     [tasks, selectedLessonRef]
   );
+  const openTask = lessonTasks.find(
+    (task) =>
+      task.status !== "completed" &&
+      task.status !== "cancelled"
+  ) ?? null;
   const activeTask =
-    lessonTasks.find(
-      (task) =>
-        task.status !== "completed" &&
-        task.status !== "cancelled"
-    ) ??
+    openTask ??
     lessonTasks[0] ??
     null;
 
@@ -301,19 +302,19 @@ function RealCourseWorkspace(props: {
   }, [props.initialLessonRef, selectedUnitRef]);
 
   useEffect(() => {
+    setPreparationProposal(null);
+    setModelExecution(null);
+    setModelExecutionRef(null);
+  }, [selectedLessonRef]);
+
+  useEffect(() => {
     if (!selectedLessonRef) {
       setPlanState(null);
       setJourney(null);
       setLessonBrief(null);
-      setPreparationProposal(null);
-      setModelExecution(null);
-      setModelExecutionRef(null);
       return;
     }
     let active = true;
-    setPreparationProposal(null);
-    setModelExecution(null);
-    setModelExecutionRef(null);
     void Promise.all([
       loadLessonTeachingPlans(selectedLessonRef),
       loadFiles({
@@ -430,7 +431,7 @@ function RealCourseWorkspace(props: {
     setActing(true);
     setError(null);
     try {
-      let task = activeTask;
+      let task = openTask;
       if (!task) {
         const created = await createLessonPreparationTask({
           lessonRef: selectedLesson.lessonRef,
@@ -547,8 +548,8 @@ function RealCourseWorkspace(props: {
 
   async function ensurePreparationTaskForGeneration() {
     if (!selectedLesson) throw new Error("请先选择课时。");
-    let task = activeTask
-      ? await loadLessonPreparationTask(activeTask.taskRef)
+    let task = openTask
+      ? await loadLessonPreparationTask(openTask.taskRef)
       : (await createLessonPreparationTask({
           lessonRef: selectedLesson.lessonRef,
           dueAt: selectedLesson.plannedAt,
@@ -656,6 +657,8 @@ function RealCourseWorkspace(props: {
           preparationProposal.proposalRevisionNumber
       });
       setPreparationProposal(null);
+      setModelExecution(null);
+      setModelExecutionRef(null);
       await loadRoot();
       await refreshLessonPlanState();
       props.onAction("已拒绝本次方案，未创建教学计划 Revision");
@@ -684,8 +687,8 @@ function RealCourseWorkspace(props: {
         expectedProposalRevisionNumber:
           preparationProposal.proposalRevisionNumber
       });
-      const task = activeTask
-        ? await loadLessonPreparationTask(activeTask.taskRef)
+      const task = openTask
+        ? await loadLessonPreparationTask(openTask.taskRef)
         : await ensurePreparationTaskForGeneration();
       await queueTeachingPlan(adjustment, task);
       props.onAction("已保留上一版方案，并按你的说明重新生成");
@@ -698,11 +701,11 @@ function RealCourseWorkspace(props: {
 
   async function approveInReviewPlan() {
     const inReview = planState?.activeInReview;
-    if (!inReview || !activeTask) return;
+    if (!inReview || !openTask) return;
     setActing(true);
     setError(null);
     try {
-      const task = await loadLessonPreparationTask(activeTask.taskRef);
+      const task = await loadLessonPreparationTask(openTask.taskRef);
       await approveTeachingPlan(inReview.revisionRef, {
         purpose: "teacher-copilot.approve-plan",
         idempotencyKey: `ui:lesson-journey:approve:${crypto.randomUUID()}`,
@@ -747,8 +750,8 @@ function RealCourseWorkspace(props: {
     setActing(true);
     setError(null);
     try {
-      const task = activeTask
-        ? await loadLessonPreparationTask(activeTask.taskRef)
+      const task = openTask
+        ? await loadLessonPreparationTask(openTask.taskRef)
         : (await createLessonPreparationTask({
             lessonRef: selectedLesson.lessonRef,
             dueAt: selectedLesson.plannedAt,
@@ -1213,7 +1216,7 @@ function RealCourseWorkspace(props: {
                       <Button
                         loading={acting}
                         onClick={createNewPreparation}
-                        data-testid="create-new-lesson-preparation"
+                        data-testid="start-lesson-preparation"
                       >
                         新建一轮备课
                       </Button>

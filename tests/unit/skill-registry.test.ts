@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createBuiltInSkillRegistry,
-  lessonPreparationSkillV1
+  lessonPreparationSkillV1,
+  lessonPreparationSkillV4
 } from "../../apps/api/src/agent/skills/index.js";
 import {
   cloneSkillManifest,
@@ -33,27 +34,46 @@ describe("Phase 5 versioned Skill Registry", () => {
 
   it("keeps a new version alongside published versions instead of overwriting them", () => {
     const registry = createBuiltInSkillRegistry();
-    const version4 = Object.freeze({
+    const version5 = Object.freeze({
       ...lessonPreparationSkillV1,
       manifest: cloneSkillManifest({
         manifest: lessonPreparationSkillV1.manifest,
-        version: "4",
+        version: "5",
         status: "published"
       })
     });
 
-    registry.register(version4);
+    registry.register(version5);
 
     expect(registry.loadPublished("lesson-preparation@1"))
       .toBe(lessonPreparationSkillV1);
-    expect(registry.loadPublished("lesson-preparation@4")).toBe(version4);
+    expect(registry.loadPublished("lesson-preparation@4"))
+      .toBe(lessonPreparationSkillV4);
+    expect(registry.loadPublished("lesson-preparation@5")).toBe(version5);
     expect(registry.list().map((item) => item.skillRef)).toEqual([
       "lesson-analysis@1",
       "lesson-preparation@1",
       "lesson-preparation@2",
       "lesson-preparation@3",
-      "lesson-preparation@4"
+      "lesson-preparation@4",
+      "lesson-preparation@5"
     ]);
+  });
+
+  it("keeps the personalized v3 Skill available for historical Run recovery", () => {
+    const registry = createBuiltInSkillRegistry();
+
+    expect(registry.loadHistorical("lesson-preparation@3").manifest)
+      .toMatchObject({
+        ref: "lesson-preparation@3",
+        version: "3",
+        status: "published"
+      });
+    expect(registry.loadPublished("lesson-preparation@4").manifest)
+      .toMatchObject({
+        ref: "lesson-preparation@4",
+        inputSchemaRef: "lesson-preparation-input@3"
+      });
   });
 
   it("does not execute draft or deprecated versions but preserves historical lookup", () => {

@@ -67,11 +67,33 @@ describe("Phase 5 Skill boundaries", () => {
     expect(manifest).toContain('ref: "lesson-preparation@1"');
     expect(manifest).toContain('ref: "lesson-preparation@2"');
     expect(manifest).toContain('ref: "lesson-preparation@3"');
+    expect(manifest).toContain('ref: "lesson-preparation@4"');
     expect(manifest).toContain('mode: "authorized_context_only"');
     expect(manifest).toContain('status: "published"');
     expect(manifest).toContain('mode: "disabled"');
     expect(manifest).toContain("humanApprovalRequired: true");
     expect(manifest).toContain("qualityBlocksProposal: false");
+  });
+
+  it("binds adopted Lesson Brief context through Runtime ports and keeps v3 recoverable", () => {
+    const orchestration = source(
+      "apps/api/src/composition/postgres-model-invocation-service.ts"
+    );
+    const runtime = source(
+      "apps/api/src/modules/agent-runtime-context/domain/runtime-kernel.ts"
+    );
+    const providerPort = source(
+      "apps/api/src/modules/agent-runtime-context/application/confirmed-lesson-brief-provider.ts"
+    );
+
+    expect(orchestration).toContain("legacyLessonPreparationSkillRef");
+    expect(orchestration).toContain("loadAdopted");
+    expect(orchestration).toContain("lessonBriefManifest");
+    expect(orchestration).toContain("lessonBriefEvaluation");
+    expect(runtime).toContain('"lesson-preparation@3"');
+    expect(runtime).toContain('"lesson-preparation@4"');
+    expect(providerPort).toContain("interface ConfirmedLessonBriefContextProvider");
+    expect(providerPort).not.toMatch(/postgres|repository|pool|query/iu);
   });
 
   it("retains compatibility exports without duplicating Skill behavior", () => {

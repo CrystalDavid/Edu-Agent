@@ -300,8 +300,10 @@ export function projectLessonJourney(
     });
   }
 
-  if (!approvedPlan && !confirmedDelivery) {
-    const briefAdopted = input.lessonBrief?.status === "adopted";
+  const briefAdopted = input.lessonBrief?.status === "adopted";
+  const briefPlanRequested = briefAdopted &&
+    (activeTask?.status === "planned" || activeTask?.status === "in_progress");
+  if ((!approvedPlan || briefPlanRequested) && !confirmedDelivery) {
     return parseProjection({
       ...common,
       currentStage: "plan",
