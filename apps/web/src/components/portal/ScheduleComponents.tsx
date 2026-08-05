@@ -588,12 +588,11 @@ export function TodoPanel(props: {
         ))}
         {filter === "active" ? visibleProjections.map((projection) => (
           <article key={projection.projectionRef} className="todo-checklist-item source-work-item">
-            <button type="button" className="todo-source-circle" aria-label={`处理 ${cleanDisplayText(projection.title)}`} onClick={() => props.onOpenSource(projection.deepLink)}><WorkspaceIcon name="arrowRight" /></button>
-            <div className="todo-checklist-content">
+            <button type="button" className="todo-checklist-content todo-source-content" onClick={() => props.onOpenSource(projection.deepLink)}>
               <strong>{projection.pinned ? "📌 " : ""}{cleanDisplayText(projection.title)}</strong>
               <span>{cleanDisplayText(projection.summary)}</span>
               <small>系统提醒 · {workSourceLabel(projection.sourceModule)} · {workProjectionStatusLabel(projection.displayStatus)}{projection.dueAt ? ` · ${formatDateTime(projection.dueAt)}` : ""}</small>
-            </div>
+            </button>
             <div className="source-work-item__actions">
               <button type="button" title={projection.pinned ? "取消置顶" : "置顶"} onClick={() => void run(projection.projectionRef, () => props.onPinSource(projection))}><WorkspaceIcon name="star" /></button>
               <Button size="small" type="link" onClick={() => props.onOpenSource(projection.deepLink)}>{projection.recommendedAction}</Button>

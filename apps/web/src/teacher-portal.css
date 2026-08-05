@@ -1851,6 +1851,8 @@ textarea:focus-visible,
 .calendar-category--other { --event-color: #738198; --event-bg: #eef1f5; }
 
 .week-calendar {
+  display: block;
+  grid-template-columns: none;
   min-width: 980px;
   min-height: 0;
 }
@@ -2065,8 +2067,7 @@ textarea:focus-visible,
   border-top: 1px solid #f0f2f6;
 }
 
-.todo-check-circle,
-.todo-source-circle {
+.todo-check-circle {
   display: grid;
   width: 21px;
   height: 21px;
@@ -2085,22 +2086,41 @@ textarea:focus-visible,
   background: var(--color-brand);
 }
 
-.todo-check-circle .workspace-icon,
-.todo-source-circle .workspace-icon {
+.todo-check-circle .workspace-icon {
   width: 12px;
   height: 12px;
-}
-
-.todo-source-circle {
-  border-color: #9bb4ef;
-  color: var(--color-brand);
-  background: var(--color-brand-soft);
 }
 
 .todo-checklist-content {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+.todo-list article.source-work-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.todo-source-content {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.todo-source-content:hover strong,
+.todo-source-content:focus-visible strong {
+  color: var(--color-brand);
+}
+
+.todo-source-content:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid rgb(51 112 255 / 24%);
+  outline-offset: 4px;
 }
 
 .todo-list .todo-checklist-content strong {
@@ -2123,9 +2143,17 @@ textarea:focus-visible,
   text-decoration: line-through;
 }
 
-.todo-actions,
-.source-work-item__actions {
+.todo-actions {
   grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.source-work-item__actions {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -5229,7 +5257,7 @@ textarea:focus-visible,
 
 @media (max-width: 1366px) {
   :root {
-    --sidebar-width: 248px !important;
+    --sidebar-width: 220px !important;
   }
 
   .teacher-portal-main {

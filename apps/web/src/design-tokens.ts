@@ -15,7 +15,7 @@ export const designTokens = {
   radiusSmall: "14px",
   radiusMedium: "24px",
   radiusPill: "999px",
-  sidebarWidth: "272px",
+  sidebarWidth: "240px",
   contentMaxWidth: "1660px",
   fontUi:
     '"HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei UI", "PingFang SC", "Microsoft YaHei", sans-serif'

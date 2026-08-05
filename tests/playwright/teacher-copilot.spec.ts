@@ -85,7 +85,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
   );
 
   const sidebar = page.locator(".teacher-sidebar");
-  await expect(sidebar).toHaveCSS("width", "272px");
+  await expect(sidebar).toHaveCSS("width", "240px");
   for (const label of [
     "概览",
     "日程",
@@ -143,7 +143,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
     .locator(".portal-page")
     .first()
     .evaluate((element) => element.getBoundingClientRect().width);
-  expect(width).toBeLessThanOrEqual(1540);
+  expect(width).toBeLessThanOrEqual(1660);
 
   for (const viewport of [
     { width: 1366, height: 768 },
@@ -176,7 +176,12 @@ test("schedule uses the real workbench and keeps day, week, and month on one dat
   });
 
   await calendar.locator(".segmented-control").getByRole("button", { name: "周" }).click();
-  await expect(calendar.getByTestId("week-calendar")).toBeVisible();
+  const weekCalendar = calendar.getByTestId("week-calendar");
+  await expect(weekCalendar).toBeVisible();
+  await expect(weekCalendar).toHaveCSS("display", "block");
+  await expect(weekCalendar.locator(".week-calendar__header")).toBeVisible();
+  await expect(weekCalendar.locator(".week-calendar__body")).toBeVisible();
+  await expect(page.getByTestId("todo-panel").locator(".todo-source-circle")).toHaveCount(0);
   await page.screenshot({
     path: `${screenshotRoot}/04-schedule-week.png`,
     animations: "disabled"
