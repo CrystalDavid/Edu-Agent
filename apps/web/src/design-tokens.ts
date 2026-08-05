@@ -3,7 +3,7 @@ export const designTokens = {
   colorBrandHover: "#2859D9",
   colorBrandSoft: "#EEF4FF",
   colorSurface: "#FFFFFF",
-  colorPage: "#F5F7FA",
+  colorPage: "#F6F8FC",
   colorText: "#1F2329",
   colorTextSecondary: "#646A73",
   colorTextMuted: "#8F959E",
@@ -12,11 +12,11 @@ export const designTokens = {
   colorSuccess: "#2E9B63",
   colorWarning: "#F5A623",
   colorDanger: "#F54A45",
-  radiusSmall: "12px",
-  radiusMedium: "18px",
+  radiusSmall: "14px",
+  radiusMedium: "24px",
   radiusPill: "999px",
-  sidebarWidth: "260px",
-  contentMaxWidth: "1540px",
+  sidebarWidth: "272px",
+  contentMaxWidth: "1660px",
   fontUi:
     '"HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei UI", "PingFang SC", "Microsoft YaHei", sans-serif'
 } as const;
@@ -66,21 +66,21 @@ export const antdTheme = {
     colorBgLayout: designTokens.colorPage,
     colorBgContainer: designTokens.colorSurface,
     colorBorder: designTokens.colorBorder,
-    borderRadius: 12,
-    borderRadiusLG: 18,
-    fontSize: 14,
+    borderRadius: 14,
+    borderRadiusLG: 22,
+    fontSize: 15,
     fontFamily: designTokens.fontUi
   },
   components: {
     Button: {
-      controlHeight: 36,
-      controlHeightLG: 42,
-      borderRadius: 18,
-      borderRadiusLG: 22,
+      controlHeight: 40,
+      controlHeightLG: 46,
+      borderRadius: 20,
+      borderRadiusLG: 24,
       primaryShadow: "none"
     },
     Card: {
-      borderRadiusLG: 18
+      borderRadiusLG: 24
     },
     Input: {
       activeShadow: "0 0 0 3px rgb(51 112 255 / 12%)"

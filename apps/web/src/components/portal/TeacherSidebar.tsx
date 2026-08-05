@@ -105,7 +105,6 @@ export function TeacherSidebar(props: {
             <strong>{teacherName}</strong>
             <small>{schoolName}</small>
           </span>
-          <WorkspaceIcon name="more" />
         </button>
         {profileOpen ? (
           <TeacherProfileMenu

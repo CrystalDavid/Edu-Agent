@@ -46,7 +46,11 @@ export function calendarEventTypeLabel(eventType: string): string {
     meeting: "会议",
     grading: "批改",
     lesson_preparation: "备课",
-    custom_reminder: "提醒"
+    duty: "巡班 / 值班",
+    school_affair: "学校事务",
+    custom_reminder: "个人提醒",
+    todo_time_block: "待办时间块",
+    assignment_deadline: "作业截止"
   }[eventType] ?? "日程";
 }
 
