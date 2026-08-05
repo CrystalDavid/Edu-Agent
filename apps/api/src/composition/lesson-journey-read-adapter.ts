@@ -1,0 +1,104 @@
+import type {
+  LessonJourneyReadContext,
+  LessonJourneySourceReader,
+  LessonJourneySourceSnapshot
+} from "../modules/work-assistant-durable-execution/application/lesson-journey-read-service.js";
+import { NotFoundError } from "../platform/errors.js";
+import type { PostgresClassroomReflectionService } from "./postgres-classroom-reflection-service.js";
+import type { PostgresFileArtifactService } from "./postgres-file-artifact-service.js";
+import type { PostgresGate2ReadService } from "./postgres-gate2-read-service.js";
+import type { PostgresLessonPreparationService } from "./postgres-lesson-preparation-service.js";
+
+export class LessonJourneyReadAdapter
+  implements LessonJourneySourceReader
+{
+  constructor(
+    private readonly preparation: PostgresLessonPreparationService,
+    private readonly read: PostgresGate2ReadService,
+    private readonly files: PostgresFileArtifactService,
+    private readonly classroom: PostgresClassroomReflectionService
+  ) {}
+
+  async loadAuthorizedSnapshot(
+    context: LessonJourneyReadContext
+  ): Promise<LessonJourneySourceSnapshot> {
+    const lesson = await this.preparation.getLesson(context);
+    const [taskList, teachingPlans, fileList, implementation, proposals] =
+      await Promise.all([
+        this.preparation.listTasks({
+          tenantRef: context.tenantRef,
+          actorRef: context.actorRef,
+          allowedCourseRunRefs: context.allowedCourseRunRefs
+        }),
+        this.preparation.getLessonTeachingPlans(context),
+        this.files.list({
+          tenantRef: context.tenantRef,
+          actorRef: context.actorRef,
+          query: {
+            status: "active",
+            sort: "newest",
+            targetType: "lesson",
+            targetRef: context.lessonRef
+          }
+        }),
+        this.classroom.getLessonSummary(context),
+        this.read.listPendingProposals({
+          tenantRef: context.tenantRef,
+          actorRef: context.actorRef
+        })
+      ]);
+    const tasks = taskList.items.filter(
+      (task) => task.lessonRef === context.lessonRef
+    );
+    const activeTask = [...tasks]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .find(
+        (task) => task.status !== "completed" && task.status !== "cancelled"
+      ) ?? tasks[0] ?? null;
+
+    return {
+      lesson,
+      tasks,
+      teachingPlans,
+      files: fileList.items,
+      implementation,
+      pendingProposals: proposals.items.filter(
+        (proposal) =>
+          proposal.lessonRef === context.lessonRef ||
+          proposal.preparationTaskRef === activeTask?.taskRef
+      ),
+      agentExecution: activeTask
+        ? await this.loadAgentExecution(context, activeTask.taskRef)
+        : null
+    };
+  }
+
+  private async loadAgentExecution(
+    context: LessonJourneyReadContext,
+    taskRef: string
+  ): Promise<LessonJourneySourceSnapshot["agentExecution"]> {
+    const task = await this.preparation.getTask({
+      tenantRef: context.tenantRef,
+      actorRef: context.actorRef,
+      taskRef
+    });
+    if (!task.latestTaskRunRef) return null;
+    try {
+      const explanation = await this.read.getRunExplanation({
+        tenantRef: context.tenantRef,
+        actorRef: context.actorRef,
+        taskRef
+      });
+      return {
+        agentRunRef: explanation.agentRun.agentRunRef,
+        agentStatus: explanation.agentRun.status,
+        modelExecutionRef: explanation.modelExecution.executionRef,
+        modelStatus: explanation.modelExecution.status
+      };
+    } catch (error) {
+      if (error instanceof NotFoundError) return null;
+      throw error;
+    }
+  }
+}
+
