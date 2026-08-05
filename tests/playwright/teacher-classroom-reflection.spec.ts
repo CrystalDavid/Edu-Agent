@@ -184,7 +184,6 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
     )
   ).toBe(true);
   await page.goto("/schedule");
-  await page.getByRole("button", { name: /业务提醒/ }).click();
   await expect(page.getByTestId("todo-panel")).toContainText("待定系数法", {
     timeout: 20_000
   });

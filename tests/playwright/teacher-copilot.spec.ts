@@ -85,7 +85,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
   );
 
   const sidebar = page.locator(".teacher-sidebar");
-  await expect(sidebar).toHaveCSS("width", "260px");
+  await expect(sidebar).toHaveCSS("width", "272px");
   for (const label of [
     "概览",
     "日程",
@@ -189,7 +189,7 @@ test("schedule uses the real workbench and keeps day, week, and month on one dat
     animations: "disabled"
   });
 
-  await expect(page.getByTestId("todo-panel")).toContainText("业务提醒");
+  await expect(page.getByTestId("todo-panel")).toContainText("系统提醒");
   await expect(page.getByTestId("todo-panel")).not.toContainText("已将待办加入日程草稿");
   await assertNoInternalTerms(page);
   await assertCleanMonitor(monitor);

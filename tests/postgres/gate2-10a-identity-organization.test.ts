@@ -96,7 +96,7 @@ describe("Gate 2.10A formal identity and organization boundary", () => {
       .expect(({ body }) => {
         expect(body).toMatchObject({
           authenticated: true,
-          user: { displayName: "林老师（合成）" },
+          user: { displayName: "林老师" },
           currentWorkspace: { organizationRef: "tenant:demo-school" }
         });
       });
@@ -139,7 +139,7 @@ describe("Gate 2.10A formal identity and organization boundary", () => {
       })
       .expect(201)
       .expect(({ body }) => {
-        expect(body.user.displayName).toBe("林老师（合成）");
+        expect(body.user.displayName).toBe("林老师");
       });
 
     await request(app)

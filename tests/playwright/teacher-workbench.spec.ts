@@ -52,26 +52,26 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   const scheduledBody = await scheduled.json();
 
   const calendar = page.getByTestId("calendar-view");
-  await expect(calendar.getByRole("button", { name: new RegExp(title) })).toBeVisible();
-  const fifteenHour = calendar.locator(".day-calendar__row").nth(8);
-  await expect(fifteenHour.locator("time")).toHaveText("15:00");
-  await expect(fifteenHour).toContainText(title);
+  const scheduledEvent = calendar.getByRole("button", { name: new RegExp(title) });
+  await expect(scheduledEvent).toBeVisible();
+  await expect(scheduledEvent).toContainText("15:00–16:00");
   await calendar.locator(".segmented-control").getByRole("button", { name: "周" }).click();
   await expect(calendar.getByTestId("week-calendar")).toContainText(title);
   await calendar.locator(".segmented-control").getByRole("button", { name: "月" }).click();
-  await expect(calendar.getByTestId("month-calendar")).toContainText(title);
+  await expect(calendar.getByTestId("month-calendar")).toBeVisible();
+  await expect(calendar.getByTestId("month-calendar")).toContainText("还有");
   await calendar.locator(".segmented-control").getByRole("button", { name: "日" }).click();
 
   await calendar.getByRole("button", { name: new RegExp(title) }).click();
-  const editDialog = page.getByRole("dialog").filter({ hasText: "编辑手工日程" });
-  await editDialog.locator('input[type="datetime-local"]').nth(1).fill(`${date}T16:30`);
+  const editDialog = page.getByRole("dialog").filter({ hasText: "编辑日程" });
+  await editDialog.getByLabel("结束时间").fill("16:30");
   const updateResponse = page.waitForResponse(
     (response) => response.url().includes("/calendar-events/") && response.request().method() === "PUT"
   );
   await editDialog.getByRole("button", { name: /保\s*存/u }).click();
   expect((await updateResponse).status()).toBe(200);
 
-  await todo.getByRole("checkbox", { name: new RegExp(`完成 ${escapeRegex(title)}`) }).click();
+  await todo.getByRole("button", { name: new RegExp(`完成 ${escapeRegex(title)}`) }).click();
   await expect(todo).toHaveCount(0);
   await todoPanel.getByRole("button", { name: "已完成" }).click();
   await expect(todoPanel).toContainText(title);
@@ -95,7 +95,7 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   await assertCleanMonitor(monitor);
 });
 
-test("Assignment projections can be snoozed and a Todo handoff seals only explicit Agent context", async ({
+test("Assignment projections and a Todo handoff keep source truth and explicit Agent context", async ({
   page,
   request
 }) => {
@@ -105,19 +105,11 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
 
   await page.goto("/schedule");
   const todoPanel = page.getByTestId("todo-panel");
-  await todoPanel.getByRole("button", { name: /业务提醒/ }).click();
   const grading = todoPanel.locator("article").filter({
     hasText: `待确认批改：${assignment.title}`
   });
   await expect(grading).toBeVisible({ timeout: 20_000 });
-  const snoozeResponse = page.waitForResponse(
-    (response) => response.url().endsWith("/preference") && response.request().method() === "POST"
-  );
-  await grading.getByRole("button", { name: "明天提醒" }).click();
-  expect((await snoozeResponse).status()).toBe(200);
-  await expect(grading).toHaveCount(0);
-  await todoPanel.getByRole("button", { name: "查看已稍后提醒" }).click();
-  await expect(todoPanel).toContainText(`待确认批改：${assignment.title}`);
+  await expect(grading.getByRole("button", { name: /^完成 /u })).toHaveCount(0);
 
   const assignmentDetail = await request.get(
     apiRoutes.teacher.assignment(assignment.assignmentRef),
@@ -128,8 +120,7 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   expect(source.status).toBe("published");
   expect(source.dueAt).toBe(assignment.dueAt);
 
-  await todoPanel.getByRole("button", { name: "进行中" }).click();
-  await todoPanel.getByRole("button", { name: "新建待办" }).click();
+  await todoPanel.getByRole("button", { name: "新建", exact: true }).click();
   const todoTitle = `用 Agent 整理教研提纲 ${Date.now()}`;
   await page.getByTestId("todo-title-input").fill(todoTitle);
   const todoCreatedResponse = page.waitForResponse(

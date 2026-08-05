@@ -94,8 +94,14 @@ describe("Phase 5 Skill boundaries", () => {
     const phase7a = migrations.filter((path) =>
       path.endsWith("0002_phase7a_memory_persistence.sql")
     );
-    expect(migrations).toHaveLength(44);
+    const calendarCategoryMigration = migrations.filter((path) =>
+      path.endsWith("0010_calendar_event_categories.sql")
+    );
+    expect(migrations).toHaveLength(45);
     expect(phase7a).toHaveLength(1);
-    expect(migrations.filter((path) => !phase7a.includes(path))).toHaveLength(43);
+    expect(calendarCategoryMigration).toHaveLength(1);
+    expect(migrations.filter((path) =>
+      !phase7a.includes(path) && !calendarCategoryMigration.includes(path)
+    )).toHaveLength(43);
   });
 });
