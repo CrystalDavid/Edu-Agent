@@ -27,11 +27,19 @@ import {
   type MaterialGenerationSkillInput,
   type MaterialGenerationSkillVersion
 } from "./material-generation/index.js";
+import {
+  classroomReflectionSkillV1,
+  type ClassroomReflectionContextBuildResult,
+  type ClassroomReflectionEvaluation,
+  type ClassroomReflectionSkillInput,
+  type ClassroomReflectionSkillVersion
+} from "./classroom-reflection/index.js";
 
 export const lessonPreparationSkillRef = "lesson-preparation@4";
 export const legacyLessonPreparationSkillRef = "lesson-preparation@3";
 export const lessonAnalysisSkillRef = "lesson-analysis@1";
 export const materialGenerationSkillRef = "material-generation@1";
+export const classroomReflectionSkillRef = "classroom-reflection@1";
 
 export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   const registry = new VersionedSkillRegistry();
@@ -41,7 +49,21 @@ export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   registry.register(lessonPreparationSkillV4);
   registry.register(lessonAnalysisSkillV1);
   registry.register(materialGenerationSkillV1);
+  registry.register(classroomReflectionSkillV1);
   return registry;
+}
+
+export function loadClassroomReflectionSkill(
+  registry: VersionedSkillRegistry,
+  skillRef = classroomReflectionSkillRef
+): ClassroomReflectionSkillVersion {
+  const skill = registry.loadPublished<ClassroomReflectionSkillVersion>(
+    skillRef
+  );
+  if (skill.manifest.id !== "classroom-reflection") {
+    throw new Error(`Skill ${skillRef} cannot organize classroom feedback.`);
+  }
+  return skill;
 }
 
 export function loadMaterialGenerationSkill(
@@ -104,7 +126,8 @@ export {
   lessonPreparationSkillV3,
   lessonPreparationSkillV4,
   lessonAnalysisSkillV1,
-  materialGenerationSkillV1
+  materialGenerationSkillV1,
+  classroomReflectionSkillV1
 };
 export type {
   SkillLifecycleStatus,
@@ -126,5 +149,9 @@ export type {
   MaterialGenerationSkillInput,
   MaterialGenerationContextBuildResult,
   MaterialGenerationEvaluation,
-  MaterialGenerationSkillVersion
+  MaterialGenerationSkillVersion,
+  ClassroomReflectionSkillInput,
+  ClassroomReflectionContextBuildResult,
+  ClassroomReflectionEvaluation,
+  ClassroomReflectionSkillVersion
 };
