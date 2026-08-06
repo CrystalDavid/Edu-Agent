@@ -142,6 +142,7 @@ export function QuickClassroomFeedback(props: {
 
         <FeedbackQuestion label="整体情况">
           <Segmented
+            data-testid="classroom-feedback-overall"
             block
             value={overall}
             onChange={(value) => setOverall(value as typeof overall)}
@@ -155,6 +156,7 @@ export function QuickClassroomFeedback(props: {
 
         <FeedbackQuestion label="课堂节奏">
           <Segmented
+            data-testid="classroom-feedback-pace"
             block
             value={pace}
             onChange={(value) => setPace(value as typeof pace)}
@@ -168,6 +170,7 @@ export function QuickClassroomFeedback(props: {
 
         <FeedbackQuestion label="学生反应">
           <Segmented
+            data-testid="classroom-feedback-student-response"
             block
             value={studentResponse}
             onChange={(value) =>
@@ -186,6 +189,7 @@ export function QuickClassroomFeedback(props: {
           hint="可多选；没有差异可以不选"
         >
           <Checkbox.Group
+            data-testid="classroom-feedback-abnormal-sections"
             className="quick-classroom-feedback__sections"
             value={abnormalSections}
             options={sectionOptions}
@@ -197,6 +201,7 @@ export function QuickClassroomFeedback(props: {
 
         <FeedbackQuestion label="补充一句（可选）">
           <Input.TextArea
+            data-testid="classroom-feedback-note"
             aria-label="课堂反馈补充"
             value={note}
             rows={2}

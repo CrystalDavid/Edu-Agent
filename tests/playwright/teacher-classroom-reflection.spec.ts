@@ -37,24 +37,36 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   const classroom = page.getByTestId("classroom-reflection-panel");
   await expect(classroom).toContainText("已批准教学计划仍然只是计划");
 
-  await page.getByTestId("create-lesson-delivery").click();
-  const deliveryDialog = page.getByRole("dialog").filter({ hasText: "课堂实施草稿" });
-  const firstStep = deliveryDialog.locator(".ant-card").filter({ hasText: "课堂导入" });
-  await firstStep.getByRole("combobox").click();
-  await page.locator(".ant-select-item-option").filter({ hasText: "现场调整" }).click();
-  await firstStep.getByRole("textbox", { name: "课堂导入实际实施" }).fill(
-    "教师根据现场回答延长了斜率正负与图像方向的对比。"
+  const quickFeedback = page.getByTestId("quick-classroom-feedback");
+  await expect(quickFeedback).toBeVisible();
+  await page.getByTestId("classroom-feedback-overall")
+    .locator(".ant-segmented-item").nth(1).click();
+  await page.getByTestId("classroom-feedback-pace")
+    .locator(".ant-segmented-item").nth(1).click();
+  await page.getByTestId("classroom-feedback-student-response")
+    .locator(".ant-segmented-item").nth(1).click();
+  await page.getByTestId("classroom-feedback-abnormal-sections")
+    .locator("label").nth(3).click();
+  await page.getByTestId("classroom-feedback-note").fill(
+    "The independent check took longer than planned."
   );
-  await firstStep.getByRole("textbox", { name: "课堂导入调整原因" }).fill(
-    "教师观察到部分匿名学习者仍混淆截距与斜率。"
+  const feedbackGenerated = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        apiRoutes.teacher.lessonDeliveryQuickFeedback &&
+      response.request().method() === "POST"
   );
-  const deliveryCreated = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === apiRoutes.teacher.lessonDeliveries && response.request().method() === "POST"
-  );
-  await deliveryDialog.getByRole("button", { name: "保存草稿" }).click();
-  const deliveryResponse = await deliveryCreated;
-  expect(deliveryResponse.status()).toBe(201);
-  const deliveryBody = await deliveryResponse.json();
+  await page.getByTestId("generate-classroom-feedback").click();
+  const quickFeedbackResponse = await feedbackGenerated;
+  expect(quickFeedbackResponse.status()).toBe(201);
+  const deliveryBody = await quickFeedbackResponse.json();
+  await expect(page.getByTestId("classroom-feedback-result")).toBeVisible();
+  await expect(page.getByTestId("lesson-delivery-card")).toBeVisible();
+  await page.screenshot({
+    path: `${screenshotRoot}/00-quick-classroom-feedback-draft.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
 
   const deliveryConfirmed = page.waitForResponse(
     (response) => response.url().endsWith("/confirm") && response.request().method() === "POST"

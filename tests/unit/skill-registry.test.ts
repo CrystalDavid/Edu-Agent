@@ -51,6 +51,7 @@ describe("Phase 5 versioned Skill Registry", () => {
       .toBe(lessonPreparationSkillV4);
     expect(registry.loadPublished("lesson-preparation@5")).toBe(version5);
     expect(registry.list().map((item) => item.skillRef)).toEqual([
+      "classroom-reflection@1",
       "lesson-analysis@1",
       "lesson-preparation@1",
       "lesson-preparation@2",

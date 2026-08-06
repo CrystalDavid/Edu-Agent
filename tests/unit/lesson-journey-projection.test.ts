@@ -132,6 +132,23 @@ describe("LessonJourneyProjection", () => {
     expect(projection.status).not.toBe("completed");
   });
 
+  it("waits for teacher confirmation after quick feedback creates a Delivery Draft", () => {
+    const projection = projectLessonJourney(input({
+      tasks: [task("ready_for_use")],
+      teachingPlans: plans({ approved: true }),
+      materialBundle: bundle("ready"),
+      implementation: implementation({ draftDelivery: true })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "deliver",
+      status: "waiting_for_teacher",
+      nextBestAction: { kind: "confirm_delivery" }
+    });
+    expect(projection.completedMilestones).not.toContain("delivery_confirmed");
+    expect(projection.status).not.toBe("completed");
+  });
+
   it("does not complete the journey when Reflection has no teacher-selected follow-up", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("completed")],
@@ -351,6 +368,7 @@ function bundle(
 }
 
 function implementation(options: {
+  draftDelivery?: boolean;
   confirmedDelivery?: boolean;
   confirmedReflection?: boolean;
   followUp?: boolean;
@@ -367,6 +385,19 @@ function implementation(options: {
         },
         history: []
       } as unknown as NonNullable<LessonImplementationSummary["delivery"]>)
+    : options.draftDelivery
+      ? ({
+          deliveryRef: "delivery:1",
+          aggregateVersion: 1,
+          currentDraft: {
+            deliveryRevisionRef: "delivery-revision:draft-1",
+            revisionNumber: 1,
+            revisionVersion: 1,
+            status: "draft"
+          },
+          currentConfirmed: null,
+          history: []
+        } as unknown as NonNullable<LessonImplementationSummary["delivery"]>)
     : null;
   const reflection = options.confirmedReflection
     ? ({

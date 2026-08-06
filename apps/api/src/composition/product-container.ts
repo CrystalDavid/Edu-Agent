@@ -2,9 +2,6 @@ import { createBuiltInSkillRegistry } from "../agent/skills/index.js";
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
 import type {
-  TeacherCopilotApplicationFacade
-} from "../modules/agent-runtime-context/application/teacher-copilot-facade.js";
-import type {
   ModelInvocationApplicationFacade
 } from "../modules/capability-integration/application/model-invocation-facade.js";
 import {
@@ -81,7 +78,6 @@ import { MaterialGenerationSourceAdapter } from "./material-generation-source-ad
 import { ClassroomFeedbackService } from "../modules/agent-runtime-context/application/classroom-feedback-service.js";
 import { ClassroomFeedbackSourceAdapter } from "./classroom-feedback-source-adapter.js";
 import { ClassroomFeedbackDeliveryAdapter } from "./classroom-feedback-delivery-adapter.js";
-import { PostgresClassroomFeedbackRunStore } from "./postgres-classroom-feedback-run-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -158,6 +154,7 @@ export function createProductContainer(
     objectStore,
     objectStoreSettings
   );
+  const teacherCopilot = new PostgresGate2TeacherCopilotService(appPool);
   const lessonBrief = new LessonBriefService(
     new LessonBriefSourceAdapter(
       lessonPreparation,
@@ -185,7 +182,7 @@ export function createProductContainer(
       personalization,
       classroomReflection
     ),
-    new PostgresClassroomFeedbackRunStore(appPool),
+    teacherCopilot,
     new ClassroomFeedbackDeliveryAdapter(classroomReflection),
     skillRegistry
   );
@@ -198,8 +195,6 @@ export function createProductContainer(
       lessonBrief
     )
   );
-  const teacherCopilot: TeacherCopilotApplicationFacade =
-    new PostgresGate2TeacherCopilotService(appPool);
   const copilotOutbox = new LocalCopilotOutboxWorker(
     workerPool,
     undefined,
