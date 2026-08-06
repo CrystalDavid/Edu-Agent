@@ -87,6 +87,11 @@ import {
   GenerateLessonBriefResultSchema,
   DecideLessonBriefRequestSchema,
   DecideLessonBriefResultSchema,
+  MaterialBundleProjectionSchema,
+  GenerateMaterialBundleRequestSchema,
+  GenerateMaterialBundleResultSchema,
+  AdoptMaterialBundleItemRequestSchema,
+  AdoptMaterialBundleItemResultSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
   LessonPreparationTaskDetailSchema,
@@ -203,6 +208,9 @@ import {
   type LessonPreparationSummary,
   type GenerateLessonBriefRequest,
   type DecideLessonBriefRequest,
+  type GenerateMaterialBundleRequest,
+  type AdoptMaterialBundleItemRequest,
+  type MaterialKind,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
   type LessonTeachingPlanState,
@@ -789,6 +797,41 @@ export function decideLessonBrief(
     "处理课时教学洞察",
     apiRoutes.teacher.decideLessonBrief(lessonRef, agentRunRef),
     DecideLessonBriefResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadLessonMaterialBundle(lessonRef: string) {
+  return request(
+    "课时教学材料包",
+    apiRoutes.teacher.lessonMaterialBundle(lessonRef),
+    MaterialBundleProjectionSchema
+  );
+}
+
+export function generateLessonMaterialBundle(
+  lessonRef: string,
+  input: GenerateMaterialBundleRequest
+) {
+  GenerateMaterialBundleRequestSchema.parse(input);
+  return request(
+    "生成课时教学材料",
+    apiRoutes.teacher.generateLessonMaterialBundle(lessonRef),
+    GenerateMaterialBundleResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function adoptLessonMaterial(
+  lessonRef: string,
+  kind: MaterialKind,
+  input: AdoptMaterialBundleItemRequest
+) {
+  AdoptMaterialBundleItemRequestSchema.parse(input);
+  return request(
+    "采用课时教学材料",
+    apiRoutes.teacher.adoptLessonMaterial(lessonRef, kind),
+    AdoptMaterialBundleItemResultSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
 }

@@ -25,7 +25,7 @@ export class LessonJourneyReadAdapter
     context: LessonJourneyReadContext
   ): Promise<LessonJourneySourceSnapshot> {
     const lesson = await this.preparation.getLesson(context);
-    const [taskList, teachingPlans, fileList, implementation, proposals, briefState] =
+    const [taskList, teachingPlans, materialBundle, implementation, proposals, briefState] =
       await Promise.all([
         this.preparation.listTasks({
           tenantRef: context.tenantRef,
@@ -33,15 +33,10 @@ export class LessonJourneyReadAdapter
           allowedCourseRunRefs: context.allowedCourseRunRefs
         }),
         this.preparation.getLessonTeachingPlans(context),
-        this.files.list({
+        this.files.getMaterialBundle({
           tenantRef: context.tenantRef,
           actorRef: context.actorRef,
-          query: {
-            status: "active",
-            sort: "newest",
-            targetType: "lesson",
-            targetRef: context.lessonRef
-          }
+          lessonRef: context.lessonRef
         }),
         this.classroom.getLessonSummary(context),
         this.read.listPendingProposals({
@@ -67,7 +62,7 @@ export class LessonJourneyReadAdapter
       lesson,
       tasks,
       teachingPlans,
-      files: fileList.items,
+      materialBundle,
       implementation,
       pendingProposals: proposals.items.filter(
         (proposal) =>

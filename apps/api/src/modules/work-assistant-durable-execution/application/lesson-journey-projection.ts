@@ -1,6 +1,5 @@
 import {
   LessonJourneyProjectionSchema,
-  type FileAssetSummary,
   type LessonBriefSnapshot,
   type LessonImplementationSummary,
   type LessonJourneyMilestone,
@@ -8,6 +7,7 @@ import {
   type LessonPreparationTaskSummary,
   type LessonTeachingPlanState,
   type LessonView,
+  type MaterialBundleProjection,
   type PendingProposalList
 } from "@edu-agent/contracts";
 
@@ -24,7 +24,7 @@ export interface LessonJourneyProjectionInput {
   readonly lesson: LessonView;
   readonly tasks: readonly LessonPreparationTaskSummary[];
   readonly teachingPlans: LessonTeachingPlanState;
-  readonly files: readonly FileAssetSummary[];
+  readonly materialBundle: MaterialBundleProjection;
   readonly implementation: LessonImplementationSummary;
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;
@@ -74,7 +74,9 @@ export function projectLessonJourney(
   const confirmedReflection = reflection?.currentConfirmed ?? null;
   const reflectionDraft = reflection?.currentDraft ?? null;
   const followUps = reflection?.followUps ?? [];
-  const activeFiles = input.files.filter((file) => file.status === "active");
+  const materialItems = input.materialBundle.items.filter(
+    (item) => item.status !== "missing" && item.assetRef
+  );
   const milestones: LessonJourneyMilestone[] = [];
   const sourceRefs: LessonJourneyProjection["sourceRefs"] = [];
   const sourceVersionVector: Record<string, string> = {};
@@ -133,14 +135,16 @@ export function projectLessonJourney(
       version: `${approvedPlan.revisionNumber}:${approvedPlan.state}`
     });
   }
-  for (const file of activeFiles) {
+  for (const file of materialItems) {
     addSource(sourceRefs, sourceVersionVector, {
       kind: "file_asset",
-      ref: file.assetRef,
-      version: `${file.version}:${file.currentVersion.versionNumber}`
+      ref: file.assetRef!,
+      version: `${file.assetVersion}:${file.versionNumber}:${file.status}`
     });
   }
-  if (activeFiles.length > 0) milestones.push("materials_available");
+  if (input.materialBundle.status === "ready") {
+    milestones.push("materials_available");
+  }
   if (confirmedDelivery) {
     milestones.push("delivery_confirmed");
     addSource(sourceRefs, sourceVersionVector, {
@@ -409,18 +413,24 @@ export function projectLessonJourney(
     });
   }
 
-  if (activeFiles.length === 0) {
+  if (input.materialBundle.status !== "ready") {
+    const waitingForTeacher =
+      input.materialBundle.status === "waiting_for_teacher";
     return parseProjection({
       ...common,
       currentStage: "materials",
-      status: "ready",
+      status: waitingForTeacher ? "waiting_for_teacher" : "ready",
       nextBestAction: action(
-        "prepare_materials",
-        "准备教学材料",
-        "教学计划已批准，本课尚无关联教学材料。",
-        common.detailLinks.files
+        waitingForTeacher ? "review_materials" : "prepare_materials",
+        waitingForTeacher ? "查看并采用教学材料" : "生成本课教学材料",
+        waitingForTeacher
+          ? "材料草稿已经生成，教师预览并采用后才成为本课可使用材料。"
+          : "教学计划已批准，可以基于该 Revision 生成本课材料包。",
+        `${common.detailLinks.lesson}#material-bundle`
       ),
-      blockingReasons: ["尚无与当前课时关联的可用教学材料。"]
+      blockingReasons: waitingForTeacher
+        ? []
+        : ["材料只能基于当前已批准的 TeachingPlan Revision 生成和采用。"]
     });
   }
 

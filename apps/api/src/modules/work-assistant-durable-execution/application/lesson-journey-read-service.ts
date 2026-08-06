@@ -1,11 +1,11 @@
 import type {
-  FileAssetSummary,
   LessonImplementationSummary,
   LessonBriefSnapshot,
   LessonJourneyProjection,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
   LessonView,
+  MaterialBundleProjection,
   PendingProposalList
 } from "@edu-agent/contracts";
 
@@ -27,7 +27,7 @@ export interface LessonJourneySourceSnapshot {
   readonly lesson: LessonView;
   readonly tasks: readonly LessonPreparationTaskSummary[];
   readonly teachingPlans: LessonTeachingPlanState;
-  readonly files: readonly FileAssetSummary[];
+  readonly materialBundle: MaterialBundleProjection;
   readonly implementation: LessonImplementationSummary;
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;

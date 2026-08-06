@@ -8,6 +8,9 @@ import type {
   FileAssetSummary,
   LessonBriefSnapshot,
   LessonJourneyProjection,
+  MaterialBundleItem,
+  MaterialBundleProjection,
+  MaterialKind,
   ModelExecutionView,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
@@ -33,6 +36,7 @@ import {
   createModelInvocation,
   createLessonPreparationTask,
   decideLessonBrief,
+  adoptLessonMaterial,
   disposeSuggestion,
   downloadFile,
   loadAssignments,
@@ -42,12 +46,14 @@ import {
   loadLessonPreparationTask,
   loadLessonBrief,
   loadLessonJourney,
+  loadLessonMaterialBundle,
   loadLessons,
   loadLessonTeachingPlans,
   loadModelInvocation,
   loadProposalDetail,
   loadWorkspace,
   generateLessonBrief,
+  generateLessonMaterialBundle,
   loadFile,
   loadFiles,
   transitionLessonPreparationTask
@@ -64,6 +70,7 @@ import {
 } from "../components/teaching/LessonJourney";
 import { LessonBriefPanel } from "../components/teaching/LessonBriefPanel";
 import { PreparationProposalPanel } from "../components/teaching/PreparationProposalPanel";
+import { MaterialBundlePanel } from "../components/teaching/MaterialBundlePanel";
 
 const { Paragraph, Text, Title } = Typography;
 type TeachingTab = "course" | "homework" | "exam";
@@ -185,6 +192,8 @@ function RealCourseWorkspace(props: {
     useState<LessonJourneyProjection | null>(null);
   const [lessonBrief, setLessonBrief] =
     useState<LessonBriefSnapshot | null>(null);
+  const [materialBundle, setMaterialBundle] =
+    useState<MaterialBundleProjection | null>(null);
   const [preparationProposal, setPreparationProposal] =
     useState<ProposalReviewDetail | null>(null);
   const [modelExecution, setModelExecution] =
@@ -312,6 +321,7 @@ function RealCourseWorkspace(props: {
       setPlanState(null);
       setJourney(null);
       setLessonBrief(null);
+      setMaterialBundle(null);
       return;
     }
     let active = true;
@@ -325,9 +335,10 @@ function RealCourseWorkspace(props: {
       }),
       loadAssignments(selectedLessonRef),
       loadLessonJourney(selectedLessonRef),
-      loadLessonBrief(selectedLessonRef)
+      loadLessonBrief(selectedLessonRef),
+      loadLessonMaterialBundle(selectedLessonRef)
     ])
-      .then(async ([result, files, assignments, journeyResult, briefState]) => {
+      .then(async ([result, files, assignments, journeyResult, briefState, bundle]) => {
         const proposalRef = journeyResult.sourceRefs.find(
           (source) => source.kind === "proposal"
         )?.ref;
@@ -340,6 +351,7 @@ function RealCourseWorkspace(props: {
           setLessonAssignments(assignments.items);
           setJourney(journeyResult);
           setLessonBrief(briefState.current);
+          setMaterialBundle(bundle);
           setPreparationProposal(proposal);
         }
       })
@@ -387,7 +399,7 @@ function RealCourseWorkspace(props: {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
-  async function openFilePreview(file: FileAssetSummary) {
+  async function openFilePreview(file: Pick<FileAssetSummary, "assetRef">) {
     setPreviewOpen(true);
     setPreviewLoading(true);
     setPreviewFile(null);
@@ -424,6 +436,115 @@ function RealCourseWorkspace(props: {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
+  }
+
+  async function generateMaterials(
+    kinds: MaterialKind[],
+    teacherAdjustment: string | null
+  ) {
+    if (
+      !selectedLesson ||
+      !materialBundle?.approvedTeachingPlanRevisionRef
+    ) {
+      setError("请先批准本课教学计划，再生成教学材料。");
+      return;
+    }
+    setActing(true);
+    setError(null);
+    try {
+      const expectedAssetVersions = Object.fromEntries(
+        materialBundle.items
+          .filter(
+            (item) =>
+              kinds.includes(item.kind) &&
+              item.generatedBySkillRef === "material-generation@1" &&
+              item.assetVersion
+          )
+          .map((item) => [item.kind, item.assetVersion!])
+      );
+      const result = await generateLessonMaterialBundle(
+        selectedLesson.lessonRef,
+        {
+          purpose: "material-bundle.generate",
+          idempotencyKey: `ui:material-bundle:generate:${crypto.randomUUID()}`,
+          expectedApprovedTeachingPlanRevisionRef:
+            materialBundle.approvedTeachingPlanRevisionRef,
+          kinds,
+          expectedAssetVersions,
+          teacherAdjustment
+        }
+      );
+      setMaterialBundle(result.bundle);
+      const [files, journeyState] = await Promise.all([
+        loadFiles({
+          status: "active",
+          sort: "newest",
+          targetType: "lesson",
+          targetRef: selectedLesson.lessonRef
+        }),
+        loadLessonJourney(selectedLesson.lessonRef)
+      ]);
+      setLessonFiles(files.items);
+      setJourney(journeyState);
+      props.onAction(
+        teacherAdjustment
+          ? "已只更新所选材料，并保留原 FileVersion。"
+          : "教学材料草稿已生成，请预览后逐项采用。"
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function adoptMaterial(item: MaterialBundleItem) {
+    if (
+      !selectedLesson ||
+      !materialBundle?.approvedTeachingPlanRevisionRef ||
+      !item.assetVersion ||
+      !item.versionRef
+    ) {
+      return;
+    }
+    setActing(true);
+    setError(null);
+    try {
+      const result = await adoptLessonMaterial(
+        selectedLesson.lessonRef,
+        item.kind,
+        {
+          purpose: "material-bundle.adopt",
+          idempotencyKey: `ui:material-bundle:adopt:${crypto.randomUUID()}`,
+          expectedApprovedTeachingPlanRevisionRef:
+            materialBundle.approvedTeachingPlanRevisionRef,
+          expectedAssetVersion: item.assetVersion,
+          expectedVersionRef: item.versionRef
+        }
+      );
+      setMaterialBundle(result.bundle);
+      setJourney(await loadLessonJourney(selectedLesson.lessonRef));
+      props.onAction(`${item.label}已采用，并绑定当前教学计划版本。`);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function downloadMaterial(item: MaterialBundleItem) {
+    if (!item.assetRef || !item.versionRef || !item.originalFileName) return;
+    try {
+      const blob = await downloadFile(item.assetRef, item.versionRef);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = item.originalFileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function startOrContinue() {
@@ -500,7 +621,22 @@ function RealCourseWorkspace(props: {
         if (activeTask) props.navigatePreparation(activeTask.taskRef, "/runs");
         return;
       case "prepare_materials":
-        props.navigateFiles({ lessonRef: selectedLesson.lessonRef });
+        if (materialBundle) {
+          await generateMaterials(
+            materialBundle.items
+              .filter(
+                (item) =>
+                  item.status === "missing" || item.status === "outdated"
+              )
+              .map((item) => item.kind),
+            null
+          );
+        }
+        return;
+      case "review_materials":
+        document
+          .getElementById("material-bundle")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
       case "record_delivery":
       case "confirm_delivery":
@@ -532,12 +668,14 @@ function RealCourseWorkspace(props: {
 
   async function refreshLessonPlanState() {
     if (!selectedLesson) return;
-    const [plans, journeyState] = await Promise.all([
+    const [plans, journeyState, bundle] = await Promise.all([
       loadLessonTeachingPlans(selectedLesson.lessonRef),
-      loadLessonJourney(selectedLesson.lessonRef)
+      loadLessonJourney(selectedLesson.lessonRef),
+      loadLessonMaterialBundle(selectedLesson.lessonRef)
     ]);
     setPlanState(plans);
     setJourney(journeyState);
+    setMaterialBundle(bundle);
     const proposalRef = journeyState.sourceRefs.find(
       (source) => source.kind === "proposal"
     )?.ref;
@@ -925,10 +1063,10 @@ function RealCourseWorkspace(props: {
         {
           key: "files",
           label: "教学材料",
-          complete: lessonFiles.length > 0,
-          detail: lessonFiles.length > 0
-            ? `${lessonFiles.length} 个文件可用`
-            : "还没有关联教学材料"
+          complete: materialBundle?.status === "ready",
+          detail: materialBundle
+            ? `${materialBundle.items.filter((item) => item.status === "adopted").length}/5 项材料已采用`
+            : "正在读取本课材料包"
         }
       ]
     : [];
@@ -1063,6 +1201,27 @@ function RealCourseWorkspace(props: {
                             void adjustPreparationProposal(strategyId, adjustment)
                           }
                           onApprove={() => void approveInReviewPlan()}
+                        />
+                      ) : null}
+                      {planState?.currentApproved && materialBundle ? (
+                        <MaterialBundlePanel
+                          bundle={materialBundle}
+                          loading={acting}
+                          onGenerate={(kinds, adjustment) =>
+                            void generateMaterials(kinds, adjustment)
+                          }
+                          onAdopt={(item) => void adoptMaterial(item)}
+                          onPreview={(item) => {
+                            if (item.assetRef) {
+                              void openFilePreview({ assetRef: item.assetRef });
+                            }
+                          }}
+                          onDownload={(item) => void downloadMaterial(item)}
+                          onOpenFiles={() =>
+                            props.navigateFiles({
+                              lessonRef: selectedLesson.lessonRef
+                            })
+                          }
                         />
                       ) : null}
                       <LessonJourney journey={journey} />

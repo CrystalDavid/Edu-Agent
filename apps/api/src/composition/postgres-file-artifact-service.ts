@@ -10,6 +10,8 @@ import {
   FileMutationResultSchema,
   FileUploadMetadataSchema,
   FileVersionUploadMetadataSchema,
+  MaterialContentDraftSchema,
+  MaterialKindSchema,
   TeachingPlanDocxExportRequestSchema,
   TeachingPlanDocxExportResultSchema,
   type AuthorizationDecision,
@@ -21,6 +23,9 @@ import {
   type FileUploadMetadata,
   type FileVersionUploadMetadata,
   type FormalWriteReceipt,
+  type MaterialBundleProjection,
+  type MaterialContentDraft,
+  type MaterialKind,
   type TeachingPlanDocxExportRequest
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
@@ -29,6 +34,14 @@ import {
   renderApprovedTeachingPlanDocx,
   TEACHING_PLAN_DOCX_TEMPLATE_VERSION
 } from "../modules/artifact-collaboration/application/teaching-plan-docx-renderer.js";
+import {
+  MATERIAL_GENERATION_SKILL_REF,
+  materialCategory,
+  materialContentSummary,
+  materialLabel,
+  projectMaterialBundle,
+  type MaterialDraftProvenance
+} from "../modules/artifact-collaboration/application/material-bundle-projection.js";
 import {
   extractOfficeContentSummary
 } from "../modules/artifact-collaboration/application/office-content-summary.js";
@@ -72,6 +85,9 @@ import {
   createWriteMetadata,
   type WriteContext
 } from "../platform/postgres/write-context.js";
+import type {
+  SqlExecutor
+} from "../platform/postgres/types.js";
 
 function hash(value: unknown): string {
   return createHash("sha256")
@@ -704,6 +720,410 @@ export class PostgresFileArtifactService {
     }
   }
 
+  async getMaterialBundle(input: {
+    tenantRef: string;
+    actorRef: string;
+    lessonRef: string;
+  }): Promise<MaterialBundleProjection> {
+    this.assertDemoActor(input.tenantRef, input.actorRef);
+    const { currentApproved } = await this.getLessonMaterialPlan(
+      this.pool,
+      input.tenantRef,
+      input.lessonRef
+    );
+    const summaries = await this.files.listAssets(
+      this.pool,
+      input.tenantRef,
+      FileAssetListQuerySchema.parse({
+        status: "active",
+        sort: "newest",
+        targetType: "lesson",
+        targetRef: input.lessonRef
+      })
+    );
+    const details = (
+      await Promise.all(
+        summaries.map((summary) =>
+          this.files.getAsset(this.pool, input.tenantRef, summary.assetRef)
+        )
+      )
+    ).filter((item): item is FileAssetDetail => Boolean(item));
+    const provenanceRows = await this.files.listMaterialDraftProvenance(
+      this.pool,
+      details.map((item) => item.currentVersion.versionRef)
+    );
+    const provenanceByVersionRef: Record<string, MaterialDraftProvenance> = {};
+    for (const row of provenanceRows) {
+      const kind = MaterialKindSchema.safeParse(row.kind);
+      if (!kind.success) continue;
+      provenanceByVersionRef[row.versionRef] = {
+        kind: kind.data,
+        teachingPlanRevisionRef: row.teachingPlanRevisionRef,
+        skillRef: row.skillRef,
+        agentRunRef: row.agentRunRef,
+        contextManifestHash: row.contextManifestHash
+      };
+    }
+    return projectMaterialBundle({
+      lessonRef: input.lessonRef,
+      approvedTeachingPlan: currentApproved,
+      files: details,
+      provenanceByVersionRef
+    });
+  }
+
+  async publishMaterialDrafts(input: {
+    context: {
+      tenantRef: string;
+      actorRef: string;
+      lessonRef: string;
+    };
+    purpose: "material-bundle.generate";
+    idempotencyKey: string;
+    expectedApprovedTeachingPlanRevisionRef: string;
+    expectedAssetVersions: Readonly<Partial<Record<MaterialKind, number>>>;
+    agentRunRef: string;
+    skillRef: string;
+    contextManifestHash: string;
+    drafts: readonly MaterialContentDraft[];
+  }): Promise<{
+    replayed: boolean;
+    generatedVersionRefs: readonly string[];
+    bundle: MaterialBundleProjection;
+  }> {
+    const { context } = input;
+    this.assertDemoActor(context.tenantRef, context.actorRef);
+    if (input.skillRef !== MATERIAL_GENERATION_SKILL_REF) {
+      throw new AuthorizationDeniedError("当前材料 Skill 版本未获准发布草稿。");
+    }
+    const drafts = input.drafts.map((draft) =>
+      MaterialContentDraftSchema.parse(draft)
+    );
+    if (
+      drafts.length === 0 ||
+      new Set(drafts.map((draft) => draft.kind)).size !== drafts.length
+    ) {
+      throw new DomainConflictError(
+        "MATERIAL_DRAFT_SET_INVALID",
+        "材料草稿必须至少包含一个且类型不能重复。"
+      );
+    }
+    const initial = await this.getMaterialBundle(context);
+    if (
+      initial.approvedTeachingPlanRevisionRef !==
+      input.expectedApprovedTeachingPlanRevisionRef
+    ) {
+      throw new DomainConflictError(
+        "MATERIAL_PLAN_VERSION_CONFLICT",
+        "已批准教学计划已更新，请刷新后再生成材料。"
+      );
+    }
+    const { lesson, currentApproved } = await this.getLessonMaterialPlan(
+      this.pool,
+      context.tenantRef,
+      context.lessonRef
+    );
+    if (!currentApproved) {
+      throw new DomainConflictError(
+        "MATERIAL_APPROVED_PLAN_REQUIRED",
+        "教学材料必须基于教师已批准的教学计划生成。"
+      );
+    }
+    const staged = await Promise.all(
+      drafts.map(async (draft) => {
+        const versionRef = `file-version:${randomUUID()}`;
+        const content = Buffer.from(
+          [
+            "---",
+            "schema: edu-agent-material-draft@1",
+            `kind: ${draft.kind}`,
+            `lesson: ${context.lessonRef}`,
+            `teachingPlanRevision: ${currentApproved.revisionRef}`,
+            `skill: ${input.skillRef}`,
+            `agentRun: ${input.agentRunRef}`,
+            `contextManifestHash: ${input.contextManifestHash}`,
+            "---",
+            "",
+            draft.contentMarkdown
+          ].join("\n"),
+          "utf8"
+        );
+        return {
+          draft,
+          versionRef,
+          stored: await this.storeBuffer(content)
+        };
+      })
+    );
+    const now = new Date().toISOString();
+    const rootKey = [
+      context.tenantRef,
+      context.actorRef,
+      context.lessonRef,
+      input.purpose,
+      input.idempotencyKey
+    ].join("|");
+    const writeContext = this.writeContext(
+      context.actorRef,
+      input.purpose,
+      input.idempotencyKey,
+      rootKey,
+      now
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.files.reserveIdempotency(client, {
+        idempotencyRef: `file-idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: hash({
+          lessonRef: context.lessonRef,
+          expectedApprovedTeachingPlanRevisionRef:
+            input.expectedApprovedTeachingPlanRevisionRef,
+          expectedAssetVersions: input.expectedAssetVersions,
+          agentRunRef: input.agentRunRef,
+          skillRef: input.skillRef,
+          contextManifestHash: input.contextManifestHash,
+          drafts
+        }),
+        writeContext
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        await Promise.all(
+          staged.map((item) => this.objectStore.delete(item.stored.objectKey))
+        );
+        return {
+          replayed: true,
+          generatedVersionRefs: parseStringArray(
+            reservation.result?.["generatedVersionRefs"]
+          ),
+          bundle: await this.getMaterialBundle(context)
+        };
+      }
+      const latest = await this.getLessonMaterialPlan(
+        client,
+        context.tenantRef,
+        context.lessonRef
+      );
+      if (
+        latest.currentApproved?.revisionRef !==
+        input.expectedApprovedTeachingPlanRevisionRef
+      ) {
+        throw new Error("MATERIAL_PLAN_VERSION_CONFLICT");
+      }
+      const receipts: FormalWriteReceipt[] = [reservation.receipt!];
+      receipts.push(
+        ...(await this.authorize(client, {
+          tenantRef: context.tenantRef,
+          actorRef: context.actorRef,
+          action: "material-bundle.generate",
+          resourceRef: currentApproved.revisionRef,
+          requestedFieldMask: [
+            "approvedTeachingPlan",
+            "authorizedContextManifest",
+            "materialDraft",
+            "fileAsset",
+            "fileVersion"
+          ],
+          context: writeContext
+        }))
+      );
+      const generatedVersionRefs: string[] = [];
+      for (const item of staged) {
+        const currentItem = initial.items.find(
+          (candidate) => candidate.kind === item.draft.kind
+        );
+        const bindings: FileBindingTarget[] = [
+          {
+            targetType: "lesson",
+            targetRef: context.lessonRef,
+            relation: "reference"
+          },
+          {
+            targetType: "teaching_plan_artifact",
+            targetRef: currentApproved.artifactRef,
+            relation: "reference"
+          },
+          {
+            targetType: "teaching_plan_revision",
+            targetRef: currentApproved.revisionRef,
+            relation: "reference"
+          }
+        ];
+        const version = {
+          versionRef: item.versionRef,
+          originalFileName: materialFileName(
+            lesson.title,
+            item.draft.kind,
+            currentApproved.revisionNumber
+          ),
+          mimeType: "text/markdown",
+          extension: ".md",
+          sizeBytes: item.stored.sizeBytes,
+          sha256: item.stored.sha256,
+          objectKey: item.stored.objectKey,
+          contentSummary: materialContentSummary({
+            kind: item.draft.kind,
+            teachingPlanRevisionNumber: currentApproved.revisionNumber
+          }),
+          createdBy: context.actorRef
+        };
+        const eventPayload = {
+          kind: item.draft.kind,
+          teachingPlanRevisionRef: currentApproved.revisionRef,
+          skillRef: input.skillRef,
+          agentRunRef: input.agentRunRef,
+          contextManifestHash: input.contextManifestHash,
+          draftOnly: true
+        };
+        const reusableGeneratedAsset =
+          currentItem?.generatedBySkillRef === MATERIAL_GENERATION_SKILL_REF &&
+          currentItem.assetRef &&
+          currentItem.assetVersion
+            ? currentItem
+            : null;
+        if (reusableGeneratedAsset) {
+          const expectedAssetVersion =
+            input.expectedAssetVersions[item.draft.kind];
+          if (expectedAssetVersion !== reusableGeneratedAsset.assetVersion) {
+            throw new Error("FILE_ASSET_VERSION_CONFLICT");
+          }
+          const created = await this.files.insertNewVersion(client, {
+            assetRef: reusableGeneratedAsset.assetRef!,
+            expectedAssetVersion,
+            version,
+            additionalBindings: bindings,
+            eventName: "TeachingMaterialDraftGenerated",
+            eventPayload,
+            writeContext
+          });
+          receipts.push(...created.receipts);
+        } else {
+          receipts.push(
+            ...(await this.files.insertFileAssetBundle(client, {
+              assetRef: `file-asset:${randomUUID()}`,
+              tenantRef: context.tenantRef,
+              displayName: `${lesson.title} · ${materialLabel(item.draft.kind)}`,
+              category: materialCategory(item.draft.kind),
+              source: "teaching_plan_export",
+              version,
+              bindings,
+              eventName: "TeachingMaterialDraftGenerated",
+              eventPayload,
+              writeContext
+            }))
+          );
+        }
+        generatedVersionRefs.push(item.versionRef);
+      }
+      const result = { generatedVersionRefs };
+      await this.files.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return {
+        replayed: false,
+        generatedVersionRefs,
+        bundle: await this.getMaterialBundle(context)
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      await Promise.all(
+        staged.map((item) =>
+          this.compensate(
+            item.stored.objectKey,
+            "material-draft-database-write-failed"
+          )
+        )
+      );
+      throw this.translateRepositoryError(error);
+    } finally {
+      client.release();
+    }
+  }
+
+  async adoptMaterial(input: {
+    context: {
+      tenantRef: string;
+      actorRef: string;
+      lessonRef: string;
+    };
+    kind: MaterialKind;
+    request: {
+      purpose: "material-bundle.adopt";
+      idempotencyKey: string;
+      expectedApprovedTeachingPlanRevisionRef: string;
+      expectedAssetVersion: number;
+      expectedVersionRef: string;
+    };
+  }): Promise<{
+    replayed: boolean;
+    bundle: MaterialBundleProjection;
+  }> {
+    const { context, request } = input;
+    this.assertDemoActor(context.tenantRef, context.actorRef);
+    const bundle = await this.getMaterialBundle(context);
+    if (
+      bundle.approvedTeachingPlanRevisionRef !==
+      request.expectedApprovedTeachingPlanRevisionRef
+    ) {
+      throw new DomainConflictError(
+        "MATERIAL_PLAN_VERSION_CONFLICT",
+        "已批准教学计划已更新，请刷新后再采用材料。"
+      );
+    }
+    const item = bundle.items.find((candidate) => candidate.kind === input.kind);
+    if (
+      !item?.assetRef ||
+      !item.versionRef ||
+      item.versionRef !== request.expectedVersionRef ||
+      (item.status !== "draft" && item.status !== "adopted")
+    ) {
+      throw new DomainConflictError(
+        "MATERIAL_DRAFT_NOT_CURRENT",
+        "当前材料不是可采用的最新草稿，请刷新后重试。"
+      );
+    }
+    if (item.status === "draft" && item.assetVersion !== request.expectedAssetVersion) {
+      throw new DomainConflictError(
+        "FILE_ASSET_VERSION_CONFLICT",
+        "材料版本已变化，请刷新后重试。"
+      );
+    }
+    const mutation = await this.metadataMutation({
+      tenantRef: context.tenantRef,
+      actorRef: context.actorRef,
+      assetRef: item.assetRef,
+      purpose: request.purpose,
+      idempotencyKey: request.idempotencyKey,
+      fingerprint: {
+        lessonRef: context.lessonRef,
+        kind: input.kind,
+        request
+      },
+      action: "material-bundle.adopt",
+      execute: (client, writeContext) =>
+        this.files.addBinding(client, {
+          assetRef: item.assetRef!,
+          expectedAssetVersion: request.expectedAssetVersion,
+          binding: {
+            targetType: "teaching_plan_revision",
+            targetRef: request.expectedApprovedTeachingPlanRevisionRef,
+            relation: "export"
+          },
+          writeContext
+        })
+    });
+    return {
+      replayed: mutation.replayed,
+      bundle: await this.getMaterialBundle(context)
+    };
+  }
+
   async cleanupOrphans(input: { gracePeriodMs?: number } = {}) {
     const grace = input.gracePeriodMs ?? 60 * 60 * 1000;
     const referenced = new Set(await this.files.listReferencedObjectKeys(this.pool));
@@ -925,6 +1345,30 @@ export class PostgresFileArtifactService {
     return FileAssetDetailSchema.parse(asset);
   }
 
+  private async getLessonMaterialPlan(
+    executor: SqlExecutor,
+    tenantRef: string,
+    lessonRef: string
+  ) {
+    const lesson = await this.education.getLesson(
+      executor,
+      tenantRef,
+      lessonRef
+    );
+    if (!lesson) throw new NotFoundError("Lesson 不存在或不属于当前工作空间。");
+    const scoped = await this.artifacts.listLessonTeachingPlanRevisions(
+      executor,
+      lessonRef
+    );
+    return {
+      lesson,
+      currentApproved:
+        scoped.find(
+          (item) => item.lifecycleStatus === "current_approved"
+        )?.revision ?? null
+    };
+  }
+
   private validateMetadata(input: { originalFileName: string; mimeType: string }) {
     try {
       return validateFileMetadata(input);
@@ -1078,6 +1522,7 @@ export class PostgresFileArtifactService {
     if (!(error instanceof Error)) return error;
     const conflicts: Record<string, [string, string]> = {
       FILE_ASSET_VERSION_CONFLICT: ["FILE_ASSET_VERSION_CONFLICT", "文件版本已变化，请刷新后重试。"],
+      MATERIAL_PLAN_VERSION_CONFLICT: ["MATERIAL_PLAN_VERSION_CONFLICT", "已批准教学计划已更新，请刷新后重试。"],
       DELETED_FILE_VERSION_FORBIDDEN: ["DELETED_FILE_VERSION_FORBIDDEN", "已删除文件不能创建新版本。"],
       DELETED_FILE_BINDING_FORBIDDEN: ["DELETED_FILE_BINDING_FORBIDDEN", "已删除文件不能新增关联。"],
       FILE_LIFECYCLE_NO_CHANGE: ["FILE_LIFECYCLE_NO_CHANGE", "文件已处于请求状态。"]
@@ -1093,4 +1538,22 @@ export class PostgresFileArtifactService {
       throw new AuthorizationDeniedError("当前教师无权访问该文件范围。");
     }
   }
+}
+
+function parseStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function materialFileName(
+  lessonTitle: string,
+  kind: MaterialKind,
+  revisionNumber: number
+): string {
+  const safeTitle = lessonTitle
+    .replace(/[\\/:*?"<>|]/gu, "-")
+    .trim()
+    .slice(0, 100) || "lesson";
+  return `${safeTitle}-${materialLabel(kind)}-R${revisionNumber}.md`;
 }

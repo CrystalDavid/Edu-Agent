@@ -22,6 +22,8 @@ import {
 } from "./lesson-analysis/index.js";
 import {
   materialGenerationSkillV1,
+  type MaterialGenerationContextBuildResult,
+  type MaterialGenerationEvaluation,
   type MaterialGenerationSkillInput,
   type MaterialGenerationSkillVersion
 } from "./material-generation/index.js";
@@ -122,5 +124,7 @@ export type {
   LessonAnalysisSkillInput,
   LessonAnalysisSkillVersion,
   MaterialGenerationSkillInput,
+  MaterialGenerationContextBuildResult,
+  MaterialGenerationEvaluation,
   MaterialGenerationSkillVersion
 };

@@ -72,6 +72,8 @@ import {
   RevokeTeacherPreferenceRequestSchema,
   GenerateLessonBriefRequestSchema,
   DecideLessonBriefRequestSchema,
+  GenerateMaterialBundleRequestSchema,
+  AdoptMaterialBundleItemRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
   UpdateLessonDeliveryDraftRequestSchema,
@@ -894,6 +896,7 @@ export function createApp(
     const classroom = product.services.classroomReflection;
     const lessonJourney = product.services.lessonJourney;
     const lessonBrief = product.services.lessonBrief;
+    const materialGeneration = product.services.materialGeneration;
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
@@ -2215,6 +2218,70 @@ export function createApp(
               },
               agentRunRef: routeParameter(request.params["agentRunRef"]),
               request: DecideLessonBriefRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonMaterialBundlePattern,
+      markRoute("product.teacher.lessons.material-bundle"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await materialGeneration.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.generateLessonMaterialBundlePattern,
+      markRoute("product.teacher.lessons.material-bundle.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.status(201).json(
+            await materialGeneration.generate({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              request: GenerateMaterialBundleRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.adoptLessonMaterialPattern,
+      markRoute("product.teacher.lessons.material-bundle.adopt"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await materialGeneration.adopt({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              kind: routeParameter(request.params["kind"]),
+              request: AdoptMaterialBundleItemRequestSchema.parse(request.body)
             })
           );
         } catch (error) {

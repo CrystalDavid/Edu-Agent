@@ -76,6 +76,9 @@ import { LessonJourneyReadService } from "../modules/work-assistant-durable-exec
 import { LessonBriefService } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
 import { LessonBriefSourceAdapter } from "./lesson-brief-source-adapter.js";
 import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
+import { MaterialGenerationService } from "../modules/agent-runtime-context/application/material-generation-service.js";
+import { MaterialGenerationSourceAdapter } from "./material-generation-source-adapter.js";
+import { PostgresMaterialGenerationStore } from "./postgres-material-generation-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -160,6 +163,17 @@ export function createProductContainer(
     lessonBriefStore,
     skillRegistry
   );
+  const materialGeneration = new MaterialGenerationService(
+    new MaterialGenerationSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization,
+      lessonBriefStore
+    ),
+    new PostgresMaterialGenerationStore(appPool),
+    files,
+    skillRegistry
+  );
   const lessonJourney = new LessonJourneyReadService(
     new LessonJourneyReadAdapter(
       lessonPreparation,
@@ -199,6 +213,7 @@ export function createProductContainer(
       classroomReflection,
       lessonJourney,
       lessonBrief,
+      materialGeneration,
       personalization,
       files
     },

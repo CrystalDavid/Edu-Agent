@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { FilePreviewKindSchema } from "./gate2-5b.js";
+
 export const LessonJourneyStageSchema = z.enum([
   "understand",
   "plan",
@@ -42,6 +44,7 @@ export const LessonJourneyActionKindSchema = z.enum([
   "review_proposal",
   "review_teaching_plan",
   "prepare_materials",
+  "review_materials",
   "record_delivery",
   "confirm_delivery",
   "start_reflection",
@@ -225,6 +228,90 @@ export const MaterialContentDraftSchema = z.object({
   knownGaps: z.array(z.string().min(1)).min(1)
 });
 
+export const MaterialBundleItemStatusSchema = z.enum([
+  "missing",
+  "outdated",
+  "draft",
+  "adopted"
+]);
+
+export const MaterialBundleStatusSchema = z.enum([
+  "blocked_no_approved_plan",
+  "ready_to_generate",
+  "partially_ready",
+  "waiting_for_teacher",
+  "ready"
+]);
+
+export const MaterialBundleItemSchema = z.object({
+  kind: MaterialKindSchema,
+  label: z.string().min(1),
+  status: MaterialBundleItemStatusSchema,
+  assetRef: z.string().min(1).nullable(),
+  assetVersion: z.number().int().positive().nullable(),
+  versionRef: z.string().min(1).nullable(),
+  versionNumber: z.number().int().positive().nullable(),
+  originalFileName: z.string().min(1).nullable(),
+  mimeType: z.string().min(1).nullable(),
+  previewKind: FilePreviewKindSchema.nullable(),
+  sourceTeachingPlanRevisionRef: z.string().min(1).nullable(),
+  generatedBySkillRef: z.string().min(1).nullable(),
+  agentRunRef: z.string().min(1).nullable(),
+  contextManifestHash: z.string().min(16).nullable(),
+  contentHash: z.string().min(16).nullable(),
+  updatedAt: z.string().datetime().nullable()
+});
+
+export const MaterialBundleProjectionSchema = z.object({
+  lessonRef: z.string().min(1),
+  approvedTeachingPlanRevisionRef: z.string().min(1).nullable(),
+  approvedTeachingPlanRevisionNumber: z.number().int().positive().nullable(),
+  status: MaterialBundleStatusSchema,
+  items: z.array(MaterialBundleItemSchema).length(5),
+  sourceVersionVector: z.record(z.string().min(1), z.string().min(1)),
+  generatedAt: z.string().datetime()
+});
+
+export const GenerateMaterialBundleRequestSchema = z.object({
+  purpose: z.literal("material-bundle.generate"),
+  idempotencyKey: z.string().min(8).max(200),
+  expectedApprovedTeachingPlanRevisionRef: z.string().min(1),
+  kinds: z.array(MaterialKindSchema).min(1).max(5),
+  expectedAssetVersions: z.partialRecord(
+    MaterialKindSchema,
+    z.number().int().positive()
+  ).default({}),
+  teacherAdjustment: z.string().trim().min(1).max(500).nullable().default(null)
+}).superRefine((value, context) => {
+  if (new Set(value.kinds).size !== value.kinds.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["kinds"],
+      message: "kinds must be unique"
+    });
+  }
+});
+
+export const GenerateMaterialBundleResultSchema = z.object({
+  replayed: z.boolean(),
+  agentRunRef: z.string().min(1),
+  generatedVersionRefs: z.array(z.string().min(1)),
+  bundle: MaterialBundleProjectionSchema
+});
+
+export const AdoptMaterialBundleItemRequestSchema = z.object({
+  purpose: z.literal("material-bundle.adopt"),
+  idempotencyKey: z.string().min(8).max(200),
+  expectedApprovedTeachingPlanRevisionRef: z.string().min(1),
+  expectedAssetVersion: z.number().int().positive(),
+  expectedVersionRef: z.string().min(1)
+});
+
+export const AdoptMaterialBundleItemResultSchema = z.object({
+  replayed: z.boolean(),
+  bundle: MaterialBundleProjectionSchema
+});
+
 export type LessonJourneyStage = z.infer<
   typeof LessonJourneyStageSchema
 >;
@@ -261,4 +348,26 @@ export type DecideLessonBriefRequest = z.infer<
 export type MaterialKind = z.infer<typeof MaterialKindSchema>;
 export type MaterialContentDraft = z.infer<
   typeof MaterialContentDraftSchema
+>;
+export type MaterialBundleItemStatus = z.infer<
+  typeof MaterialBundleItemStatusSchema
+>;
+export type MaterialBundleStatus = z.infer<
+  typeof MaterialBundleStatusSchema
+>;
+export type MaterialBundleItem = z.infer<typeof MaterialBundleItemSchema>;
+export type MaterialBundleProjection = z.infer<
+  typeof MaterialBundleProjectionSchema
+>;
+export type GenerateMaterialBundleRequest = z.infer<
+  typeof GenerateMaterialBundleRequestSchema
+>;
+export type GenerateMaterialBundleResult = z.infer<
+  typeof GenerateMaterialBundleResultSchema
+>;
+export type AdoptMaterialBundleItemRequest = z.infer<
+  typeof AdoptMaterialBundleItemRequestSchema
+>;
+export type AdoptMaterialBundleItemResult = z.infer<
+  typeof AdoptMaterialBundleItemResultSchema
 >;

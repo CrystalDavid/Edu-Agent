@@ -164,6 +164,18 @@ export const apiRoutes = {
       "/api/v1/teacher/lessons/:lessonRef/brief/:agentRunRef/disposition",
     decideLessonBrief: (lessonRef: string, agentRunRef: string): string =>
       `${teacherLessonRoute(lessonRef)}/brief/${encodeRouteSegment(agentRunRef)}/disposition`,
+    lessonMaterialBundlePattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle",
+    lessonMaterialBundle: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle`,
+    generateLessonMaterialBundlePattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle/generate",
+    generateLessonMaterialBundle: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle/generate`,
+    adoptLessonMaterialPattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle/:kind/adopt",
+    adoptLessonMaterial: (lessonRef: string, kind: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle/${encodeRouteSegment(kind)}/adopt`,
     lessonPreparationSummary:
       "/api/v1/teacher/lesson-preparation/summary",
     preparationTasks:
