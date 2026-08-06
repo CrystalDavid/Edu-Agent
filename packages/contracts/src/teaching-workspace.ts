@@ -277,10 +277,13 @@ export const GenerateMaterialBundleRequestSchema = z.object({
   idempotencyKey: z.string().min(8).max(200),
   expectedApprovedTeachingPlanRevisionRef: z.string().min(1),
   kinds: z.array(MaterialKindSchema).min(1).max(5),
-  expectedAssetVersions: z.partialRecord(
-    MaterialKindSchema,
-    z.number().int().positive()
-  ).default({}),
+  expectedAssetVersions: z.object({
+    lesson_plan: z.number().int().positive().optional(),
+    slide_outline: z.number().int().positive().optional(),
+    exercise_set: z.number().int().positive().optional(),
+    board_design: z.number().int().positive().optional(),
+    differentiated_support: z.number().int().positive().optional()
+  }).default({}),
   teacherAdjustment: z.string().trim().min(1).max(500).nullable().default(null)
 }).superRefine((value, context) => {
   if (new Set(value.kinds).size !== value.kinds.length) {

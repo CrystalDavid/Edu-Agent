@@ -134,11 +134,15 @@ function toCandidate(
   const revisionBindings = file.bindings.filter(
     (binding) => binding.targetType === "teaching_plan_revision"
   );
-  const currentBinding = currentRevisionRef
-    ? revisionBindings.find(
+  const currentBindings = currentRevisionRef
+    ? revisionBindings.filter(
         (binding) => binding.targetRef === currentRevisionRef
-      ) ?? null
-    : null;
+      )
+    : [];
+  const currentBinding =
+    currentBindings.find((binding) => binding.relation === "export") ??
+    currentBindings[0] ??
+    null;
   const sourceRevisionRef =
     provenance?.teachingPlanRevisionRef ??
     currentBinding?.targetRef ??

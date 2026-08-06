@@ -78,7 +78,6 @@ import { LessonBriefSourceAdapter } from "./lesson-brief-source-adapter.js";
 import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
 import { MaterialGenerationService } from "../modules/agent-runtime-context/application/material-generation-service.js";
 import { MaterialGenerationSourceAdapter } from "./material-generation-source-adapter.js";
-import { PostgresMaterialGenerationStore } from "./postgres-material-generation-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -107,17 +106,18 @@ export function createProductContainer(
   const skillRegistry = createBuiltInSkillRegistry();
   const personalization = new PostgresPersonalizationService(appPool);
   const lessonBriefStore = new PostgresLessonBriefStore(appPool);
+  const modelInvocationService = new PostgresModelInvocationService(
+    appPool,
+    modelProvider,
+    modelSettings,
+    {
+      skills: skillRegistry,
+      personalization,
+      lessonBriefs: lessonBriefStore
+    }
+  );
   const modelInvocations: ModelInvocationApplicationFacade =
-    new PostgresModelInvocationService(
-      appPool,
-      modelProvider,
-      modelSettings,
-      {
-        skills: skillRegistry,
-        personalization,
-        lessonBriefs: lessonBriefStore
-      }
-    );
+    modelInvocationService;
   const objectStoreSettings =
     options.objectStoreSettings ?? readObjectStoreSettings();
   const objectStore =
@@ -170,7 +170,7 @@ export function createProductContainer(
       personalization,
       lessonBriefStore
     ),
-    new PostgresMaterialGenerationStore(appPool),
+    modelInvocationService,
     files,
     skillRegistry
   );

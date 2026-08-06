@@ -5,14 +5,14 @@
 
 本文只描述尚未完成的未来工作。当前已经具备的能力以 [当前能力](capabilities.md) 为准，历史阶段以 [版本历史](version-history.md) 为准。
 
-## 近期：完成仓库治理审查
+## 近期：完成 Teaching Workspace 产品闭环验收
 
-- 人工审查仓库清理、文档重组、Demo/Test Fixture 分离和稳定命令入口；
-- 确认 43 个历史 Migration、业务流程、开发数据库和 LocalObjectStore 均未被改变；
-- 合并清理 PR 后保持 `main`、文档和 GitHub 同步；
-- 这项工作不是产品 Gate，不创建 Verified Gate Tag。
+- 验收 Lesson Journey、Lesson Brief、备课 Proposal 与 Material Bundle 的同页工作流；
+- 确认 45 个只向前 Migration、开发数据库和 LocalObjectStore 均未被改变；
+- 下一步按低风险顺序接入课堂快速反馈与 Reflection Journey，而不是新增长表单；
+- 教材/课程标准/考点 Knowledge Layer 在独立阶段设计，不在缺少来源时伪造权威结论。
 
-## 下一产品阶段：Gate 2.10B 云部署与小范围试点
+## 后续生产阶段：Gate 2.10B 云部署与小范围试点
 
 Gate 2.10B 尚未开始。进入实施前需要产品所有者确认试点范围、云平台、Identity Provider、数据类别、供应商与运维责任。最小方向包括：
 

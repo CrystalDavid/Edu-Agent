@@ -14,7 +14,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
 - `packages/sample-data`：显式 Seed 和测试共用的稳定匿名 refs/data；产品 API/Web 不依赖该 package；
 - `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
-- PostgreSQL 18：七个 Schema、43 个只向前 Migration；
+- PostgreSQL 18：七个 Schema、45 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；
 - 可选生产集成 Adapter：OIDC Identity Provider、Volcengine Ark Chat Completions。
 
@@ -30,7 +30,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 | `capability-integration` | `capability` | ModelProvider、ModelExecution、PromptBundle、Budget/Data Manifest、Provider capability、ObjectStore Port 和外部能力执行 |
 | `artifact-collaboration` | `artifact` | Proposal/Disposition、TeachingPlan/Revision、LessonReflection/Revision、FileAsset/FileVersion/Binding、正式教学成果 |
 | `education-domain` | `education` | CourseRun/Unit/Lesson/Objective、Enrollment、Assignment/Submission/Grade/Evidence、LessonDelivery、ClassroomObservation |
-| `personalization-memory-analytics` | `personalization` | MemoryCandidate、TeacherPreference 确认/拒绝/过期/撤销与 Evaluation 基础；当前无 PostgreSQL Adapter 或产品入口，不维护 learner profile |
+| `personalization-memory-analytics` | `personalization` | MemoryCandidate、TeacherPreference 确认/拒绝/过期/撤销、不可变 revision 与 Evaluation；已有 PostgreSQL Adapter 和教师治理入口，不维护 learner profile |
 
 模块边界并不意味着七个独立进程。当前是一个部署单元中的模块化单体；Schema ownership、Repository Port、架构测试和数据库角色约束写入边界。
 
@@ -154,7 +154,7 @@ SubmissionAttempt 和已发布 Assignment 内容不原地覆盖；批改修订�
 
 ## 9. Skill-aware Context Engineering 与 Memory 边界
 
-新 lesson preparation 运行绑定 `lesson-preparation@3`。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，但在 ModelProvider 调用前增加纯 Context Builder，并只通过 owner-scoped Personalization Context Port 读取已确认且未撤销的教师偏好：
+新 lesson preparation 运行绑定 `lesson-preparation@4`，历史 `@1`、`@2`、`@3` 仍可解释和恢复。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，但在 ModelProvider 调用前增加纯 Context Builder，并只通过 owner-scoped Personalization Context Port 读取已确认且未撤销的教师偏好：
 
 ```mermaid
 flowchart LR
@@ -168,11 +168,28 @@ flowchart LR
 
 Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifest 和实际 snapshot refs，执行确定性排序/压缩，并记录 resource version/hash/provenance、排除原因、missing information 和分段 token 估算。授权、关键资源、Evidence 命中或预算检查失败时不调用模型；纯预算失败保持现有 `budget_exceeded` API 语义。安全 manifest/evaluation 摘要写入 AgentRun output，不保存完整 Prompt 或 Evidence。
 
-历史 `lesson-preparation@1`、`@2` 保留在 Registry，可继续恢复；新版本没有覆盖已发布版本。
+历史 SkillVersion 保留在 Registry；新版本不覆盖已发布版本。
 
-Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision。Agent 只能提出 draft；候选在教师确认前不能进入 Context；只有 owning teacher 能确认、修改、拒绝或撤销。设置页提供最小治理界面，active preference 可跨 Run/Session/重启使用，revoked preference 立即从 Context 查询中消失。Context manifest 只记录 preference ref/key/version/hash 和 Token 估算，不复制偏好值；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
+Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision；第 45 个前向 Migration 扩展日历事件类别。Agent 只能提出 preference draft；候选在教师确认前不能进入 Context；只有 owning teacher 能确认、修改、拒绝或撤销。设置页提供最小治理界面，active preference 可跨 Run/Session/重启使用，revoked preference 立即从 Context 查询中消失。Context manifest 只记录 preference ref/key/version/hash 和 Token 估算，不复制偏好值；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
 
-## 10. Worker、Outbox 与恢复
+## 10. Teaching Workspace 读取层与材料闭环
+
+Lesson Workspace 不创建第二套 Lesson 状态。`LessonJourneyProjection`、`LessonBriefSnapshot` 与 `MaterialBundleProjection` 都是可重建解释层：它们从 owning Facade/API 读取版本化事实，计算当前阶段、下一步、缺口与链接，不写独立表。
+
+```mermaid
+flowchart LR
+    LESSON["Lesson + Objective"] --> BRIEF["lesson-analysis@1<br/>Lesson Brief candidate"]
+    BRIEF --> BCONFIRM["Teacher adopts selections"]
+    BCONFIRM --> PREP["lesson-preparation@4<br/>TeachingPlan Proposal"]
+    PREP --> APPROVE["Teacher approves Revision"]
+    APPROVE --> MATERIAL["material-generation@1<br/>Content Drafts"]
+    MATERIAL --> ARTIFACT["Artifact Service<br/>FileAsset + immutable FileVersion"]
+    ARTIFACT --> ADOPT["Teacher preview / adopt / download"]
+```
+
+`material-generation@1` 只读取 current approved TeachingPlan Revision、Lesson Brief、已授权 Evidence 与 confirmed Preference，并输出五类 Markdown 内容草稿：教案、PPT 大纲、课堂练习、板书设计和分层支持。Skill 与 Runtime 不写 Artifact；只有 Artifact Application Service 能创建 FileAsset/FileVersion 和 binding。局部重生成只为目标 item 创建新 FileVersion，不覆盖其余材料，也不复制旧版 adopted 状态。没有 current approved Revision 时 Projection 返回 `blocked_no_approved_plan`，服务端拒绝生成，不伪造 baseline。
+
+## 11. Worker、Outbox 与恢复
 
 应用级 Worker 使用数据库租约、重试和 Consumer Effect 幂等：
 
@@ -181,10 +198,10 @@ Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandida
 - 同数据库必须同步提交的正式状态仍由 owning Application Service 更新，不为了“使用事件”强行异步化；
 - Worker 停止不回滚已提交的业务事实，恢复后继续追赶；系统明确采用 at-least-once 处理，不宣称 exactly-once。
 
-## 11. Audit、数据最小化与安全日志
+## 12. Audit、数据最小化与安全日志
 
 Audit 记录 actor/organization、intent、decision、资源 refs、版本、状态和幂等信息。模型日志只保留 provider/model、hash、Usage、延迟、finish reason、安全错误类别和脱敏 request ID；不记录 Secret、Authorization header、完整 Prompt、完整响应或隐藏推理。身份系统不保存 OIDC access/refresh/id token。
 
-## 12. 当前部署边界
+## 13. 当前部署边界
 
 当前架构在本机完整运行，但生产适配尚未完成：数据库和对象存储仍为本地方案，OIDC 只有 provider-neutral Adapter，缺少域名/HTTPS、Secret 管理、托管服务、备份、监控告警、限流/CSP、远程 E2E 和试点运维流程。详见 [部署就绪差距](operations/deployment-readiness-gaps.md)。

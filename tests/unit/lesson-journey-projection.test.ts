@@ -1,10 +1,10 @@
 import type {
-  FileAssetSummary,
   LessonBriefSnapshot,
   LessonImplementationSummary,
   LessonPreparationTaskSummary,
   LessonTeachingPlanState,
   LessonView,
+  MaterialBundleProjection,
   PendingProposalList
 } from "@edu-agent/contracts";
 import { describe, expect, it } from "vitest";
@@ -119,7 +119,7 @@ describe("LessonJourneyProjection", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("ready_for_use")],
       teachingPlans: plans({ approved: true }),
-      files: [file()]
+      materialBundle: bundle("ready")
     }));
 
     expect(projection).toMatchObject({
@@ -136,7 +136,7 @@ describe("LessonJourneyProjection", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("completed")],
       teachingPlans: plans({ approved: true }),
-      files: [file()],
+      materialBundle: bundle("ready"),
       implementation: implementation({
         confirmedDelivery: true,
         confirmedReflection: true,
@@ -157,7 +157,7 @@ describe("LessonJourneyProjection", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("completed")],
       teachingPlans: plans({ approved: true }),
-      files: [file()],
+      materialBundle: bundle("ready"),
       implementation: implementation({
         confirmedDelivery: true,
         confirmedReflection: true,
@@ -190,7 +190,7 @@ function input(
     lesson: lesson(),
     tasks: [],
     teachingPlans: plans(),
-    files: [],
+    materialBundle: bundle("blocked_no_approved_plan"),
     implementation: implementation(),
     pendingProposals: [],
     agentExecution: null,
@@ -309,33 +309,44 @@ function brief(status: LessonBriefSnapshot["status"]): LessonBriefSnapshot {
   };
 }
 
-function file(): FileAssetSummary {
+function bundle(
+  status: MaterialBundleProjection["status"]
+): MaterialBundleProjection {
   return {
-    assetRef: "file:1",
-    displayName: "一次函数教案.docx",
-    category: "lesson_plan",
-    source: "teaching_plan_export",
-    status: "active",
-    version: 2,
-    currentVersion: {
-      versionRef: "file-version:1",
-      assetRef: "file:1",
-      versionNumber: 2,
-      originalFileName: "plan.docx",
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      extension: ".docx",
-      previewKind: "office",
-      sizeBytes: 1024,
-      sha256: "a".repeat(64),
-      contentSummary: "一次函数教案",
-      createdBy: "teacher:1",
-      createdAt: now
-    },
-    bindingCount: 1,
-    deletionProtected: true,
-    createdBy: "teacher:1",
-    createdAt: now,
-    updatedAt: now
+    lessonRef: "lesson:1",
+    approvedTeachingPlanRevisionRef:
+      status === "blocked_no_approved_plan" ? null : "plan-revision:1",
+    approvedTeachingPlanRevisionNumber:
+      status === "blocked_no_approved_plan" ? null : 3,
+    status,
+    items: ([
+      "lesson_plan",
+      "slide_outline",
+      "exercise_set",
+      "board_design",
+      "differentiated_support"
+    ] as const).map((kind, index) => ({
+      kind,
+      label: kind,
+      status: status === "ready" ? "adopted" as const : "missing" as const,
+      assetRef: status === "ready" ? `file:${index + 1}` : null,
+      assetVersion: status === "ready" ? 2 : null,
+      versionRef: status === "ready" ? `file-version:${index + 1}` : null,
+      versionNumber: status === "ready" ? 2 : null,
+      originalFileName: status === "ready" ? `${kind}.md` : null,
+      mimeType: status === "ready" ? "text/markdown" : null,
+      previewKind: status === "ready" ? "text" as const : null,
+      sourceTeachingPlanRevisionRef:
+        status === "ready" ? "plan-revision:1" : null,
+      generatedBySkillRef:
+        status === "ready" ? "material-generation@1" : null,
+      agentRunRef: status === "ready" ? "agent-run:material" : null,
+      contextManifestHash: status === "ready" ? "d".repeat(64) : null,
+      contentHash: status === "ready" ? "e".repeat(64) : null,
+      updatedAt: status === "ready" ? now : null
+    })),
+    sourceVersionVector: {},
+    generatedAt: now
   };
 }
 

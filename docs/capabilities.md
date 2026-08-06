@@ -13,11 +13,11 @@
 | 概览 | REAL（教师工作投影） | 查看 Todo、日历、备课、待审计划、作业/批改、模型失败、课堂实施/反思和最近文件；创建个人 Todo；进入源业务 | PostgreSQL；`/teacher/workbench/overview`、`action-items` | Work 聚合读取；2.8，2.9 补充课堂事项 | 不在概览直接伪造源业务完成；学校宣传动态未进入产品范围 |
 | 日程 | REAL | 日/周/月统一查看；创建、移动、完成或取消手工事件；将 Todo 安排为独立时间块；对源事项稍后提醒 | Work Schema；`calendar-events`、`todos/:ref/schedule`、workbench projection preference | Work；2.8 | 无共享/外部日历、复杂重复规则或自动排程；源业务日历项只读 |
 | 教学 | REAL（当前范围） | 在统一 Workspace 中进入课程、课时、作业、课堂实施和反思；考试入口明确关闭 | 各子页面正式 API；页面路由由 Web 自定义 history router 解析 | Education / Work / Artifact；2.5、2.7、2.9 | 完整考试未开始 |
-| 课程 | REAL | 读取 CourseRun → Unit → Lesson；按单元展开课时；查看准备度、成果预览、重点难点、课堂实施、观察、反思与后续行动 | Education/Work/Artifact PostgreSQL；`course-runs`、`units`、`lessons`、`implementation-summary` | Education 等；2.5，2.9 扩展 | 当前为最小课程切片；无课程 CRUD、完整资源树或排课系统 |
+| 课程 | REAL | 读取 CourseRun → Unit → Lesson；查看 Journey、可解释 Lesson Brief、备课 Proposal、current approved plan、五类材料包、课堂实施、观察、反思与后续行动 | Education/Work/Runtime/Artifact PostgreSQL；lesson journey/brief/material-bundle 与既有 lesson API | Education / Work / Runtime / Artifact；2.5、2.9、Phase 8A | 当前为最小课程切片；无课程 CRUD、教材知识库、完整资源树或排课系统 |
 | 作业 | REAL | 创建/修订草稿、显式发布/关闭/归档；载入匿名样例提交；逐题批改、确认/重开；查看可重算统计与学习依据；调整下一课 | Education Schema；`assignments`、`submissions`、`grading-queue`、`analytics`、`evidence`、`adjust-next-lesson` | Education / Work；2.7 | 无学生端自行提交、完整题库/考试或自动成绩发布 |
 | 考试 | DISABLED | 页面明确显示暂未开放，不提供伪造结果 | 无 | 无正式状态所有者 | 无考试创建、发布、提交、批改或持久化闭环 |
 | 学生 | PARTIAL | 查看当前 CourseRun 的匿名 enrollment、近期提交/确认 Evidence 和教师确认的 learner-scope classroom observation | Education PostgreSQL；`course-runs/:ref/enrollments`、`learners/:ref/evidence`、observations | Education；2.7、2.9 | 无正式学生身份、真实名单、长期画像或固定能力标签 |
-| 文件 | REAL | 上传、下载、搜索、分类、排序、详情、新版本、软删除/恢复、绑定 Lesson/Task/TeachingPlan；导出 approved TeachingPlan DOCX | Artifact PostgreSQL + Capability LocalObjectStore；`files`、`versions`、`content`、`bindings`、`teaching-plans/:revision/export-docx` | Artifact / Capability；2.5B | 本地对象存储；Office 只提取摘要/下载；无分享、协作、云同步或文件内容入模 |
+| 文件 | REAL | 上传、下载、搜索、分类、排序、详情、新版本、软删除/恢复、绑定 Lesson/Task/TeachingPlan；导出 approved TeachingPlan DOCX；材料草稿逐项预览、重生成、采用与下载 | Artifact PostgreSQL + Capability LocalObjectStore；File API、DOCX export、lesson material-bundle API | Artifact / Capability；2.5B、Phase 8A-3 | 本地对象存储；PPT 当前是内容大纲 Markdown，不生成 PPTX；无分享、协作、云同步或文件内容入模 |
 | Agent 一级页 | REAL（任务入口） | 读取服务器中的未完成备课任务，并从 Task、Todo、Reflection 等正式入口进入受限 Agent 流程 | 正式 deep link + lesson preparation Task API | Work / Runtime / Capability；2、2.5、2.8、2.9 | 不提供无上下文对话、收藏或本地会话副本；无多 Agent 或自动化平台 |
 | Agent / Copilot | REAL | 封存 TaskWorkingSet/授权上下文；创建可恢复 ModelExecution；Mock 或 Ark 生成 Proposal；取消、重试、恢复；教师处置 | Work/Runtime/Capability/Artifact PostgreSQL；task context、model invocation、proposal API | 2.4、2.5、2.6A | Ark 需服务端配置；默认本地/测试为 Mock；不能自动批准、完成任务或扩大上下文 |
 | Teaching Plan | REAL | 查看 current approved、active in-review、draft、superseded/history；处置 Proposal；单独批准；显式完成备课；导出 DOCX | Artifact/Work PostgreSQL；lesson teaching-plan reads、proposal disposition、approve、export | Artifact / Work；2.4、2.5、2.5B | `published` 未实现；approved Revision immutable；正式导出只允许 current approved |
@@ -36,6 +36,7 @@
 | 备课 | REAL | Lesson → lesson_preparation Task → request/context → Proposal → in-review → approved → ready → explicit complete | 不包含完整课程资源树或自动完成 |
 | 豆包模型生成 | REAL（可选） | 单一 `VolcengineArkProvider`、事务外 Worker、结构化校验/一次修复、预算、取消、重试、恢复、Usage | 默认离线 Provider 不联网；真实调用需合规数据授权；无多供应商/模型选择器 |
 | TeachingPlan 审批 | REAL | draft → active in-review/superseded → current approved；教师处置和批准分离 | 未实现 published；approved 不可原地修改 |
+| Lesson Journey 与材料包 | REAL（当前范围） | Lesson Brief 候选由教师采用；备课 Proposal 经教师批准后，按 approved Revision 生成教案、PPT 大纲、练习、板书、分层支持；单项重生成形成新 FileVersion | Projection 可重建且不写第二真值；无 approved plan 时禁止材料生成；无真实 PPTX/Office 编辑器或教材知识库 |
 | 文件和 DOCX | REAL（本地） | FileAsset/FileVersion、LocalObjectStore、绑定、版本、删除保护、approved plan DOCX | 无云 ObjectStore、分享协作或 Office 完整预览 |
 | 作业和提交 | REAL（教师端） | Assignment 生命周期/版本、immutable Attempt/Response、未交语义；本机可选匿名样例提交 | 无学生端、自助提交入口或完整题库 |
 | 批改和 Evidence | REAL | grade draft/confirm/reopen，Evidence 来源链和可重算统计 | 自动评分只可作建议；不形成长期 learner estimate |

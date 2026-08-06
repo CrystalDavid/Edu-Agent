@@ -781,7 +781,9 @@ export class PostgresFileArtifactService {
     purpose: "material-bundle.generate";
     idempotencyKey: string;
     expectedApprovedTeachingPlanRevisionRef: string;
-    expectedAssetVersions: Readonly<Partial<Record<MaterialKind, number>>>;
+    expectedAssetVersions: Readonly<
+      Partial<Record<MaterialKind, number | undefined>>
+    >;
     agentRunRef: string;
     skillRef: string;
     contextManifestHash: string;

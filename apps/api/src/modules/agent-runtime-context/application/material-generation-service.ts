@@ -73,7 +73,9 @@ export interface MaterialBundleArtifactPort {
     readonly purpose: "material-bundle.generate";
     readonly idempotencyKey: string;
     readonly expectedApprovedTeachingPlanRevisionRef: string;
-    readonly expectedAssetVersions: Readonly<Partial<Record<MaterialKind, number>>>;
+    readonly expectedAssetVersions: Readonly<
+      Partial<Record<MaterialKind, number | undefined>>
+    >;
     readonly agentRunRef: string;
     readonly skillRef: string;
     readonly contextManifestHash: string;

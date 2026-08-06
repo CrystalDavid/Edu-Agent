@@ -6,9 +6,9 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 - 固定产品 Tag：`gate-2-10a-verified`
 - 当前形态：Node.js / TypeScript pnpm workspace 模块化单体
 - 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
-- 下一产品阶段：Gate 2.10B 云部署与小范围试点准备；本仓库整理不构成新 Gate
+- 当前工程阶段：Phase 8 Teaching Workspace；云部署与小范围试点在工作流验收后进入
 
-详细 Commit、PR、Tag 和 43 个历史 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A 另增 1 个前向 Personalization Migration，当前合计 44 个。
+详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A 与日历分类各追加 1 个前向 Migration，当前合计 45 个。
 
 ## 项目定位
 
@@ -29,11 +29,11 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 |---|---|---|---|
 | 登录与学校工作空间 | REAL（本机）/ PARTIAL（生产） | 手机号密码/验证码、Local/OIDC Provider Port、HttpOnly Session、登录/刷新/登出、多学校选择 | 本机账号映射林老师；正式 IdP 和云环境尚未配置 |
 | 教师权限与学校隔离 | REAL | Membership、Role、CourseRun access、服务端 ActingContext、跨校不泄漏 | 角色范围仍是试点最小集合 |
-| 课程与课时 | REAL（最小切片） | CourseRun → Unit → Lesson、目标、准备度、重点难点、成果预览和实施汇总 | 无课程 CRUD、排课和完整资源树 |
+| 课程与课时 | REAL（最小切片） | CourseRun → Unit → Lesson；Lesson Journey、可解释 Lesson Brief、备课 Proposal 与五类 Material Bundle | 无课程 CRUD、排课、教材知识库和完整资源树 |
 | 备课任务与授权上下文 | REAL | lesson preparation Task、TaskWorkingSet、重新授权、sealed ContextManifest | 当前内置一组匿名样例课程 |
 | 豆包真实模型生成 | PARTIAL | Volcengine Ark Chat Completions、预算、排队、取消、重试、恢复和验证 | 需本机服务端 Key；当前只有一个真实 Provider |
 | Agent Proposal 与 TeachingPlan 审批 | REAL | Proposal 处置、`draft → in_review → approved`、Revision 历史、显式完成 | Agent 不能自动批准或发布 |
-| 文件、版本与 DOCX | REAL | FileAsset/FileVersion、绑定、软删除/恢复、approved TeachingPlan DOCX | 当前使用本地 ObjectStore，无协作和云同步 |
+| 文件、版本与 DOCX | REAL | FileAsset/FileVersion、绑定、软删除/恢复、approved TeachingPlan DOCX；材料草稿逐项版本化、预览、采用和下载 | 当前使用本地 ObjectStore；PPT 仅生成内容大纲，不生成真实 PPTX；无协作和云同步 |
 | 作业、提交与批改 | REAL（教师端） | Assignment 生命周期、immutable Attempt、批改草稿、确认/重开、统计 | 当前可载入匿名样例提交，无学生端自行提交 |
 | Evidence | REAL | Observation/Claim 与来源、置信度、unknowns、批改和教学上下文可追溯 | 不形成永久 learner 能力标签 |
 | 调整下一课 | REAL | 从作业/Evidence 生成显式的下一课调整建议和任务关系 | 仍由教师决定是否采用 |
@@ -72,7 +72,7 @@ Edu-Agent 是一个部署单元内的七模块模块化单体。每个模块拥�
 | `capability-integration` | `capability` | ModelProvider/Execution、Prompt/预算、ObjectStore Port、外部能力调用 |
 | `artifact-collaboration` | `artifact` | Proposal、TeachingPlan/Revision、Reflection/Revision、文件与版本 |
 | `education-domain` | `education` | Course/Lesson/Objective、Assignment/Submission/Grade/Evidence、课堂实施与观察 |
-| `personalization-memory-analytics` | `personalization` | MemoryCandidate、教师确认 Preference 与 Evaluation 基础；尚未接成产品持久化能力，不维护 learner profile |
+| `personalization-memory-analytics` | `personalization` | MemoryCandidate、教师确认 Preference、不可变 revision 与 Evaluation；不维护 learner profile |
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,7 @@ Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根�
 ```mermaid
 flowchart TB
     subgraph PREP["备课闭环"]
-      P1["课程 / 课时"] --> P2["备课 Task + WorkingSet"] --> P3["重新授权的上下文"] --> P4["模型 Proposal"] --> P5["教师处置"] --> P6["TeachingPlan 审批"]
+      P1["课程 / 课时"] --> P2["Lesson Brief"] --> P3["备课 Task + 授权上下文"] --> P4["模型 Proposal"] --> P5["TeachingPlan 审批"] --> P6["逐项材料包"]
     end
     subgraph LEARN["作业—Evidence—调整教学"]
       L1["Assignment"] --> L2["SubmissionAttempt"] --> L3["教师批改确认"] --> L4["Evidence"] --> L5["调整下一课"]
@@ -134,7 +134,7 @@ flowchart TB
 | Workspace | Node.js 24（本轮验证 24.14.0）、Corepack、pnpm 11.9.0、TypeScript 7 |
 | Web | React 19、Vite 8、Ant Design 6、原生 history router |
 | API | Express 5、Zod 4、OpenAI-compatible client、openid-client |
-| 数据 | PostgreSQL 18、Drizzle ORM、43 个历史 Migration + 1 个 Phase 7A 前向 Migration |
+| 数据 | PostgreSQL 18、Drizzle ORM、45 个只向前 Migration（43 个 Verified 基线 + Phase 7A + 日历分类） |
 | 文件 | LocalObjectStore、`docx`、JSZip |
 | 测试 | Vitest 4、PGlite、Supertest、Node test runner、Playwright 1.62 |
 | 本地环境 | Docker Desktop / Docker Compose |
@@ -169,10 +169,10 @@ corepack pnpm app:down
 
 1. 登录并选择学校工作空间，刷新确认 Session 恢复；
 2. 查看概览与工作台，确认来源事项能回到源业务；
-3. 进入课程和课时，创建备课任务；
-4. 检查 TaskWorkingSet/授权上下文，用 Mock 或豆包生成 Proposal；
+3. 进入课程和课时，生成并采用 Lesson Brief，确认 Journey 下一步；
+4. 创建备课任务，检查 TaskWorkingSet/授权上下文，用 Mock 或豆包生成 Proposal；
 5. 处置 Proposal，确认 TeachingPlan 的 in-review、approved 和历史 Revision；
-6. 上传文件、创建版本、绑定课时/任务/计划并导出 DOCX；
+6. 基于 current approved Revision 生成材料包，局部重生成、预览、采用和下载；再验证上传文件、版本、绑定与 DOCX；
 7. 创建/发布作业、导入匿名示例提交、批改并确认学习证据；
 8. 从学习证据显式“调整下一课”；
 9. 创建 Todo/Calendar，验证源业务投影只读和稍后提醒；
