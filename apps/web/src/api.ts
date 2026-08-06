@@ -90,6 +90,9 @@ import {
   MaterialBundleProjectionSchema,
   GenerateMaterialBundleRequestSchema,
   GenerateMaterialBundleResultSchema,
+  GenerateClassroomFeedbackRequestSchema,
+  GenerateClassroomFeedbackResultSchema,
+  LatestClassroomFeedbackResultSchema,
   AdoptMaterialBundleItemRequestSchema,
   AdoptMaterialBundleItemResultSchema,
   LessonPreparationSummarySchema,
@@ -209,6 +212,7 @@ import {
   type GenerateLessonBriefRequest,
   type DecideLessonBriefRequest,
   type GenerateMaterialBundleRequest,
+  type GenerateClassroomFeedbackRequest,
   type AdoptMaterialBundleItemRequest,
   type MaterialKind,
   type LessonPreparationTaskActionRequest,
@@ -1678,6 +1682,26 @@ export function loadLessonImplementationSummary(lessonRef: string) {
     "课时实施与反思摘要",
     apiRoutes.teacher.lessonImplementationSummary(lessonRef),
     LessonImplementationSummarySchema
+  );
+}
+
+export function loadLatestClassroomFeedback(lessonRef: string) {
+  return request(
+    "最近课堂快速反馈",
+    apiRoutes.teacher.lessonLatestClassroomFeedback(lessonRef),
+    LatestClassroomFeedbackResultSchema
+  );
+}
+
+export function generateClassroomFeedback(
+  input: GenerateClassroomFeedbackRequest
+) {
+  GenerateClassroomFeedbackRequestSchema.parse(input);
+  return request(
+    "生成课堂记录草稿",
+    apiRoutes.teacher.lessonDeliveryQuickFeedback,
+    GenerateClassroomFeedbackResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
   );
 }
 

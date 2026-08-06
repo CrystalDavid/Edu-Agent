@@ -110,6 +110,103 @@ export const LessonDeliveryMutationResultSchema = z.object({
   delivery: LessonDeliveryDetailSchema
 });
 
+export const QuickClassroomOverallSchema = z.enum([
+  "as_planned",
+  "adjusted",
+  "incomplete"
+]);
+
+export const QuickClassroomPaceSchema = z.enum([
+  "on_pace",
+  "slower",
+  "faster"
+]);
+
+export const QuickClassroomStudentResponseSchema = z.enum([
+  "attained",
+  "partial_difficulty",
+  "needs_review"
+]);
+
+export const QuickClassroomSectionSchema = z.enum([
+  "opening",
+  "explanation",
+  "activity",
+  "practice",
+  "summary"
+]);
+
+export const GenerateClassroomFeedbackRequestSchema = z.object({
+  courseRunRef: z.string().min(1),
+  lessonRef: z.string().min(1),
+  expectedApprovedTeachingPlanRevisionRef: z.string().min(1),
+  overall: QuickClassroomOverallSchema,
+  pace: QuickClassroomPaceSchema,
+  studentResponse: QuickClassroomStudentResponseSchema,
+  abnormalSections: z.array(QuickClassroomSectionSchema).max(5),
+  note: z.string().trim().max(500).nullable().default(null),
+  purpose: z.literal("lesson-delivery.quick-feedback.generate"),
+  idempotencyKey: z.string().min(8)
+}).superRefine((value, context) => {
+  if (new Set(value.abnormalSections).size !== value.abnormalSections.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["abnormalSections"],
+      message: "abnormalSections must be unique"
+    });
+  }
+});
+
+export const ClassroomFeedbackObservationCandidateSchema = z.object({
+  candidateId: z.string().min(1),
+  status: z.literal("candidate"),
+  scope: z.enum(["class", "activity"]),
+  scopeRef: z.string().min(1).nullable(),
+  observationType: z.enum([
+    "achievement",
+    "confusion",
+    "timing",
+    "engagement",
+    "activity_effectiveness",
+    "unresolved"
+  ]),
+  content: z.string().min(1),
+  basisRefs: z.array(z.string().min(1)).min(1),
+  confidence: z.literal("teacher_signal"),
+  teacherConfirmationRequired: z.literal(true)
+});
+
+export const ClassroomFeedbackReflectionInputSchema = z.object({
+  plannedVsImplemented: z.array(z.string().min(1)),
+  effectiveSegments: z.array(z.string().min(1)),
+  uncertainQuestions: z.array(z.string().min(1)),
+  suggestedNextActions: z.array(z.string().min(1))
+});
+
+export const ClassroomFeedbackRunViewSchema = z.object({
+  agentRunRef: z.string().min(1),
+  contextManifestRef: z.string().min(1),
+  contextManifestHash: z.string().min(16),
+  skillRef: z.literal("classroom-reflection@1"),
+  lessonRef: z.string().min(1),
+  teachingPlanRevisionRef: z.string().min(1),
+  deliverySummary: z.string().min(1),
+  observationCandidates: z.array(ClassroomFeedbackObservationCandidateSchema),
+  reflectionInput: ClassroomFeedbackReflectionInputSchema,
+  knownGaps: z.array(z.string().min(1)).min(1),
+  createdAt: z.string().datetime()
+});
+
+export const GenerateClassroomFeedbackResultSchema =
+  ClassroomFeedbackRunViewSchema.extend({
+    replayed: z.boolean(),
+    delivery: LessonDeliveryDetailSchema
+  });
+
+export const LatestClassroomFeedbackResultSchema = z.object({
+  item: ClassroomFeedbackRunViewSchema.nullable()
+});
+
 export const ObservedPedagogicalMoveSchema = z.object({
   moveRef: z.string().min(1),
   deliveryRevisionRef: z.string().min(1),
@@ -441,6 +538,11 @@ export type CreateLessonDeliveryRequest = z.infer<typeof CreateLessonDeliveryReq
 export type UpdateLessonDeliveryDraftRequest = z.infer<typeof UpdateLessonDeliveryDraftRequestSchema>;
 export type ConfirmLessonDeliveryRequest = z.infer<typeof ConfirmLessonDeliveryRequestSchema>;
 export type AmendLessonDeliveryRequest = z.infer<typeof AmendLessonDeliveryRequestSchema>;
+export type GenerateClassroomFeedbackRequest = z.infer<typeof GenerateClassroomFeedbackRequestSchema>;
+export type GenerateClassroomFeedbackResult = z.infer<typeof GenerateClassroomFeedbackResultSchema>;
+export type ClassroomFeedbackRunView = z.infer<typeof ClassroomFeedbackRunViewSchema>;
+export type ClassroomFeedbackObservationCandidate = z.infer<typeof ClassroomFeedbackObservationCandidateSchema>;
+export type QuickClassroomSection = z.infer<typeof QuickClassroomSectionSchema>;
 export type ClassroomObservationRevision = z.infer<typeof ClassroomObservationRevisionSchema>;
 export type ClassroomObservationDetail = z.infer<typeof ClassroomObservationDetailSchema>;
 export type CreateClassroomObservationRequest = z.infer<typeof CreateClassroomObservationRequestSchema>;

@@ -32,6 +32,7 @@ import {
   type ClassroomReflectionContextBuildResult,
   type ClassroomReflectionEvaluation,
   type ClassroomReflectionSkillInput,
+  type ClassroomReflectionSkillOutput,
   type ClassroomReflectionSkillVersion
 } from "./classroom-reflection/index.js";
 
@@ -151,6 +152,7 @@ export type {
   MaterialGenerationEvaluation,
   MaterialGenerationSkillVersion,
   ClassroomReflectionSkillInput,
+  ClassroomReflectionSkillOutput,
   ClassroomReflectionContextBuildResult,
   ClassroomReflectionEvaluation,
   ClassroomReflectionSkillVersion

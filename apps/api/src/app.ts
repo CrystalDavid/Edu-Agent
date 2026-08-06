@@ -73,6 +73,7 @@ import {
   GenerateLessonBriefRequestSchema,
   DecideLessonBriefRequestSchema,
   GenerateMaterialBundleRequestSchema,
+  GenerateClassroomFeedbackRequestSchema,
   AdoptMaterialBundleItemRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
@@ -897,6 +898,7 @@ export function createApp(
     const lessonJourney = product.services.lessonJourney;
     const lessonBrief = product.services.lessonBrief;
     const materialGeneration = product.services.materialGeneration;
+    const classroomFeedback = product.services.classroomFeedback;
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
@@ -1033,6 +1035,47 @@ export function createApp(
             actorRef: contexts.acting.actorRef,
             lessonRef: routeParameter(request.params["lessonRef"])
           }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonLatestClassroomFeedbackPattern,
+      markRoute("product.teacher.classroom.feedback.latest"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroomFeedback.latest({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            lessonRef: routeParameter(request.params["lessonRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.lessonDeliveryQuickFeedback,
+      markRoute("product.teacher.classroom.feedback.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const parsed = GenerateClassroomFeedbackRequestSchema.parse(
+            request.body
+          );
+          const result = await classroomFeedback.generate({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: parsed.lessonRef
+            },
+            request: parsed
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
         } catch (error) {
           next(error);
         }

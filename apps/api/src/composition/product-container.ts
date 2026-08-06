@@ -78,6 +78,10 @@ import { LessonBriefSourceAdapter } from "./lesson-brief-source-adapter.js";
 import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
 import { MaterialGenerationService } from "../modules/agent-runtime-context/application/material-generation-service.js";
 import { MaterialGenerationSourceAdapter } from "./material-generation-source-adapter.js";
+import { ClassroomFeedbackService } from "../modules/agent-runtime-context/application/classroom-feedback-service.js";
+import { ClassroomFeedbackSourceAdapter } from "./classroom-feedback-source-adapter.js";
+import { ClassroomFeedbackDeliveryAdapter } from "./classroom-feedback-delivery-adapter.js";
+import { PostgresClassroomFeedbackRunStore } from "./postgres-classroom-feedback-run-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -174,6 +178,17 @@ export function createProductContainer(
     files,
     skillRegistry
   );
+  const classroomFeedback = new ClassroomFeedbackService(
+    new ClassroomFeedbackSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization,
+      classroomReflection
+    ),
+    new PostgresClassroomFeedbackRunStore(appPool),
+    new ClassroomFeedbackDeliveryAdapter(classroomReflection),
+    skillRegistry
+  );
   const lessonJourney = new LessonJourneyReadService(
     new LessonJourneyReadAdapter(
       lessonPreparation,
@@ -214,6 +229,7 @@ export function createProductContainer(
       lessonJourney,
       lessonBrief,
       materialGeneration,
+      classroomFeedback,
       personalization,
       files
     },

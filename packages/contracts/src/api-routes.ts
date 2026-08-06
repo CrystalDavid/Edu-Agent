@@ -383,7 +383,11 @@ export const apiRoutes = {
     lessonImplementationSummaryPattern: "/api/v1/teacher/lessons/:lessonRef/implementation-summary",
     lessonImplementationSummary: (lessonRef: string): string =>
       `${teacherLessonRoute(lessonRef)}/implementation-summary`,
+    lessonLatestClassroomFeedbackPattern: "/api/v1/teacher/lessons/:lessonRef/classroom-feedback/latest",
+    lessonLatestClassroomFeedback: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/classroom-feedback/latest`,
     lessonDeliveries: "/api/v1/teacher/classroom/deliveries",
+    lessonDeliveryQuickFeedback: "/api/v1/teacher/classroom/deliveries/quick-feedback",
     lessonDeliveryPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef",
     lessonDelivery: teacherLessonDeliveryRoute,
     lessonDeliveryConfirmPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef/confirm",

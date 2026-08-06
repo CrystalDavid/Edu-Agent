@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  ClassroomFeedbackObservationCandidate,
   ClassroomObservationRevision,
   DeliveryStepInput,
   LessonImplementationSummary,
@@ -37,6 +38,7 @@ import {
   supersedeClassroomObservation,
   updateLessonDeliveryDraft
 } from "../../api";
+import { QuickClassroomFeedback } from "./QuickClassroomFeedback";
 
 const { Paragraph, Text, Title } = Typography;
 
@@ -343,6 +345,22 @@ export function ClassroomReflectionPanel(props: {
     setObservationOpen(true);
   }
 
+  function useObservationCandidate(
+    candidate: ClassroomFeedbackObservationCandidate
+  ) {
+    setObservationToAmend(null);
+    setObservationForm({
+      scope: candidate.scope,
+      scopeRef: candidate.scopeRef ?? "",
+      observationType: candidate.observationType,
+      content: candidate.content.replace(/^候选观察：/u, ""),
+      observedAt: localDateTime(
+        currentConfirmed?.actualEndAt ?? new Date().toISOString()
+      )
+    });
+    setObservationOpen(true);
+  }
+
   async function saveObservation() {
     if (!delivery || !currentConfirmed) return;
     if (observationForm.scope !== "class" && !observationForm.scopeRef.trim()) {
@@ -446,6 +464,17 @@ export function ClassroomReflectionPanel(props: {
             <Alert type="warning" showIcon title="尚无已批准教学计划" description="请先批准一版教学计划，再记录本节课的实际实施情况。" />
           ) : currentConfirmed ? (
             <>
+              <QuickClassroomFeedback
+                courseRunRef={props.courseRunRef}
+                lessonRef={props.lesson.lessonRef}
+                approvedTeachingPlanRevisionRef={
+                  props.planState.currentApproved.revisionRef
+                }
+                mode="confirmed"
+                onGenerated={props.onAction}
+                onRefresh={refresh}
+                onUseCandidate={useObservationCandidate}
+              />
               <Space wrap>
                 <Tag color="success">教师已确认</Tag>
                 <Tag>实施记录第 {currentConfirmed.revisionNumber} 版</Tag>
@@ -467,6 +496,16 @@ export function ClassroomReflectionPanel(props: {
             </>
           ) : currentDraft ? (
             <>
+              <QuickClassroomFeedback
+                courseRunRef={props.courseRunRef}
+                lessonRef={props.lesson.lessonRef}
+                approvedTeachingPlanRevisionRef={
+                  props.planState.currentApproved.revisionRef
+                }
+                mode="draft"
+                onGenerated={props.onAction}
+                onRefresh={refresh}
+              />
               <Alert type="info" showIcon title="课堂实施草稿" description="当前内容尚未成为正式实施事实。" />
               <Space wrap>
                 <Button onClick={() => openDelivery("edit")}>继续编辑</Button>
@@ -477,6 +516,16 @@ export function ClassroomReflectionPanel(props: {
             </>
           ) : (
             <>
+              <QuickClassroomFeedback
+                courseRunRef={props.courseRunRef}
+                lessonRef={props.lesson.lessonRef}
+                approvedTeachingPlanRevisionRef={
+                  props.planState.currentApproved.revisionRef
+                }
+                mode="generate"
+                onGenerated={props.onAction}
+                onRefresh={refresh}
+              />
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未记录本节课实际实施" />
               <Button type="primary" disabled={!props.planState.currentApproved} onClick={() => openDelivery("create")} data-testid="create-lesson-delivery">记录本节课</Button>
             </>

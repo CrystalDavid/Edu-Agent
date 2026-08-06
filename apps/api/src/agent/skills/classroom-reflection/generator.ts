@@ -31,7 +31,7 @@ export function generateClassroomReflectionDraft(
   const feedbackRef = `teacher-feedback:${sha256(input.teacherFeedback).slice(0, 24)}`;
   const planRef = input.approvedTeachingPlan.revisionRef;
   const planned = plannedSegments(input);
-  const steps = planned.map((segment, sequence) => {
+  const steps = planned.map((segment, index) => {
     const isAbnormal = abnormal.has(segment.key);
     const disposition = dispositionFor(
       input.teacherFeedback.overall,
@@ -39,7 +39,7 @@ export function generateClassroomReflectionDraft(
     );
     return {
       stepKey: segment.key,
-      sequence,
+      sequence: index + 1,
       title: sectionLabels[segment.key],
       plannedDescription: segment.description,
       actualDescription: actualDescription(
@@ -246,7 +246,7 @@ function candidatesFor(input: {
     candidates.push(withCandidateId({
       status: "candidate",
       scope: "activity",
-      scopeRef: `delivery-step:${section}`,
+      scopeRef: section,
       observationType: "activity_effectiveness",
       content: `候选观察：教师标记“${sectionLabels[section]}”环节存在实际差异，具体表现待教师确认。`,
       basisRefs,
