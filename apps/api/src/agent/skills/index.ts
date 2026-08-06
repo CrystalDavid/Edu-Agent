@@ -20,10 +20,16 @@ import {
   type LessonAnalysisSkillInput,
   type LessonAnalysisSkillVersion
 } from "./lesson-analysis/index.js";
+import {
+  materialGenerationSkillV1,
+  type MaterialGenerationSkillInput,
+  type MaterialGenerationSkillVersion
+} from "./material-generation/index.js";
 
 export const lessonPreparationSkillRef = "lesson-preparation@4";
 export const legacyLessonPreparationSkillRef = "lesson-preparation@3";
 export const lessonAnalysisSkillRef = "lesson-analysis@1";
+export const materialGenerationSkillRef = "material-generation@1";
 
 export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   const registry = new VersionedSkillRegistry();
@@ -32,7 +38,21 @@ export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   registry.register(lessonPreparationSkillV3);
   registry.register(lessonPreparationSkillV4);
   registry.register(lessonAnalysisSkillV1);
+  registry.register(materialGenerationSkillV1);
   return registry;
+}
+
+export function loadMaterialGenerationSkill(
+  registry: VersionedSkillRegistry,
+  skillRef = materialGenerationSkillRef
+): MaterialGenerationSkillVersion {
+  const skill = registry.loadPublished<MaterialGenerationSkillVersion>(
+    skillRef
+  );
+  if (skill.manifest.id !== "material-generation") {
+    throw new Error(`Skill ${skillRef} cannot generate teaching materials.`);
+  }
+  return skill;
 }
 
 export function loadLessonAnalysisSkill(
@@ -81,7 +101,8 @@ export {
   lessonPreparationSkillV2,
   lessonPreparationSkillV3,
   lessonPreparationSkillV4,
-  lessonAnalysisSkillV1
+  lessonAnalysisSkillV1,
+  materialGenerationSkillV1
 };
 export type {
   SkillLifecycleStatus,
@@ -99,5 +120,7 @@ export type {
   LessonPreparationSkillEvaluation,
   LessonPreparationSkillVersion,
   LessonAnalysisSkillInput,
-  LessonAnalysisSkillVersion
+  LessonAnalysisSkillVersion,
+  MaterialGenerationSkillInput,
+  MaterialGenerationSkillVersion
 };

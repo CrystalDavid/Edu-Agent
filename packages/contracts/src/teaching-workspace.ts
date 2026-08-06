@@ -209,6 +209,22 @@ export const DecideLessonBriefResultSchema = z.object({
   }).nullable()
 });
 
+export const MaterialKindSchema = z.enum([
+  "lesson_plan",
+  "slide_outline",
+  "exercise_set",
+  "board_design",
+  "differentiated_support"
+]);
+
+export const MaterialContentDraftSchema = z.object({
+  kind: MaterialKindSchema,
+  title: z.string().min(1).max(180),
+  contentMarkdown: z.string().min(80).max(20_000),
+  sourceRefs: z.array(z.string().min(1)).min(2),
+  knownGaps: z.array(z.string().min(1)).min(1)
+});
+
 export type LessonJourneyStage = z.infer<
   typeof LessonJourneyStageSchema
 >;
@@ -241,4 +257,8 @@ export type GenerateLessonBriefRequest = z.infer<
 >;
 export type DecideLessonBriefRequest = z.infer<
   typeof DecideLessonBriefRequestSchema
+>;
+export type MaterialKind = z.infer<typeof MaterialKindSchema>;
+export type MaterialContentDraft = z.infer<
+  typeof MaterialContentDraftSchema
 >;
