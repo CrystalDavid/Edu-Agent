@@ -276,6 +276,39 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
     expect(generated.body.currentDraft.revisionNumber).toBe(2);
     expect(generated.body.currentConfirmed).toBeNull();
 
+    const runtimeDraft = await adminPool.query<{ output: Record<string, unknown> }>(
+      `SELECT output
+         FROM runtime.agent_run
+        WHERE agent_run_ref = $1`,
+      [generated.body.currentDraft.sourceAgentRunRef]
+    );
+    expect(runtimeDraft.rows[0]?.output).toMatchObject({
+      runtimeStatus: "waiting_for_human",
+      skill: {
+        id: "reflection-analysis",
+        version: "1",
+        ref: "reflection-analysis@1"
+      },
+      reflectionAnalysis: {
+        schemaVersion: "reflection-analysis-draft@1",
+        teacherConfirmationRequired: true,
+        whatHappened: { facts: expect.any(Array) },
+        whatItMeans: { interpretations: expect.any(Array) },
+        whatNext: { actionCandidates: expect.any(Array) }
+      }
+    });
+    const automaticFollowUps = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM work.reflection_follow_up_link
+        WHERE reflection_revision_ref IN (
+          SELECT revision_ref
+            FROM artifact.lesson_reflection_scope
+           WHERE artifact_ref = $1
+        )`,
+      [reflectionRef]
+    );
+    expect(automaticFollowUps.rows[0]?.count).toBe("0");
+
     const confirmedReflection = await request(app)
       .post(apiRoutes.teacher.reflectionConfirm(reflectionRef))
       .set(demoHeaders)

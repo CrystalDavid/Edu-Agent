@@ -117,7 +117,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
     animations: "disabled"
   });
 
-  await page.getByLabel("给教学助手的补充说明").fill(
+  await page.getByLabel("一句话告诉教学助手需要关注或调整什么").fill(
     "只整理教师确认的课堂事实，并保留证据缺口。"
   );
   const generationCreated = page.waitForResponse(
@@ -138,6 +138,16 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await expect(page).toHaveURL(new RegExp(`/agent/reflections/${encodeURIComponent(reflectionRef)}`));
   await expect(page.getByTestId("reflection-context")).toContainText("已完成", { timeout: 20_000 });
   await expect(page.getByTestId("reflection-draft-editor")).toContainText("教学助手整理");
+  await expect(page.getByTestId("reflection-facts")).toContainText("发生了什么");
+  await expect(page.getByTestId("reflection-interpretation")).toContainText("教学助手的解释");
+  await expect(page.getByTestId("reflection-action-candidates")).toContainText("候选尚未执行");
+  await expect(page.getByTestId("reflection-teacher-decision")).toContainText("只有“准确”会确认 Reflection");
+  await page.screenshot({
+    path: `${screenshotRoot}/02-layered-reflection-review.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+  await page.locator(".reflection-advanced-editor summary").click();
   await page.getByLabel("目标达成情况").fill(
     "教师确认：多数学生能解释斜率正负与图像方向，仍需区分截距。"
   );
@@ -154,6 +164,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await reflectionConfirmed).status()).toBe(200);
   await expect(page.getByTestId("reflection-draft-editor")).toContainText("教师已确认课后反思");
+  await expect(page.getByTestId("reflection-follow-ups")).toContainText("确认反思不会自动创建任何任务");
 
   const followUpCreated = page.waitForResponse(
     (response) => response.url().endsWith("/follow-ups") && response.request().method() === "POST"

@@ -170,6 +170,42 @@ describe("LessonJourneyProjection", () => {
     expect(projection.completedMilestones).not.toContain("follow_up_created");
   });
 
+  it("opens Reflection only after Delivery is confirmed", () => {
+    const projection = projectLessonJourney(input({
+      tasks: [task("completed")],
+      teachingPlans: plans({ approved: true }),
+      materialBundle: bundle("ready"),
+      implementation: implementation({ confirmedDelivery: true })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "reflect",
+      status: "ready",
+      nextBestAction: { kind: "start_reflection" }
+    });
+    expect(projection.completedMilestones).toContain("delivery_confirmed");
+    expect(projection.completedMilestones).not.toContain("reflection_confirmed");
+  });
+
+  it("waits for teacher judgment when a Reflection Draft is ready", () => {
+    const projection = projectLessonJourney(input({
+      tasks: [task("completed")],
+      teachingPlans: plans({ approved: true }),
+      materialBundle: bundle("ready"),
+      implementation: implementation({
+        confirmedDelivery: true,
+        draftReflection: true
+      })
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "reflect",
+      status: "waiting_for_teacher",
+      nextBestAction: { kind: "review_reflection" }
+    });
+    expect(projection.completedMilestones).not.toContain("reflection_confirmed");
+  });
+
   it("completes only after a confirmed Reflection has a follow-up source", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("completed")],
@@ -370,6 +406,7 @@ function bundle(
 function implementation(options: {
   draftDelivery?: boolean;
   confirmedDelivery?: boolean;
+  draftReflection?: boolean;
   confirmedReflection?: boolean;
   followUp?: boolean;
 } = {}): LessonImplementationSummary {
@@ -424,7 +461,23 @@ function implementation(options: {
             }]
           : []
       } as unknown as NonNullable<LessonImplementationSummary["reflection"]>)
-    : null;
+    : options.draftReflection
+      ? ({
+          reflectionRef: "reflection:1",
+          reflectionTaskRef: "reflection-task:1",
+          generationStatus: "draft_ready",
+          currentModelExecutionRef: "model-execution:1",
+          currentDraft: {
+            reflectionRevisionRef: "reflection-revision:draft-1",
+            reflectionRef: "reflection:1",
+            revisionNumber: 2,
+            status: "draft"
+          },
+          currentConfirmed: null,
+          history: [],
+          followUps: []
+        } as unknown as NonNullable<LessonImplementationSummary["reflection"]>)
+      : null;
   return {
     lessonRef: "lesson:1",
     delivery,
