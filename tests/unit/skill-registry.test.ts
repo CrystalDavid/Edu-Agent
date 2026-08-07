@@ -58,7 +58,8 @@ describe("Phase 5 versioned Skill Registry", () => {
       "lesson-preparation@3",
       "lesson-preparation@4",
       "lesson-preparation@5",
-      "material-generation@1"
+      "material-generation@1",
+      "reflection-analysis@1"
     ]);
   });
 

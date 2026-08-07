@@ -35,12 +35,22 @@ import {
   type ClassroomReflectionSkillOutput,
   type ClassroomReflectionSkillVersion
 } from "./classroom-reflection/index.js";
+import {
+  reflectionAnalysisSkillV1,
+  type ReflectionAnalysisContextBuildResult,
+  type ReflectionAnalysisEvaluation,
+  type ReflectionAnalysisOperationMetrics,
+  type ReflectionAnalysisSkillInput,
+  type ReflectionAnalysisSkillOutput,
+  type ReflectionAnalysisSkillVersion
+} from "./reflection-analysis/index.js";
 
 export const lessonPreparationSkillRef = "lesson-preparation@4";
 export const legacyLessonPreparationSkillRef = "lesson-preparation@3";
 export const lessonAnalysisSkillRef = "lesson-analysis@1";
 export const materialGenerationSkillRef = "material-generation@1";
 export const classroomReflectionSkillRef = "classroom-reflection@1";
+export const reflectionAnalysisSkillRef = "reflection-analysis@1";
 
 export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   const registry = new VersionedSkillRegistry();
@@ -51,7 +61,21 @@ export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   registry.register(lessonAnalysisSkillV1);
   registry.register(materialGenerationSkillV1);
   registry.register(classroomReflectionSkillV1);
+  registry.register(reflectionAnalysisSkillV1);
   return registry;
+}
+
+export function loadReflectionAnalysisSkill(
+  registry: VersionedSkillRegistry,
+  skillRef = reflectionAnalysisSkillRef
+): ReflectionAnalysisSkillVersion {
+  const skill = registry.loadPublished<ReflectionAnalysisSkillVersion>(
+    skillRef
+  );
+  if (skill.manifest.id !== "reflection-analysis") {
+    throw new Error(`Skill ${skillRef} cannot analyze lesson reflection.`);
+  }
+  return skill;
 }
 
 export function loadClassroomReflectionSkill(
@@ -128,7 +152,8 @@ export {
   lessonPreparationSkillV4,
   lessonAnalysisSkillV1,
   materialGenerationSkillV1,
-  classroomReflectionSkillV1
+  classroomReflectionSkillV1,
+  reflectionAnalysisSkillV1
 };
 export type {
   SkillLifecycleStatus,
@@ -155,5 +180,11 @@ export type {
   ClassroomReflectionSkillOutput,
   ClassroomReflectionContextBuildResult,
   ClassroomReflectionEvaluation,
-  ClassroomReflectionSkillVersion
+  ClassroomReflectionSkillVersion,
+  ReflectionAnalysisContextBuildResult,
+  ReflectionAnalysisEvaluation,
+  ReflectionAnalysisOperationMetrics,
+  ReflectionAnalysisSkillInput,
+  ReflectionAnalysisSkillOutput,
+  ReflectionAnalysisSkillVersion
 };
