@@ -21,7 +21,7 @@ const systemInstruction = [
   "只返回一个符合 lesson-reflection@1 的 JSON 对象，不得包含 Markdown 或解释性前后缀。"
 ].join("\n");
 
-const descriptorPayload = {
+const descriptorPayloadV1 = {
   promptBundleRef: "prompt-bundle:lesson-reflection-ark",
   version: 1,
   useCase: "lesson_reflection" as const,
@@ -43,11 +43,31 @@ const descriptorPayload = {
   createdAt: "2026-08-01T00:00:00.000Z"
 };
 
-export const lessonReflectionPromptBundle: PromptBundleDescriptor =
+export const lessonReflectionPromptBundleV1: PromptBundleDescriptor =
   PromptBundleDescriptorSchema.parse({
-    ...descriptorPayload,
-    contentHash: sha256({ ...descriptorPayload, systemInstruction })
+    ...descriptorPayloadV1,
+    contentHash: sha256({ ...descriptorPayloadV1, systemInstruction })
   });
+
+const descriptorPayloadV2 = {
+  ...descriptorPayloadV1,
+  version: 2,
+  inputFields: [
+    ...descriptorPayloadV1.inputFields.slice(0, 8),
+    "adoptedLessonBrief",
+    ...descriptorPayloadV1.inputFields.slice(8)
+  ],
+  createdAt: "2026-08-07T00:00:00.000Z"
+};
+
+export const lessonReflectionPromptBundleV2: PromptBundleDescriptor =
+  PromptBundleDescriptorSchema.parse({
+    ...descriptorPayloadV2,
+    contentHash: sha256({ ...descriptorPayloadV2, systemInstruction })
+  });
+
+/** Current bundle for new executions. Historical executions remain bound to V1. */
+export const lessonReflectionPromptBundle = lessonReflectionPromptBundleV2;
 
 export interface LessonReflectionPromptInput {
   invocationRef: string;
@@ -100,17 +120,28 @@ export interface LessonReflectionPromptInput {
     summary: string;
     objectiveRef: string;
   }[];
+  adoptedLessonBrief?: {
+    briefRef: string;
+    teachingFocus: readonly string[];
+    difficultyFocus: readonly string[];
+    attentionPoints: readonly string[];
+    knownGaps: readonly string[];
+  } | null;
   currentReflectionDraft: ReflectionContent;
+  promptBundleVersion?: 1 | 2;
 }
 
 export function assembleLessonReflectionModelRequest(
   input: LessonReflectionPromptInput
 ): ModelRequestV2 {
+  const promptBundle = input.promptBundleVersion === 1
+    ? lessonReflectionPromptBundleV1
+    : lessonReflectionPromptBundleV2;
   return ModelRequestSchemaV2.parse({
     invocationRef: input.invocationRef,
     taskRunRef: input.taskRunRef,
     agentRunRef: input.agentRunRef,
-    promptBundle: lessonReflectionPromptBundle,
+    promptBundle,
     contextManifestRef: input.contextManifestRef,
     expectedOutputSchema: "lesson-reflection@1",
     timeoutMs: input.timeoutMs,
@@ -130,6 +161,9 @@ export function assembleLessonReflectionModelRequest(
           confirmedDelivery: input.confirmedDelivery,
           confirmedObservations: input.confirmedObservations,
           authorizedEvidence: input.authorizedEvidence,
+          ...(promptBundle.version >= 2
+            ? { adoptedLessonBrief: input.adoptedLessonBrief ?? null }
+            : {}),
           currentReflectionDraft: input.currentReflectionDraft,
           contextManifest: {
             contextManifestRef: input.contextManifestRef,

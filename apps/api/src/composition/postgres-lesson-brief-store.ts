@@ -96,6 +96,19 @@ export class PostgresLessonBriefStore
     return brief;
   }
 
+  async loadLatestAdopted(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly lessonRef: string;
+  }): Promise<LessonBriefSnapshot | null> {
+    const latest = await this.getLatest({
+      tenantRef: input.tenantRef,
+      actorRef: input.teacherRef,
+      lessonRef: input.lessonRef
+    });
+    return latest?.status === "adopted" ? latest : null;
+  }
+
   async saveGenerated(
     input: Parameters<LessonBriefRunStore["saveGenerated"]>[0]
   ) {

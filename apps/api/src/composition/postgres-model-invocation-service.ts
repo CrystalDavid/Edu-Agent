@@ -33,8 +33,12 @@ import {
   LessonPreparationContextBuildError,
   legacyLessonPreparationSkillRef,
   lessonPreparationSkillRef,
+  loadReflectionAnalysisSkill,
   loadHistoricalLessonPreparationSkill,
   loadLessonPreparationSkill,
+  reflectionAnalysisSkillRef,
+  type ReflectionAnalysisEvaluation,
+  type ReflectionAnalysisSkillVersion,
   type LessonPreparationSkillEvaluation,
   type LessonPreparationContextEvaluation,
   type LessonPreparationEngineeringManifest,
@@ -206,6 +210,7 @@ export class PostgresModelInvocationService
   private readonly runtimeKernel: RuntimeKernelService<PostgresClient>;
   private readonly skills: VersionedSkillRegistry;
   private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
+  private readonly reflectionAnalysisSkill: ReflectionAnalysisSkillVersion;
   private readonly personalization: PersonalizationContextProvider;
   private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
@@ -247,6 +252,10 @@ export class PostgresModelInvocationService
       dependencies.runtime ?? new PostgresRuntimeRepository();
     this.skills = dependencies.skills ?? createBuiltInSkillRegistry();
     this.lessonPreparationSkill = loadLessonPreparationSkill(this.skills);
+    this.reflectionAnalysisSkill = loadReflectionAnalysisSkill(
+      this.skills,
+      reflectionAnalysisSkillRef
+    );
     this.personalization = dependencies.personalization ?? {
       async listConfirmedPreferences() {
         return [];
@@ -1461,6 +1470,16 @@ export class PostgresModelInvocationService
           "反思生成只能使用当前明确选择的已确认课堂事实与 Evidence。"
         );
       }
+      const latestLessonBrief = await this.lessonBriefs.loadLatestAdopted({
+        tenantRef: input.tenantRef,
+        teacherRef: input.actorRef,
+        lessonRef: draft.lessonRef
+      });
+      const adoptedLessonBrief = latestLessonBrief;
+      const lessonBriefRef = adoptedLessonBrief
+        ? `lesson-brief-run:${adoptedLessonBrief.agentRunRef}`
+        : null;
+      const reflectionSkill = this.reflectionAnalysisSkill;
       const provider = this.settings.activeProvider;
       const modelId = provider === "volcengine-ark"
         ? this.settings.ark?.modelId
@@ -1482,7 +1501,8 @@ export class PostgresModelInvocationService
         draft.teachingPlanRevisionRef,
         draft.deliveryRevisionRef,
         draft.reflectionRevisionRef,
-        ...draft.observationRevisionRefs
+        ...draft.observationRevisionRefs,
+        ...(lessonBriefRef ? [lessonBriefRef] : [])
       ];
       const authorizedContextPlan = AuthorizedContextPlanSchema.parse({
         authorizedContextPlanRef,
@@ -1594,6 +1614,13 @@ export class PostgresModelInvocationService
           output: {
             resultKind: "lesson_reflection_draft",
             reflectionRef: request.reflectionRef,
+            runtimeStatus: "queued",
+            skill: {
+              id: reflectionSkill.manifest.id,
+              version: reflectionSkill.manifest.version,
+              ref: reflectionSkill.manifest.ref,
+              contentHash: reflectionSkill.manifest.contentHash
+            },
             teacherConfirmationRequired: true,
             rawProviderContentStored: false
           },
@@ -1605,11 +1632,15 @@ export class PostgresModelInvocationService
           contextManifestRef,
           promptVersionRef: lessonReflectionPromptBundle.promptBundleRef,
           policyVersionRef: decision.policyVersion,
-          capabilityRefs: [this.provider.descriptor.capabilityRef],
+          capabilityRefs: [
+            this.provider.descriptor.capabilityRef,
+            reflectionSkill.manifest.ref
+          ],
           contextRefs: [...resourceRefs, ...draft.assignmentEvidenceRefs],
           contentHash: hash({
             prompt: lessonReflectionPromptBundle.contentHash,
-            context: authorizedContextPlan.contentHash
+            context: authorizedContextPlan.contentHash,
+            skill: reflectionSkill.manifest.contentHash
           }),
           metadata: createWriteMetadata(writeContext, "runtime", "reflection-run-manifest")
         },
@@ -1682,6 +1713,13 @@ export class PostgresModelInvocationService
             deliveryRevisionRef: draft.deliveryRevisionRef,
             observationRevisionRefs: draft.observationRevisionRefs,
             assignmentEvidenceRefs: draft.assignmentEvidenceRefs,
+            lessonBriefRef,
+            lessonBriefContentHash: adoptedLessonBrief?.contentHash ?? null,
+            teacherNotesProvided: request.teacherNotes.trim().length > 0,
+            skillId: reflectionSkill.manifest.id,
+            skillVersion: reflectionSkill.manifest.version,
+            skillRef: reflectionSkill.manifest.ref,
+            skillContentHash: reflectionSkill.manifest.contentHash,
             teacherNotesHash: hash(request.teacherNotes),
             syntheticData: true
           },
@@ -2379,45 +2417,47 @@ export class PostgresModelInvocationService
             outputText: result.outputText
           })
           .catch(() => undefined);
-        const validation = execution.resultKind === "lesson_reflection_draft"
-          ? validateReflectionOutput({
-              outputText: result.outputText,
-              request,
-              teachingPlanRevisionRef: String(
-                execution.inputSummary["teachingPlanRevisionRef"] ?? ""
-              ),
-              deliveryRevisionRef: String(
-                execution.inputSummary["deliveryRevisionRef"] ?? ""
-              ),
-              observationRevisionRefs: Array.isArray(
-                execution.inputSummary["observationRevisionRefs"]
-              )
-                ? execution.inputSummary["observationRevisionRefs"] as string[]
-                : []
-            })
-          : lessonSkill!.validateOutput({
-              outputText: result.outputText,
-              request
+        let validationIssues: string[] = [];
+        if (execution.resultKind === "lesson_reflection_draft") {
+          const modelValidation = validateReflectionOutput({
+            outputText: result.outputText,
+            request,
+            teachingPlanRevisionRef: String(
+              execution.inputSummary["teachingPlanRevisionRef"] ?? ""
+            ),
+            deliveryRevisionRef: String(
+              execution.inputSummary["deliveryRevisionRef"] ?? ""
+            ),
+            observationRevisionRefs: Array.isArray(
+              execution.inputSummary["observationRevisionRefs"]
+            )
+              ? execution.inputSummary["observationRevisionRefs"] as string[]
+              : []
+          });
+          if (modelValidation.valid && "analysisContext" in context) {
+            const analysisDraft = this.reflectionAnalysisSkill.normalize({
+              context: context.analysisContext.input,
+              modelOutput: modelValidation.output,
+              knownGaps: context.analysisContext.manifest.missingInformation
             });
-        if (validation.valid) {
-          const skillEvaluation = lessonSkill && "strategies" in validation
-            ? lessonSkill.evaluateOutput({
-                validation,
+            const skillValidation = this.reflectionAnalysisSkill.validate({
+              output: analysisDraft,
+              sources: context.analysisContext.manifest.sourceRefs
+            });
+            if (skillValidation.valid) {
+              const skillEvaluation = this.reflectionAnalysisSkill.evaluate({
+                context: context.analysisContext,
+                validation: skillValidation,
                 operation: {
                   latencyMs: result.latencyMs,
-                  ...(result.inputTokens !== undefined &&
-                  result.outputTokens !== undefined
-                    ? {
-                        usage: {
-                          inputTokens: result.inputTokens,
-                          outputTokens: result.outputTokens,
-                          totalTokens:
-                            result.inputTokens + result.outputTokens
-                        }
-                      }
+                  ...(result.inputTokens !== undefined
+                    ? { inputTokens: result.inputTokens }
                     : {}),
-                  attemptCount: execution.attemptCount,
-                  estimatedCostUsd: estimateCost({
+                  ...(result.outputTokens !== undefined
+                    ? { outputTokens: result.outputTokens }
+                    : {}),
+                  retryCount: Math.max(0, execution.attemptCount - 1),
+                  estimatedCost: estimateCost({
                     inputTokens: result.inputTokens ?? 0,
                     outputTokens: result.outputTokens ?? 0,
                     inputPricePerMillion:
@@ -2426,18 +2466,68 @@ export class PostgresModelInvocationService
                       this.settings.budget.outputPricePerMillion
                   })
                 }
-              })
-            : undefined;
-          await this.persistValidatedOutput(
-            execution,
-            validation.output,
-            latestOutput,
-            skillEvaluation
-          );
-          await this.finalizeValidatedExecution(
-            execution.executionRef
-          );
-          return;
+              });
+              await this.persistValidatedOutput(
+                execution,
+                modelValidation.output,
+                latestOutput,
+                skillEvaluation
+              );
+              await this.finalizeValidatedExecution(
+                execution.executionRef
+              );
+              return;
+            }
+            validationIssues = skillValidation.issues;
+          } else {
+            validationIssues = modelValidation.valid
+              ? ["Reflection Skill Context could not be reconstructed."]
+              : modelValidation.issues;
+          }
+        } else {
+          const validation = lessonSkill!.validateOutput({
+            outputText: result.outputText,
+            request
+          });
+          if (validation.valid) {
+            const skillEvaluation = lessonSkill!.evaluateOutput({
+              validation,
+              operation: {
+                latencyMs: result.latencyMs,
+                ...(result.inputTokens !== undefined &&
+                result.outputTokens !== undefined
+                  ? {
+                      usage: {
+                        inputTokens: result.inputTokens,
+                        outputTokens: result.outputTokens,
+                        totalTokens:
+                          result.inputTokens + result.outputTokens
+                      }
+                    }
+                  : {}),
+                attemptCount: execution.attemptCount,
+                estimatedCostUsd: estimateCost({
+                  inputTokens: result.inputTokens ?? 0,
+                  outputTokens: result.outputTokens ?? 0,
+                  inputPricePerMillion:
+                    this.settings.budget.inputPricePerMillion,
+                  outputPricePerMillion:
+                    this.settings.budget.outputPricePerMillion
+                })
+              }
+            });
+            await this.persistValidatedOutput(
+              execution,
+              validation.output,
+              latestOutput,
+              skillEvaluation
+            );
+            await this.finalizeValidatedExecution(
+              execution.executionRef
+            );
+            return;
+          }
+          validationIssues = validation.issues;
         }
         if (attempt < execution.maxAttempts) {
           await this.recordRetryableFailure(
@@ -2448,15 +2538,15 @@ export class PostgresModelInvocationService
             latestOutput
           );
           request = execution.resultKind === "lesson_reflection_draft"
-            ? assembleReflectionRepairRequest({
-                original: context.request,
-                invalidOutput: result.outputText,
-                validationIssues: validation.issues
-              })
-            : lessonSkill!.assembleRepairRequest({
+              ? assembleReflectionRepairRequest({
+                  original: context.request,
+                  invalidOutput: result.outputText,
+                  validationIssues
+                })
+              : lessonSkill!.assembleRepairRequest({
             original: context.request,
             invalidOutput: result.outputText,
-            validationIssues: validation.issues
+            validationIssues
               });
           execution =
             (await this.executions.get(
@@ -2799,7 +2889,10 @@ export class PostgresModelInvocationService
 
   private async loadReflectionPromptContext(
     execution: StoredModelExecution
-  ): Promise<{ request: ModelRequestV2 }> {
+  ): Promise<{
+    request: ModelRequestV2;
+    analysisContext: ReturnType<ReflectionAnalysisSkillVersion["buildContext"]>;
+  }> {
     const tenantRef = await this.executionTenantRef(execution);
     const reflectionRef = String(
       execution.inputSummary["reflectionRef"] ?? ""
@@ -2917,6 +3010,139 @@ export class PostgresModelInvocationService
             reflection.assignmentEvidenceRefs
           ]
         );
+    const sealedLessonBriefRef = typeof execution.inputSummary["lessonBriefRef"] === "string"
+      ? execution.inputSummary["lessonBriefRef"]
+      : null;
+    const adoptedLessonBrief = sealedLessonBriefRef
+      ? await this.lessonBriefs.loadAdopted({
+          tenantRef: reflection.tenantRef,
+          teacherRef: execution.actorRef,
+          lessonRef: reflection.lessonRef,
+          briefRef: sealedLessonBriefRef
+        })
+      : null;
+    if (
+      sealedLessonBriefRef &&
+      (
+        !adoptedLessonBrief ||
+        adoptedLessonBrief.contentHash !==
+          execution.inputSummary["lessonBriefContentHash"]
+      )
+    ) {
+      throw new Error("The sealed adopted Lesson Brief cannot be reconstructed.");
+    }
+    const selectedBriefCandidateIds = new Set(
+      adoptedLessonBrief?.disposition?.selectedCandidateIds ?? []
+    );
+    const selectedBriefTitles = (items: LessonBriefSnapshot["teachingFocusCandidates"]) =>
+      items
+        .filter((item) => selectedBriefCandidateIds.has(item.candidateId))
+        .map((item) => item.title);
+    const analysisContext = this.reflectionAnalysisSkill.buildContext({
+      tenantRef: reflection.tenantRef,
+      actorRef: execution.actorRef,
+      lesson: {
+        lessonRef: lesson.lessonRef,
+        courseRunRef: courseRun.courseRunRef,
+        title: lesson.title,
+        learningObjectiveRefs: lesson.learningObjectives.map(
+          (item) => item.objectiveRef
+        ),
+        source: {
+          ref: lesson.lessonRef,
+          version: `${lesson.preparationState}:${lesson.plannedAt ?? "unscheduled"}`,
+          contentHash: hash(lesson),
+          provenance: "education.lesson.authorized-read"
+        }
+      },
+      approvedTeachingPlan: {
+        revisionRef: teachingPlan.revisionRef,
+        content: teachingPlan.content,
+        source: {
+          ref: teachingPlan.revisionRef,
+          version: String(teachingPlan.revisionNumber),
+          contentHash: hash(teachingPlan.content),
+          provenance: "artifact.teaching-plan.current-approved"
+        }
+      },
+      confirmedDelivery: {
+        deliveryRevisionRef: delivery.deliveryRevisionRef,
+        actualStartAt: delivery.actualStartAt,
+        actualEndAt: delivery.actualEndAt,
+        steps: delivery.steps,
+        paceNotes: delivery.paceNotes,
+        unresolvedQuestions: delivery.unresolvedQuestions,
+        followUpNotes: delivery.followUpNotes,
+        source: {
+          ref: delivery.deliveryRevisionRef,
+          version: `${delivery.revisionNumber}:${delivery.status}`,
+          contentHash: hash(delivery),
+          provenance: "education.lesson-delivery.confirmed-revision"
+        }
+      },
+      confirmedObservations: observations.map((item) => ({
+        observationRevisionRef: item.observationRevisionRef,
+        scope: item.scope,
+        scopeRef: item.scopeRef,
+        observationType: item.observationType,
+        content: item.content,
+        observedAt: item.observedAt,
+        source: {
+          ref: item.observationRevisionRef,
+          version: `${item.revisionNumber}:${item.status}`,
+          contentHash: hash(item),
+          provenance: "education.classroom-observation.confirmed-selection"
+        }
+      })),
+      selectedEvidence: evidenceResult.rows.map((item) => ({
+        evidenceRef: item.observation_ref,
+        objectiveRef: item.objective_ref,
+        summary: `教师已确认的作业 Evidence，结果：${item.outcome}`,
+        source: {
+          ref: item.observation_ref,
+          version: "current-confirmed",
+          contentHash: hash(item),
+          provenance: "education.assignment-evidence.authorized-selection"
+        }
+      })),
+      lessonBrief: adoptedLessonBrief && sealedLessonBriefRef
+        ? {
+            briefRef: sealedLessonBriefRef,
+            status: "adopted",
+            teachingFocus: selectedBriefTitles(
+              adoptedLessonBrief.teachingFocusCandidates
+            ),
+            difficultyFocus: selectedBriefTitles(
+              adoptedLessonBrief.difficultyCandidates
+            ),
+            attentionPoints: selectedBriefTitles(
+              adoptedLessonBrief.suggestedAttentionPoints
+            ),
+            knownGaps: adoptedLessonBrief.knownGaps,
+            source: {
+              ref: sealedLessonBriefRef,
+              version: adoptedLessonBrief.generatedAt,
+              contentHash: adoptedLessonBrief.contentHash,
+              provenance: "runtime.lesson-brief.teacher-adopted"
+            }
+          }
+        : null,
+      currentReflectionDraft: reflection.content,
+      teacherAdjustment: execution.inputSummary["teacherNotesProvided"] === true
+        ? taskRun.request.requestText
+        : null,
+      authorizedEvidenceRefs: reflection.assignmentEvidenceRefs,
+      excludedEvidenceRefs: [],
+      generatedAt: execution.queuedAt
+    });
+    if (
+      !sameStringRefs(
+        analysisContext.manifest.evidenceRefs,
+        contextManifest.evidenceRefs
+      )
+    ) {
+      throw new Error("The Reflection Skill context exceeds the sealed Evidence selection.");
+    }
     const capabilities = await this.getCapabilities();
     const responseFormat = execution.provider === "mock"
       ? "json_schema"
@@ -2925,7 +3151,17 @@ export class PostgresModelInvocationService
         : capabilities?.supportsJsonObject === false
           ? "prompt_json"
           : "json_object";
+    const reflectionPromptBundleVersion = execution.promptBundleVersion;
+    if (
+      execution.promptBundleRef !== lessonReflectionPromptBundle.promptBundleRef ||
+      (reflectionPromptBundleVersion !== 1 && reflectionPromptBundleVersion !== 2)
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} has an unsupported Reflection prompt bundle.`
+      );
+    }
     return {
+      analysisContext,
       request: assembleLessonReflectionModelRequest({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
@@ -2973,7 +3209,17 @@ export class PostgresModelInvocationService
           objectiveRef: item.objective_ref,
           summary: `教师已确认的合成作业 Evidence，结果：${item.outcome}`
         })),
-        currentReflectionDraft: reflection.content
+        adoptedLessonBrief: analysisContext.input.lessonBrief
+          ? {
+              briefRef: analysisContext.input.lessonBrief.briefRef,
+              teachingFocus: analysisContext.input.lessonBrief.teachingFocus,
+              difficultyFocus: analysisContext.input.lessonBrief.difficultyFocus,
+              attentionPoints: analysisContext.input.lessonBrief.attentionPoints,
+              knownGaps: analysisContext.input.lessonBrief.knownGaps
+            }
+          : null,
+        currentReflectionDraft: reflection.content,
+        promptBundleVersion: reflectionPromptBundleVersion
       })
     };
   }
@@ -3233,7 +3479,9 @@ export class PostgresModelInvocationService
       providerRequestId?: string;
       finishReason?: string;
     },
-    skillEvaluation?: LessonPreparationSkillEvaluation
+    skillEvaluation?:
+      | LessonPreparationSkillEvaluation
+      | ReflectionAnalysisEvaluation
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -3609,10 +3857,44 @@ export class PostgresModelInvocationService
     if (!validation.valid) {
       throw new Error("Persisted Reflection output no longer passes validation.");
     }
+    const analysisDraft = this.reflectionAnalysisSkill.normalize({
+      context: context.analysisContext.input,
+      modelOutput: output,
+      knownGaps: context.analysisContext.manifest.missingInformation
+    });
+    const skillValidation = this.reflectionAnalysisSkill.validate({
+      output: analysisDraft,
+      sources: context.analysisContext.manifest.sourceRefs
+    });
+    if (!skillValidation.valid) {
+      throw new Error(
+        `Persisted Reflection analysis no longer passes validation: ${skillValidation.issues.join("; ")}`
+      );
+    }
+    const skillEvaluation = this.reflectionAnalysisSkill.evaluate({
+      context: context.analysisContext,
+      validation: skillValidation,
+      operation: {
+        latencyMs: execution.latencyMs ?? 0,
+        ...(execution.inputTokens !== null
+          ? { inputTokens: execution.inputTokens }
+          : {}),
+        ...(execution.outputTokens !== null
+          ? { outputTokens: execution.outputTokens }
+          : {}),
+        retryCount: Math.max(0, execution.attemptCount - 1),
+        estimatedCost: execution.estimatedCost ?? 0
+      }
+    });
+    if (!skillEvaluation.passed) {
+      throw new Error("Persisted Reflection analysis evaluation no longer passes.");
+    }
     const now = this.clock().toISOString();
     const writeContext = executionWriteContext(execution, now);
     const revisionRef = `artifact-revision:${randomUUID()}`;
-    const content = ReflectionContentSchema.parse(output);
+    const content = ReflectionContentSchema.parse(
+      analysisDraft.reflectionContent
+    );
     const inserted = await this.gate29Artifacts.insertDraftRevision(client, {
       reflectionRef,
       revisionRef,
@@ -3688,8 +3970,20 @@ export class PostgresModelInvocationService
         resultKind: "lesson_reflection_draft",
         reflectionRef,
         reflectionRevisionRef: revisionRef,
+        runtimeStatus: "waiting_for_human",
+        skill: {
+          id: this.reflectionAnalysisSkill.manifest.id,
+          version: this.reflectionAnalysisSkill.manifest.version,
+          ref: this.reflectionAnalysisSkill.manifest.ref,
+          contentHash: this.reflectionAnalysisSkill.manifest.contentHash
+        },
+        contextManifestHash: context.analysisContext.manifest.contentHash,
+        reflectionContextManifest: context.analysisContext.manifest,
+        reflectionAnalysis: analysisDraft,
+        skillEvaluation,
         teacherConfirmationRequired: true,
-        outputHash: execution.outputHash,
+        outputHash: hash(analysisDraft),
+        providerOutputHash: execution.outputHash,
         rawProviderContentStored: false
       },
       updatedAt: now

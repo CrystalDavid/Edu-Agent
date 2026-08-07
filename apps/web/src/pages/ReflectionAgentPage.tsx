@@ -37,7 +37,7 @@ import { PageHeader } from "../components/portal/PortalPrimitives";
 import { modelExecutionStatusLabel } from "../presentation";
 import type { AppRoute } from "../route";
 
-const { Paragraph, Text, Title } = Typography;
+const { Paragraph, Text } = Typography;
 
 const terminalStatuses = new Set([
   "succeeded",
@@ -88,9 +88,7 @@ export function ReflectionAgentPage(props: {
   const [lessons, setLessons] = useState<LessonView[]>([]);
   const [draftContent, setDraftContent] = useState<ReflectionContent | null>(null);
   const [teacherNotes, setTeacherNotes] = useState("");
-  const [followUpType, setFollowUpType] = useState<"lesson_preparation" | "assignment_draft" | "teacher_todo">("lesson_preparation");
   const [targetLessonRef, setTargetLessonRef] = useState("");
-  const [followUpTitle, setFollowUpTitle] = useState("落实本节课后反思");
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,14 +186,15 @@ export function ReflectionAgentPage(props: {
     }
   }
 
-  async function saveDraft() {
-    if (!reflection?.currentDraft || !draftContent) return;
+  async function saveDraft(contentOverride?: ReflectionContent) {
+    const content = contentOverride ?? draftContent;
+    if (!reflection?.currentDraft || !content) return;
     setActing(true);
     setError(null);
     try {
       const result = await updateReflectionDraft(reflection.reflectionRef, {
         expectedRevisionNumber: reflection.currentDraft.revisionNumber,
-        content: draftContent,
+        content,
         purpose: "lesson-reflection.update-draft",
         idempotencyKey: `ui:reflection:update:${crypto.randomUUID()}`
       });
@@ -206,6 +205,18 @@ export function ReflectionAgentPage(props: {
     } finally {
       setActing(false);
     }
+  }
+
+  async function markDraftUncertain() {
+    if (!draftContent) return;
+    const uncertainty = teacherNotes.trim() || "教师暂不确认当前解释，需要补充证据后再判断。";
+    const nextContent: ReflectionContent = {
+      ...draftContent,
+      uncertainties: [...new Set([...draftContent.uncertainties, uncertainty])]
+    };
+    setDraftContent(nextContent);
+    await saveDraft(nextContent);
+    props.onAction("已保留为不确定项；本次反思尚未确认，也没有创建后续行动");
   }
 
   async function confirmDraft() {
@@ -261,7 +272,9 @@ export function ReflectionAgentPage(props: {
     }
   }
 
-  async function createFollowUp() {
+  async function createFollowUp(
+    actionType: "lesson_preparation" | "assignment_draft" | "teacher_todo"
+  ) {
     const confirmed = reflection?.currentConfirmed;
     if (!confirmed) return;
     setActing(true);
@@ -272,7 +285,7 @@ export function ReflectionAgentPage(props: {
         purpose: "lesson-reflection.create-follow-up" as const,
         idempotencyKey: `ui:reflection:follow-up:${crypto.randomUUID()}`
       };
-      const result = followUpType === "lesson_preparation"
+      const result = actionType === "lesson_preparation"
         ? await createReflectionFollowUp(reflection.reflectionRef, {
             ...base,
             actionType: "lesson_preparation",
@@ -280,13 +293,13 @@ export function ReflectionAgentPage(props: {
             priority: "normal",
             dueAt: null
           })
-        : followUpType === "assignment_draft"
+        : actionType === "assignment_draft"
           ? await createReflectionFollowUp(reflection.reflectionRef, {
               ...base,
               actionType: "assignment_draft",
               targetLessonRef,
-              title: followUpTitle,
-              instructions: "依据教师确认的课后反思创建补充练习草稿；发布前需教师审核。",
+              title: confirmed.content.assignmentSuggestions[0]?.slice(0, 240) || "本课补充练习",
+              instructions: confirmed.content.assignmentSuggestions.join("\n") || "依据教师确认的课后反思创建补充练习草稿；发布前需教师审核。",
               dueAt: null,
               items: [{
                 sequence: 1,
@@ -302,8 +315,8 @@ export function ReflectionAgentPage(props: {
           : await createReflectionFollowUp(reflection.reflectionRef, {
               ...base,
               actionType: "teacher_todo",
-              title: followUpTitle,
-              description: "来源于教师已确认的课后反思；需教师显式完成。",
+              title: confirmed.content.uncertainties[0]?.slice(0, 300) || "复核本节课仍不确定的问题",
+              description: confirmed.content.uncertainties.join("\n") || "来源于教师已确认的课后反思；需教师显式完成。",
               priority: "normal",
               dueAt: null
             });
@@ -319,11 +332,10 @@ export function ReflectionAgentPage(props: {
     }
   }
 
-  const editableFields = useMemo(() => draftContent ? [
-    ["objectiveAttainment", "目标达成情况", draftContent.objectiveAttainment],
-    ["plannedVsImplemented", "计划与实际差异", draftContent.plannedVsImplemented],
-    ["teacherNotes", "教师补充说明", draftContent.teacherNotes]
-  ] as const : [], [draftContent]);
+  const actionCandidates = useMemo(
+    () => buildActionCandidates(draftContent ?? activeRevision?.content ?? null),
+    [activeRevision?.reflectionRevisionRef, draftContent]
+  );
 
   return (
     <div className="portal-page reflection-agent-page" data-testid="reflection-agent-page">
@@ -367,58 +379,100 @@ export function ReflectionAgentPage(props: {
               {reflection.currentConfirmed ? (
                 <Alert type="success" showIcon title="教师已确认课后反思" description={`当前为第 ${reflection.currentConfirmed.revisionNumber} 版；原教学计划没有被修改。`} />
               ) : (
-                <>
-                  <label>给教学助手的补充说明<Input.TextArea rows={3} value={teacherNotes} onChange={(event) => setTeacherNotes(event.target.value)} placeholder="只补充本节课的课堂情况，不添加未授权学生数据" /></label>
+                <div className="reflection-adjustment">
+                  <label>一句话告诉教学助手需要关注或调整什么<Input.TextArea id="reflection-adjustment-input" rows={2} value={teacherNotes} onChange={(event) => setTeacherNotes(event.target.value)} placeholder="例如：学生对概念基本掌握，但应用题迁移仍不稳定" /></label>
                   <Space wrap>
                     <Button type="primary" loading={acting || reflection.generationStatus === "generating"} disabled={reflection.generationStatus === "generating"} onClick={() => void runGeneration()} data-testid="generate-reflection">
-                      {reflection.generationStatus === "generating" ? "正在生成与验证" : "生成反思草稿"}
+                      {reflection.generationStatus === "generating" ? "正在整理本节课" : reflection.currentDraft?.sourceAgentRunRef ? "按这句话重新整理" : "生成本节课复盘"}
                     </Button>
-                    <Text type="secondary">现有教师草稿不会被直接确认为正式事实。</Text>
+                    <Text type="secondary">只会生成新草稿，不会确认事实或创建后续行动。</Text>
                   </Space>
-                </>
+                </div>
               )}
 
               {reflection.currentDraft && draftContent ? (
                 <>
                   <Divider />
-                  <Space wrap><Tag color="processing">草稿第 {reflection.currentDraft.revisionNumber} 版</Tag><Tag>{reflection.currentDraft.sourceAgentRunRef ? "教学助手整理" : "教师创建"}</Tag></Space>
-                  {editableFields.map(([field, label, value]) => (
-                    <label key={field}>{label}<Input.TextArea rows={3} value={value} onChange={(event) => setDraftContent((current) => current ? { ...current, [field]: event.target.value } : current)} /></label>
-                  ))}
-                  {([
-                    ["effectiveMoves", "有效教学环节"],
-                    ["ineffectiveMoves", "未达预期环节"],
-                    ["observationSummary", "课堂观察摘要"],
-                    ["evidenceAlignment", "与作业证据的一致或冲突"],
-                    ["uncertainties", "尚不确定的问题"],
-                    ["nextLessonSuggestions", "下一课建议"],
-                    ["assignmentSuggestions", "后续练习建议"]
-                  ] as const).map(([field, label]) => (
-                    <label key={field}>{label}<Input.TextArea rows={3} value={lines(draftContent[field])} onChange={(event) => setDraftContent((current) => current ? { ...current, [field]: splitLines(event.target.value) } : current)} /></label>
-                  ))}
-                  <Space wrap>
-                    <Button loading={acting} onClick={() => void saveDraft()} data-testid="save-reflection-draft">保存教师修改</Button>
-                    <Popconfirm title="确认这份课后反思？" description="确认后不可原地覆盖，也不会自动修改教学计划或创建后续任务。" onConfirm={() => void confirmDraft()}>
-                      <Button type="primary" loading={acting} data-testid="confirm-reflection">确认课后反思</Button>
-                    </Popconfirm>
-                  </Space>
+                  <Space wrap><Tag color="processing">草稿第 {reflection.currentDraft.revisionNumber} 版</Tag><Tag>{reflection.currentDraft.sourceAgentRunRef ? "教学助手整理" : "教师创建"}</Tag><Tag>等待教师判断</Tag></Space>
+
+                  <div className="reflection-review-grid">
+                    <section className="reflection-review-section reflection-review-section--facts" data-testid="reflection-facts">
+                      <header><span>01</span><div><h3>发生了什么</h3><small>仅整理已确认课堂记录、观察和已选择 Evidence</small></div></header>
+                      <p>{draftContent.plannedVsImplemented}</p>
+                      {draftContent.observationSummary.length > 0 ? <ul>{draftContent.observationSummary.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="reflection-empty-copy">本次没有选择课堂观察。</p>}
+                      <small>来源：confirmed Delivery · {reflection.currentDraft.observationRevisionRefs.length} 条 confirmed Observation · {reflection.currentDraft.assignmentEvidenceRefs.length} 条 selected Evidence</small>
+                    </section>
+
+                    <section className="reflection-review-section reflection-review-section--meaning" data-testid="reflection-interpretation">
+                      <header><span>02</span><div><h3>这意味着什么</h3><small>以下是教学助手的解释，不是新增课堂事实</small></div></header>
+                      <p>{draftContent.objectiveAttainment}</p>
+                      {[...draftContent.effectiveMoves, ...draftContent.ineffectiveMoves, ...draftContent.evidenceAlignment].length > 0 ? <ul>{[...draftContent.effectiveMoves, ...draftContent.ineffectiveMoves, ...draftContent.evidenceAlignment].map((item) => <li key={item}>{item}</li>)}</ul> : null}
+                      {draftContent.uncertainties.length > 0 ? <div className="reflection-uncertainties"><strong>仍不确定</strong>{draftContent.uncertainties.map((item) => <p key={item}>{item}</p>)}</div> : null}
+                    </section>
+
+                    <section className="reflection-review-section reflection-review-section--next" data-testid="reflection-action-candidates">
+                      <header><span>03</span><div><h3>下一步可以做什么</h3><small>候选尚未执行，确认反思后仍需逐项选择</small></div></header>
+                      {actionCandidates.length > 0 ? <ul>{actionCandidates.map((candidate) => <li key={candidate.actionType}><strong>{candidate.title}</strong><span>{candidate.rationale}</span></li>)}</ul> : <p className="reflection-empty-copy">当前没有足够依据生成后续行动候选。</p>}
+                    </section>
+                  </div>
+
+                  <div className="reflection-decision-bar" data-testid="reflection-teacher-decision">
+                    <div><strong>请判断这份复盘</strong><small>只有“准确”会确认 Reflection；其余操作都保留草稿状态。</small></div>
+                    <Space wrap>
+                      <Popconfirm title="确认事实与复盘准确？" description="确认后不可原地覆盖，也不会自动修改教学计划或创建后续任务。" onConfirm={() => void confirmDraft()}>
+                        <Button type="primary" loading={acting} data-testid="confirm-reflection">准确，确认反思</Button>
+                      </Popconfirm>
+                      <Button onClick={() => document.getElementById("reflection-adjustment-input")?.focus()} data-testid="adjust-reflection">需要调整</Button>
+                      <Button loading={acting} onClick={() => void markDraftUncertain()} data-testid="mark-reflection-uncertain">暂不确定</Button>
+                    </Space>
+                  </div>
+
+                  <details className="reflection-advanced-editor">
+                    <summary>精细修改草稿内容</summary>
+                    <div>
+                      <label>目标达成情况<Input.TextArea rows={3} value={draftContent.objectiveAttainment} onChange={(event) => setDraftContent((current) => current ? { ...current, objectiveAttainment: event.target.value } : current)} /></label>
+                      <label>计划与实际差异<Input.TextArea rows={3} value={draftContent.plannedVsImplemented} onChange={(event) => setDraftContent((current) => current ? { ...current, plannedVsImplemented: event.target.value } : current)} /></label>
+                      <label>教师补充说明<Input.TextArea rows={3} value={draftContent.teacherNotes} onChange={(event) => setDraftContent((current) => current ? { ...current, teacherNotes: event.target.value } : current)} /></label>
+                      {([
+                        ["effectiveMoves", "有效教学环节"],
+                        ["ineffectiveMoves", "未达预期环节"],
+                        ["observationSummary", "课堂观察摘要"],
+                        ["evidenceAlignment", "与作业证据的一致或冲突"],
+                        ["uncertainties", "尚不确定的问题"],
+                        ["nextLessonSuggestions", "下一课建议"],
+                        ["assignmentSuggestions", "后续练习建议"]
+                      ] as const).map(([field, label]) => (
+                        <label key={field}>{label}<Input.TextArea rows={3} value={lines(draftContent[field])} onChange={(event) => setDraftContent((current) => current ? { ...current, [field]: splitLines(event.target.value) } : current)} /></label>
+                      ))}
+                      <Button loading={acting} onClick={() => void saveDraft()} data-testid="save-reflection-draft">保存教师修改</Button>
+                    </div>
+                  </details>
                 </>
               ) : null}
             </Card>
 
             {reflection.currentConfirmed ? (
-              <Card className="workspace-card" variant="borderless" title="显式创建后续行动" data-testid="reflection-follow-ups">
-                <Paragraph type="secondary">确认课后反思本身不会自动创建任务。请选择一种后续行动。</Paragraph>
-                <Space wrap align="start">
-                  <Select value={followUpType} onChange={setFollowUpType} options={[
-                    { value: "lesson_preparation", label: "调整下一课" },
-                    { value: "assignment_draft", label: "补充练习草稿" },
-                    { value: "teacher_todo", label: "个人待办" }
-                  ]} />
-                  {followUpType !== "teacher_todo" ? <Select<string> value={targetLessonRef || null} placeholder="选择目标课时" style={{ minWidth: 220 }} onChange={setTargetLessonRef} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: `${lesson.sequence}. ${lesson.title}` }))} /> : null}
-                  {followUpType !== "lesson_preparation" ? <Input value={followUpTitle} onChange={(event) => setFollowUpTitle(event.target.value)} placeholder="后续行动标题" /> : null}
-                  <Button type="primary" loading={acting} disabled={followUpType !== "teacher_todo" && !targetLessonRef} onClick={() => void createFollowUp()} data-testid="create-reflection-follow-up">创建后续行动</Button>
-                </Space>
+              <Card className="workspace-card reflection-follow-up-card" variant="borderless" title="把复盘变成下一步" data-testid="reflection-follow-ups">
+                <Paragraph type="secondary">以下仍是候选。确认反思不会自动创建任何任务，请明确选择需要执行的一项。</Paragraph>
+                <label className="reflection-target-lesson">目标课时<Select<string> value={targetLessonRef || null} placeholder="选择下一课" onChange={setTargetLessonRef} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: `${lesson.sequence}. ${lesson.title}` }))} /></label>
+                <div className="reflection-follow-up-candidates">
+                  {actionCandidates.map((candidate) => (
+                    <article key={candidate.actionType}>
+                      <Tag>{followUpTypeLabel(candidate.actionType)}</Tag>
+                      <strong>{candidate.title}</strong>
+                      <p>{candidate.rationale}</p>
+                      <Button
+                        type={candidate.actionType === "lesson_preparation" ? "primary" : "default"}
+                        loading={acting}
+                        disabled={candidate.actionType !== "teacher_todo" && !targetLessonRef}
+                        onClick={() => void createFollowUp(candidate.actionType)}
+                        {...(candidate.actionType === "lesson_preparation" ? { "data-testid": "create-reflection-follow-up" } : {})}
+                      >
+                        {candidate.actionType === "lesson_preparation" ? "创建下一课备课任务" : candidate.actionType === "assignment_draft" ? "创建练习草稿" : "创建个人待办"}
+                      </Button>
+                    </article>
+                  ))}
+                </div>
                 {reflection.followUps.length > 0 ? (
                   <div className="reflection-follow-up-list">
                     {reflection.followUps.map((item) => <Paragraph key={item.followUpRef}><Tag>{followUpTypeLabel(item.actionType)}</Tag>{followUpStatusLabel(item.targetStatus)}</Paragraph>)}
@@ -453,4 +507,39 @@ function followUpStatusLabel(status: string): string {
     completed: "已完成",
     cancelled: "已取消"
   }[status] ?? "已创建";
+}
+
+function buildActionCandidates(content: ReflectionContent | null): Array<{
+  actionType: "lesson_preparation" | "assignment_draft" | "teacher_todo";
+  title: string;
+  rationale: string;
+}> {
+  if (!content) return [];
+  const candidates: Array<{
+    actionType: "lesson_preparation" | "assignment_draft" | "teacher_todo";
+    title: string;
+    rationale: string;
+  }> = [];
+  if (content.nextLessonSuggestions.length > 0) {
+    candidates.push({
+      actionType: "lesson_preparation",
+      title: "调整下一课教学重点",
+      rationale: content.nextLessonSuggestions.join("；")
+    });
+  }
+  if (content.assignmentSuggestions.length > 0) {
+    candidates.push({
+      actionType: "assignment_draft",
+      title: "生成补充练习草稿",
+      rationale: content.assignmentSuggestions.join("；")
+    });
+  }
+  if (content.uncertainties.length > 0) {
+    candidates.push({
+      actionType: "teacher_todo",
+      title: "复核仍不确定的问题",
+      rationale: content.uncertainties.join("；")
+    });
+  }
+  return candidates.slice(0, 3);
 }
