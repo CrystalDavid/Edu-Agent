@@ -78,6 +78,10 @@ import { MaterialGenerationSourceAdapter } from "./material-generation-source-ad
 import { ClassroomFeedbackService } from "../modules/agent-runtime-context/application/classroom-feedback-service.js";
 import { ClassroomFeedbackSourceAdapter } from "./classroom-feedback-source-adapter.js";
 import { ClassroomFeedbackDeliveryAdapter } from "./classroom-feedback-delivery-adapter.js";
+import { NextLessonOptimizationService } from "../modules/agent-runtime-context/application/next-lesson-optimization-service.js";
+import { NextLessonOptimizationSourceAdapter } from "./next-lesson-optimization-source-adapter.js";
+import { NextLessonActionTargetAdapter } from "./next-lesson-action-target-adapter.js";
+import { PostgresNextLessonActionStore } from "./postgres-next-lesson-action-store.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -186,13 +190,28 @@ export function createProductContainer(
     new ClassroomFeedbackDeliveryAdapter(classroomReflection),
     skillRegistry
   );
+  const nextLessonOptimization = new NextLessonOptimizationService(
+    new NextLessonOptimizationSourceAdapter(
+      classroomReflection,
+      lessonPreparation,
+      read,
+      personalization
+    ),
+    new PostgresNextLessonActionStore(appPool),
+    new NextLessonActionTargetAdapter(
+      classroomReflection,
+      lessonPreparation
+    ),
+    skillRegistry
+  );
   const lessonJourney = new LessonJourneyReadService(
     new LessonJourneyReadAdapter(
       lessonPreparation,
       read,
       files,
       classroomReflection,
-      lessonBrief
+      lessonBrief,
+      nextLessonOptimization
     )
   );
   const copilotOutbox = new LocalCopilotOutboxWorker(
@@ -225,6 +244,7 @@ export function createProductContainer(
       lessonBrief,
       materialGeneration,
       classroomFeedback,
+      nextLessonOptimization,
       personalization,
       files
     },

@@ -74,6 +74,10 @@ import {
   DecideLessonBriefRequestSchema,
   GenerateMaterialBundleRequestSchema,
   GenerateClassroomFeedbackRequestSchema,
+  GenerateNextLessonActionsRequestSchema,
+  UpdateNextLessonActionRequestSchema,
+  AcceptNextLessonActionRequestSchema,
+  RejectNextLessonActionRequestSchema,
   AdoptMaterialBundleItemRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
@@ -899,6 +903,7 @@ export function createApp(
     const lessonBrief = product.services.lessonBrief;
     const materialGeneration = product.services.materialGeneration;
     const classroomFeedback = product.services.classroomFeedback;
+    const nextLessonOptimization = product.services.nextLessonOptimization;
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
@@ -1384,6 +1389,117 @@ export function createApp(
             actorRef: contexts.acting.actorRef,
             reflectionRef: routeParameter(request.params["reflectionRef"]),
             request: CreateReflectionFollowUpRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.reflectionNextLessonActionsPattern,
+      markRoute("product.teacher.next-lesson-actions.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.list({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflectionNextLessonActionsGeneratePattern,
+      markRoute("product.teacher.next-lesson-actions.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await nextLessonOptimization.generate({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              reflectionRef: routeParameter(request.params["reflectionRef"])
+            },
+            request: GenerateNextLessonActionsRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.nextLessonActionPattern,
+      markRoute("product.teacher.next-lesson-actions.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.get({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.patch(
+      apiRoutes.teacher.nextLessonActionPattern,
+      markRoute("product.teacher.next-lesson-actions.update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.update({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: UpdateNextLessonActionRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.nextLessonActionAcceptPattern,
+      markRoute("product.teacher.next-lesson-actions.accept"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.accept({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            },
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: AcceptNextLessonActionRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.nextLessonActionRejectPattern,
+      markRoute("product.teacher.next-lesson-actions.reject"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.reject({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: RejectNextLessonActionRequestSchema.parse(request.body)
           }));
         } catch (error) {
           next(error);

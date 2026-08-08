@@ -80,6 +80,11 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0010_calendar_event_categories.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0011_next_lesson_action_candidates.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"

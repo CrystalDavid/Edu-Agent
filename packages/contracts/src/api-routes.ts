@@ -410,6 +410,16 @@ export const apiRoutes = {
     reflectionGenerate: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/generate`,
     reflectionFollowUpsPattern: "/api/v1/teacher/reflections/:reflectionRef/follow-ups",
     reflectionFollowUps: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/follow-ups`,
+    reflectionNextLessonActionsPattern: "/api/v1/teacher/reflections/:reflectionRef/next-lesson-actions",
+    reflectionNextLessonActions: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/next-lesson-actions`,
+    reflectionNextLessonActionsGeneratePattern: "/api/v1/teacher/reflections/:reflectionRef/next-lesson-actions/generate",
+    reflectionNextLessonActionsGenerate: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/next-lesson-actions/generate`,
+    nextLessonActionPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef",
+    nextLessonAction: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}`,
+    nextLessonActionAcceptPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef/accept",
+    nextLessonActionAccept: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}/accept`,
+    nextLessonActionRejectPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef/reject",
+    nextLessonActionReject: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}/reject`,
     pendingReflections: "/api/v1/teacher/reflections/pending"
   },
   demo: {

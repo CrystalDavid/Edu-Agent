@@ -165,6 +165,22 @@ export class PostgresClassroomReflectionService {
     return delivery;
   }
 
+  async getDeliveryRevision(input: {
+    tenantRef: string;
+    actorRef: string;
+    deliveryRevisionRef: string;
+  }) {
+    this.assertDemoActor(input.tenantRef, input.actorRef);
+    const delivery = await this.education.getDeliveryByRevision(
+      this.pool,
+      input.tenantRef,
+      input.actorRef,
+      input.deliveryRevisionRef
+    );
+    if (!delivery) throw new NotFoundError("课堂实施修订不存在。");
+    return delivery;
+  }
+
   async updateDeliveryDraft(input: { tenantRef: string; actorRef: string; deliveryRef: string; request: unknown }) {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const request = UpdateLessonDeliveryDraftRequestSchema.parse(input.request);

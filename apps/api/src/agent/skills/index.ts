@@ -44,6 +44,14 @@ import {
   type ReflectionAnalysisSkillOutput,
   type ReflectionAnalysisSkillVersion
 } from "./reflection-analysis/index.js";
+import {
+  nextLessonAdjustmentSkillV1,
+  type NextLessonAdjustmentContextBuildResult,
+  type NextLessonAdjustmentEvaluation,
+  type NextLessonAdjustmentSkillInput,
+  type NextLessonAdjustmentSkillOutput,
+  type NextLessonAdjustmentSkillVersion
+} from "./next-lesson-adjustment/index.js";
 
 export const lessonPreparationSkillRef = "lesson-preparation@4";
 export const legacyLessonPreparationSkillRef = "lesson-preparation@3";
@@ -51,6 +59,7 @@ export const lessonAnalysisSkillRef = "lesson-analysis@1";
 export const materialGenerationSkillRef = "material-generation@1";
 export const classroomReflectionSkillRef = "classroom-reflection@1";
 export const reflectionAnalysisSkillRef = "reflection-analysis@1";
+export const nextLessonAdjustmentSkillRef = "next-lesson-adjustment@1";
 
 export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   const registry = new VersionedSkillRegistry();
@@ -62,7 +71,21 @@ export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   registry.register(materialGenerationSkillV1);
   registry.register(classroomReflectionSkillV1);
   registry.register(reflectionAnalysisSkillV1);
+  registry.register(nextLessonAdjustmentSkillV1);
   return registry;
+}
+
+export function loadNextLessonAdjustmentSkill(
+  registry: VersionedSkillRegistry,
+  skillRef = nextLessonAdjustmentSkillRef
+): NextLessonAdjustmentSkillVersion {
+  const skill = registry.loadPublished<NextLessonAdjustmentSkillVersion>(
+    skillRef
+  );
+  if (skill.manifest.id !== "next-lesson-adjustment") {
+    throw new Error(`Skill ${skillRef} cannot generate next lesson actions.`);
+  }
+  return skill;
 }
 
 export function loadReflectionAnalysisSkill(
@@ -153,7 +176,8 @@ export {
   lessonAnalysisSkillV1,
   materialGenerationSkillV1,
   classroomReflectionSkillV1,
-  reflectionAnalysisSkillV1
+  reflectionAnalysisSkillV1,
+  nextLessonAdjustmentSkillV1
 };
 export type {
   SkillLifecycleStatus,
@@ -186,5 +210,10 @@ export type {
   ReflectionAnalysisOperationMetrics,
   ReflectionAnalysisSkillInput,
   ReflectionAnalysisSkillOutput,
-  ReflectionAnalysisSkillVersion
+  ReflectionAnalysisSkillVersion,
+  NextLessonAdjustmentContextBuildResult,
+  NextLessonAdjustmentEvaluation,
+  NextLessonAdjustmentSkillInput,
+  NextLessonAdjustmentSkillOutput,
+  NextLessonAdjustmentSkillVersion
 };

@@ -269,3 +269,44 @@ export const suggestionDispositionTable = workSchema.table(
     ...formalWriteColumns()
   }
 );
+
+export const nextLessonActionCandidateTable = workSchema.table(
+  "next_lesson_action_candidate",
+  {
+    candidateRef: text("candidate_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    teacherRef: text("teacher_ref").notNull(),
+    sourceReflectionRef: text("source_reflection_ref").notNull(),
+    sourceReflectionRevisionRef: text("source_reflection_revision_ref").notNull(),
+    sourceAgentRunRef: text("source_agent_run_ref").notNull(),
+    contextManifestRef: text("context_manifest_ref").notNull(),
+    candidateType: text("candidate_type").notNull(),
+    title: text("title").notNull(),
+    reason: text("reason").notNull(),
+    confidence: text("confidence").notNull(),
+    status: text("status").notNull(),
+    version: integer("version").notNull(),
+    targetLessonRef: text("target_lesson_ref"),
+    targetRef: text("target_ref"),
+    deepLink: text("deep_link"),
+    teacherNote: text("teacher_note"),
+    sourceRefs: jsonb("source_refs").notNull(),
+    generatedBySkillRef: text("generated_by_skill_ref").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true, mode: "string" }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+    ...formalWriteColumns()
+  }
+);
+
+export const nextLessonActionHistoryTable = workSchema.table(
+  "next_lesson_action_history",
+  {
+    historyRef: text("history_ref").primaryKey(),
+    candidateRef: text("candidate_ref").notNull(),
+    candidateVersion: integer("candidate_version").notNull(),
+    changeKind: text("change_kind").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    ...formalWriteColumns()
+  }
+);

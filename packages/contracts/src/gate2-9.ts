@@ -504,6 +504,96 @@ export const ReflectionFollowUpResultSchema = z.object({
   deepLink: z.string().min(1)
 });
 
+export const NextLessonActionTypeSchema = z.enum([
+  "adjust_next_lesson_focus",
+  "create_practice_task",
+  "create_teacher_todo",
+  "review_student_issue"
+]);
+
+export const NextLessonActionStatusSchema = z.enum([
+  "candidate",
+  "accepted",
+  "rejected",
+  "expired"
+]);
+
+export const NextLessonActionCandidateSchema = z.object({
+  candidateRef: z.string().min(1),
+  tenantRef: z.string().min(1),
+  teacherRef: z.string().min(1),
+  sourceReflectionRef: z.string().min(1),
+  sourceReflectionRevisionRef: z.string().min(1),
+  sourceAgentRunRef: z.string().min(1),
+  contextManifestRef: z.string().min(1),
+  candidateType: NextLessonActionTypeSchema,
+  title: z.string().min(1).max(300),
+  reason: z.string().min(1).max(4_000),
+  confidence: z.enum(["high", "medium", "low"]),
+  status: NextLessonActionStatusSchema,
+  version: z.number().int().positive(),
+  targetLessonRef: z.string().min(1).nullable(),
+  targetRef: z.string().min(1).nullable(),
+  deepLink: z.string().min(1).nullable(),
+  teacherNote: z.string().max(4_000).nullable(),
+  sourceRefs: z.array(z.string().min(1)),
+  generatedBySkillRef: z.string().min(1),
+  expiresAt: z.string().datetime().nullable(),
+  decidedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export const NextLessonActionListSchema = z.object({
+  reflectionRef: z.string().min(1),
+  reflectionRevisionRef: z.string().min(1).nullable(),
+  items: z.array(NextLessonActionCandidateSchema)
+});
+
+export const GenerateNextLessonActionsRequestSchema = z.object({
+  reflectionRevisionRef: z.string().min(1),
+  targetLessonRef: z.string().min(1),
+  teacherAdjustment: z.string().trim().max(4_000).nullable().default(null),
+  purpose: z.literal("next-lesson-adjustment.generate"),
+  idempotencyKey: z.string().min(8)
+});
+
+export const GenerateNextLessonActionsResultSchema = z.object({
+  replayed: z.boolean(),
+  agentRunRef: z.string().min(1),
+  contextManifestRef: z.string().min(1),
+  skillRef: z.string().min(1),
+  items: z.array(NextLessonActionCandidateSchema).max(3)
+});
+
+export const UpdateNextLessonActionRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  title: z.string().min(1).max(300),
+  reason: z.string().min(1).max(4_000),
+  targetLessonRef: z.string().min(1).nullable(),
+  teacherNote: z.string().max(4_000).nullable().default(null),
+  purpose: z.literal("next-lesson-adjustment.update"),
+  idempotencyKey: z.string().min(8)
+});
+
+export const AcceptNextLessonActionRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  purpose: z.literal("next-lesson-adjustment.accept"),
+  idempotencyKey: z.string().min(8)
+});
+
+export const RejectNextLessonActionRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().max(4_000).nullable().default(null),
+  purpose: z.literal("next-lesson-adjustment.reject"),
+  idempotencyKey: z.string().min(8)
+});
+
+export const NextLessonActionMutationResultSchema = z.object({
+  replayed: z.boolean(),
+  candidate: NextLessonActionCandidateSchema
+});
+
 export const LessonImplementationSummarySchema = z.object({
   lessonRef: z.string().min(1),
   delivery: LessonDeliveryDetailSchema.nullable(),
@@ -559,4 +649,11 @@ export type UpdateReflectionDraftRequest = z.infer<typeof UpdateReflectionDraftR
 export type ConfirmReflectionRequest = z.infer<typeof ConfirmReflectionRequestSchema>;
 export type GenerateReflectionRequest = z.infer<typeof GenerateReflectionRequestSchema>;
 export type CreateReflectionFollowUpRequest = z.infer<typeof CreateReflectionFollowUpRequestSchema>;
+export type NextLessonActionType = z.infer<typeof NextLessonActionTypeSchema>;
+export type NextLessonActionStatus = z.infer<typeof NextLessonActionStatusSchema>;
+export type NextLessonActionCandidate = z.infer<typeof NextLessonActionCandidateSchema>;
+export type GenerateNextLessonActionsRequest = z.infer<typeof GenerateNextLessonActionsRequestSchema>;
+export type UpdateNextLessonActionRequest = z.infer<typeof UpdateNextLessonActionRequestSchema>;
+export type AcceptNextLessonActionRequest = z.infer<typeof AcceptNextLessonActionRequestSchema>;
+export type RejectNextLessonActionRequest = z.infer<typeof RejectNextLessonActionRequestSchema>;
 export type LessonImplementationSummary = z.infer<typeof LessonImplementationSummarySchema>;
