@@ -40,11 +40,11 @@
 | 文件和 DOCX | REAL（本地） | FileAsset/FileVersion、LocalObjectStore、绑定、版本、删除保护、approved plan DOCX | 无云 ObjectStore、分享协作或 Office 完整预览 |
 | 作业和提交 | REAL（教师端） | Assignment 生命周期/版本、immutable Attempt/Response、未交语义；本机可选匿名样例提交 | 无学生端、自助提交入口或完整题库 |
 | 批改和 Evidence | REAL | grade draft/confirm/reopen，Evidence 来源链和可重算统计 | 自动评分只可作建议；不形成长期 learner estimate |
-| 调整下一课 | REAL | 教师选择 Evidence → 新 lesson prep Task → 每次重新授权 → Copilot/plan 审批 | Agent 不能读取未选择的全班提交 |
+| 调整下一课 | REAL | 作业路径支持教师选择 Evidence 后创建 lesson prep Task；Reflection 路径支持显式生成最多三个版本化行动候选、教师修改/拒绝/接受，接受后才创建 Preparation Task、Assignment draft 或 TeacherTodo | Agent 不能读取未选择的全班提交；候选不自动执行，也不等于 Lesson/TeachingPlan 事实 |
 | Todo 和 Calendar | REAL | 手工 Todo/Event、关联、安排、状态和 source-version reminder preference | 无共享/外部日历或自动工作流 |
 | 课堂实施 | REAL | Delivery draft/confirmed/amended revision；planned vs implemented | 日历结束不会自动产生实施事实 |
 | 课堂观察 | REAL | 教师确认的班级/Objective/活动/匿名 learner observation 与 supersedes 历史 | Agent 推断不是正式事实；不做长期能力标签 |
-| 课后反思 | REAL | selected context → Agent draft → teacher confirm → explicit follow-up | Reflection 不覆盖 TeachingPlan，也不自动创建行动 |
+| 课后反思 | REAL | selected context → Agent draft → teacher confirm → `next-lesson-adjustment@1` 候选 → teacher decision → explicit follow-up | Reflection 不覆盖 TeachingPlan；确认 Reflection 或生成候选都不自动创建行动 |
 | 学校成员管理 | REAL（最小） | Organization、Membership、Role、CourseRun access、suspend/reactivate、安全 Audit | 无完整组织树、人事系统或跨学校管理员 |
 | 数据治理请求 | PARTIAL | 记录 export、de-identification/deletion 请求与状态基础 | 未实现导出/去标识执行 Worker、审批门户或 SLA |
 | 教师偏好与个性化 | REAL（最小） | 候选 draft、教师确认/修改/拒绝/撤销、不可变 revision、跨重启恢复；仅 active confirmed preference 进入 lesson preparation Context | 无学生画像、向量检索、自动人格分析或未确认 Memory 入模 |

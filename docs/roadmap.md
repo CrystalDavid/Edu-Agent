@@ -5,12 +5,14 @@
 
 本文只描述尚未完成的未来工作。当前已经具备的能力以 [当前能力](capabilities.md) 为准，历史阶段以 [版本历史](version-history.md) 为准。
 
-## 近期：完成 Teaching Workspace 产品闭环验收
+## 近期：完成 Teaching Workspace 端到端产品验收
 
-- 验收 Lesson Journey、Lesson Brief、备课 Proposal 与 Material Bundle 的同页工作流；
-- 确认 45 个只向前 Migration、开发数据库和 LocalObjectStore 均未被改变；
-- 下一步按低风险顺序接入课堂快速反馈与 Reflection Journey，而不是新增长表单；
+- 验收 Lesson Journey、Lesson Brief、备课 Proposal、Material Bundle、课堂快速反馈、Reflection 与下一课优化的同页工作流；
+- 确认 46 个只向前 Migration、开发数据库和 LocalObjectStore 均未被改变；
+- 验证 confirmed Reflection → 版本化行动候选 → 教师接受 → 下一课 Preparation Task 的完整重启恢复链路；
 - 教材/课程标准/考点 Knowledge Layer 在独立阶段设计，不在缺少来源时伪造权威结论。
+
+Teaching Workspace 闭环验收后，优先进入独立的 Phase 9 Knowledge Foundation 设计与来源治理；只有在来源授权、版本和引用策略明确后，才让教材、课程标准或考点知识进入 Agent Context。
 
 ## 后续生产阶段：Gate 2.10B 云部署与小范围试点
 

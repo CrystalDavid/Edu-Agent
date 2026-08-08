@@ -14,7 +14,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
 - `packages/sample-data`：显式 Seed 和测试共用的稳定匿名 refs/data；产品 API/Web 不依赖该 package；
 - `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
-- PostgreSQL 18：七个 Schema、45 个只向前 Migration；
+- PostgreSQL 18：七个 Schema、46 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；
 - 可选生产集成 Adapter：OIDC Identity Provider、Volcengine Ark Chat Completions。
 
@@ -25,7 +25,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 | 模块目录 | Schema | 当前状态所有权与职责 |
 |---|---|---|
 | `identity-governance-audit` | `governance` | User、ExternalIdentity、Organization、Membership、Role/Course access、Session、OIDC state、AuthorizationDecision、Audit、安全事件、数据治理请求 |
-| `work-assistant-durable-execution` | `work` | Task/TaskRun、lesson preparation、TaskWorkingSet、Todo、Calendar、work projection、提醒偏好、Outbox/消费效果、follow-up 工作关系 |
+| `work-assistant-durable-execution` | `work` | Task/TaskRun、lesson preparation、TaskWorkingSet、Todo、Calendar、work projection、提醒偏好、版本化下一课行动候选、Outbox/消费效果、follow-up 工作关系 |
 | `agent-runtime-context` | `runtime` | AgentRun、Resolved Contract、AuthorizedContextPlan、ContextManifest、运行解释边界 |
 | `capability-integration` | `capability` | ModelProvider、ModelExecution、PromptBundle、Budget/Data Manifest、Provider capability、ObjectStore Port 和外部能力执行 |
 | `artifact-collaboration` | `artifact` | Proposal/Disposition、TeachingPlan/Revision、LessonReflection/Revision、FileAsset/FileVersion/Binding、正式教学成果 |
@@ -131,10 +131,12 @@ flowchart TD
     CONFIRM --> OBS["Teacher-confirmed observations"]
     OBS --> REFLECT["Agent Reflection draft"]
     REFLECT --> RCONFIRM["Teacher-confirmed Reflection"]
-    RCONFIRM --> FOLLOW["Explicit follow-up Task / Assignment / Todo"]
+    RCONFIRM --> CANDIDATE["Versioned next-Lesson action candidates"]
+    CANDIDATE --> DECISION["Teacher edit / accept / reject"]
+    DECISION --> FOLLOW["Explicit follow-up Task / Assignment / Todo"]
 ```
 
-关键语义：模型网络调用不持有业务事务；Proposal 不是实施事实；approved plan 不是已授课；只有教师确认的 Delivery/Observation 是课堂事实；Reflection 不覆盖 TeachingPlan；后续行动必须显式创建。
+关键语义：模型网络调用不持有业务事务；Proposal 不是实施事实；approved plan 不是已授课；只有教师确认的 Delivery/Observation 是课堂事实；Reflection 不覆盖 TeachingPlan；确认 Reflection 不自动生成或执行行动；只有教师接受版本化候选后才通过 owning Application Service 创建正式 follow-up。
 
 ## 8. 作业到学习 Evidence 的数据流
 
@@ -170,7 +172,7 @@ Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifes
 
 历史 SkillVersion 保留在 Registry；新版本不覆盖已发布版本。
 
-Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision；第 45 个前向 Migration 扩展日历事件类别。Agent 只能提出 preference draft；候选在教师确认前不能进入 Context；只有 owning teacher 能确认、修改、拒绝或撤销。设置页提供最小治理界面，active preference 可跨 Run/Session/重启使用，revoked preference 立即从 Context 查询中消失。Context manifest 只记录 preference ref/key/version/hash 和 Token 估算，不复制偏好值；Platform facts 仍只来自 owning Schema，Memory 不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
+Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision；第 45 个前向 Migration 扩展日历事件类别；第 46 个前向 Migration 在 Work Schema 中持久化 `NextLessonActionCandidate` 及不可变决策历史。Agent 只能提出 preference draft 或行动候选；候选在教师确认前不能进入正式业务状态。只有 owning teacher 能确认、修改、拒绝或撤销偏好，并能修改、接受或拒绝下一课候选。active preference 可跨 Run/Session/重启使用，revoked preference 立即从 Context 查询中消失；行动候选只有被接受后才调用既有 Lesson Preparation、Assignment 或 Todo Application Service。Context manifest 记录授权来源、版本、hash、缺口和 Token 估算；Platform facts 仍只来自 owning Schema，Memory 或行动候选均不能写 Course、Lesson、TeachingPlan、Evidence 或 GradeDecision。
 
 ## 10. Teaching Workspace 读取层与材料闭环
 

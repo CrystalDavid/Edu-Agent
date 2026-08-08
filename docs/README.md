@@ -55,6 +55,7 @@
 - [目标仓库结构](project/target-repository-structure.md)；
 - [Phase 7A Memory 产品化报告](architecture/phase7a-memory-product-report.md)；
 - [Phase 8A-3 Material Bundle 报告](architecture/phase8a3-material-bundle-report.md)；
+- [Phase 8A-6 下一课优化闭环报告](architecture/phase8a6-next-lesson-report.md)；
 - [Claude Code 仓库经验](project/claude-code-repository-lessons.md)；
 - [部署就绪差距明细](operations/deployment-readiness-gaps.md)；
 - [Migration ownership](../infra/postgres/migration-ownership.md)；

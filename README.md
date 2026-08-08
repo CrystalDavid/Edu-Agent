@@ -8,7 +8,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 - 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
 - 当前工程阶段：Phase 8 Teaching Workspace；云部署与小范围试点在工作流验收后进入
 
-详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A 与日历分类各追加 1 个前向 Migration，当前合计 45 个。
+详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A、日历分类与 Phase 8A-6 下一课行动候选各追加 1 个前向 Migration，当前合计 46 个。
 
 ## 项目定位
 
@@ -36,10 +36,10 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 | 文件、版本与 DOCX | REAL | FileAsset/FileVersion、绑定、软删除/恢复、approved TeachingPlan DOCX；材料草稿逐项版本化、预览、采用和下载 | 当前使用本地 ObjectStore；PPT 仅生成内容大纲，不生成真实 PPTX；无协作和云同步 |
 | 作业、提交与批改 | REAL（教师端） | Assignment 生命周期、immutable Attempt、批改草稿、确认/重开、统计 | 当前可载入匿名样例提交，无学生端自行提交 |
 | Evidence | REAL | Observation/Claim 与来源、置信度、unknowns、批改和教学上下文可追溯 | 不形成永久 learner 能力标签 |
-| 调整下一课 | REAL | 从作业/Evidence 生成显式的下一课调整建议和任务关系 | 仍由教师决定是否采用 |
+| 调整下一课 | REAL | 从作业/Evidence 或 confirmed Reflection 显式生成、修改、拒绝和接受可追溯行动候选；接受后复用正式 Task/Assignment/Todo 写路径 | 候选不会自动执行，仍由教师决定是否采用 |
 | Todo 与 Calendar | REAL | 个人 Todo、手工日历、来源业务投影、稍后提醒、工作台 | 无外部日历和复杂重复规则 |
 | 课堂实施与观察 | REAL | LessonDelivery、ClassroomObservation、修订/取代历史 | 无实时课堂、音视频或自动观察 |
-| 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、显式 follow-up | 反思不能倒推伪造课堂事实 |
+| 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、版本化下一课行动候选与显式 follow-up | 反思不能倒推伪造课堂事实；确认 Reflection 不会自动创建行动 |
 | 学校管理员 | REAL（最小） | 成员查看/创建/激活/停用、普通教师角色与 CourseRun access | 无邮件邀请、MFA、SCIM 或完整后台 |
 | 教师偏好与个性化 | REAL（最小） | 查看 MemoryCandidate，确认、修改、拒绝或撤销 TeacherPreference；跨重启恢复；已确认偏好受控进入备课 Context | 无学生长期画像、向量数据库或自动人格分析 |
 | 考试 | DISABLED | 一级入口明确标记暂未开放 | 无正式考试、提交、批改和持久化 |
@@ -134,7 +134,7 @@ flowchart TB
 | Workspace | Node.js 24（本轮验证 24.14.0）、Corepack、pnpm 11.9.0、TypeScript 7 |
 | Web | React 19、Vite 8、Ant Design 6、原生 history router |
 | API | Express 5、Zod 4、OpenAI-compatible client、openid-client |
-| 数据 | PostgreSQL 18、Drizzle ORM、45 个只向前 Migration（43 个 Verified 基线 + Phase 7A + 日历分类） |
+| 数据 | PostgreSQL 18、Drizzle ORM、46 个只向前 Migration（43 个 Verified 基线 + Phase 7A + 日历分类 + Phase 8A-6 行动候选） |
 | 文件 | LocalObjectStore、`docx`、JSZip |
 | 测试 | Vitest 4、PGlite、Supertest、Node test runner、Playwright 1.62 |
 | 本地环境 | Docker Desktop / Docker Compose |
