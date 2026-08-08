@@ -170,6 +170,62 @@ describe("LessonJourneyProjection", () => {
     expect(projection.completedMilestones).not.toContain("follow_up_created");
   });
 
+  it("waits for the teacher when next-Lesson action candidates are ready", () => {
+    const projection = projectLessonJourney(input({
+      tasks: [task("completed")],
+      teachingPlans: plans({ approved: true }),
+      materialBundle: bundle("ready"),
+      implementation: implementation({
+        confirmedDelivery: true,
+        confirmedReflection: true,
+        followUp: false
+      }),
+      nextLessonActions: [{
+        candidateRef: "next-lesson-action:1",
+        status: "candidate",
+        version: 1
+      }]
+    }));
+
+    expect(projection).toMatchObject({
+      currentStage: "improve",
+      status: "waiting_for_teacher",
+      nextBestAction: {
+        kind: "choose_follow_up",
+        label: "决定下一课优化建议"
+      }
+    });
+    expect(projection.sourceRefs).toContainEqual(expect.objectContaining({
+      kind: "next_lesson_action",
+      ref: "next-lesson-action:1",
+      version: "1:candidate"
+    }));
+    expect(projection.completedMilestones).not.toContain("follow_up_created");
+  });
+
+  it("does not treat a candidate decision as a formal follow-up", () => {
+    for (const status of ["accepted", "rejected", "expired"] as const) {
+      const projection = projectLessonJourney(input({
+        tasks: [task("completed")],
+        teachingPlans: plans({ approved: true }),
+        materialBundle: bundle("ready"),
+        implementation: implementation({
+          confirmedDelivery: true,
+          confirmedReflection: true,
+          followUp: false
+        }),
+        nextLessonActions: [{
+          candidateRef: `next-lesson-action:${status}`,
+          status,
+          version: 2
+        }]
+      }));
+
+      expect(projection.status).toBe("waiting_for_teacher");
+      expect(projection.completedMilestones).not.toContain("follow_up_created");
+    }
+  });
+
   it("opens Reflection only after Delivery is confirmed", () => {
     const projection = projectLessonJourney(input({
       tasks: [task("completed")],

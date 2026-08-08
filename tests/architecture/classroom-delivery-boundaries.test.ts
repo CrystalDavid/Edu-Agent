@@ -54,10 +54,10 @@ describe("Phase 8A-4 classroom delivery boundaries", () => {
     expect(runStore).toContain("teacherConfirmationRequired: true");
   });
 
-  it("adds no classroom feedback fact table and preserves 45 Migrations", () => {
+  it("adds no classroom feedback fact table and preserves 46 Migrations", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
-    expect(migrations).toHaveLength(45);
+    expect(migrations).toHaveLength(46);
     const sql = migrations.map((path) => readFileSync(path, "utf8")).join("\n");
     expect(sql).not.toMatch(
       /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+\w+\.(?:quick_classroom_feedback|delivery_draft|classroom_feedback)/iu

@@ -46,13 +46,13 @@ describe("Phase 8A-5 Reflection analysis boundaries", () => {
     expect(formalService).toContain("createFollowUpTarget");
   });
 
-  it("adds no Reflection analysis fact table and preserves 45 Migrations", () => {
+  it("adds no Reflection analysis fact table and preserves 46 Migrations", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
-    expect(migrations).toHaveLength(45);
+    expect(migrations).toHaveLength(46);
     const sql = migrations.map((path) => readFileSync(path, "utf8")).join("\n");
     expect(sql).not.toMatch(
-      /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+\w+\.(?:reflection_analysis|reflection_draft|action_candidate)/iu
+      /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+\w+\.(?:reflection_analysis|reflection_draft)/iu
     );
   });
 });

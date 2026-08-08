@@ -164,15 +164,47 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await reflectionConfirmed).status()).toBe(200);
   await expect(page.getByTestId("reflection-draft-editor")).toContainText("教师已确认课后反思");
-  await expect(page.getByTestId("reflection-follow-ups")).toContainText("确认反思不会自动创建任何任务");
+  await expect(page.getByTestId("reflection-follow-ups")).toContainText("生成候选不会自动创建任何任务");
 
-  const followUpCreated = page.waitForResponse(
-    (response) => response.url().endsWith("/follow-ups") && response.request().method() === "POST"
+  const reflectionBeforeActions = await request.get(
+    apiRoutes.teacher.reflection(reflectionRef),
+    { headers }
   );
-  await page.getByTestId("create-reflection-follow-up").click();
-  const followUpResponse = await followUpCreated;
-  expect(followUpResponse.status()).toBe(201);
-  const followUp = await followUpResponse.json();
+  expect(reflectionBeforeActions.status()).toBe(200);
+  expect((await reflectionBeforeActions.json()).followUps).toEqual([]);
+
+  await expect(page.getByTestId("generate-next-lesson-actions")).toBeEnabled();
+  const actionsGenerated = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        apiRoutes.teacher.reflectionNextLessonActionsGenerate(reflectionRef) &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("generate-next-lesson-actions").click();
+  const actionsResponse = await actionsGenerated;
+  expect(actionsResponse.status()).toBe(201);
+  const actions = await actionsResponse.json();
+  expect(actions.skillRef).toBe("next-lesson-adjustment@1");
+  expect(actions.items.length).toBeGreaterThan(0);
+  await expect(page.getByTestId("next-lesson-action-candidate").first()).toBeVisible();
+  await page.screenshot({
+    path: `${screenshotRoot}/03-next-lesson-action-candidates.png`,
+    fullPage: true,
+    animations: "disabled"
+  });
+
+  const acceptedResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname.endsWith("/accept") &&
+      response.request().method() === "POST"
+  );
+  await page.getByTestId("accept-next-lesson-action").click();
+  await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
+  const accepted = await acceptedResponse;
+  expect(accepted.status()).toBe(200);
+  const followUp = (await accepted.json()).candidate;
+  expect(followUp.status).toBe("accepted");
+  expect(followUp.targetRef).toBeTruthy();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   await expect(page.getByTestId("task-working-set")).toContainText("课后反思来源");
   await expect(page.getByTestId("task-working-set")).toContainText("1 条教师确认观察");

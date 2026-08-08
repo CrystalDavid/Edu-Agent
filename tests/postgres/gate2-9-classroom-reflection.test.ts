@@ -728,6 +728,246 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
     expect(links.rows[0]?.count).toBe("1");
   });
 
+  it("persists teacher-governed next-Lesson candidates and creates a formal target only after acceptance", async () => {
+    const delivery = await createConfirmedDelivery("next-lesson-optimization");
+    const reflectionDraft = await product.services.classroomReflection.createReflectionDraft({
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      request: {
+        courseRunRef: gate2DemoRefs.courseRunRef,
+        lessonRef: gate25DemoRefs.lessonRefs.slopeAndGraph,
+        teachingPlanRevisionRef: gate2DemoRefs.teachingPlanRevisionRef,
+        deliveryRevisionRef: delivery.currentConfirmed!.deliveryRevisionRef,
+        observationRevisionRefs: [],
+        assignmentEvidenceRefs: [],
+        content: {
+          ...reflectionContent,
+          objectiveAttainment: "多数学生能够说明斜率变化。",
+          plannedVsImplemented: "练习环节比计划慢五分钟。",
+          uncertainties: ["是否需要延长基础概念复习仍需教师复核。"],
+          nextLessonSuggestions: ["下一课先用对比例题复核斜率与截距。"],
+          assignmentSuggestions: ["增加一道斜率与截距辨析题。"],
+          teacherNotes: "方案保持简洁。"
+        },
+        purpose: "lesson-reflection.create-draft",
+        idempotencyKey: key("next-action-reflection")
+      }
+    });
+    const confirmed = await product.services.classroomReflection.confirmReflection({
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      reflectionRef: reflectionDraft.reflection.reflectionRef,
+      request: {
+        expectedRevisionNumber: reflectionDraft.reflection.currentDraft!.revisionNumber,
+        purpose: "lesson-reflection.confirm",
+        idempotencyKey: key("next-action-reflection-confirm")
+      }
+    });
+    const reflectionRef = confirmed.reflection.reflectionRef;
+    const reflectionRevisionRef =
+      confirmed.reflection.currentConfirmed!.reflectionRevisionRef;
+    const context = {
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      reflectionRef
+    };
+
+    const beforeGeneration = await product.services.nextLessonOptimization.list(context);
+    expect(beforeGeneration.items).toEqual([]);
+    const followUpsBefore = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM work.reflection_follow_up_link
+        WHERE reflection_revision_ref = $1`,
+      [reflectionRevisionRef]
+    );
+    expect(followUpsBefore.rows[0]?.count).toBe("0");
+
+    const generationRequest = {
+      reflectionRevisionRef,
+      targetLessonRef: gate25DemoRefs.lessonRefs.coefficientMethod,
+      teacherAdjustment: "下一课减少讨论，先巩固基础。",
+      purpose: "next-lesson-adjustment.generate" as const,
+      idempotencyKey: key("next-actions-generate")
+    };
+    const generated = await product.services.nextLessonOptimization.generate({
+      context,
+      request: generationRequest
+    });
+    const replay = await product.services.nextLessonOptimization.generate({
+      context,
+      request: generationRequest
+    });
+
+    expect(generated).toMatchObject({
+      replayed: false,
+      skillRef: "next-lesson-adjustment@1"
+    });
+    expect(generated.items).toHaveLength(3);
+    expect(generated.items.every((item) => item.status === "candidate")).toBe(true);
+    expect(replay).toMatchObject({
+      replayed: true,
+      agentRunRef: generated.agentRunRef
+    });
+    expect(replay.items.map((item) => item.candidateRef))
+      .toEqual(generated.items.map((item) => item.candidateRef));
+
+    const runtime = await adminPool.query<{ output: Record<string, unknown> }>(
+      `SELECT output FROM runtime.agent_run WHERE agent_run_ref = $1`,
+      [generated.agentRunRef]
+    );
+    expect(runtime.rows[0]?.output).toMatchObject({
+      kind: "next_lesson_action_candidates",
+      runtimeStatus: "waiting_for_human",
+      skill: {
+        id: "next-lesson-adjustment",
+        version: "1",
+        ref: "next-lesson-adjustment@1"
+      }
+    });
+    const manifest = await adminPool.query<{
+      evidence_refs: string[];
+      resource_refs: string[];
+    }>(
+      `SELECT evidence_refs, resource_refs
+         FROM runtime.context_manifest
+        WHERE context_manifest_ref = $1`,
+      [generated.contextManifestRef]
+    );
+    expect(manifest.rows[0]?.evidence_refs).toEqual([]);
+    expect(manifest.rows[0]?.resource_refs).toEqual(expect.arrayContaining([
+      reflectionRevisionRef,
+      delivery.currentConfirmed!.deliveryRevisionRef,
+      gate25DemoRefs.lessonRefs.slopeAndGraph,
+      gate25DemoRefs.lessonRefs.coefficientMethod
+    ]));
+
+    const adjustment = generated.items.find((item) =>
+      item.candidateType === "adjust_next_lesson_focus"
+    )!;
+    const updated = await product.services.nextLessonOptimization.update({
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      candidateRef: adjustment.candidateRef,
+      request: {
+        expectedVersion: adjustment.version,
+        title: "先复核斜率与截距，再进入待定系数法",
+        reason: "教师确认先用两个基础例题，再进入新知识。",
+        targetLessonRef: gate25DemoRefs.lessonRefs.coefficientMethod,
+        teacherNote: "控制在十分钟内。",
+        purpose: "next-lesson-adjustment.update",
+        idempotencyKey: key("next-action-update")
+      }
+    });
+    expect(updated.candidate).toMatchObject({
+      version: 2,
+      status: "candidate",
+      title: "先复核斜率与截距，再进入待定系数法"
+    });
+
+    const practice = generated.items.find((item) =>
+      item.candidateType === "create_practice_task"
+    )!;
+    const rejected = await product.services.nextLessonOptimization.reject({
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      candidateRef: practice.candidateRef,
+      request: {
+        expectedVersion: practice.version,
+        reason: "本轮先不增加练习。",
+        purpose: "next-lesson-adjustment.reject",
+        idempotencyKey: key("next-action-reject")
+      }
+    });
+    expect(rejected.candidate).toMatchObject({
+      status: "rejected",
+      targetRef: null,
+      deepLink: null
+    });
+
+    const accepted = await product.services.nextLessonOptimization.accept({
+      context: {
+        tenantRef: gate2DemoRefs.tenantRef,
+        actorRef: gate2DemoRefs.teacherRef
+      },
+      candidateRef: adjustment.candidateRef,
+      request: {
+        expectedVersion: updated.candidate.version,
+        purpose: "next-lesson-adjustment.accept",
+        idempotencyKey: key("next-action-accept")
+      }
+    });
+    expect(accepted.candidate).toMatchObject({
+      status: "accepted",
+      version: 3,
+      targetRef: expect.any(String),
+      deepLink: expect.any(String)
+    });
+    const acceptedReplay = await product.services.nextLessonOptimization.accept({
+      context: {
+        tenantRef: gate2DemoRefs.tenantRef,
+        actorRef: gate2DemoRefs.teacherRef
+      },
+      candidateRef: adjustment.candidateRef,
+      request: {
+        expectedVersion: updated.candidate.version,
+        purpose: "next-lesson-adjustment.accept",
+        idempotencyKey: key("next-action-accept-replay")
+      }
+    });
+    expect(acceptedReplay).toMatchObject({
+      replayed: true,
+      candidate: { targetRef: accepted.candidate.targetRef }
+    });
+
+    const task = await product.services.lessonPreparation.getTask({
+      tenantRef: gate2DemoRefs.tenantRef,
+      actorRef: gate2DemoRefs.teacherRef,
+      taskRef: accepted.candidate.targetRef!
+    });
+    expect(task.workingSet).toMatchObject({
+      sourceReflectionRef: reflectionRef,
+      sourceDeliveryRevisionRef: delivery.currentConfirmed!.deliveryRevisionRef
+    });
+    const formalLinks = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM work.reflection_follow_up_link
+        WHERE reflection_revision_ref = $1`,
+      [reflectionRevisionRef]
+    );
+    expect(formalLinks.rows[0]?.count).toBe("1");
+    const history = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM work.next_lesson_action_history
+        WHERE candidate_ref = $1`,
+      [adjustment.candidateRef]
+    );
+    expect(history.rows[0]?.count).toBe("3");
+
+    await expect(product.services.nextLessonOptimization.get({
+      tenantRef: "tenant:other-school",
+      actorRef: gate2DemoRefs.teacherRef,
+      candidateRef: adjustment.candidateRef
+    })).rejects.toThrow();
+
+    const reloadedProduct = createProductContainer(postgresEnvironment);
+    try {
+      const persisted = await reloadedProduct.services.nextLessonOptimization.list(context);
+      expect(persisted.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          candidateRef: adjustment.candidateRef,
+          status: "accepted",
+          targetRef: accepted.candidate.targetRef
+        }),
+        expect.objectContaining({
+          candidateRef: practice.candidateRef,
+          status: "rejected"
+        })
+      ]));
+    } finally {
+      await reloadedProduct.close();
+    }
+  });
+
   it("denies another tenant before exposing classroom facts", async () => {
     const delivery = await createConfirmedDelivery("tenant-isolation");
     await request(app)
