@@ -23,7 +23,7 @@ test("Lesson Brief drives a teacher-controlled Preparation Proposal in the Lesso
   await expect(panel.locator(".lesson-brief-candidates button").first())
     .toBeVisible();
   await expect(panel).toContainText("待教师判断");
-  await panel.locator(".lesson-brief-sources summary").click();
+  await expect(panel.locator(".lesson-brief-sources")).toBeVisible();
   await expect(panel).toContainText("尚未接入教材知识源");
 
   const stateResponse = await page.request.get(

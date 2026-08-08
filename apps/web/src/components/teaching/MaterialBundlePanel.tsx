@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type {
   MaterialBundleItem,
   MaterialBundleProjection,
   MaterialKind
 } from "@edu-agent/contracts";
-import { Button, Input, Modal, Progress, Tag, Typography } from "antd";
+import { Button, Progress, Tag, Typography } from "antd";
 
 import { WorkspaceIcon } from "../WorkspaceIcon";
 
@@ -30,8 +30,6 @@ export function MaterialBundlePanel(props: {
   onDownload: (item: MaterialBundleItem) => void;
   onOpenFiles: () => void;
 }) {
-  const [adjusting, setAdjusting] = useState<MaterialKind | null>(null);
-  const [adjustment, setAdjustment] = useState("");
   const adoptedCount = props.bundle.items.filter(
     (item) => item.status === "adopted"
   ).length;
@@ -53,11 +51,11 @@ export function MaterialBundlePanel(props: {
       <header className="material-bundle-panel__header">
         <div>
           <Text className="section-kicker">本课材料包</Text>
-          <Title level={3}>方案批准后，材料由系统先准备</Title>
+          <Title level={3}>本课材料</Title>
           <Paragraph type="secondary">
             {blocked
               ? "本课还没有已批准的教学计划，材料生成入口保持关闭。"
-              : `全部材料绑定 TeachingPlan Revision ${props.bundle.approvedTeachingPlanRevisionNumber}；草稿需由教师预览并采用。`}
+              : `基于已批准教学方案第 ${props.bundle.approvedTeachingPlanRevisionNumber} 版生成。预览确认后即可上课使用。`}
           </Paragraph>
         </div>
         <div className="material-bundle-panel__progress">
@@ -93,39 +91,30 @@ export function MaterialBundlePanel(props: {
                     : "尚未生成内容草稿"}
                 </small>
                 <div className="material-bundle-item__actions">
-                  {item.assetRef ? (
-                    <>
-                      <Button size="small" onClick={() => props.onPreview(item)}>
-                        预览
-                      </Button>
-                      <Button size="small" onClick={() => props.onDownload(item)}>
-                        下载
-                      </Button>
-                    </>
-                  ) : null}
-                  {!blocked ? (
-                    <Button
-                      size="small"
-                      disabled={props.loading}
-                      onClick={() => {
-                        setAdjusting(item.kind);
-                        setAdjustment("");
-                      }}
-                    >
-                      {item.status === "missing" ? "生成" : "调整并重生成"}
-                    </Button>
-                  ) : null}
-                  {item.status === "draft" ? (
-                    <Button
-                      size="small"
-                      type="primary"
-                      loading={props.loading}
-                      onClick={() => props.onAdopt(item)}
-                      data-testid={`adopt-material-${item.kind}`}
-                    >
-                      采用
-                    </Button>
-                  ) : null}
+                  <Button
+                    size="small"
+                    disabled={!item.assetRef}
+                    onClick={() => props.onPreview(item)}
+                  >
+                    预览
+                  </Button>
+                  <Button
+                    size="small"
+                    type={item.status === "draft" ? "primary" : "default"}
+                    loading={props.loading && item.status === "draft"}
+                    disabled={item.status !== "draft"}
+                    onClick={() => props.onAdopt(item)}
+                    data-testid={`adopt-material-${item.kind}`}
+                  >
+                    {item.status === "adopted" ? "已确认" : "确认"}
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={!item.assetRef}
+                    onClick={() => props.onDownload(item)}
+                  >
+                    下载
+                  </Button>
                 </div>
               </div>
             </article>
@@ -134,7 +123,7 @@ export function MaterialBundlePanel(props: {
       </div>
 
       <footer className="material-bundle-panel__footer">
-        <Button onClick={props.onOpenFiles}>在文件中查看版本历史</Button>
+        <Button onClick={props.onOpenFiles}>查看全部文件</Button>
         {!blocked && generationKinds.length > 0 ? (
           <Button
             type="primary"
@@ -147,36 +136,6 @@ export function MaterialBundlePanel(props: {
         ) : null}
       </footer>
 
-      <Modal
-        open={adjusting !== null}
-        title={
-          adjusting
-            ? `调整${props.bundle.items.find((item) => item.kind === adjusting)?.label ?? "材料"}`
-            : "调整材料"
-        }
-        okText="重新生成此项"
-        cancelText="取消"
-        okButtonProps={{ disabled: adjustment.trim().length === 0 }}
-        confirmLoading={props.loading}
-        onCancel={() => setAdjusting(null)}
-        onOk={() => {
-          if (!adjusting || !adjustment.trim()) return;
-          props.onGenerate([adjusting], adjustment.trim());
-          setAdjusting(null);
-        }}
-      >
-        <Paragraph type="secondary">
-          只更新这一项并创建新的 FileVersion，其余材料和历史版本保持不变。
-        </Paragraph>
-        <Input.TextArea
-          value={adjustment}
-          onChange={(event) => setAdjustment(event.target.value)}
-          rows={4}
-          maxLength={500}
-          placeholder="例如：第二题简单一点；板书减少一些内容；增加课堂互动。"
-          data-testid="material-adjustment-input"
-        />
-      </Modal>
     </section>
   );
 }

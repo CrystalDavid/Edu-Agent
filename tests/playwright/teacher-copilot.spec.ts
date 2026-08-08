@@ -85,7 +85,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
   );
 
   const sidebar = page.locator(".teacher-sidebar");
-  await expect(sidebar).toHaveCSS("width", "240px");
+  await expect(sidebar).toHaveCSS("width", "210px");
   for (const label of [
     "概览",
     "日程",
@@ -210,7 +210,7 @@ test("teaching workspace supports course files, homework and assessment analysis
     page.getByRole("heading", { name: "教学", exact: true })
   ).toBeVisible();
   await expect(page.getByTestId("unit-list")).toBeVisible();
-  await expect(page.getByTestId("lesson-list")).toHaveCount(0);
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("unit-1").click();
   await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
@@ -220,9 +220,8 @@ test("teaching workspace supports course files, homework and assessment analysis
   await expect(page.getByTestId("lesson-context-header")).toContainText(
     "斜率与图像变化"
   );
-  await expect(page.getByTestId("lesson-next-best-action")).toBeVisible();
-  await expect(page.getByTestId("lesson-journey")).toContainText("看懂本课");
-  await expect(page.getByTestId("lesson-journey")).toContainText("推动下一课");
+  await expect(page.getByTestId("lesson-stage-overview")).toContainText("备课阶段");
+  await expect(page.getByTestId("lesson-stage-overview")).toContainText("课下阶段");
   await page.screenshot({
     path: `${screenshotRoot}/06-teaching-course-tree.png`,
     animations: "disabled"
@@ -667,8 +666,8 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByTestId("lesson-3").click();
   const lessonDetail = page.getByTestId("lesson-detail");
   await expect(lessonDetail).toContainText("斜率与图像变化");
-  await expect(lessonDetail).toContainText("备课任务");
-  await expect(lessonDetail).toContainText(/未开始|已取消/u);
+  await expect(lessonDetail).toContainText("备课阶段");
+  await expect(lessonDetail).toContainText(/开始新一轮备课|开始备课|继续备课/u);
   const initialPlansResponse = await request.get(
     apiRoutes.teacher.lessonTeachingPlans(
       "lesson:slope-and-graph-change"
@@ -988,21 +987,18 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.goto("/teaching");
   await page.getByTestId("unit-1").click();
   await page.getByTestId("lesson-3").click();
-  await expect(page.getByTestId("lesson-detail")).toContainText("已完成");
+  await expect(page.getByTestId("lesson-detail")).toContainText("教学方案第 4 版已批准");
   await expect(
     page.getByTestId("lesson-detail").getByRole("button", {
-      name: "查看已完成备课"
+      name: "查看方案与历史"
     })
   ).toBeVisible();
-  await expect(page.getByTestId("lesson-related-files")).toContainText(
-    "斜率与图像变化 教案"
-  );
-  await page
-    .getByTestId("lesson-related-files")
-    .getByRole("button", { name: /斜率与图像变化 教案/ })
-    .click();
+  const lessonPlanMaterial = page.getByTestId("material-item-lesson_plan");
+  await expect(lessonPlanMaterial).toContainText("教案");
+  await expect(lessonPlanMaterial).toContainText("已采用");
+  await lessonPlanMaterial.getByRole("button", { name: "预 览" }).click();
   await expect(page.getByRole("dialog", { name: /斜率与图像变化 教案/ })).toBeVisible();
-  await page.getByRole("button", { name: "在文件库中查看" }).click();
+  await page.getByRole("button", { name: "打开文件位置" }).click();
   await expect(page).toHaveURL(
     /\/files\?asset=.*&lesson=lesson(?:%3A|:)slope-and-graph-change/
   );
@@ -1020,10 +1016,10 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.goto("/teaching");
   await page.getByTestId("unit-1").click();
   await page.getByTestId("lesson-5").click();
-  await expect(page.getByTestId("lesson-detail")).toContainText("已计划");
+  await expect(page.getByTestId("lesson-detail")).toContainText("继续备课");
   await page.getByRole("button", { name: "取消备课" }).click();
   await page.getByRole("button", { name: "确认取消" }).click();
-  await expect(page.getByTestId("lesson-detail")).toContainText("已取消");
+  await expect(page.getByTestId("lesson-detail")).toContainText("开始新一轮备课");
   await page.getByTestId("reopen-lesson-preparation").click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   await expect(page.getByTestId("task-working-set")).toContainText(

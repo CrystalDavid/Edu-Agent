@@ -105,15 +105,15 @@ export function LessonBriefPanel(props: {
         </div>
       )}
 
-      <details className="lesson-brief-sources">
-        <summary>查看来源与信息缺口</summary>
+      <section className="lesson-brief-sources">
+        <strong>来源与信息缺口</strong>
         <div>
           <strong>实际使用来源</strong>
           <p>{props.brief.sourceRefs.filter((source) => source.included).map((source) => source.ref).join("、")}</p>
           <strong>当前缺口</strong>
           <ul>{props.brief.knownGaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
         </div>
-      </details>
+      </section>
 
       {!readOnly ? (
         <div className="lesson-brief-actions">

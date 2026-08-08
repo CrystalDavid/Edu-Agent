@@ -22,10 +22,8 @@ import {
   Button,
   Card,
   Empty,
+  Input,
   Modal,
-  Popconfirm,
-  Progress,
-  Space,
   Spin,
   Tag,
   Typography
@@ -55,7 +53,6 @@ import {
   generateLessonBrief,
   generateLessonMaterialBundle,
   loadFile,
-  loadFiles,
   transitionLessonPreparationTask
 } from "../api";
 import { AssignmentWorkspace } from "./AssignmentWorkspace";
@@ -64,9 +61,7 @@ import { ClassroomReflectionPanel } from "../components/portal/ClassroomReflecti
 import { cleanDisplayText, lessonPreparationStatusLabel } from "../presentation";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
 import {
-  LessonContextHeader,
-  LessonJourney,
-  LessonNextBestActionCard
+  LessonContextHeader
 } from "../components/teaching/LessonJourney";
 import { LessonBriefPanel } from "../components/teaching/LessonBriefPanel";
 import { PreparationProposalPanel } from "../components/teaching/PreparationProposalPanel";
@@ -93,6 +88,7 @@ export function TeachingWorkspacePage(props: {
     assetRef?: string;
     lessonRef?: string;
   }) => void;
+  navigateLesson: (lessonRef: string) => void;
   navigateReflection: (reflectionRef: string) => void;
   initialLessonRef?: string | null;
   initialTab?: TeachingTab;
@@ -138,6 +134,7 @@ export function TeachingWorkspacePage(props: {
       {tab === "course" ? (
         <RealCourseWorkspace
           navigateFiles={props.navigateFiles}
+          navigateLesson={props.navigateLesson}
           navigatePreparation={props.navigatePreparation}
           navigateReflection={props.navigateReflection}
           onOpenAssignments={() => setTab("homework")}
@@ -169,12 +166,14 @@ function RealCourseWorkspace(props: {
     assetRef?: string;
     lessonRef?: string;
   }) => void;
+  navigateLesson: (lessonRef: string) => void;
   navigateReflection: (reflectionRef: string) => void;
   onAction: (message: string) => void;
   onOpenAssignments: () => void;
   initialLessonRef?: string | null;
 }) {
   const [courses, setCourses] = useState<CourseRunView[]>([]);
+  const [selectedCourseRef, setSelectedCourseRef] = useState<string | null>(null);
   const [units, setUnits] = useState<CurriculumUnitView[]>([]);
   const [lessons, setLessons] = useState<LessonView[]>([]);
   const [tasks, setTasks] = useState<
@@ -200,18 +199,20 @@ function RealCourseWorkspace(props: {
     useState<ModelExecutionView | null>(null);
   const [modelExecutionRef, setModelExecutionRef] =
     useState<string | null>(null);
-  const [lessonFiles, setLessonFiles] = useState<FileAssetSummary[]>([]);
   const [lessonAssignments, setLessonAssignments] = useState<AssignmentSummary[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileAssetDetail | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewMaterialKind, setPreviewMaterialKind] = useState<MaterialKind | null>(null);
+  const [materialAdjustment, setMaterialAdjustment] = useState("");
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedCourse = courses[0] ?? null;
+  const selectedCourse =
+    courses.find((course) => course.courseRunRef === selectedCourseRef) ?? null;
   const selectedUnit =
     units.find((unit) => unit.unitRef === selectedUnitRef) ?? null;
   const selectedLesson =
@@ -249,16 +250,11 @@ function RealCourseWorkspace(props: {
       ]);
       setCourses(courseResult.items);
       setTasks(taskResult.items);
-      const course = courseResult.items[0];
-      if (!course) return;
-      const unitResult = await loadCurriculumUnits(
-        course.courseRunRef
+      setSelectedCourseRef((current) =>
+        current && courseResult.items.some((course) => course.courseRunRef === current)
+          ? current
+          : courseResult.items[0]?.courseRunRef ?? null
       );
-      setUnits(unitResult.items);
-      const unit = unitResult.items[0];
-      if (unit && props.initialLessonRef) {
-        setSelectedUnitRef((current) => current ?? unit.unitRef);
-      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -271,26 +267,38 @@ function RealCourseWorkspace(props: {
   }, []);
 
   useEffect(() => {
-    if (!selectedUnitRef) {
+    if (!selectedCourseRef) {
+      setUnits([]);
       setLessons([]);
+      setSelectedUnitRef(null);
       setSelectedLessonRef(null);
       return;
     }
     let active = true;
     setLoading(true);
-    void loadLessons(selectedUnitRef)
-      .then((result) => {
+    void loadCurriculumUnits(selectedCourseRef)
+      .then(async (unitResult) => {
+        const lessonResults = await Promise.all(
+          unitResult.items.map((unit) => loadLessons(unit.unitRef))
+        );
         if (!active) return;
-        setLessons(result.items);
+        const nextLessons = lessonResults.flatMap((result) => result.items);
+        setUnits(unitResult.items);
+        setLessons(nextLessons);
+        const routedLesson = nextLessons.find(
+          (lesson) => lesson.lessonRef === props.initialLessonRef
+        );
+        const defaultUnitRef = routedLesson?.unitRef ?? unitResult.items[0]?.unitRef ?? null;
+        setSelectedUnitRef((current) =>
+          current && unitResult.items.some((unit) => unit.unitRef === current)
+            ? current
+            : defaultUnitRef
+        );
         setSelectedLessonRef((current) => {
-          const routedLesson = result.items.find(
-            (lesson) =>
-              lesson.lessonRef === props.initialLessonRef
-          );
           if (routedLesson) return routedLesson.lessonRef;
           if (
             current &&
-            result.items.some(
+            nextLessons.some(
               (lesson) => lesson.lessonRef === current
             )
           ) {
@@ -308,7 +316,7 @@ function RealCourseWorkspace(props: {
     return () => {
       active = false;
     };
-  }, [props.initialLessonRef, selectedUnitRef]);
+  }, [props.initialLessonRef, selectedCourseRef]);
 
   useEffect(() => {
     setPreparationProposal(null);
@@ -327,18 +335,12 @@ function RealCourseWorkspace(props: {
     let active = true;
     void Promise.all([
       loadLessonTeachingPlans(selectedLessonRef),
-      loadFiles({
-        status: "active",
-        sort: "newest",
-        targetType: "lesson",
-        targetRef: selectedLessonRef
-      }),
       loadAssignments(selectedLessonRef),
       loadLessonJourney(selectedLessonRef),
       loadLessonBrief(selectedLessonRef),
       loadLessonMaterialBundle(selectedLessonRef)
     ])
-      .then(async ([result, files, assignments, journeyResult, briefState, bundle]) => {
+      .then(async ([result, assignments, journeyResult, briefState, bundle]) => {
         const proposalRef = journeyResult.sourceRefs.find(
           (source) => source.kind === "proposal"
         )?.ref;
@@ -347,7 +349,6 @@ function RealCourseWorkspace(props: {
           : null;
         if (active) {
           setPlanState(result);
-          setLessonFiles(files.items);
           setLessonAssignments(assignments.items);
           setJourney(journeyResult);
           setLessonBrief(briefState.current);
@@ -432,6 +433,8 @@ function RealCourseWorkspace(props: {
     setPreviewOpen(false);
     setPreviewFile(null);
     setPreviewText(null);
+    setPreviewMaterialKind(null);
+    setMaterialAdjustment("");
     setPreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -475,17 +478,7 @@ function RealCourseWorkspace(props: {
         }
       );
       setMaterialBundle(result.bundle);
-      const [files, journeyState] = await Promise.all([
-        loadFiles({
-          status: "active",
-          sort: "newest",
-          targetType: "lesson",
-          targetRef: selectedLesson.lessonRef
-        }),
-        loadLessonJourney(selectedLesson.lessonRef)
-      ]);
-      setLessonFiles(files.items);
-      setJourney(journeyState);
+      setJourney(await loadLessonJourney(selectedLesson.lessonRef));
       props.onAction(
         teacherAdjustment
           ? "已只更新所选材料，并保留原 FileVersion。"
@@ -1031,55 +1024,50 @@ function RealCourseWorkspace(props: {
     }
   }
 
-  const preparationStatus = activeTask?.status ?? selectedLesson?.preparationState;
-  const readinessItems = selectedLesson
-    ? [
-        {
-          key: "objectives",
-          label: "教学目标",
-          complete: selectedLesson.learningObjectives.length > 0,
-          detail: selectedLesson.learningObjectives.length > 0
-            ? `${selectedLesson.learningObjectives.length} 项目标已明确`
-            : "还需要补充教学目标"
-        },
-        {
-          key: "preparation",
-          label: "备课任务",
-          complete: preparationStatus === "completed",
-          detail: preparationStatus
-            ? lessonPreparationStatusLabel(preparationStatus)
-            : "还没有开始备课"
-        },
-        {
-          key: "plan",
-          label: "批准教案",
-          complete: Boolean(planState?.currentApproved),
-          detail: planState?.currentApproved
-            ? `第 ${planState.currentApproved.revisionNumber} 版已批准`
-            : planState?.activeInReview
-              ? `第 ${planState.activeInReview.revisionNumber} 版等待审核`
-              : "还没有已批准教案"
-        },
-        {
-          key: "files",
-          label: "教学材料",
-          complete: materialBundle?.status === "ready",
-          detail: materialBundle
-            ? `${materialBundle.items.filter((item) => item.status === "adopted").length}/5 项材料已采用`
-            : "正在读取本课材料包"
-        }
-      ]
-    : [];
-  const completedReadinessCount = readinessItems.filter((item) => item.complete).length;
-  const readinessPercent = readinessItems.length > 0
-    ? Math.round((completedReadinessCount / readinessItems.length) * 100)
-    : 0;
+  function confirmCancelPreparation() {
+    Modal.confirm({
+      title: "取消本轮备课？",
+      content: "本次备课任务将停止，已经批准的方案、生成材料和历史记录不会被删除。",
+      okText: "确认取消",
+      cancelText: "继续备课",
+      okButtonProps: { danger: true },
+      onOk: cancelPreparation
+    });
+  }
+
   const teachingFocus = planState?.currentApproved?.content.lessonFocus
     ?? selectedLesson?.learningObjectives[0]?.title
     ?? "选择课时后查看教学重点";
   const teachingDifficulty = planState?.currentApproved?.content.supportStrategy
     ?? selectedLesson?.learningObjectives[0]?.description
     ?? "选择课时后查看需要重点突破的内容";
+  const currentTerm = courses[0]?.academicTerm ?? null;
+  const currentCourses = currentTerm
+    ? courses.filter((course) => course.academicTerm === currentTerm)
+    : courses;
+  const historicalCourses = currentTerm
+    ? courses.filter((course) => course.academicTerm !== currentTerm)
+    : [];
+  const selectedUnitLessons = lessons.filter(
+    (lesson) => lesson.unitRef === selectedUnitRef
+  );
+  const selectedUnitObjectives = Array.from(
+    new Map(
+      selectedUnitLessons
+        .flatMap((lesson) => lesson.learningObjectives)
+        .map((objective) => [objective.objectiveRef, objective])
+    ).values()
+  );
+  const journeyStageRank = journey
+    ? ["understand", "plan", "materials", "deliver", "reflect", "improve"].indexOf(
+        journey.currentStage
+      )
+    : -1;
+  const preparationComplete =
+    materialBundle?.status === "ready" || journeyStageRank >= 3;
+  const deliveryComplete = journeyStageRank >= 4;
+  const afterClassComplete =
+    journey?.currentStage === "improve" && journey.status === "completed";
 
   return (
     <Spin spinning={loading}>
@@ -1099,54 +1087,94 @@ function RealCourseWorkspace(props: {
         ) : (
           <div className="lesson-workspace-layout">
             <Card className="workspace-card course-browser-card" variant="borderless">
-              <header className="course-browser-heading">
-                <div>
-                  <Text className="section-kicker">当前课程</Text>
-                  <Title level={3}>{selectedCourse.title}</Title>
-                  <Paragraph>{selectedCourse.gradeLevel} · {selectedCourse.subject}</Paragraph>
-                </div>
-                <Tag>{units.length} 个单元</Tag>
-              </header>
-              <div className="unit-accordion" data-testid="unit-list">
+              <div className="course-context-selector" aria-label="课程范围">
+                <section>
+                  <Text className="section-kicker">当前教学</Text>
+                  <strong>{currentTerm}</strong>
+                  <div className="course-context-list">
+                    {currentCourses.map((course) => (
+                      <button
+                        type="button"
+                        key={course.courseRunRef}
+                        className={course.courseRunRef === selectedCourseRef ? "is-active" : ""}
+                        onClick={() => {
+                          setSelectedCourseRef(course.courseRunRef);
+                          setSelectedUnitRef(null);
+                          setSelectedLessonRef(null);
+                        }}
+                      >
+                        <strong>{course.subject}</strong>
+                        <span>{course.gradeLevel} / {course.academicTerm} / {shortClassName(course)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section className="course-history-section">
+                  <Text className="section-kicker">历史教学</Text>
+                  {historicalCourses.length > 0 ? (
+                    <div className="course-context-list">
+                      {historicalCourses.map((course) => (
+                        <button
+                          type="button"
+                          key={course.courseRunRef}
+                          className={course.courseRunRef === selectedCourseRef ? "is-active" : ""}
+                          onClick={() => {
+                            setSelectedCourseRef(course.courseRunRef);
+                            setSelectedUnitRef(null);
+                            setSelectedLessonRef(null);
+                          }}
+                        >
+                          <strong>{course.subject}</strong>
+                          <span>{course.gradeLevel} / {course.academicTerm} / {shortClassName(course)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <small>历史学期会显示在这里，教案和材料仍可回看复用。</small>
+                  )}
+                </section>
+              </div>
+              <div className="unit-list-direct" data-testid="unit-list">
                 {units.map((unit) => {
-                  const expanded = unit.unitRef === selectedUnitRef;
+                  const activeUnit = unit.unitRef === selectedUnitRef;
+                  const unitLessons = lessons.filter((lesson) => lesson.unitRef === unit.unitRef);
                   return (
-                    <section key={unit.unitRef} className={expanded ? "unit-panel is-expanded" : "unit-panel"}>
+                    <section key={unit.unitRef} className={activeUnit ? "unit-panel is-expanded" : "unit-panel"}>
                       <button
                         type="button"
                         className="unit-panel__trigger"
-                        aria-expanded={expanded}
                         onClick={() => {
-                          setSelectedUnitRef((current) => current === unit.unitRef ? null : unit.unitRef);
+                          setSelectedUnitRef(unit.unitRef);
+                          setSelectedLessonRef(null);
                         }}
                         data-testid={`unit-${unit.sequence}`}
                       >
                         <span className="unit-panel__number">{unit.sequence}</span>
                         <span className="unit-panel__copy">
-                          <strong>{unit.title}</strong>
+                          <strong>第 {unit.sequence} 单元 · {unit.title}</strong>
                           <small>{unit.description}</small>
                         </span>
-                        <WorkspaceIcon name="chevron" />
                       </button>
-                      {expanded ? (
-                        <div className="lesson-list" data-testid="lesson-list">
-                          {lessons.map((lesson) => (
+                      <div className="lesson-list" data-testid="lesson-list">
+                          {unitLessons.map((lesson) => (
                             <button
                               type="button"
                               key={lesson.lessonRef}
                               className={lesson.lessonRef === selectedLessonRef ? "is-active" : ""}
-                              onClick={() => setSelectedLessonRef(lesson.lessonRef)}
+                              onClick={() => {
+                                setSelectedUnitRef(unit.unitRef);
+                                setSelectedLessonRef(lesson.lessonRef);
+                                props.navigateLesson(lesson.lessonRef);
+                              }}
                               data-testid={`lesson-${lesson.sequence}`}
                             >
                               <span className="lesson-list__sequence">第 {lesson.sequence} 课时</span>
                               <span className="lesson-list__title">{lesson.title}</span>
                               <span className="lesson-list__meta">{lesson.durationMinutes} 分钟 · {lessonPreparationStatusLabel(lesson.preparationState)}</span>
-                              <WorkspaceIcon name="arrowRight" />
                             </button>
                           ))}
-                          {lessons.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该单元还没有课时" /> : null}
+                          {unitLessons.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该单元还没有课时" /> : null}
                         </div>
-                      ) : null}
                     </section>
                   );
                 })}
@@ -1161,19 +1189,76 @@ function RealCourseWorkspace(props: {
               {selectedLesson ? (
                 <>
                   {journey ? (
-                    <>
-                      <LessonContextHeader
-                        courseTitle={selectedCourse.title}
-                        unitTitle={selectedUnit?.title ?? null}
-                        lesson={selectedLesson}
-                        journey={journey}
-                      />
-                      <LessonNextBestActionCard
-                        journey={journey}
-                        loading={acting}
-                        onAction={() => void runJourneyAction()}
-                      />
-                      {journey.currentStage === "understand" &&
+                    <LessonContextHeader
+                      courseTitle={`${selectedCourse.subject} / ${selectedCourse.gradeLevel} / ${selectedCourse.academicTerm} / ${selectedCourse.className}`}
+                      unitTitle={selectedUnit ? `第 ${selectedUnit.sequence} 单元 · ${selectedUnit.title}` : null}
+                      lesson={selectedLesson}
+                      journey={journey}
+                    />
+                  ) : (
+                    <header className="lesson-detail-heading">
+                      <div>
+                        <Text className="section-kicker">第 {selectedLesson.sequence} 课时</Text>
+                        <Title level={2}>{selectedLesson.title}</Title>
+                      </div>
+                      <Tag color="processing">正在整理本课进度</Tag>
+                    </header>
+                  )}
+
+                  <section className="lesson-unit-insight">
+                    <header>
+                      <div>
+                        <Text className="section-kicker">本单元先看这里</Text>
+                        <Title level={3}>{selectedUnit?.title ?? "单元教学目标"}</Title>
+                      </div>
+                    </header>
+                    <Paragraph type="secondary">{selectedUnit?.description}</Paragraph>
+                    <div className="lesson-focus-grid">
+                      <article><span>教学重点</span><strong>{teachingFocus}</strong></article>
+                      <article><span>教学难点</span><strong>{teachingDifficulty}</strong></article>
+                    </div>
+                    <div className="lesson-objectives-direct">
+                      <Text className="section-kicker">本课教学目标</Text>
+                      {selectedLesson.learningObjectives.map((objective) => (
+                        <article key={objective.objectiveRef}>
+                          <strong>{objective.title}</strong>
+                          <span>{objective.description}</span>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+
+                  <nav className="lesson-stage-overview" aria-label="本课教学阶段" data-testid="lesson-stage-overview">
+                    {[
+                      ["备课阶段", preparationComplete],
+                      ["上课阶段", deliveryComplete],
+                      ["课下阶段", afterClassComplete]
+                    ].map(([label, complete], index) => (
+                      <span key={String(label)} className={complete ? "is-complete" : ""}>
+                        <i>{complete ? <WorkspaceIcon name="check" /> : index + 1}</i>
+                        {label}
+                      </span>
+                    ))}
+                  </nav>
+
+                  <section className="lesson-stage-card" id="lesson-stage-prepare">
+                    <header className="lesson-stage-card__header">
+                      <div className="lesson-stage-title">
+                        <span className={preparationComplete ? "stage-check is-complete" : "stage-check"}>
+                          {preparationComplete ? <WorkspaceIcon name="check" /> : "1"}
+                        </span>
+                        <div><Text className="section-kicker">课前</Text><Title level={3}>备课阶段</Title></div>
+                      </div>
+                      {journey && ["understand", "plan", "materials"].includes(journey.currentStage) ? (
+                        <div data-testid="lesson-next-best-action">
+                          <Button type="primary" loading={acting} onClick={() => void runJourneyAction()}>
+                            {journey.nextBestAction.label}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </header>
+                    <Paragraph type="secondary">系统先准备教学洞察、方案和材料，老师只需要判断和确认。</Paragraph>
+                    {journey?.currentStage === "understand" &&
                       (journey.nextBestAction.kind === "generate_lesson_brief" ||
                         journey.nextBestAction.kind === "review_lesson_brief") ? (
                         <LessonBriefPanel
@@ -1184,8 +1269,8 @@ function RealCourseWorkspace(props: {
                           onAdopt={(candidateIds) => void adoptBrief(candidateIds)}
                           onDefer={() => void deferBrief()}
                         />
-                      ) : null}
-                      {journey.currentStage === "plan" ? (
+                    ) : null}
+                    {journey?.currentStage === "plan" ? (
                         <PreparationProposalPanel
                           proposal={preparationProposal}
                           execution={modelExecution}
@@ -1202,8 +1287,8 @@ function RealCourseWorkspace(props: {
                           }
                           onApprove={() => void approveInReviewPlan()}
                         />
-                      ) : null}
-                      {planState?.currentApproved && materialBundle ? (
+                    ) : null}
+                    {planState?.currentApproved && materialBundle ? (
                         <MaterialBundlePanel
                           bundle={materialBundle}
                           loading={acting}
@@ -1213,6 +1298,8 @@ function RealCourseWorkspace(props: {
                           onAdopt={(item) => void adoptMaterial(item)}
                           onPreview={(item) => {
                             if (item.assetRef) {
+                              setPreviewMaterialKind(item.kind);
+                              setMaterialAdjustment("");
                               void openFilePreview({ assetRef: item.assetRef });
                             }
                           }}
@@ -1223,202 +1310,72 @@ function RealCourseWorkspace(props: {
                             })
                           }
                         />
+                    ) : null}
+                    <div className="lesson-stage-actions">
+                      {!activeTask || ["planned", "in_progress"].includes(activeTask.status) ? (
+                        <Button type="primary" loading={acting} onClick={startOrContinue} data-testid="start-lesson-preparation">
+                          {activeTask ? "继续备课" : "开始备课"}
+                        </Button>
                       ) : null}
-                      <LessonJourney journey={journey} />
-                    </>
-                  ) : (
-                    <header className="lesson-detail-heading">
-                      <div>
-                        <Text className="section-kicker">第 {selectedLesson.sequence} 课时</Text>
-                        <Title level={2}>{selectedLesson.title}</Title>
-                      </div>
-                      <Tag color="processing">正在整理本课进度</Tag>
-                    </header>
-                  )}
-
-                  <section className="lesson-readiness" aria-labelledby="lesson-readiness-title">
-                    <header>
-                      <div>
-                        <Text className="section-kicker">本课时准备度</Text>
-                        <Title id="lesson-readiness-title" level={3}>已完成 {completedReadinessCount} 项，还需补齐 {readinessItems.length - completedReadinessCount} 项</Title>
-                      </div>
-                      <Progress type="circle" size={72} percent={readinessPercent} strokeWidth={9} />
-                    </header>
-                    <div className="lesson-readiness-grid">
-                      {readinessItems.map((item) => (
-                        <article key={item.key} className={item.complete ? "is-complete" : "is-pending"}>
-                          <span className="readiness-icon"><WorkspaceIcon name={item.complete ? "check" : "clock"} /></span>
-                          <span><strong>{item.label}</strong><small>{item.detail}</small></span>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="lesson-artifact-actions" data-testid="lesson-related-files">
+                      {activeTask && ["completed", "cancelled"].includes(activeTask.status) ? (
+                        <Button type="primary" loading={acting} onClick={createNewPreparation} data-testid="start-lesson-preparation">
+                          开始新一轮备课
+                        </Button>
+                      ) : null}
                       {activeTask ? (
-                        <Button onClick={() => props.navigatePreparation(activeTask.taskRef, "/teaching-plan")}>查看备课与教案</Button>
-                      ) : null}
-                      {lessonFiles.map((file) => (
                         <Button
-                          key={file.assetRef}
-                          icon={<WorkspaceIcon name="document" />}
-                          onClick={() => void openFilePreview(file)}
-                          onDoubleClick={() => props.navigateFiles({ assetRef: file.assetRef, lessonRef: selectedLesson.lessonRef })}
-                          title="单击预览，双击进入文件库"
+                          onClick={() => props.navigatePreparation(activeTask.taskRef, "/teaching-plan")}
+                          {...(activeTask.status === "ready_for_use"
+                            ? { "data-testid": "finish-ready-preparation" }
+                            : {})}
                         >
-                          {file.displayName} · 第 {file.currentVersion.versionNumber} 版
+                          查看方案与历史
                         </Button>
-                      ))}
-                      <Button onClick={() => props.navigateFiles({ lessonRef: selectedLesson.lessonRef })}>打开本课时文件</Button>
+                      ) : null}
+                      {activeTask && ["planned", "in_progress"].includes(activeTask.status) ? (
+                        <Button danger loading={acting} onClick={confirmCancelPreparation}>取消备课</Button>
+                      ) : null}
+                      {activeTask && ["ready_for_use", "completed", "cancelled"].includes(activeTask.status) ? (
+                        <Button loading={acting} onClick={reopen} data-testid="reopen-lesson-preparation">重新调整</Button>
+                      ) : null}
                     </div>
                   </section>
 
-                  <section className="lesson-focus-section">
-                    <Text className="section-kicker">课堂核心</Text>
-                    <Title level={3}>重点与难点</Title>
-                    <div className="lesson-focus-grid">
-                      <article><span>教学重点</span><strong>{teachingFocus}</strong></article>
-                      <article><span>教学难点</span><strong>{teachingDifficulty}</strong></article>
+                  <section className="lesson-stage-card" id="lesson-stage-deliver">
+                    <header className="lesson-stage-card__header">
+                      <div className="lesson-stage-title">
+                        <span className={deliveryComplete ? "stage-check is-complete" : "stage-check"}>
+                          {deliveryComplete ? <WorkspaceIcon name="check" /> : "2"}
+                        </span>
+                        <div><Text className="section-kicker">课堂中</Text><Title level={3}>上课阶段</Title></div>
+                      </div>
+                    </header>
+                    <Paragraph type="secondary">课堂中不要求填写表单。直接使用已确认方案和材料，下课后用 30 秒反馈记录差异。</Paragraph>
+                    <div className="lesson-stage-summary">
+                      <span><strong>教学方案</strong>{planState?.currentApproved ? `第 ${planState.currentApproved.revisionNumber} 版已批准` : "尚未批准"}</span>
+                      <span><strong>可用材料</strong>{materialBundle ? `${materialBundle.items.filter((item) => item.status === "adopted").length}/5 项已确认` : "尚未准备"}</span>
                     </div>
-                    <details className="lesson-objectives">
-                      <summary>查看 {selectedLesson.learningObjectives.length} 项教学目标</summary>
-                      {selectedLesson.learningObjectives.map((objective) => (
-                        <Paragraph key={objective.objectiveRef}><strong>{objective.title}</strong><br />{objective.description}</Paragraph>
-                      ))}
-                    </details>
                   </section>
 
-                  <section className="lesson-linked-work" data-testid="lesson-related-assignments">
-                    <div>
-                      <Text className="section-kicker">课后衔接</Text>
-                      <Title level={4}>作业与学习情况</Title>
-                      <Paragraph type="secondary">
-                        {lessonAssignments.length > 0
-                          ? `${lessonAssignments.length} 份关联作业，可继续查看提交、批改与共性问题。`
-                          : "当前课时还没有作业，可创建草稿后由教师审核发布。"}
-                      </Paragraph>
+                  <section className="lesson-stage-card" id="classroom-implementation">
+                    <header className="lesson-stage-card__header">
+                      <div className="lesson-stage-title">
+                        <span className={afterClassComplete ? "stage-check is-complete" : "stage-check"}>
+                          {afterClassComplete ? <WorkspaceIcon name="check" /> : "3"}
+                        </span>
+                        <div><Text className="section-kicker">下课后</Text><Title level={3}>课下阶段</Title></div>
+                      </div>
+                    </header>
+                    <div className="lesson-linked-work" data-testid="lesson-related-assignments">
+                      <div>
+                        <strong>作业与学习情况</strong>
+                        <span>{lessonAssignments.length > 0 ? `${lessonAssignments.length} 份关联作业` : "本课暂无作业"}</span>
+                      </div>
+                      <Button onClick={props.onOpenAssignments} data-testid="open-lesson-assignments">
+                        {lessonAssignments.length > 0 ? "查看作业" : "创建作业"}
+                      </Button>
                     </div>
-                    <Button onClick={props.onOpenAssignments} data-testid="open-lesson-assignments">
-                      {lessonAssignments.length > 0 ? "查看作业与批改" : "创建本课时作业"}
-                    </Button>
-                  </section>
-
-                  <Space wrap className="lesson-primary-actions">
-                    {!activeTask ||
-                    ["planned", "in_progress"].includes(
-                      activeTask.status
-                    ) ? (
-                      <Button
-                        type="primary"
-                        loading={acting}
-                        onClick={startOrContinue}
-                        data-testid="start-lesson-preparation"
-                      >
-                        {activeTask ? "继续备课" : "开始备课"}
-                      </Button>
-                    ) : null}
-                    {activeTask?.status === "awaiting_plan_review" ? (
-                      <Button
-                        type="primary"
-                        onClick={() =>
-                          props.navigatePreparation(
-                            activeTask.taskRef,
-                            "/teaching-plan"
-                          )
-                        }
-                        data-testid="continue-plan-review"
-                      >
-                        继续审核教学计划
-                      </Button>
-                    ) : null}
-                    {activeTask?.status === "ready_for_use" ? (
-                      <Button
-                        type="primary"
-                        onClick={() =>
-                          props.navigatePreparation(
-                            activeTask.taskRef,
-                            "/teaching-plan"
-                          )
-                        }
-                        data-testid="finish-ready-preparation"
-                      >
-                        查看计划并完成备课
-                      </Button>
-                    ) : null}
-                    {activeTask?.status === "completed" ? (
-                      <Button
-                        type="primary"
-                        onClick={() =>
-                          props.navigatePreparation(
-                            activeTask.taskRef,
-                            "/teaching-plan"
-                          )
-                        }
-                      >
-                        查看已完成备课
-                      </Button>
-                    ) : null}
-                    {activeTask &&
-                    ["ready_for_use", "completed", "cancelled"].includes(
-                      activeTask.status
-                    ) ? (
-                      <Button
-                        loading={acting}
-                        onClick={reopen}
-                        data-testid="reopen-lesson-preparation"
-                      >
-                        重新打开并修改
-                      </Button>
-                    ) : null}
-                    {activeTask &&
-                    ["completed", "cancelled"].includes(
-                      activeTask.status
-                    ) ? (
-                      <Button
-                        loading={acting}
-                        onClick={createNewPreparation}
-                        data-testid="start-lesson-preparation"
-                      >
-                        新建一轮备课
-                      </Button>
-                    ) : null}
-                    {activeTask ? (
-                      <Button
-                        onClick={() =>
-                          props.navigatePreparation(
-                            activeTask.taskRef,
-                            "/teaching-plan"
-                          )
-                        }
-                      >
-                        查看计划与历史
-                      </Button>
-                    ) : null}
-                    {activeTask &&
-                    [
-                      "planned",
-                      "in_progress",
-                      "awaiting_plan_review",
-                      "ready_for_use"
-                    ].includes(activeTask.status) ? (
-                      <Popconfirm
-                        title="确认取消这次备课？"
-                        description="只取消本次备课任务，不删除建议、教案或文件历史。"
-                        okText="确认取消"
-                        cancelText="保留任务"
-                        onConfirm={() => void cancelPreparation()}
-                      >
-                        <Button danger disabled={acting}>
-                          取消备课
-                        </Button>
-                      </Popconfirm>
-                    ) : null}
-                  </Space>
-                  {selectedCourse && planState ? (
-                    <details
-                      id="classroom-implementation"
-                      className="lesson-reflection-details"
-                      open={Boolean(props.initialLessonRef)}
-                    >
-                      <summary>课堂实施、观察与课后反思</summary>
+                    {planState ? (
                       <ClassroomReflectionPanel
                         lesson={selectedLesson}
                         courseRunRef={selectedCourse.courseRunRef}
@@ -1427,19 +1384,33 @@ function RealCourseWorkspace(props: {
                         navigateReflection={props.navigateReflection}
                         onAction={props.onAction}
                       />
-                    </details>
-                  ) : null}
+                    ) : null}
+                  </section>
                 </>
               ) : (
-                <div className="lesson-empty-state">
-                  <WorkspaceIcon name="course" />
-                  <Title level={3}>{selectedUnitRef ? "请选择一个课时" : "先选择一个单元"}</Title>
-                  <Paragraph type="secondary">
-                    {selectedUnitRef
-                      ? "选择课时后，即可查看准备进度、教学重点和可用成果。"
-                      : "展开单元后选择课时，即可查看准备进度、教学重点和可用成果。"}
-                  </Paragraph>
-                </div>
+                selectedUnit ? (
+                  <section className="unit-overview-direct">
+                    <Text className="section-kicker">第 {selectedUnit.sequence} 单元</Text>
+                    <Title level={2}>{selectedUnit.title}</Title>
+                    <Paragraph type="secondary">{selectedUnit.description}</Paragraph>
+                    <div className="unit-overview-objectives">
+                      <Title level={3}>单元教学目标</Title>
+                      {selectedUnitObjectives.length > 0 ? selectedUnitObjectives.map((objective) => (
+                        <article key={objective.objectiveRef}>
+                          <WorkspaceIcon name="check" />
+                          <span><strong>{objective.title}</strong><small>{objective.description}</small></span>
+                        </article>
+                      )) : <Paragraph type="secondary">当前单元尚未配置教学目标。</Paragraph>}
+                    </div>
+                    <Text type="secondary">从左侧直接选择课时，进入备课、上课和课下三个阶段。</Text>
+                  </section>
+                ) : (
+                  <div className="lesson-empty-state">
+                    <WorkspaceIcon name="course" />
+                    <Title level={3}>选择一个单元</Title>
+                    <Paragraph type="secondary">先查看单元目标，再进入具体课时。</Paragraph>
+                  </div>
+                )
               )}
             </Card>
           </div>
@@ -1450,7 +1421,20 @@ function RealCourseWorkspace(props: {
           onCancel={closeFilePreview}
           width={760}
           footer={previewFile && selectedLesson ? [
-            <Button key="library" type="primary" onClick={() => props.navigateFiles({ assetRef: previewFile.assetRef, lessonRef: selectedLesson.lessonRef })}>在文件库中查看</Button>,
+            <Button
+              key="adjust"
+              type="primary"
+              disabled={!previewMaterialKind || materialAdjustment.trim().length === 0}
+              loading={acting}
+              onClick={() => {
+                if (!previewMaterialKind || !materialAdjustment.trim()) return;
+                void generateMaterials([previewMaterialKind], materialAdjustment.trim());
+                closeFilePreview();
+              }}
+            >
+              让 Agent 调整
+            </Button>,
+            <Button key="library" onClick={() => props.navigateFiles({ assetRef: previewFile.assetRef, lessonRef: selectedLesson.lessonRef })}>打开文件位置</Button>,
             <Button key="close" onClick={closeFilePreview}>关闭</Button>
           ] : null}
         >
@@ -1462,6 +1446,19 @@ function RealCourseWorkspace(props: {
                 {previewFile.currentVersion.previewKind === "pdf" && previewUrl ? <iframe title={`${previewFile.displayName} 预览`} src={previewUrl} /> : null}
                 {previewFile.currentVersion.previewKind === "text" && previewText !== null ? <pre>{previewText}</pre> : null}
                 {previewFile.currentVersion.previewKind === "office" ? <Alert type="info" showIcon title="可查看文件详情并下载" description="办公文档暂不在浏览器内完整渲染，请进入文件库查看版本或下载。" /> : null}
+                {previewMaterialKind ? (
+                  <div className="lesson-file-adjustment">
+                    <strong>需要修改？直接告诉 Agent</strong>
+                    <Input.TextArea
+                      rows={3}
+                      maxLength={500}
+                      value={materialAdjustment}
+                      onChange={(event) => setMaterialAdjustment(event.target.value)}
+                      placeholder="例如：第二题简单一点，或者减少板书内容并增加课堂互动。"
+                    />
+                    <small>只生成这一项的新版本，其他材料和历史版本保持不变。</small>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </Spin>
@@ -1473,6 +1470,11 @@ function RealCourseWorkspace(props: {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "未知错误";
+}
+
+function shortClassName(course: CourseRunView): string {
+  const normalized = course.className.replace(course.gradeLevel, "").trim();
+  return normalized || course.className;
 }
 
 function preparationRequestFromBrief(

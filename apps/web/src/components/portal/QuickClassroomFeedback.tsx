@@ -276,8 +276,8 @@ export function QuickClassroomFeedback(props: {
         </div>
       ) : null}
 
-      <details>
-        <summary>查看来源与缺口</summary>
+      <section className="classroom-feedback-provenance">
+        <strong>来源与缺口</strong>
         <ul>
           <li>Agent Run：{currentLatest.agentRunRef}</li>
           <li>Context Manifest：{currentLatest.contextManifestHash}</li>
@@ -285,7 +285,7 @@ export function QuickClassroomFeedback(props: {
             <li key={gap}>{gap}</li>
           ))}
         </ul>
-      </details>
+      </section>
     </div>
   );
 }

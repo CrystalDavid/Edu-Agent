@@ -124,6 +124,7 @@ export function App() {
   const {
     route,
     navigate,
+    goBack,
     proposalRevisionRef,
     navigateProposal,
     preparationTaskRef,
@@ -358,10 +359,10 @@ export function App() {
           ) : null}
           {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
           {route === "/teaching" || route === "/courses" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
           ) : null}
           {route === "/assignments" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialTab="homework" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialTab="homework" onAction={showNotice} />
           ) : null}
           {route === "/students" ? (
             <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
@@ -416,7 +417,7 @@ export function App() {
           {route === "/copilot" ? (
             <div className="legacy-detail-shell">
               <header>
-                <button type="button" onClick={() => navigate("/agent")}><WorkspaceIcon name="arrowLeft" />返回 Agent</button>
+                <button type="button" onClick={() => goBack("/agent")}><WorkspaceIcon name="arrowLeft" />返回上一步</button>
                 <span>教学建议详情</span>
               </header>
               <CopilotPage
@@ -436,7 +437,7 @@ export function App() {
           {route === "/teaching-plan" ? (
             <div className="legacy-detail-shell">
               <header>
-                <button type="button" onClick={() => navigate("/teaching")}><WorkspaceIcon name="arrowLeft" />返回教学</button>
+                <button type="button" onClick={() => goBack("/teaching")}><WorkspaceIcon name="arrowLeft" />返回上一步</button>
                 <span>教学计划版本与变更</span>
               </header>
               <TeachingPlanPage
@@ -453,7 +454,7 @@ export function App() {
           {route === "/runs" ? (
             <div className="legacy-detail-shell">
               <header>
-                <button type="button" onClick={() => navigate("/settings")}><WorkspaceIcon name="arrowLeft" />返回设置</button>
+                <button type="button" onClick={() => goBack("/settings")}><WorkspaceIcon name="arrowLeft" />返回上一步</button>
                 <span>系统记录与技术详情</span>
               </header>
               <RunsPage workspace={workspace} task={task} preparationTaskRef={preparationTaskRef} />

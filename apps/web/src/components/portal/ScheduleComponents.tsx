@@ -97,6 +97,13 @@ export function CalendarView(props: {
             </button>
           ))}
         </div>
+        <Button
+          type="primary"
+          icon={<WorkspaceIcon name="plus" />}
+          onClick={() => setCreateOpen(true)}
+        >
+          新建日程
+        </Button>
         <div className="calendar-period">
           <button type="button" aria-label="上一周期" onClick={props.onPrevious}>
             <WorkspaceIcon name="arrowLeft" />
@@ -107,42 +114,37 @@ export function CalendarView(props: {
           </button>
           <strong>{periodLabel(props.selectedDate, props.mode)}</strong>
         </div>
-        <Button
-          type="primary"
-          icon={<WorkspaceIcon name="plus" />}
-          onClick={() => setCreateOpen(true)}
-        >
-          新建日程
-        </Button>
       </header>
 
       {props.error ? <p role="alert" className="inline-error">{props.error}</p> : null}
       {props.loading ? <p className="loading-copy">正在读取日历…</p> : null}
-      {!props.loading && props.mode === "day" ? (
-        <DayCalendar
-          date={props.selectedDate}
-          events={props.events}
-          onEdit={setEditing}
-          onOpenSource={props.onOpenSource}
-        />
-      ) : null}
-      {!props.loading && props.mode === "week" ? (
-        <WeekCalendar
-          date={props.selectedDate}
-          events={props.events}
-          onEdit={setEditing}
-          onOpenSource={props.onOpenSource}
-        />
-      ) : null}
-      {!props.loading && props.mode === "month" ? (
-        <MonthCalendar
-          date={props.selectedDate}
-          events={props.events}
-          onEdit={setEditing}
-          onOpenSource={props.onOpenSource}
-          onDateSelect={props.onDateSelect}
-        />
-      ) : null}
+      <div className="calendar-scroll-region">
+        {!props.loading && props.mode === "day" ? (
+          <DayCalendar
+            date={props.selectedDate}
+            events={props.events}
+            onEdit={setEditing}
+            onOpenSource={props.onOpenSource}
+          />
+        ) : null}
+        {!props.loading && props.mode === "week" ? (
+          <WeekCalendar
+            date={props.selectedDate}
+            events={props.events}
+            onEdit={setEditing}
+            onOpenSource={props.onOpenSource}
+          />
+        ) : null}
+        {!props.loading && props.mode === "month" ? (
+          <MonthCalendar
+            date={props.selectedDate}
+            events={props.events}
+            onEdit={setEditing}
+            onOpenSource={props.onOpenSource}
+            onDateSelect={props.onDateSelect}
+          />
+        ) : null}
+      </div>
 
       <CalendarEventModal
         open={createOpen || editing !== null}
@@ -1084,5 +1086,13 @@ function periodLabel(value: string, mode: CalendarMode): string {
   if (mode === "day") return new Date(`${value}T12:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
   if (mode === "month") return new Date(`${value.slice(0, 7)}-01T12:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long" });
   const dates = weekDates(value);
-  return `${dates[0]} — ${dates[6]}`;
+  const first = new Date(`${dates[0]}T12:00:00`);
+  const last = new Date(`${dates[6]}T12:00:00`);
+  if (first.getFullYear() === last.getFullYear() && first.getMonth() === last.getMonth()) {
+    return `${first.getFullYear()}年${first.getMonth() + 1}月${first.getDate()}日—${last.getDate()}日`;
+  }
+  if (first.getFullYear() === last.getFullYear()) {
+    return `${first.getFullYear()}年${first.getMonth() + 1}月${first.getDate()}日—${last.getMonth() + 1}月${last.getDate()}日`;
+  }
+  return `${dates[0]}—${dates[6]}`;
 }

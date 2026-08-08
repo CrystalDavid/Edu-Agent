@@ -24,7 +24,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
 
   const panel = page.getByTestId("material-bundle-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("方案批准后，材料由系统先准备");
+  await expect(panel).toContainText("本课材料");
   await panel.getByTestId("generate-material-bundle").click();
 
   await expect.poll(async () => {
@@ -42,11 +42,12 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   const initialBundle = await loadBundle(page);
   const initialBoard = requiredBoard(initialBundle);
 
-  await board.getByRole("button", { name: "调整并重生成" }).click();
-  await page.getByTestId("material-adjustment-input").fill(
+  await board.getByRole("button", { name: /预\s*览/u }).click();
+  const adjustmentPreview = page.getByRole("dialog").filter({ hasText: "板书设计" });
+  await adjustmentPreview.getByPlaceholder(/第二题简单一点/u).fill(
     "板书减少一些内容，只保留目标、关键步骤和检查。"
   );
-  await page.getByRole("button", { name: "重新生成此项" }).click();
+  await adjustmentPreview.getByRole("button", { name: "让 Agent 调整" }).click();
   await expect.poll(async () => {
     const latest = requiredBoard(await loadBundle(page));
     return latest.versionNumber;

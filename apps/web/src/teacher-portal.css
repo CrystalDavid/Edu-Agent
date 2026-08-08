@@ -2115,14 +2115,14 @@ textarea:focus-visible,
 .week-calendar {
   display: block;
   grid-template-columns: none;
-  min-width: 980px;
+  min-width: 0;
   min-height: 0;
 }
 
 .week-calendar__header,
 .week-calendar__all-day {
   display: grid;
-  grid-template-columns: 64px repeat(7, minmax(118px, 1fr));
+  grid-template-columns: 52px repeat(7, minmax(0, 1fr));
 }
 
 .week-calendar__header {
@@ -2178,13 +2178,13 @@ textarea:focus-visible,
 
 .week-calendar__body {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   padding: 10px 0 30px;
 }
 
 .week-calendar__columns {
   display: grid;
-  grid-template-columns: repeat(7, minmax(118px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .week-calendar__day {
@@ -6246,7 +6246,7 @@ textarea:focus-visible,
 
 @media (max-width: 1366px) {
   :root {
-    --sidebar-width: 220px !important;
+    --sidebar-width: 196px !important;
   }
 
   .teacher-portal-main {
@@ -6281,6 +6281,537 @@ textarea:focus-visible,
 
   .metric-grid--five {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Compact product shell and direct teaching workflow */
+
+.teacher-portal-main:not(.teacher-portal-main--agent) {
+  padding: 24px clamp(18px, 2vw, 34px) 48px;
+}
+
+.teacher-sidebar {
+  padding: 18px 12px 14px;
+}
+
+.teacher-sidebar__identity {
+  padding-bottom: 14px;
+}
+
+.teacher-sidebar__nav {
+  gap: 5px;
+  padding-top: 4px;
+}
+
+.teacher-sidebar__nav > button,
+.teacher-settings-shortcut {
+  min-height: 48px;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  font-size: 15px;
+}
+
+.teacher-sidebar__nav .workspace-icon,
+.teacher-settings-shortcut .workspace-icon {
+  width: 21px;
+  height: 21px;
+}
+
+.portal-page-header {
+  min-height: 50px;
+  margin-bottom: 16px;
+}
+
+.portal-page-header h1 {
+  font-size: 27px;
+}
+
+.portal-page-header p {
+  margin-top: 2px;
+  font-size: 14px;
+}
+
+.schedule-page > .portal-page-header {
+  margin-bottom: 14px;
+}
+
+.schedule-layout {
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 16px;
+}
+
+.calendar-workspace {
+  overflow: hidden;
+  border-radius: 28px;
+}
+
+.calendar-toolbar {
+  grid-template-columns: auto auto minmax(280px, 1fr);
+  min-width: 0;
+  min-height: 68px;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.calendar-period {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.calendar-period button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.calendar-period strong {
+  min-width: 150px;
+  overflow: hidden;
+  padding-left: 4px;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-toolbar > .ant-btn {
+  flex: 0 0 auto;
+  justify-self: start;
+}
+
+.calendar-scroll-region {
+  width: 100%;
+  overflow: auto;
+}
+
+.teaching-tabs {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  margin-bottom: 14px;
+  padding: 4px;
+  border-radius: var(--radius-pill);
+  background: #edf1f7;
+}
+
+.teaching-tabs > button {
+  display: block;
+  min-width: 92px;
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  text-align: center;
+}
+
+.teaching-tabs > button.is-active {
+  border: 0;
+  color: var(--color-text);
+  background: #fff;
+  box-shadow: 0 2px 8px rgb(31 52 87 / 8%);
+}
+
+.teaching-tabs strong {
+  font-size: 15px;
+}
+
+.teaching-tabs span {
+  display: none;
+}
+
+.lesson-workspace-layout {
+  grid-template-columns: minmax(275px, 320px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.course-browser-card .ant-card-body,
+.lesson-priority-card .ant-card-body {
+  padding: 18px;
+}
+
+.course-browser-card,
+.lesson-priority-card,
+.lesson-stage-card,
+.lesson-unit-insight,
+.unit-overview-direct {
+  border-radius: 28px;
+}
+
+.course-context-selector {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.course-context-selector > section {
+  display: grid;
+  gap: 7px;
+}
+
+.course-context-selector > section > strong {
+  font-size: 14px;
+}
+
+.course-context-list {
+  display: grid;
+  gap: 6px;
+}
+
+.course-context-list > button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 18px;
+  color: var(--color-text);
+  background: #f5f7fb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.course-context-list > button.is-active {
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.course-context-list > button span,
+.course-history-section small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.unit-list-direct {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.unit-panel {
+  overflow: visible;
+  border-radius: 22px;
+  box-shadow: none;
+}
+
+.unit-panel.is-expanded {
+  box-shadow: none;
+}
+
+.unit-panel__trigger {
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  padding: 13px;
+}
+
+.unit-panel__number {
+  width: 34px;
+  height: 34px;
+  border-radius: 13px;
+}
+
+.unit-panel__copy small {
+  white-space: normal;
+}
+
+.lesson-list {
+  gap: 6px;
+  padding: 0 10px 10px 54px;
+}
+
+.lesson-list > button {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+
+.lesson-context-header {
+  padding: 0;
+}
+
+.lesson-context-header h2 {
+  font-size: 27px;
+}
+
+.lesson-unit-insight,
+.lesson-stage-card,
+.unit-overview-direct {
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+}
+
+.lesson-unit-insight h3,
+.lesson-stage-card h3,
+.unit-overview-direct h2,
+.unit-overview-direct h3 {
+  margin-bottom: 0 !important;
+}
+
+.lesson-objectives-direct {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--color-divider);
+}
+
+.lesson-objectives-direct article,
+.unit-overview-objectives article {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f7f9fc;
+}
+
+.lesson-objectives-direct article span,
+.unit-overview-objectives article small {
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.lesson-stage-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 5px;
+  border-radius: 22px;
+  background: #eef2f8;
+}
+
+.lesson-stage-overview > span {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 18px;
+  color: var(--color-text-secondary);
+  background: #fff;
+  font-weight: 650;
+}
+
+.lesson-stage-overview i,
+.stage-check {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  background: #edf0f4;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.lesson-stage-overview .is-complete i,
+.stage-check.is-complete {
+  color: #fff;
+  background: var(--color-success);
+}
+
+.lesson-stage-overview .workspace-icon,
+.stage-check .workspace-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.lesson-stage-card {
+  display: grid;
+  gap: 14px;
+}
+
+.lesson-stage-card__header,
+.lesson-stage-title,
+.lesson-stage-actions,
+.lesson-stage-summary {
+  display: flex;
+  align-items: center;
+}
+
+.lesson-stage-card__header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lesson-stage-title {
+  gap: 12px;
+}
+
+.lesson-stage-title h3 {
+  margin-top: 2px !important;
+}
+
+.lesson-stage-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lesson-stage-summary {
+  gap: 10px;
+}
+
+.lesson-stage-summary > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  color: var(--color-text-secondary);
+  background: #f7f9fc;
+}
+
+.lesson-stage-summary strong {
+  color: var(--color-text);
+}
+
+.lesson-linked-work {
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: #f7f9fc;
+}
+
+.lesson-linked-work > div {
+  display: grid;
+  gap: 3px;
+}
+
+.lesson-linked-work span {
+  color: var(--color-text-muted);
+}
+
+.material-bundle-panel {
+  margin: 4px 0 0;
+  padding: 18px;
+  border-radius: 24px;
+  box-shadow: none;
+}
+
+.material-bundle-grid {
+  grid-template-columns: 1fr;
+}
+
+.material-bundle-item {
+  align-items: center;
+  border-radius: 22px;
+}
+
+.material-bundle-item__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 14px;
+  align-items: center;
+}
+
+.material-bundle-item__title,
+.material-bundle-item__body small {
+  grid-column: 1;
+}
+
+.material-bundle-item__actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-top: 0;
+}
+
+.material-bundle-item__actions .ant-btn {
+  min-width: 68px;
+  border-radius: 999px;
+}
+
+.lesson-file-adjustment {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 20px;
+  background: #f5f8ff;
+}
+
+.lesson-file-adjustment small {
+  color: var(--color-text-muted);
+}
+
+.unit-overview-objectives {
+  display: grid;
+  gap: 9px;
+  margin: 22px 0;
+}
+
+.unit-overview-objectives article {
+  grid-template-columns: 22px minmax(0, 1fr);
+}
+
+.unit-overview-objectives article > span {
+  display: grid;
+  gap: 3px;
+}
+
+.unit-overview-objectives .workspace-icon {
+  width: 17px;
+  color: var(--color-success);
+}
+
+#classroom-implementation .classroom-reflection-panel > .ant-divider,
+#classroom-implementation .classroom-reflection-panel > .section-kicker,
+#classroom-implementation .classroom-reflection-panel > h3,
+#classroom-implementation .classroom-reflection-panel > p {
+  display: none;
+}
+
+#classroom-implementation .classroom-reflection-panel {
+  margin-top: 0;
+}
+
+#classroom-implementation .classroom-reflection-grid .ant-card {
+  border-radius: 22px;
+}
+
+@media (max-width: 1180px) {
+  .schedule-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .todo-panel {
+    position: static;
+  }
+
+  .lesson-workspace-layout {
+    grid-template-columns: minmax(240px, 285px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .calendar-toolbar {
+    grid-template-columns: auto auto;
+  }
+
+  .calendar-toolbar > .ant-btn {
+    justify-self: end;
+  }
+
+  .calendar-toolbar .calendar-period {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .lesson-workspace-layout,
+  .lesson-focus-grid,
+  .material-bundle-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .material-bundle-item__body {
+    grid-template-columns: 1fr;
+  }
+
+  .material-bundle-item__actions {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 12px;
   }
 }
 

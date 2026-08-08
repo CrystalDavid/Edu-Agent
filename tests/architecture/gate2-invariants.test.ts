@@ -137,7 +137,7 @@ describe("Gate 2 architecture invariants", () => {
 
     expect(tokens).toContain('colorBrand: "#3370FF"');
     expect(tokens).toContain(
-      'sidebarWidth: "240px"'
+      'sidebarWidth: "210px"'
     );
     expect(main).toContain("installDesignTokens");
     expect(main).toContain("theme={antdTheme}");
