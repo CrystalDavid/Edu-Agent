@@ -16,6 +16,24 @@ import {
 type WorkMetadata = FormalWriteMetadata & { owner: "work" };
 
 export class PostgresNextLessonActionRepository {
+  async lockGenerationScope(
+    client: PostgresClient,
+    input: {
+      tenantRef: string;
+      teacherRef: string;
+      reflectionRevisionRef: string;
+    }
+  ): Promise<void> {
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      [[
+        input.tenantRef,
+        input.teacherRef,
+        input.reflectionRevisionRef
+      ].join("|")]
+    );
+  }
+
   async insertCandidate(
     client: PostgresClient,
     input: {

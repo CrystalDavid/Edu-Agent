@@ -5,7 +5,8 @@ import {
   NextLessonActionMutationResultSchema,
   type AuthorizationDecision,
   type FormalWriteReceipt,
-  type NextLessonActionCandidate
+  type NextLessonActionCandidate,
+  type NextLessonActionStatus
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
@@ -13,11 +14,9 @@ import type {
   NextLessonActionStore,
   NextLessonOptimizationContext
 } from "../modules/agent-runtime-context/application/next-lesson-optimization-service.js";
-import { PostgresGate2RuntimeRepository } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
-import { PostgresRuntimeRepository } from "../modules/agent-runtime-context/infrastructure/postgres-runtime-repository.js";
-import { PostgresGovernanceRepository } from "../modules/identity-governance-audit/infrastructure/postgres-governance-repository.js";
-import { PostgresNextLessonActionRepository } from "../modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-repository.js";
-import { PostgresWorkRepository } from "../modules/work-assistant-durable-execution/infrastructure/postgres-work-repository.js";
+import type { PostgresNextLessonActionRuntimePort } from "../modules/agent-runtime-context/infrastructure/postgres-next-lesson-action-runtime-port.js";
+import type { PostgresNextLessonActionGovernancePort } from "../modules/identity-governance-audit/infrastructure/postgres-next-lesson-action-governance-port.js";
+import type { PostgresNextLessonActionWorkPort } from "../modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-work-port.js";
 import {
   DomainConflictError,
   NotFoundError
@@ -31,11 +30,9 @@ import {
 export class PostgresNextLessonActionStore implements NextLessonActionStore {
   constructor(
     private readonly pool: Pool,
-    private readonly governance = new PostgresGovernanceRepository(),
-    private readonly work = new PostgresWorkRepository(),
-    private readonly actions = new PostgresNextLessonActionRepository(),
-    private readonly runtime = new PostgresRuntimeRepository(),
-    private readonly runtimeContext = new PostgresGate2RuntimeRepository(),
+    private readonly governance: PostgresNextLessonActionGovernancePort,
+    private readonly work: PostgresNextLessonActionWorkPort,
+    private readonly runtime: PostgresNextLessonActionRuntimePort,
     private readonly clock: () => Date = () => new Date()
   ) {}
 
@@ -107,6 +104,11 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           replayed: true
         });
       }
+      await this.work.lockGenerationScope(client, {
+        tenantRef: input.context.tenantRef,
+        teacherRef: input.context.actorRef,
+        reflectionRevisionRef: input.request.reflectionRevisionRef
+      });
       const authorization: AuthorizationDecision = {
         decisionRef,
         actorRef: input.context.actorRef,
@@ -149,6 +151,66 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           )
         })
       ];
+      const previousCandidates = (
+        await this.work.listByReflection(client, {
+          tenantRef: input.context.tenantRef,
+          teacherRef: input.context.actorRef,
+          reflectionRef: input.context.reflectionRef
+        })
+      ).filter((candidate) => candidate.status === "candidate");
+      for (const [index, previous] of previousCandidates.entries()) {
+        const expired = await this.work.update(client, {
+          current: previous,
+          next: {
+            title: previous.title,
+            reason: previous.reason,
+            targetLessonRef: previous.targetLessonRef,
+            targetRef: null,
+            deepLink: null,
+            teacherNote: previous.teacherNote,
+            status: "expired",
+            decidedAt: nowIso,
+            updatedAt: nowIso
+          },
+          historyRef: `next-lesson-action-history:${randomUUID()}`,
+          changeKind: "expired",
+          historyMetadata: createWriteMetadata(
+            writeContext,
+            "work",
+            `next-lesson-action-regeneration-expired-history-${index + 1}`
+          )
+        });
+        if (expired) {
+          receipts.push(createReceipt({
+            writeRef: expired.candidateRef,
+            recordType: "NextLessonActionCandidateExpiredByRegeneration",
+            metadata: createWriteMetadata(
+              writeContext,
+              "work",
+              `next-lesson-action-regeneration-expired-${index + 1}`
+            )
+          }));
+        }
+      }
+      if (previousCandidates.length > 0) {
+        receipts.push(await this.work.insertOutbox(client, {
+          outboxRef: `outbox:${randomUUID()}`,
+          eventName: "NextLessonActionCandidatesExpired",
+          aggregateRef: input.context.reflectionRef,
+          payload: {
+            reflectionRevisionRef: input.request.reflectionRevisionRef,
+            candidateRefs: previousCandidates.map(
+              (candidate) => candidate.candidateRef
+            ),
+            reason: "superseded_by_explicit_regeneration"
+          },
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "next-lesson-action-regeneration-expired-outbox"
+          )
+        }));
+      }
       receipts.push(
         ...(await this.runtime.insertAgentRunBundle(client, {
           agentRun: {
@@ -221,7 +283,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
         ...input.runtimeContext.input.sourceLesson.learningObjectiveRefs
       ];
       receipts.push(
-        await this.runtimeContext.insertContextManifest(client, {
+        await this.runtime.insertContextManifest(client, {
           contextManifestRef: input.contextManifestRef,
           agentRunRef: input.agentRunRef,
           resourceRefs: input.runtimeContext.manifest.resourceRefs,
@@ -255,7 +317,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
         })
       );
       for (const [index, candidate] of candidates.entries()) {
-        receipts.push(...await this.actions.insertCandidate(client, {
+        receipts.push(...await this.work.insertCandidate(client, {
           candidate,
           metadata: createWriteMetadata(
             writeContext,
@@ -270,7 +332,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           )
         }));
       }
-      receipts.push(await this.actions.insertOutbox(client, {
+      receipts.push(await this.work.insertOutbox(client, {
         outboxRef: `outbox:${randomUUID()}`,
         eventName: "NextLessonActionCandidatesProjected",
         aggregateRef: input.context.reflectionRef,
@@ -308,7 +370,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
   }
 
   list(context: NextLessonOptimizationContext) {
-    return this.actions.listByReflection(this.pool, {
+    return this.work.listByReflection(this.pool, {
       tenantRef: context.tenantRef,
       teacherRef: context.actorRef,
       reflectionRef: context.reflectionRef
@@ -320,7 +382,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
     actorRef: string;
     candidateRef: string;
   }) {
-    const candidate = await this.actions.get(this.pool, {
+    const candidate = await this.work.get(this.pool, {
       tenantRef: input.tenantRef,
       teacherRef: input.actorRef,
       candidateRef: input.candidateRef
@@ -401,7 +463,16 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
     next: (
       current: NextLessonActionCandidate,
       now: string
-    ) => Parameters<PostgresNextLessonActionRepository["update"]>[1]["next"];
+    ) => Pick<
+      NextLessonActionCandidate,
+      | "title"
+      | "reason"
+      | "targetLessonRef"
+      | "targetRef"
+      | "deepLink"
+      | "teacherNote"
+      | "decidedAt"
+    > & { status: NextLessonActionStatus; updatedAt: string };
   }) {
     const now = this.clock().toISOString();
     const rootKey = rootKeyFor(
@@ -438,7 +509,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           replayed: true
         });
       }
-      const current = await this.actions.get(client, {
+      const current = await this.work.get(client, {
         tenantRef: input.tenantRef,
         teacherRef: input.actorRef,
         candidateRef: input.candidateRef
@@ -519,7 +590,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           )
         })
       ];
-      const candidate = await this.actions.update(client, {
+      const candidate = await this.work.update(client, {
         current,
         next: input.next(current, now),
         historyRef: `next-lesson-action-history:${randomUUID()}`,
@@ -545,7 +616,7 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           `next-lesson-action-${input.changeKind}-candidate`
         )
       }));
-      receipts.push(await this.actions.insertOutbox(client, {
+      receipts.push(await this.work.insertOutbox(client, {
         outboxRef: `outbox:${randomUUID()}`,
         eventName: input.eventName,
         aggregateRef: candidate.candidateRef,

@@ -81,6 +81,9 @@ import { ClassroomFeedbackDeliveryAdapter } from "./classroom-feedback-delivery-
 import { NextLessonOptimizationService } from "../modules/agent-runtime-context/application/next-lesson-optimization-service.js";
 import { NextLessonOptimizationSourceAdapter } from "./next-lesson-optimization-source-adapter.js";
 import { NextLessonActionTargetAdapter } from "./next-lesson-action-target-adapter.js";
+import { PostgresNextLessonActionRuntimePort } from "../modules/agent-runtime-context/infrastructure/postgres-next-lesson-action-runtime-port.js";
+import { PostgresNextLessonActionGovernancePort } from "../modules/identity-governance-audit/infrastructure/postgres-next-lesson-action-governance-port.js";
+import { PostgresNextLessonActionWorkPort } from "../modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-work-port.js";
 import { PostgresNextLessonActionStore } from "./postgres-next-lesson-action-store.js";
 
 export function createProductContainer(
@@ -197,7 +200,12 @@ export function createProductContainer(
       read,
       personalization
     ),
-    new PostgresNextLessonActionStore(appPool),
+    new PostgresNextLessonActionStore(
+      appPool,
+      new PostgresNextLessonActionGovernancePort(),
+      new PostgresNextLessonActionWorkPort(),
+      new PostgresNextLessonActionRuntimePort()
+    ),
     new NextLessonActionTargetAdapter(
       classroomReflection,
       lessonPreparation

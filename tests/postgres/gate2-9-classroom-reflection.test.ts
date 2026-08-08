@@ -810,10 +810,23 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
     });
     expect(replay.items.map((item) => item.candidateRef))
       .toEqual(generated.items.map((item) => item.candidateRef));
+    const regenerated = await product.services.nextLessonOptimization.generate({
+      context,
+      request: {
+        ...generationRequest,
+        teacherAdjustment: "第二轮：控制复习在十分钟内。",
+        idempotencyKey: key("next-actions-regenerate")
+      }
+    });
+    const afterRegeneration = await product.services.nextLessonOptimization.list(context);
+    expect(afterRegeneration.items.filter((item) =>
+      generated.items.some((previous) => previous.candidateRef === item.candidateRef)
+    ).every((item) => item.status === "expired")).toBe(true);
+    expect(regenerated.items.every((item) => item.status === "candidate")).toBe(true);
 
     const runtime = await adminPool.query<{ output: Record<string, unknown> }>(
       `SELECT output FROM runtime.agent_run WHERE agent_run_ref = $1`,
-      [generated.agentRunRef]
+      [regenerated.agentRunRef]
     );
     expect(runtime.rows[0]?.output).toMatchObject({
       kind: "next_lesson_action_candidates",
@@ -831,7 +844,7 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
       `SELECT evidence_refs, resource_refs
          FROM runtime.context_manifest
         WHERE context_manifest_ref = $1`,
-      [generated.contextManifestRef]
+      [regenerated.contextManifestRef]
     );
     expect(manifest.rows[0]?.evidence_refs).toEqual([]);
     expect(manifest.rows[0]?.resource_refs).toEqual(expect.arrayContaining([
@@ -841,7 +854,7 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
       gate25DemoRefs.lessonRefs.coefficientMethod
     ]));
 
-    const adjustment = generated.items.find((item) =>
+    const adjustment = regenerated.items.find((item) =>
       item.candidateType === "adjust_next_lesson_focus"
     )!;
     const updated = await product.services.nextLessonOptimization.update({
@@ -864,7 +877,7 @@ describe("Gate 2.9 classroom implementation and reflection", () => {
       title: "先复核斜率与截距，再进入待定系数法"
     });
 
-    const practice = generated.items.find((item) =>
+    const practice = regenerated.items.find((item) =>
       item.candidateType === "create_practice_task"
     )!;
     const rejected = await product.services.nextLessonOptimization.reject({

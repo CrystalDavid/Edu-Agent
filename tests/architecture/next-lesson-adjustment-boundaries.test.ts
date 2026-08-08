@@ -33,6 +33,9 @@ describe("Phase 8A-6 next Lesson optimization boundaries", () => {
     const service = source(
       "apps/api/src/modules/agent-runtime-context/application/next-lesson-optimization-service.ts"
     );
+    const store = source(
+      "apps/api/src/composition/postgres-next-lesson-action-store.ts"
+    );
 
     expect(service).toContain("NextLessonOptimizationSourceReader");
     expect(service).toContain("NextLessonActionStore");
@@ -40,6 +43,33 @@ describe("Phase 8A-6 next Lesson optimization boundaries", () => {
     expect(service).toContain("loadNextLessonAdjustmentSkill");
     expect(service).not.toMatch(/from\s+["'][^"']*(?:postgres|repository)/iu);
     expect(service).not.toContain("createFollowUp(");
+    expect(store).toContain("PostgresNextLessonActionGovernancePort");
+    expect(store).toContain("PostgresNextLessonActionRuntimePort");
+    expect(store).toContain("PostgresNextLessonActionWorkPort");
+    expect(store).not.toMatch(
+      /modules\/.+\/infrastructure\/postgres-.+-repository/iu
+    );
+  });
+
+  it("keeps transaction-aware persistence ports inside their owning modules", () => {
+    const ports = [
+      source(
+        "apps/api/src/modules/identity-governance-audit/infrastructure/postgres-next-lesson-action-governance-port.ts"
+      ),
+      source(
+        "apps/api/src/modules/agent-runtime-context/infrastructure/postgres-next-lesson-action-runtime-port.ts"
+      ),
+      source(
+        "apps/api/src/modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-work-port.ts"
+      )
+    ];
+
+    expect(ports[0]).not.toContain("../identity-governance-audit/");
+    expect(ports[0]).not.toContain("../work-assistant-durable-execution/");
+    expect(ports[1]).not.toContain("../identity-governance-audit/");
+    expect(ports[1]).not.toContain("../work-assistant-durable-execution/");
+    expect(ports[2]).not.toContain("../agent-runtime-context/");
+    expect(ports[2]).not.toContain("../identity-governance-audit/");
   });
 
   it("routes accepted candidates through the existing formal follow-up service", () => {
