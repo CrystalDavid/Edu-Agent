@@ -92,4 +92,3 @@ Journey 继续只把正式 follow-up 作为完成依据。只有生成但未决�
 - 接受、修改、拒绝使用 expected-version；
 - AgentRun 和 ContextManifest 持久化，进程重启后候选与来源仍可读取；
 - 历史候选和决策不静默覆盖。
-

@@ -78,4 +78,3 @@ DROP TRIGGER IF EXISTS next_lesson_action_history_no_update
 CREATE TRIGGER next_lesson_action_history_no_update
   BEFORE UPDATE OR DELETE ON work.next_lesson_action_history
   FOR EACH ROW EXECUTE FUNCTION work.reject_teacher_work_history_mutation();
-
