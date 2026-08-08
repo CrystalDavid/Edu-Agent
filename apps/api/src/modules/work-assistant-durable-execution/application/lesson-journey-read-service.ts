@@ -6,6 +6,7 @@ import type {
   LessonTeachingPlanState,
   LessonView,
   MaterialBundleProjection,
+  NextLessonActionCandidate,
   PendingProposalList
 } from "@edu-agent/contracts";
 
@@ -32,6 +33,7 @@ export interface LessonJourneySourceSnapshot {
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;
   readonly lessonBrief: LessonBriefSnapshot | null;
+  readonly nextLessonActions: readonly NextLessonActionCandidate[];
 }
 
 export interface LessonJourneySourceReader {

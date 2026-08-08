@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   LessonView,
   ModelExecutionView,
+  NextLessonActionCandidate,
   ReflectionContent,
   ReflectionDetail
 } from "@edu-agent/contracts";
@@ -22,15 +23,19 @@ import {
 
 import {
   cancelModelInvocation,
+  acceptNextLessonAction,
   confirmReflection,
-  createReflectionFollowUp,
+  generateNextLessonActions,
   generateReflection,
   loadCourseRuns,
   loadCurriculumUnits,
   loadLessons,
   loadModelInvocation,
+  loadNextLessonActions,
   loadReflection,
+  rejectNextLessonAction,
   retryModelInvocation,
+  updateNextLessonAction,
   updateReflectionDraft
 } from "../api";
 import { PageHeader } from "../components/portal/PortalPrimitives";
@@ -89,6 +94,11 @@ export function ReflectionAgentPage(props: {
   const [draftContent, setDraftContent] = useState<ReflectionContent | null>(null);
   const [teacherNotes, setTeacherNotes] = useState("");
   const [targetLessonRef, setTargetLessonRef] = useState("");
+  const [nextActions, setNextActions] = useState<NextLessonActionCandidate[]>([]);
+  const [nextActionAdjustment, setNextActionAdjustment] = useState("");
+  const [editingCandidateRef, setEditingCandidateRef] = useState<string | null>(null);
+  const [candidateTitle, setCandidateTitle] = useState("");
+  const [candidateReason, setCandidateReason] = useState("");
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +111,11 @@ export function ReflectionAgentPage(props: {
     setError(null);
     const detail = await loadReflection(props.reflectionRef);
     setReflection(detail);
+    setNextActions(
+      detail.currentConfirmed
+        ? (await loadNextLessonActions(props.reflectionRef)).items
+        : []
+    );
     if (detail.currentModelExecutionRef) {
       setExecution(await loadModelInvocation(detail.currentModelExecutionRef));
     } else {
@@ -272,59 +287,109 @@ export function ReflectionAgentPage(props: {
     }
   }
 
-  async function createFollowUp(
-    actionType: "lesson_preparation" | "assignment_draft" | "teacher_todo"
-  ) {
+  async function generateActions() {
     const confirmed = reflection?.currentConfirmed;
-    if (!confirmed) return;
+    if (!confirmed || !targetLessonRef) return;
     setActing(true);
     setError(null);
     try {
-      const base = {
+      const result = await generateNextLessonActions(reflection.reflectionRef, {
         reflectionRevisionRef: confirmed.reflectionRevisionRef,
-        purpose: "lesson-reflection.create-follow-up" as const,
-        idempotencyKey: `ui:reflection:follow-up:${crypto.randomUUID()}`
-      };
-      const result = actionType === "lesson_preparation"
-        ? await createReflectionFollowUp(reflection.reflectionRef, {
-            ...base,
-            actionType: "lesson_preparation",
-            targetLessonRef,
-            priority: "normal",
-            dueAt: null
-          })
-        : actionType === "assignment_draft"
-          ? await createReflectionFollowUp(reflection.reflectionRef, {
-              ...base,
-              actionType: "assignment_draft",
-              targetLessonRef,
-              title: confirmed.content.assignmentSuggestions[0]?.slice(0, 240) || "本课补充练习",
-              instructions: confirmed.content.assignmentSuggestions.join("\n") || "依据教师确认的课后反思创建补充练习草稿；发布前需教师审核。",
-              dueAt: null,
-              items: [{
-                sequence: 1,
-                itemType: "short_answer",
-                prompt: "请用自己的语言说明本课时最需要继续巩固的概念。",
-                maxScore: 5,
-                options: [],
-                answerKey: { referenceAnswer: "答案需由教师结合本课时目标审核。" },
-                gradingCriteria: "概念表述清楚，并能说明依据。",
-                objectiveRef: targetLesson?.learningObjectives[0]?.objectiveRef ?? sourceLesson?.learningObjectives[0]?.objectiveRef ?? confirmed.lessonRef
-              }]
-            })
-          : await createReflectionFollowUp(reflection.reflectionRef, {
-              ...base,
-              actionType: "teacher_todo",
-              title: confirmed.content.uncertainties[0]?.slice(0, 300) || "复核本节课仍不确定的问题",
-              description: confirmed.content.uncertainties.join("\n") || "来源于教师已确认的课后反思；需教师显式完成。",
-              priority: "normal",
-              dueAt: null
-            });
-      props.onAction("后续行动已创建，并保留课后反思来源关系");
-      await refresh();
-      if (result.actionType === "lesson_preparation") props.navigatePreparation(result.targetRef, "/agent");
-      else if (result.actionType === "assignment_draft") props.navigate("/assignments");
-      else props.navigate("/schedule");
+        targetLessonRef,
+        teacherAdjustment: nextActionAdjustment.trim() || null,
+        purpose: "next-lesson-adjustment.generate",
+        idempotencyKey: `ui:next-lesson-actions:generate:${crypto.randomUUID()}`
+      });
+      setNextActions(result.items);
+      props.onAction("下一课优化建议已生成，尚未创建任何正式任务");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  function beginCandidateEdit(candidate: NextLessonActionCandidate) {
+    setEditingCandidateRef(candidate.candidateRef);
+    setCandidateTitle(candidate.title);
+    setCandidateReason(candidate.reason);
+  }
+
+  async function saveCandidate(candidate: NextLessonActionCandidate) {
+    setActing(true);
+    setError(null);
+    try {
+      const result = await updateNextLessonAction(candidate.candidateRef, {
+        expectedVersion: candidate.version,
+        title: candidateTitle,
+        reason: candidateReason,
+        targetLessonRef:
+          candidate.candidateType === "create_teacher_todo"
+            ? null
+            : targetLessonRef || candidate.targetLessonRef,
+        teacherNote: nextActionAdjustment.trim() || candidate.teacherNote,
+        purpose: "next-lesson-adjustment.update",
+        idempotencyKey: `ui:next-lesson-actions:update:${crypto.randomUUID()}`
+      });
+      setNextActions((current) => current.map((item) =>
+        item.candidateRef === result.candidate.candidateRef
+          ? result.candidate
+          : item
+      ));
+      setEditingCandidateRef(null);
+      props.onAction("优化建议已保存为新版本，Reflection 未被修改");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function rejectCandidate(candidate: NextLessonActionCandidate) {
+    setActing(true);
+    setError(null);
+    try {
+      const result = await rejectNextLessonAction(candidate.candidateRef, {
+        expectedVersion: candidate.version,
+        reason: nextActionAdjustment.trim() || null,
+        purpose: "next-lesson-adjustment.reject",
+        idempotencyKey: `ui:next-lesson-actions:reject:${crypto.randomUUID()}`
+      });
+      setNextActions((current) => current.map((item) =>
+        item.candidateRef === result.candidate.candidateRef
+          ? result.candidate
+          : item
+      ));
+      props.onAction("已拒绝该建议，没有创建或修改任何教学事实");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function acceptCandidate(candidate: NextLessonActionCandidate) {
+    setActing(true);
+    setError(null);
+    try {
+      const result = await acceptNextLessonAction(candidate.candidateRef, {
+        expectedVersion: candidate.version,
+        purpose: "next-lesson-adjustment.accept",
+        idempotencyKey: `ui:next-lesson-actions:accept:${crypto.randomUUID()}`
+      });
+      setNextActions((current) => current.map((item) =>
+        item.candidateRef === result.candidate.candidateRef
+          ? result.candidate
+          : item
+      ));
+      props.onAction("已按教师决定创建正式后续对象，并保留完整来源关系");
+      if (candidate.candidateType === "adjust_next_lesson_focus" && result.candidate.targetRef) {
+        props.navigatePreparation(result.candidate.targetRef, "/agent");
+      } else if (candidate.candidateType === "create_practice_task") {
+        props.navigate("/assignments");
+      } else {
+        props.navigate("/schedule");
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -453,25 +518,53 @@ export function ReflectionAgentPage(props: {
 
             {reflection.currentConfirmed ? (
               <Card className="workspace-card reflection-follow-up-card" variant="borderless" title="把复盘变成下一步" data-testid="reflection-follow-ups">
-                <Paragraph type="secondary">以下仍是候选。确认反思不会自动创建任何任务，请明确选择需要执行的一项。</Paragraph>
+                <Paragraph type="secondary">系统只会生成可追溯候选。接受、修改或拒绝都由教师决定；生成候选不会自动创建任何任务。</Paragraph>
                 <label className="reflection-target-lesson">目标课时<Select<string> value={targetLessonRef || null} placeholder="选择下一课" onChange={setTargetLessonRef} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: `${lesson.sequence}. ${lesson.title}` }))} /></label>
+                <label>补充要求（可选）<Input.TextArea rows={2} value={nextActionAdjustment} onChange={(event) => setNextActionAdjustment(event.target.value)} placeholder="例如：下一课减少讨论，先用两个基础例题巩固" /></label>
+                <Space wrap>
+                  <Button type="primary" loading={acting} disabled={!targetLessonRef} onClick={() => void generateActions()} data-testid="generate-next-lesson-actions">
+                    {nextActions.length > 0 ? "重新生成优化建议" : "生成下一课优化建议"}
+                  </Button>
+                  <Text type="secondary">使用 next-lesson-adjustment@1；实际来源已封存。</Text>
+                </Space>
                 <div className="reflection-follow-up-candidates">
-                  {actionCandidates.map((candidate) => (
-                    <article key={candidate.actionType}>
-                      <Tag>{followUpTypeLabel(candidate.actionType)}</Tag>
-                      <strong>{candidate.title}</strong>
-                      <p>{candidate.rationale}</p>
-                      <Button
-                        type={candidate.actionType === "lesson_preparation" ? "primary" : "default"}
-                        loading={acting}
-                        disabled={candidate.actionType !== "teacher_todo" && !targetLessonRef}
-                        onClick={() => void createFollowUp(candidate.actionType)}
-                        {...(candidate.actionType === "lesson_preparation" ? { "data-testid": "create-reflection-follow-up" } : {})}
-                      >
-                        {candidate.actionType === "lesson_preparation" ? "创建下一课备课任务" : candidate.actionType === "assignment_draft" ? "创建练习草稿" : "创建个人待办"}
-                      </Button>
+                  {nextActions.map((candidate) => (
+                    <article key={candidate.candidateRef} data-testid="next-lesson-action-candidate">
+                      <Space wrap>
+                        <Tag>{nextActionTypeLabel(candidate.candidateType)}</Tag>
+                        <Tag color={candidate.status === "accepted" ? "success" : candidate.status === "rejected" ? "default" : "processing"}>{nextActionStatusLabel(candidate.status)}</Tag>
+                        <Tag>{candidate.confidence === "high" ? "依据较充分" : candidate.confidence === "medium" ? "建议复核" : "信息有限"}</Tag>
+                      </Space>
+                      {editingCandidateRef === candidate.candidateRef ? (
+                        <div className="reflection-candidate-editor">
+                          <Input value={candidateTitle} onChange={(event) => setCandidateTitle(event.target.value)} />
+                          <Input.TextArea rows={3} value={candidateReason} onChange={(event) => setCandidateReason(event.target.value)} />
+                          <Space wrap>
+                            <Button type="primary" loading={acting} onClick={() => void saveCandidate(candidate)}>保存修改</Button>
+                            <Button onClick={() => setEditingCandidateRef(null)}>取消</Button>
+                          </Space>
+                        </div>
+                      ) : (
+                        <>
+                          <strong>{candidate.title}</strong>
+                          <p>{candidate.reason}</p>
+                        </>
+                      )}
+                      {candidate.status === "candidate" && editingCandidateRef !== candidate.candidateRef ? (
+                        <Space wrap>
+                          <Popconfirm title="接受并创建正式后续对象？" description="只有确认后才会创建备课任务、练习草稿或个人待办。" onConfirm={() => void acceptCandidate(candidate)}>
+                            <Button type={candidate.candidateType === "adjust_next_lesson_focus" ? "primary" : "default"} loading={acting} data-testid={candidate.candidateType === "adjust_next_lesson_focus" ? "accept-next-lesson-action" : undefined}>接受</Button>
+                          </Popconfirm>
+                          <Button onClick={() => beginCandidateEdit(candidate)}>修改</Button>
+                          <Popconfirm title="拒绝这条建议？" description="拒绝会保留历史，但不会创建任何对象。" onConfirm={() => void rejectCandidate(candidate)}>
+                            <Button>拒绝</Button>
+                          </Popconfirm>
+                        </Space>
+                      ) : null}
+                      {candidate.status === "accepted" && candidate.deepLink ? <Text type="secondary">已创建：{candidate.deepLink}</Text> : null}
                     </article>
                   ))}
+                  {nextActions.length === 0 ? <Paragraph type="secondary">尚未生成下一课优化建议。</Paragraph> : null}
                 </div>
                 {reflection.followUps.length > 0 ? (
                   <div className="reflection-follow-up-list">
@@ -507,6 +600,24 @@ function followUpStatusLabel(status: string): string {
     completed: "已完成",
     cancelled: "已取消"
   }[status] ?? "已创建";
+}
+
+function nextActionTypeLabel(actionType: NextLessonActionCandidate["candidateType"]): string {
+  return {
+    adjust_next_lesson_focus: "调整下一课",
+    create_practice_task: "补充练习",
+    create_teacher_todo: "教师待办",
+    review_student_issue: "复查学习现象"
+  }[actionType];
+}
+
+function nextActionStatusLabel(status: NextLessonActionCandidate["status"]): string {
+  return {
+    candidate: "等待教师决定",
+    accepted: "已接受",
+    rejected: "已拒绝",
+    expired: "已过期"
+  }[status];
 }
 
 function buildActionCandidates(content: ReflectionContent | null): Array<{

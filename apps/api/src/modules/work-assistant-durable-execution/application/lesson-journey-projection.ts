@@ -29,7 +29,14 @@ export interface LessonJourneyProjectionInput {
   readonly pendingProposals: readonly SuggestionSummary[];
   readonly agentExecution: LessonJourneyAgentExecution | null;
   readonly lessonBrief?: LessonBriefSnapshot | null;
+  readonly nextLessonActions?: readonly LessonJourneySourceSnapshotAction[];
   readonly generatedAt?: string;
+}
+
+interface LessonJourneySourceSnapshotAction {
+  readonly candidateRef: string;
+  readonly status: "candidate" | "accepted" | "rejected" | "expired";
+  readonly version: number;
 }
 
 const activeAgentStatuses = new Set([
@@ -74,6 +81,7 @@ export function projectLessonJourney(
   const confirmedReflection = reflection?.currentConfirmed ?? null;
   const reflectionDraft = reflection?.currentDraft ?? null;
   const followUps = reflection?.followUps ?? [];
+  const nextLessonActions = input.nextLessonActions ?? [];
   const materialItems = input.materialBundle.items.filter(
     (item) => item.status !== "missing" && item.assetRef
   );
@@ -178,6 +186,13 @@ export function projectLessonJourney(
       kind: "follow_up",
       ref: followUp.followUpRef,
       version: followUp.targetStatus
+    });
+  }
+  for (const candidate of nextLessonActions) {
+    addSource(sourceRefs, sourceVersionVector, {
+      kind: "next_lesson_action",
+      ref: candidate.candidateRef,
+      version: `${candidate.version}:${candidate.status}`
     });
   }
   if (followUps.length > 0) milestones.push("follow_up_created");
@@ -386,14 +401,19 @@ export function projectLessonJourney(
 
   if (confirmedReflection) {
     if (followUps.length === 0) {
+      const pendingActions = nextLessonActions.filter(
+        (candidate) => candidate.status === "candidate"
+      );
       return parseProjection({
         ...common,
         currentStage: "improve",
         status: "waiting_for_teacher",
         nextBestAction: action(
           "choose_follow_up",
-          "选择下一步行动",
-          "反思已经确认，但系统不能替教师假设是否需要后续行动。",
+          pendingActions.length > 0 ? "决定下一课优化建议" : "生成下一课优化建议",
+          pendingActions.length > 0
+            ? `系统已准备 ${pendingActions.length} 项候选，正在等待教师接受、修改或拒绝。`
+            : "反思已经确认，但系统不会自动创建建议或后续任务。",
           common.detailLinks.reflection ?? common.detailLinks.lesson
         ),
         blockingReasons: []

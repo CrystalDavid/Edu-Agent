@@ -71,6 +71,7 @@ export const LessonJourneySourceKindSchema = z.enum([
   "file_asset",
   "delivery_revision",
   "reflection_revision",
+  "next_lesson_action",
   "follow_up"
 ]);
 

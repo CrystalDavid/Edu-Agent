@@ -9,6 +9,7 @@ import type { PostgresFileArtifactService } from "./postgres-file-artifact-servi
 import type { PostgresGate2ReadService } from "./postgres-gate2-read-service.js";
 import type { PostgresLessonPreparationService } from "./postgres-lesson-preparation-service.js";
 import type { LessonBriefService } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
+import type { NextLessonOptimizationService } from "../modules/agent-runtime-context/application/next-lesson-optimization-service.js";
 
 export class LessonJourneyReadAdapter
   implements LessonJourneySourceReader
@@ -18,7 +19,8 @@ export class LessonJourneyReadAdapter
     private readonly read: PostgresGate2ReadService,
     private readonly files: PostgresFileArtifactService,
     private readonly classroom: PostgresClassroomReflectionService,
-    private readonly lessonBrief: LessonBriefService
+    private readonly lessonBrief: LessonBriefService,
+    private readonly nextLessonOptimization: NextLessonOptimizationService
   ) {}
 
   async loadAuthorizedSnapshot(
@@ -72,7 +74,14 @@ export class LessonJourneyReadAdapter
       agentExecution: activeTask
         ? await this.loadAgentExecution(context, activeTask.taskRef)
         : null,
-      lessonBrief: briefState.current
+      lessonBrief: briefState.current,
+      nextLessonActions: implementation.reflection
+        ? (await this.nextLessonOptimization.list({
+            tenantRef: context.tenantRef,
+            actorRef: context.actorRef,
+            reflectionRef: implementation.reflection.reflectionRef
+          })).items
+        : []
     };
   }
 

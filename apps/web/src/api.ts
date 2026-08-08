@@ -114,6 +114,14 @@ import {
   ReflectionGenerationResultSchema,
   ReflectionFollowUpResultSchema,
   ReflectionMutationResultSchema,
+  NextLessonActionCandidateSchema,
+  NextLessonActionListSchema,
+  GenerateNextLessonActionsRequestSchema,
+  GenerateNextLessonActionsResultSchema,
+  UpdateNextLessonActionRequestSchema,
+  AcceptNextLessonActionRequestSchema,
+  RejectNextLessonActionRequestSchema,
+  NextLessonActionMutationResultSchema,
   RetryModelInvocationRequestSchema,
   ReopenGradeRequestSchema,
   SaveGradeDraftRequestSchema,
@@ -193,6 +201,10 @@ import {
   type CreateModelInvocationResult,
   type CreateReflectionDraftRequest,
   type CreateReflectionFollowUpRequest,
+  type GenerateNextLessonActionsRequest,
+  type UpdateNextLessonActionRequest,
+  type AcceptNextLessonActionRequest,
+  type RejectNextLessonActionRequest,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
   type CreateTeacherTodoRequest,
@@ -1901,6 +1913,74 @@ export function createReflectionFollowUp(
     "创建反思后续行动",
     apiRoutes.teacher.reflectionFollowUps(reflectionRef),
     ReflectionFollowUpResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadNextLessonActions(reflectionRef: string) {
+  return request(
+    "下一课优化建议",
+    apiRoutes.teacher.reflectionNextLessonActions(reflectionRef),
+    NextLessonActionListSchema
+  );
+}
+
+export function generateNextLessonActions(
+  reflectionRef: string,
+  input: GenerateNextLessonActionsRequest
+) {
+  GenerateNextLessonActionsRequestSchema.parse(input);
+  return request(
+    "生成下一课优化建议",
+    apiRoutes.teacher.reflectionNextLessonActionsGenerate(reflectionRef),
+    GenerateNextLessonActionsResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadNextLessonAction(candidateRef: string) {
+  return request(
+    "下一课优化建议详情",
+    apiRoutes.teacher.nextLessonAction(candidateRef),
+    NextLessonActionCandidateSchema
+  );
+}
+
+export function updateNextLessonAction(
+  candidateRef: string,
+  input: UpdateNextLessonActionRequest
+) {
+  UpdateNextLessonActionRequestSchema.parse(input);
+  return request(
+    "修改下一课优化建议",
+    apiRoutes.teacher.nextLessonAction(candidateRef),
+    NextLessonActionMutationResultSchema,
+    { method: "PATCH", body: JSON.stringify(input) }
+  );
+}
+
+export function acceptNextLessonAction(
+  candidateRef: string,
+  input: AcceptNextLessonActionRequest
+) {
+  AcceptNextLessonActionRequestSchema.parse(input);
+  return request(
+    "接受下一课优化建议",
+    apiRoutes.teacher.nextLessonActionAccept(candidateRef),
+    NextLessonActionMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function rejectNextLessonAction(
+  candidateRef: string,
+  input: RejectNextLessonActionRequest
+) {
+  RejectNextLessonActionRequestSchema.parse(input);
+  return request(
+    "拒绝下一课优化建议",
+    apiRoutes.teacher.nextLessonActionReject(candidateRef),
+    NextLessonActionMutationResultSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
 }
