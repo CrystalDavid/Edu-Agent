@@ -478,7 +478,10 @@ export class PostgresNextLessonActionStore implements NextLessonActionStore {
           { currentVersion: current.version }
         );
       }
-      if (current.expiresAt && new Date(current.expiresAt).getTime() <= Date.now()) {
+      if (
+        current.expiresAt &&
+        new Date(current.expiresAt).getTime() <= new Date(now).getTime()
+      ) {
         throw new DomainConflictError(
           "NEXT_LESSON_ACTION_EXPIRED",
           "该行动候选已过期，请重新生成。"

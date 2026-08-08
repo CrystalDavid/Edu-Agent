@@ -104,8 +104,12 @@ export function ReflectionAgentPage(props: {
   const [error, setError] = useState<string | null>(null);
 
   const activeRevision = reflection?.currentDraft ?? reflection?.currentConfirmed ?? null;
-  const sourceLesson = lessons.find((item) => item.lessonRef === activeRevision?.lessonRef) ?? null;
-  const targetLesson = lessons.find((item) => item.lessonRef === targetLessonRef) ?? null;
+  const targetLessonOptions = lessons
+    .filter((item) => item.lessonRef !== activeRevision?.lessonRef)
+    .map((lesson) => ({
+      value: lesson.lessonRef,
+      label: `${lesson.sequence}. ${lesson.title}`
+    }));
 
   async function refresh() {
     setError(null);
@@ -161,7 +165,10 @@ export function ReflectionAgentPage(props: {
   useEffect(() => {
     if (!activeRevision || lessons.length === 0) return;
     const currentIndex = lessons.findIndex((item) => item.lessonRef === activeRevision.lessonRef);
-    setTargetLessonRef((current) => current || lessons[currentIndex + 1]?.lessonRef || activeRevision.lessonRef);
+    setTargetLessonRef((current) => {
+      if (current && current !== activeRevision.lessonRef) return current;
+      return lessons[currentIndex + 1]?.lessonRef ?? "";
+    });
   }, [activeRevision?.lessonRef, lessons]);
 
   useEffect(() => {
@@ -519,7 +526,7 @@ export function ReflectionAgentPage(props: {
             {reflection.currentConfirmed ? (
               <Card className="workspace-card reflection-follow-up-card" variant="borderless" title="把复盘变成下一步" data-testid="reflection-follow-ups">
                 <Paragraph type="secondary">系统只会生成可追溯候选。接受、修改或拒绝都由教师决定；生成候选不会自动创建任何任务。</Paragraph>
-                <label className="reflection-target-lesson">目标课时<Select<string> value={targetLessonRef || null} placeholder="选择下一课" onChange={setTargetLessonRef} options={lessons.map((lesson) => ({ value: lesson.lessonRef, label: `${lesson.sequence}. ${lesson.title}` }))} /></label>
+                <label className="reflection-target-lesson">目标课时<Select<string> value={targetLessonRef || null} placeholder="选择下一课" onChange={setTargetLessonRef} options={targetLessonOptions} /></label>
                 <label>补充要求（可选）<Input.TextArea rows={2} value={nextActionAdjustment} onChange={(event) => setNextActionAdjustment(event.target.value)} placeholder="例如：下一课减少讨论，先用两个基础例题巩固" /></label>
                 <Space wrap>
                   <Button type="primary" loading={acting} disabled={!targetLessonRef} onClick={() => void generateActions()} data-testid="generate-next-lesson-actions">

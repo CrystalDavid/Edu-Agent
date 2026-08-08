@@ -65,6 +65,12 @@ export class NextLessonOptimizationSourceAdapter
           teacherRef: context.actorRef
         })
       ]);
+    if (sourceLesson.lessonRef === targetLesson.lessonRef) {
+      throw new DomainConflictError(
+        "NEXT_LESSON_TARGET_REQUIRED",
+        "请选择当前课时之后的目标课时。"
+      );
+    }
     if (
       sourceLesson.courseRunRef !== confirmed.courseRunRef ||
       targetLesson.courseRunRef !== confirmed.courseRunRef ||
