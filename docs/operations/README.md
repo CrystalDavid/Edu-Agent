@@ -12,7 +12,7 @@
 | PostgreSQL | `127.0.0.1:55432` | Docker Compose，长期开发 Volume |
 | LocalObjectStore | `.local-data/object-store` | 仓库根部的 Git ignored 本机目录，跨重启保留 |
 
-完整操作和产品验收见 [本机运行指南](operations/local-environment.md)。
+完整操作和产品验收见 [本机运行指南](local-environment.md)。
 
 ## 生命周期命令
 
@@ -52,6 +52,6 @@ corepack pnpm app:down     # 关闭容器，保留 Volume
 
 ## Gate 2.10B 边界
 
-云部署、正式 OIDC、托管 PostgreSQL/ObjectStore、Secret Manager、TLS、监控、告警、备份恢复、远程 E2E、容量和发布 Runbook 尚未开始。详细差距和退出条件见 [部署准备差距](operations/deployment-readiness-gaps.md)，未来顺序见 [后续路线](roadmap.md)。
+云部署、正式 OIDC、托管 PostgreSQL/ObjectStore、Secret Manager、TLS、监控、告警、备份恢复、远程 E2E、容量和发布 Runbook 尚未开始。详细差距和退出条件见 [部署准备差距](deployment-readiness-gaps.md)，未来顺序见 [后续路线](../roadmap.md)。
 
 仓库当前没有可执行的云部署资产，因此不保留 `deploy/` 占位目录。未来只有在出现经过评审、能够被验证的部署清单或基础设施代码时，才根据实际平台建立部署目录；仅有计划和差距说明时继续维护在 `docs/operations/`。

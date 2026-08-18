@@ -15,8 +15,7 @@ export const appRoutes = [
   "/evidence",
   "/copilot",
   "/teaching-plan",
-  "/runs",
-  "/style-guide"
+  "/runs"
 ] as const;
 
 export type AppRoute = (typeof appRoutes)[number];
@@ -185,7 +184,8 @@ export function useAppRoute(): {
   }) => void;
   navigatePreparation: (
     preparationTaskRef: string,
-    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs",
+    prompt?: string
   ) => void;
 } {
   const [location, setLocation] = useState<ParsedRoute>(() =>
@@ -362,11 +362,15 @@ export function useAppRoute(): {
     },
     navigatePreparation(
       preparationTaskRef,
-      destination = "/agent"
+      destination = "/agent",
+      prompt
     ) {
-      const path = `${destination}/tasks/${encodeURIComponent(
+      const canonicalPath = `${destination}/tasks/${encodeURIComponent(
         preparationTaskRef
       )}`;
+      const search = new URLSearchParams();
+      if (prompt?.trim()) search.set("prompt", prompt.trim());
+      const path = `${canonicalPath}${search.size > 0 ? `?${search.toString()}` : ""}`;
       pushPath(path);
       setLocation({
         route: destination,
@@ -376,7 +380,7 @@ export function useAppRoute(): {
         lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
-        canonicalPath: path
+        canonicalPath
       });
       window.scrollTo({ top: 0, behavior: "instant" });
     }

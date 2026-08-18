@@ -1,4 +1,4 @@
-import { Avatar } from "antd";
+import { useState } from "react";
 
 import { cleanDisplayText } from "../../presentation";
 
@@ -8,17 +8,30 @@ export function TeacherAvatar(props: {
   className?: string;
 }) {
   const displayName = cleanDisplayText(props.displayName) || "教师";
-  const imageSource = displayName === "林老师"
-    ? "/images/teacher-lin-avatar.png"
-    : undefined;
+  const [imageFailed, setImageFailed] = useState(false);
+  const baseUrl = import.meta.env.BASE_URL.endsWith("/")
+    ? import.meta.env.BASE_URL
+    : `${import.meta.env.BASE_URL}/`;
+  const imageSource = `${baseUrl}images/teacher-lin-avatar-anime.png`;
+  const size = props.size ?? 40;
+  const className = ["teacher-avatar", props.className].filter(Boolean).join(" ");
 
   return (
-    <Avatar
-      size={props.size ?? 40}
-      className={props.className ?? "teacher-avatar"}
-      {...(imageSource ? { src: imageSource } : {})}
+    <span
+      className={className}
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label={`${displayName}的头像`}
     >
-      {displayName.slice(0, 1)}
-    </Avatar>
+      {imageFailed ? (
+        <span className="teacher-avatar__fallback">{displayName.slice(0, 1)}</span>
+      ) : (
+        <img
+          src={imageSource}
+          alt=""
+          onError={() => setImageFailed(true)}
+        />
+      )}
+    </span>
   );
 }

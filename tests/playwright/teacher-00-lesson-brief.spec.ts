@@ -14,7 +14,7 @@ test("Lesson Brief drives a teacher-controlled Preparation Proposal in the Lesso
 }) => {
   test.setTimeout(90_000);
   await page.goto("/teaching");
-  await page.getByTestId("unit-1").click();
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
 
   const panel = page.getByTestId("lesson-brief-panel");

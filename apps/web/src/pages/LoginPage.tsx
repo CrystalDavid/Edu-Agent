@@ -7,7 +7,41 @@ import type {
 } from "@edu-agent/contracts";
 import { Alert, Button, Input, Tabs, Typography } from "antd";
 
+import { LoginEducationNetworkDrawing } from "../components/auth/LoginEducationNetworkDrawing";
+
 type LoginMode = "password" | "sms";
+
+function LoginEducationNetworkIllustration() {
+  return (
+    <svg
+      className="login-network-svg"
+      viewBox="0 0 1024 1152"
+      role="img"
+      aria-label="教师、学生和家长协作网络插画"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <LoginEducationNetworkDrawing />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg className="login-input-icon" aria-hidden="true" viewBox="0 0 24 24">
+      <rect x="6.5" y="2.75" width="11" height="18.5" rx="2.5" />
+      <path d="M10 18h4" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg className="login-input-icon" aria-hidden="true" viewBox="0 0 24 24">
+      <rect x="4.5" y="10" width="15" height="11" rx="2.5" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14.5v2.75" />
+    </svg>
+  );
+}
 
 export function LoginPage(props: {
   provider: AuthenticationProviderAvailability | null;
@@ -90,47 +124,16 @@ export function LoginPage(props: {
   return (
     <main className="login-page" data-testid="login-page">
       <section className="login-shell">
-        <aside className="login-story" aria-label="教师工作台介绍">
-          <div className="login-logo-row">
-            <span className="login-logo-mark">EA</span>
-            <strong>教师工作台</strong>
-          </div>
-          <div className="login-story-copy">
-            <h1>让每一次教学准备，都有清晰依据</h1>
-            <p>从备课、课堂实施到课后反思，把教师的真实工作连成一条可恢复的教学闭环。</p>
-          </div>
-          <div className="login-visual" aria-hidden="true">
-            <div className="login-visual-orbit login-visual-orbit-one" />
-            <div className="login-visual-orbit login-visual-orbit-two" />
-            <div className="login-visual-main-card">
-              <span className="login-visual-label">今日教学</span>
-              <strong>一次函数 · 斜率与图像变化</strong>
-              <div className="login-visual-progress"><span /></div>
-              <small>计划、证据与反思保持同步</small>
-            </div>
-            <div className="login-visual-float login-visual-float-plan">
-              <span>✓</span>
-              <div><strong>教学计划</strong><small>教师已批准</small></div>
-            </div>
-            <div className="login-visual-float login-visual-float-evidence">
-              <span>↗</span>
-              <div><strong>学习证据</strong><small>可追溯</small></div>
-            </div>
-          </div>
-          <div className="login-story-points">
-            <span>备课协同</span>
-            <span>证据追溯</span>
-            <span>教学反思</span>
+        <aside className="login-story" aria-label="教育智能工作台介绍">
+          <div className="login-network-figure">
+            <LoginEducationNetworkIllustration />
           </div>
         </aside>
 
-        <section className="login-panel" aria-label="登录教师工作台">
+        <section className="login-panel" aria-label="登录教育智能工作台">
           <div className="login-panel-inner">
             <div className="login-heading">
               <Typography.Title level={2}>欢迎登录</Typography.Title>
-              <Typography.Text type="secondary">
-                登录后继续今天的教学工作
-              </Typography.Text>
             </div>
 
             {!props.provider ? (
@@ -147,6 +150,7 @@ export function LoginPage(props: {
               />
             ) : props.provider.mode === "oidc" ? (
               <Button
+                className="login-oidc-button"
                 data-testid="oidc-login-button"
                 type="primary"
                 size="large"
@@ -176,13 +180,14 @@ export function LoginPage(props: {
                     void submit();
                   }}
                 >
-                  <label htmlFor="login-phone">手机号</label>
                   <Input
                     id="login-phone"
                     data-testid="login-phone"
+                    aria-label="手机号"
                     size="large"
                     inputMode="numeric"
                     autoComplete="tel"
+                    prefix={<PhoneIcon />}
                     placeholder="请输入手机号"
                     value={phone}
                     onChange={(event) => updatePhone(event.target.value)}
@@ -190,31 +195,32 @@ export function LoginPage(props: {
                   />
 
                   {mode === "password" ? (
-                    <>
-                      <label htmlFor="login-password">密码</label>
-                      <Input.Password
-                        id="login-password"
-                        data-testid="login-password"
-                        size="large"
-                        autoComplete="current-password"
-                        placeholder="请输入登录密码"
-                        value={password}
-                        onChange={(event) => {
-                          setPassword(event.target.value);
-                          setError(null);
-                        }}
-                      />
-                    </>
+                    <Input.Password
+                      id="login-password"
+                      data-testid="login-password"
+                      aria-label="密码"
+                      size="large"
+                      autoComplete="current-password"
+                      prefix={<LockIcon />}
+                      placeholder="请输入登录密码"
+                      value={password}
+                      visibilityToggle={false}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setError(null);
+                      }}
+                    />
                   ) : (
                     <>
-                      <label htmlFor="login-code">验证码</label>
                       <div className="login-code-row">
                         <Input
                           id="login-code"
                           data-testid="login-code"
+                          aria-label="验证码"
                           size="large"
                           inputMode="numeric"
                           autoComplete="one-time-code"
+                          prefix={<LockIcon />}
                           placeholder="请输入 6 位验证码"
                           value={code}
                           onChange={(event) => {
@@ -244,6 +250,11 @@ export function LoginPage(props: {
                       ) : null}
                     </>
                   )}
+
+                  <div className="login-form-meta">
+                    <span>首次使用可直接登录</span>
+                    <span>{mode === "password" ? "忘记密码?" : "收不到验证码?"}</span>
+                  </div>
 
                   {error ? (
                     <Alert

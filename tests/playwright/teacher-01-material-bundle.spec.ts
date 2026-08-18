@@ -19,13 +19,17 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
 }) => {
   test.setTimeout(90_000);
   await page.goto("/teaching");
-  await page.getByTestId("unit-1").click();
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
+  await page
+    .getByTestId("lesson-stage-overview")
+    .getByRole("button", { name: /上课/u })
+    .click();
 
-  const panel = page.getByTestId("material-bundle-panel");
+  const panel = page.getByTestId("class-materials-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toContainText("本课材料");
-  await panel.getByTestId("generate-material-bundle").click();
+  await expect(panel).toContainText("本课课堂资源");
+  await panel.getByTestId("generate-class-materials").click();
 
   await expect.poll(async () => {
     const response = await page.request.get(
@@ -38,16 +42,16 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   }).toBeGreaterThanOrEqual(4);
 
   const board = panel.getByTestId("material-item-board_design");
-  await expect(board).toContainText("待教师采用");
+  await expect(board).toContainText("待确认");
   const initialBundle = await loadBundle(page);
   const initialBoard = requiredBoard(initialBundle);
 
-  await board.getByRole("button", { name: /预\s*览/u }).click();
+  await board.getByRole("button", { name: "查看" }).click();
   const adjustmentPreview = page.getByRole("dialog").filter({ hasText: "板书设计" });
   await adjustmentPreview.getByPlaceholder(/第二题简单一点/u).fill(
     "板书减少一些内容，只保留目标、关键步骤和检查。"
   );
-  await adjustmentPreview.getByRole("button", { name: "让 Agent 调整" }).click();
+  await adjustmentPreview.getByRole("button", { name: "让教学助手调整" }).click();
   await expect.poll(async () => {
     const latest = requiredBoard(await loadBundle(page));
     return latest.versionNumber;
@@ -57,7 +61,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   expect(regenerated.assetRef).toBe(initialBoard.assetRef);
   expect(regenerated.versionRef).not.toBe(initialBoard.versionRef);
 
-  await board.getByRole("button", { name: /预\s*览/u }).click();
+  await board.getByRole("button", { name: "查看" }).click();
   const preview = page.getByRole("dialog").filter({ hasText: "板书设计" });
   await expect(preview).toBeVisible();
   await expect(preview.locator("pre")).toContainText(
@@ -66,7 +70,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   await preview.getByRole("button", { name: /关\s*闭/u }).click();
 
   const download = page.waitForEvent("download");
-  await board.getByRole("button", { name: /下\s*载/u }).click();
+  await board.getByRole("button", { name: "下载" }).click();
   expect((await download).suggestedFilename()).toMatch(/\.md$/u);
 
   await board.getByTestId("adopt-material-board_design").click();

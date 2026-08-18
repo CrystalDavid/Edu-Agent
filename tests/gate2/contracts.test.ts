@@ -63,8 +63,7 @@ describe("Gate 2 UI and domain contracts", () => {
       "/evidence",
       "/copilot",
       "/teaching-plan",
-      "/runs",
-      "/style-guide"
+      "/runs"
     ]);
   });
 

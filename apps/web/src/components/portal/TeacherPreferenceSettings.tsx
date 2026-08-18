@@ -4,7 +4,7 @@ import type {
   MemoryCandidateView,
   TeacherPersonalizationState
 } from "@edu-agent/contracts";
-import { Alert, Button, Empty, Input, Space, Tag, Typography } from "antd";
+import { Alert, Button, Empty, Input, Select, Space, Tag } from "antd";
 
 import {
   createMemoryCandidate,
@@ -74,17 +74,10 @@ export function TeacherPreferenceSettings(props: {
   return (
     <div className="teacher-preference-settings" data-testid="teacher-preference-settings">
       {error ? <Alert type="error" showIcon message={error} /> : null}
-      <Alert
-        type="info"
-        showIcon
-        message="由您决定 Agent 可以长期使用哪些偏好"
-        description="候选偏好在确认前不会进入模型上下文；撤销后会立即停止使用，同时保留必要的审计历史。"
-      />
-
       <section>
-        <h3>待您确认</h3>
+        <h3>需要确认</h3>
         {draftCandidates.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={loading ? "加载中" : "暂无待确认偏好"} />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={loading ? "加载中" : "暂无记录"} />
         ) : (
           <div className="settings-list">
             {draftCandidates.map((candidate) => (
@@ -105,7 +98,7 @@ export function TeacherPreferenceSettings(props: {
                     purpose: "personalization.candidate.reject",
                     idempotencyKey: `ui-preference-reject-${crypto.randomUUID()}`
                   });
-                  props.onAction("偏好候选已忽略，不会进入 Agent 上下文。");
+                  props.onAction("偏好候选已忽略，不会影响后续建议。");
                 })}
               />
             ))}
@@ -114,9 +107,9 @@ export function TeacherPreferenceSettings(props: {
       </section>
 
       <section>
-        <h3>已确认偏好</h3>
+        <h3>已保存</h3>
         {activePreferences.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未确认长期偏好" />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无记录" />
         ) : (
           <div className="settings-list">
             {activePreferences.map((preference) => {
@@ -125,7 +118,6 @@ export function TeacherPreferenceSettings(props: {
                 <article className="settings-row" key={preference.preferenceRef} data-testid={`preference-${preference.preferenceRef}`}>
                   <span>
                     <strong>{preferenceLabel(preference.preferenceKey)}</strong>
-                    <small>确认后可用于备课建议 · 版本 {preference.version}</small>
                   </span>
                   <Space wrap>
                     <Input
@@ -162,7 +154,7 @@ export function TeacherPreferenceSettings(props: {
                           purpose: "personalization.preference.revoke",
                           idempotencyKey: `ui-preference-revoke-${crypto.randomUUID()}`
                         });
-                        props.onAction("偏好已撤销，Agent 将不再使用它。");
+                        props.onAction("偏好已撤销，助手将不再使用它。");
                       })}
                     >删除并撤销</Button>
                   </Space>
@@ -174,12 +166,14 @@ export function TeacherPreferenceSettings(props: {
       </section>
 
       <section>
-        <h3>手动记录偏好</h3>
-        <Typography.Paragraph type="secondary">
-          手动记录也先形成候选，仍需您再次确认后才会用于 Agent。
-        </Typography.Paragraph>
+        <h3>添加偏好</h3>
         <Space direction="vertical" style={{ width: "100%" }}>
-          <Input value={draftKey} onChange={(event) => setDraftKey(event.target.value)} placeholder="偏好类型，例如 lesson_plan_detail" />
+          <Select
+            aria-label="偏好类型"
+            value={draftKey}
+            onChange={setDraftKey}
+            options={Object.entries(preferenceLabels).map(([value, label]) => ({ value, label }))}
+          />
           <Input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="偏好内容，例如 简洁、突出课堂案例" />
           <Input.TextArea value={draftSummary} onChange={(event) => setDraftSummary(event.target.value)} placeholder="为什么记录这条偏好" autoSize={{ minRows: 2, maxRows: 4 }} />
           <Button
@@ -198,13 +192,13 @@ export function TeacherPreferenceSettings(props: {
               setDraftSummary("");
               props.onAction("偏好候选已记录，请确认后再启用。");
             })}
-          >记录候选</Button>
+          >添加</Button>
         </Space>
       </section>
 
       {revokedPreferences.length > 0 ? (
         <section>
-          <h3>已撤销</h3>
+          <h3>已删除</h3>
           <Space wrap>
             {revokedPreferences.map((preference) => (
               <Tag key={preference.preferenceRef}>{preferenceLabel(preference.preferenceKey)}：{preference.preferenceValue}</Tag>
@@ -236,5 +230,5 @@ function CandidateRow(props: {
 }
 
 function preferenceLabel(key: string): string {
-  return preferenceLabels[key] ?? key.replaceAll("_", " ");
+  return preferenceLabels[key] ?? "自定义偏好";
 }

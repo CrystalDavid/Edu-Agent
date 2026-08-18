@@ -413,7 +413,7 @@ export function ReflectionAgentPage(props: {
     <div className="portal-page reflection-agent-page" data-testid="reflection-agent-page">
       <PageHeader
         title="课后反思"
-        subtitle="教学助手只整理教师明确选择的课堂事实；草稿仍需教师修改和确认"
+        subtitle="助手只整理教师明确选择的课堂事实；草稿仍需教师修改和确认"
         actions={<Button onClick={() => activeRevision ? props.navigateLesson(activeRevision.lessonRef) : props.navigate("/teaching")}>返回课时</Button>}
       />
       {error ? <Alert type="error" showIcon title="课后反思流程未能继续" description={error} closable onClose={() => setError(null)} /> : null}
@@ -434,7 +434,7 @@ export function ReflectionAgentPage(props: {
                   <Divider />
                   <Space wrap>
                     <Tag color={execution.status === "succeeded" ? "success" : "processing"}>{modelExecutionStatusLabel(execution.status)}</Tag>
-                    <Tag>{execution.provider === "volcengine-ark" ? "豆包教学助手" : "教学助手"}</Tag>
+                    <Tag>{execution.provider === "volcengine-ark" ? "豆包助手" : "助手"}</Tag>
                     <Tag>反思模板第 {execution.promptBundleVersion} 版</Tag>
                   </Space>
                   <Paragraph>本次授权范围已封存，可在运行记录中查看技术详情。</Paragraph>
@@ -449,10 +449,10 @@ export function ReflectionAgentPage(props: {
 
             <Card className="workspace-card" variant="borderless" title="课后反思草稿" data-testid="reflection-draft-editor">
               {reflection.currentConfirmed ? (
-                <Alert type="success" showIcon title="教师已确认课后反思" description={`当前为第 ${reflection.currentConfirmed.revisionNumber} 版；原教学计划没有被修改。`} />
+                <Alert type="success" showIcon title="课后反思已完成" />
               ) : (
-                <div className="reflection-adjustment">
-                  <label>一句话告诉教学助手需要关注或调整什么<Input.TextArea id="reflection-adjustment-input" rows={2} value={teacherNotes} onChange={(event) => setTeacherNotes(event.target.value)} placeholder="例如：学生对概念基本掌握，但应用题迁移仍不稳定" /></label>
+                <div className="reflection-adjustment ai-task-composer">
+                  <label>告诉 Agent 需要关注什么<Input.TextArea className="ai-task-input" id="reflection-adjustment-input" autoSize={{ minRows: 1, maxRows: 5 }} value={teacherNotes} onChange={(event) => setTeacherNotes(event.target.value)} placeholder="例如：学生对概念基本掌握，但应用题迁移仍不稳定" /></label>
                   <Space wrap>
                     <Button type="primary" loading={acting || reflection.generationStatus === "generating"} disabled={reflection.generationStatus === "generating"} onClick={() => void runGeneration()} data-testid="generate-reflection">
                       {reflection.generationStatus === "generating" ? "正在整理本节课" : reflection.currentDraft?.sourceAgentRunRef ? "按这句话重新整理" : "生成本节课复盘"}
@@ -465,18 +465,18 @@ export function ReflectionAgentPage(props: {
               {reflection.currentDraft && draftContent ? (
                 <>
                   <Divider />
-                  <Space wrap><Tag color="processing">草稿第 {reflection.currentDraft.revisionNumber} 版</Tag><Tag>{reflection.currentDraft.sourceAgentRunRef ? "教学助手整理" : "教师创建"}</Tag><Tag>等待教师判断</Tag></Space>
+                  <Space wrap><Tag color="processing">草稿第 {reflection.currentDraft.revisionNumber} 版</Tag><Tag>{reflection.currentDraft.sourceAgentRunRef ? "助手整理" : "教师创建"}</Tag><Tag>等待教师判断</Tag></Space>
 
                   <div className="reflection-review-grid">
                     <section className="reflection-review-section reflection-review-section--facts" data-testid="reflection-facts">
                       <header><span>01</span><div><h3>发生了什么</h3><small>仅整理已确认课堂记录、观察和已选择 Evidence</small></div></header>
                       <p>{draftContent.plannedVsImplemented}</p>
                       {draftContent.observationSummary.length > 0 ? <ul>{draftContent.observationSummary.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="reflection-empty-copy">本次没有选择课堂观察。</p>}
-                      <small>来源：confirmed Delivery · {reflection.currentDraft.observationRevisionRefs.length} 条 confirmed Observation · {reflection.currentDraft.assignmentEvidenceRefs.length} 条 selected Evidence</small>
+                      <small>依据：已确认课堂记录 · {reflection.currentDraft.observationRevisionRefs.length} 条教师确认观察 · {reflection.currentDraft.assignmentEvidenceRefs.length} 条教师选择的作业证据</small>
                     </section>
 
                     <section className="reflection-review-section reflection-review-section--meaning" data-testid="reflection-interpretation">
-                      <header><span>02</span><div><h3>这意味着什么</h3><small>以下是教学助手的解释，不是新增课堂事实</small></div></header>
+                      <header><span>02</span><div><h3>这意味着什么</h3><small>以下是助手的解释，不是新增课堂事实</small></div></header>
                       <p>{draftContent.objectiveAttainment}</p>
                       {[...draftContent.effectiveMoves, ...draftContent.ineffectiveMoves, ...draftContent.evidenceAlignment].length > 0 ? <ul>{[...draftContent.effectiveMoves, ...draftContent.ineffectiveMoves, ...draftContent.evidenceAlignment].map((item) => <li key={item}>{item}</li>)}</ul> : null}
                       {draftContent.uncertainties.length > 0 ? <div className="reflection-uncertainties"><strong>仍不确定</strong>{draftContent.uncertainties.map((item) => <p key={item}>{item}</p>)}</div> : null}
@@ -489,7 +489,7 @@ export function ReflectionAgentPage(props: {
                   </div>
 
                   <div className="reflection-decision-bar" data-testid="reflection-teacher-decision">
-                    <div><strong>请判断这份复盘</strong><small>只有“准确”会确认 Reflection；其余操作都保留草稿状态。</small></div>
+                    <div><strong>请判断这份复盘</strong><small>只有“准确”会确认课后反思；其余操作都保留草稿状态。</small></div>
                     <Space wrap>
                       <Popconfirm title="确认事实与复盘准确？" description="确认后不可原地覆盖，也不会自动修改教学计划或创建后续任务。" onConfirm={() => void confirmDraft()}>
                         <Button type="primary" loading={acting} data-testid="confirm-reflection">准确，确认反思</Button>
@@ -524,10 +524,9 @@ export function ReflectionAgentPage(props: {
             </Card>
 
             {reflection.currentConfirmed ? (
-              <Card className="workspace-card reflection-follow-up-card" variant="borderless" title="把复盘变成下一步" data-testid="reflection-follow-ups">
-                <Paragraph type="secondary">系统只会生成可追溯候选。接受、修改或拒绝都由教师决定；生成候选不会自动创建任何任务。</Paragraph>
+              <Card className="workspace-card reflection-follow-up-card" variant="borderless" title="下一课" data-testid="reflection-follow-ups">
                 <label className="reflection-target-lesson">目标课时<Select<string> value={targetLessonRef || null} placeholder="选择下一课" onChange={setTargetLessonRef} options={targetLessonOptions} /></label>
-                <label>补充要求（可选）<Input.TextArea rows={2} value={nextActionAdjustment} onChange={(event) => setNextActionAdjustment(event.target.value)} placeholder="例如：下一课减少讨论，先用两个基础例题巩固" /></label>
+                <label className="ai-task-composer">补充要求（可选）<Input.TextArea className="ai-task-input" autoSize={{ minRows: 1, maxRows: 5 }} value={nextActionAdjustment} onChange={(event) => setNextActionAdjustment(event.target.value)} placeholder="例如：下一课减少讨论，先用两个基础例题巩固" /></label>
                 <Space wrap>
                   <Button type="primary" loading={acting} disabled={!targetLessonRef} onClick={() => void generateActions()} data-testid="generate-next-lesson-actions">
                     {nextActions.length > 0 ? "重新生成优化建议" : "生成下一课优化建议"}

@@ -26,12 +26,12 @@ type PortalRoute =
   | "/settings";
 
 const navigation: NavigationItem[] = [
-  { route: "/overview", label: "概览", icon: "workspace" },
+  { route: "/overview", label: "首页", icon: "workspace" },
   { route: "/schedule", label: "日程", icon: "schedule" },
-  { route: "/teaching", label: "教学", icon: "course" },
-  { route: "/students", label: "学生", icon: "students" },
-  { route: "/files", label: "文件", icon: "files" },
-  { route: "/agent", label: "Agent", icon: "agent" }
+  { route: "/teaching", label: "课程", icon: "course" },
+  { route: "/students", label: "学情", icon: "students" },
+  { route: "/files", label: "资料", icon: "files" },
+  { route: "/agent", label: "助手", icon: "agent" }
 ];
 
 const profileItems: Array<{
@@ -40,10 +40,9 @@ const profileItems: Array<{
   icon: WorkspaceIconName;
 }> = [
   { label: "个人信息", section: "profile", icon: "user" },
-  { label: "账号和学校", section: "identity", icon: "lock" },
-  { label: "角色与课程", section: "workspace", icon: "workspace" },
+  { label: "账号和学校", section: "identity", icon: "organization" },
+  { label: "助手偏好", section: "personalization", icon: "agent" },
   { label: "隐私与数据", section: "privacy", icon: "lock" },
-  { label: "系统状态", section: "system", icon: "settings" }
 ];
 
 function activeRoute(route: AppRoute): PortalRoute | null {
@@ -51,7 +50,8 @@ function activeRoute(route: AppRoute): PortalRoute | null {
   if (route === "/courses" || route === "/assignments" || route === "/goals" || route === "/teaching-plan") return "/teaching";
   if (route === "/evidence") return "/students";
   if (route === "/copilot") return "/agent";
-  if (route === "/runs" || route === "/style-guide") return "/settings";
+  if (route === "/settings") return "/settings";
+  if (route === "/runs") return "/settings";
   return navigation.some((item) => item.route === route) ? (route as PortalRoute) : null;
 }
 export function TeacherSidebar(props: {
@@ -91,7 +91,7 @@ export function TeacherSidebar(props: {
 
   return (
     <aside className="teacher-sidebar" aria-label="普通教师端主导航">
-      <div className="teacher-sidebar__identity" ref={profileRef}>
+      <div className="teacher-sidebar__identity teacher-sidebar__identity--top" ref={profileRef}>
         <button
           data-testid="teacher-profile-trigger"
           type="button"
@@ -100,11 +100,7 @@ export function TeacherSidebar(props: {
           aria-haspopup="menu"
           onClick={() => setProfileOpen((value) => !value)}
         >
-          <TeacherAvatar displayName={teacherName} size={46} />
-          <span>
-            <strong>{teacherName}</strong>
-            <small>{schoolName}</small>
-          </span>
+          <TeacherAvatar displayName={teacherName} size={44} />
         </button>
         {profileOpen ? (
           <TeacherProfileMenu
@@ -125,27 +121,25 @@ export function TeacherSidebar(props: {
           <button
             type="button"
             key={item.route}
+            aria-label={item.label}
+            title={item.label}
+            data-label={item.label}
             className={current === item.route ? "is-active" : ""}
             aria-current={current === item.route ? "page" : undefined}
             onClick={() => props.onNavigate(item.route)}
           >
-            <WorkspaceIcon name={item.icon} />
-            <span>{item.label}</span>
+            <span className="teacher-nav-icon">
+              <WorkspaceIcon
+                name={item.icon}
+                variant="filled"
+                className={`workspace-icon workspace-icon--${item.icon}`}
+              />
+            </span>
+            <span className="teacher-nav-label">{item.label}</span>
           </button>
         ))}
       </nav>
 
-      <div className="teacher-sidebar__footer">
-        <button
-          type="button"
-          className="teacher-settings-shortcut"
-          onClick={() => openSettings()}
-          aria-label="打开设置"
-        >
-          <WorkspaceIcon name="settings" />
-          <span>设置</span>
-        </button>
-      </div>
     </aside>
   );
 }
@@ -195,7 +189,11 @@ export function TeacherProfileMenu(props: {
             key={item.section}
             onClick={() => props.onSelect(item.section)}
           >
-            <WorkspaceIcon name={item.icon} />
+            <WorkspaceIcon
+              name={item.icon}
+              variant="profile"
+              className={`workspace-icon workspace-icon--profile-${item.icon}`}
+            />
             <span>{item.label}</span>
           </button>
         ))}

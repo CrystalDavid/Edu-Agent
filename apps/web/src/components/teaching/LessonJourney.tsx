@@ -3,7 +3,7 @@ import type {
   LessonJourneyStage,
   LessonView
 } from "@edu-agent/contracts";
-import { Button, Tag, Typography } from "antd";
+import { Typography } from "antd";
 
 import { WorkspaceIcon } from "../WorkspaceIcon";
 
@@ -28,11 +28,11 @@ const stageLabels: Record<LessonJourneyStage, string> = {
 };
 
 const statusLabels: Record<LessonJourneyProjection["status"], string> = {
-  ready: "可以开始",
+  ready: "未完成",
   in_progress: "进行中",
-  waiting_for_agent: "系统准备中",
-  waiting_for_teacher: "等待老师判断",
-  needs_attention: "需要处理",
+  waiting_for_agent: "进行中",
+  waiting_for_teacher: "进行中",
+  needs_attention: "未完成",
   completed: "已完成"
 };
 
@@ -45,61 +45,15 @@ export function LessonContextHeader(props: {
   return (
     <header className="lesson-context-header" data-testid="lesson-context-header">
       <div>
-        <Text className="section-kicker">
-          {props.courseTitle}
-          {props.unitTitle ? ` · ${props.unitTitle}` : ""}
-        </Text>
         <Title level={2}>{props.lesson.title}</Title>
         <Paragraph type="secondary">
-          第 {props.lesson.sequence} 课时 · {props.lesson.durationMinutes} 分钟
+          {props.courseTitle} · 第 {props.lesson.sequence} 课时 · {props.lesson.durationMinutes} 分钟
           {props.lesson.plannedAt
             ? ` · ${formatLessonTime(props.lesson.plannedAt)}`
             : ""}
         </Paragraph>
       </div>
-      <Tag className={`journey-status-tag is-${props.journey.status}`}>
-        {statusLabels[props.journey.status]}
-      </Tag>
     </header>
-  );
-}
-
-export function LessonNextBestActionCard(props: {
-  journey: LessonJourneyProjection;
-  loading?: boolean;
-  onAction: () => void;
-}) {
-  return (
-    <section
-      className={`lesson-next-action is-${props.journey.status}`}
-      data-testid="lesson-next-best-action"
-    >
-      <div className="lesson-next-action__icon" aria-hidden="true">
-        <WorkspaceIcon
-          name={props.journey.status === "needs_attention" ? "warning" : "insight"}
-        />
-      </div>
-      <div className="lesson-next-action__copy">
-        <Text className="section-kicker">现在需要老师决定</Text>
-        <Title level={3}>{props.journey.nextBestAction.label}</Title>
-        <Paragraph>{props.journey.nextBestAction.reason}</Paragraph>
-        {props.journey.blockingReasons.length > 0 ? (
-          <ul>
-            {props.journey.blockingReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-      <Button
-        type="primary"
-        size="large"
-        loading={Boolean(props.loading)}
-        onClick={props.onAction}
-      >
-        {props.journey.nextBestAction.label}
-      </Button>
-    </section>
   );
 }
 

@@ -62,4 +62,4 @@
 
 Phase 7A 已将 Phase 6 的 MemoryCandidate/TeacherPreference 边界产品化：新增前向 Migration、PostgreSQL Adapter、服务端会话授权 API 和教师设置界面。Context manifest 摘要随 AgentRun 持久化，只使用当前 tenant/teacher 的 active confirmed preference；撤销即时生效，历史 revision 保留。
 
-相关文档：[完整版本历史](version-history.md) · [当前架构](architecture.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)
+相关文档：[完整版本历史](version-history.md) · [当前架构](architecture/README.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)

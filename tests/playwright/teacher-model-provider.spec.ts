@@ -31,7 +31,7 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
   const monitor = monitorPage(page);
   await setFakeArkScenario(request, "timeout");
   await page.goto("/teaching");
-  await page.getByTestId("unit-1").click();
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
   await page.getByTestId("start-lesson-preparation").click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);

@@ -16,7 +16,7 @@ const labels: Record<SemanticKind, string> = {
   estimate: "状态估计",
   suggestion: "建议草稿",
   artifact: "内容版本",
-  mock: "教学助手"
+  mock: "助手"
 };
 
 export function SemanticTag(props: {

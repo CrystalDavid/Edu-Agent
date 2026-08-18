@@ -54,8 +54,8 @@
 | 权限、事务、幂等、审计 | 规范上确立 ActingContext/ActionIntent、AuthorizationDecision、Audit、Outbox、模块所有权；首轮代码只实现最小验证面。 |
 | 测试与验收 | 根提交带 Architecture、Ingress、Walking Skeleton、PGlite 和 Node smoke 测试；没有独立人工验收记录。 |
 | 已实现 / 未实现 | 已建立仓库、工具链和架构骨架；真实 PostgreSQL Adapter、产品闭环、真实模型、文件、身份均未完成。 |
-| 后续修正 | Gate 1B 完成真实 PostgreSQL；后续 Gate 逐步把早期 ADR 的一部分转成产品代码。当前实现以 [当前架构](architecture.md) 为准。 |
-| 主要文档 | [v0.3 红队审查](history/research/教育智能体平台架构红队审查与v0.3建议.md)、[v0.3.1 修订](history/research/教育智能体平台v0.3.1架构修订.md)、[v0.3.2 修订](history/research/教育智能体平台v0.3.2架构修订.md)、[v0.3.2 ADR 包](adr/教育智能体平台v0.3.2勘误与adr包.md)。 |
+| 后续修正 | Gate 1B 完成真实 PostgreSQL；后续 Gate 逐步把早期 ADR 的一部分转成产品代码。当前实现以 [当前架构](architecture/README.md) 为准。 |
+| 主要文档 | [v0.3 红队审查](history/research/教育智能体平台架构红队审查与v0.3建议.md)、[v0.3.1 修订](history/research/教育智能体平台v0.3.1架构修订.md)、[v0.3.2 修订](history/research/教育智能体平台v0.3.2架构修订.md)、[v0.3.2 ADR 包](history/architecture/education-platform-v0.3.2-adr-bundle.md)。 |
 
 ### 1. Gate 1A — 七模块无 LLM Walking Skeleton
 

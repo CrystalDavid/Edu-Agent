@@ -31,7 +31,7 @@ Edu-Agent 当前具备可运行、可持久化的应用基线，但尚未完成�
 - Production 缺少 OIDC、Secure Cookie 或 Provider 配置时必须拒绝启动，不能静默回 Local/Mock/Demo。
 - 上传文件受大小、类型、hash、tenant key 和授权下载边界约束；当前 LocalObjectStore 仅用于本机环境和匿名样例数据。
 
-更完整的当前架构见 [docs/architecture.md](docs/architecture.md)，生产前差距见 [docs/operations/deployment-readiness-gaps.md](docs/operations/deployment-readiness-gaps.md)。
+更完整的当前架构见 [当前架构](docs/architecture/README.md)，生产前差距见 [部署准备差距](docs/operations/deployment-readiness-gaps.md)。
 
 ## 本地数据和测试隔离
 

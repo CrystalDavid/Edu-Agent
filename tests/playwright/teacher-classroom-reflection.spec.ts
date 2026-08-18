@@ -34,8 +34,12 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
 
   await page.goto(`/teaching/lessons/${encodeURIComponent(lessonRef)}`);
   await expect(page.getByTestId("lesson-detail")).toContainText("斜率与图像变化");
+  await page
+    .getByTestId("lesson-stage-overview")
+    .getByRole("button", { name: /课后/u })
+    .click();
   const classroom = page.getByTestId("classroom-reflection-panel");
-  await expect(classroom).toContainText("已批准教学计划仍然只是计划");
+  await expect(classroom).toContainText("老师确认的教学方案仍然只是课前方案");
 
   const quickFeedback = page.getByTestId("quick-classroom-feedback");
   await expect(quickFeedback).toBeVisible();
@@ -141,7 +145,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await expect(page.getByTestId("reflection-facts")).toContainText("发生了什么");
   await expect(page.getByTestId("reflection-interpretation")).toContainText("教学助手的解释");
   await expect(page.getByTestId("reflection-action-candidates")).toContainText("候选尚未执行");
-  await expect(page.getByTestId("reflection-teacher-decision")).toContainText("只有“准确”会确认 Reflection");
+  await expect(page.getByTestId("reflection-teacher-decision")).toContainText("只有“准确”会确认课后反思");
   await page.screenshot({
     path: `${screenshotRoot}/02-layered-reflection-review.png`,
     fullPage: true,
@@ -250,6 +254,10 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
 
   await restartApi(request);
   await page.goto(`/teaching/lessons/${encodeURIComponent(lessonRef)}`);
+  await page
+    .getByTestId("lesson-stage-overview")
+    .getByRole("button", { name: /课后/u })
+    .click();
   await expect(page.getByTestId("lesson-delivery-card")).toContainText("教师已确认", { timeout: 20_000 });
   await expect(page.getByTestId("classroom-observation-card")).toContainText(observationText);
   await expect(page.getByTestId("lesson-reflection-card")).toContainText("正式反思已确认");

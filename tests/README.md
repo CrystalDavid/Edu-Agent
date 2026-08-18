@@ -13,4 +13,4 @@
 - `live/`：显式 opt-in 的真实 Provider；
 - `fixtures/`、`support/`：测试数据、Fake Ark 和 loader，不属于产品运行时。
 
-默认 `pnpm test` 排除 `postgres/` 和 `live/`；Playwright 也需单独运行。报告、结果和截图写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不在仓库根目录生成。完整矩阵见 [验证指南](../docs/validation.md)。
+默认 `pnpm test` 排除 `postgres/` 和 `live/`；Playwright 也需单独运行。报告、结果和截图写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不在仓库根目录生成。完整矩阵见 [验证指南](../docs/engineering/validation.md)。

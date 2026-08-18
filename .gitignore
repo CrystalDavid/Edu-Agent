@@ -7,7 +7,7 @@ coverage/
 playwright-report/
 playwright-report-ark/
 test-results/
-output/playwright/
+output/
 .playwright-cli/
 .pglite/
 .gate1a-data/
@@ -52,3 +52,9 @@ logs/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local browser inspection snapshots
+/assistant-final.yml
+/assistant-home-final.yml
+/assistant-task-final.yml
+/teaching-final.yml

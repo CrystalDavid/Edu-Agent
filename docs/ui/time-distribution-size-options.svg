@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="title desc">
+  <title id="title">日程与时间分布胶囊尺寸三档对比</title>
+  <desc id="desc">A 紧凑 132×36，B 标准 144×40，C 宽松 156×44。时间分布选定 A，日程主切换仍使用 B。</desc>
+  <rect width="960" height="360" rx="28" fill="#ffffff"/>
+  <text x="48" y="54" fill="#1f242b" font-family="Noto Sans SC, Microsoft YaHei, sans-serif" font-size="26" font-weight="700">日程 / 时间分布胶囊 · 三档尺寸对比</text>
+  <text x="48" y="84" fill="#8792a5" font-family="Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14">按真实 CSS 尺寸等比例放大 1.5 倍展示；时间分布使用 A，日程主切换保持 B</text>
+
+  <g transform="translate(48 116)">
+    <rect width="264" height="192" rx="22" fill="#f7f8fa" stroke="#3370ff" stroke-width="2"/>
+    <rect x="154" y="17" width="88" height="26" rx="13" fill="#e4eeff"/>
+    <text x="198" y="35" text-anchor="middle" fill="#3370ff" font-family="Noto Sans SC, sans-serif" font-size="12" font-weight="700">已选定</text>
+    <text x="20" y="34" fill="#1f242b" font-family="Nunito, Noto Sans SC, sans-serif" font-size="17" font-weight="700">A · 紧凑</text>
+    <text x="20" y="58" fill="#8792a5" font-family="Nunito, Noto Sans SC, sans-serif" font-size="13">132 × 36px</text>
+    <g transform="translate(33 90)">
+      <rect width="198" height="54" rx="27" fill="#f1f2f4"/>
+      <rect x="4.5" y="4.5" width="63" height="45" rx="22.5" fill="#ffffff"/>
+      <text x="36" y="34" text-anchor="middle" fill="#3370ff" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="700">今日</text>
+      <text x="99" y="34" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="600">本周</text>
+      <text x="164" y="34" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="18" font-weight="600">本月</text>
+    </g>
+  </g>
+
+  <g transform="translate(348 116)">
+    <rect width="264" height="192" rx="22" fill="#f7f8fa"/>
+    <text x="20" y="34" fill="#1f242b" font-family="Nunito, Noto Sans SC, sans-serif" font-size="17" font-weight="700">B · 标准</text>
+    <text x="20" y="58" fill="#8792a5" font-family="Nunito, Noto Sans SC, sans-serif" font-size="13">144 × 40px</text>
+    <g transform="translate(24 87)">
+      <rect width="216" height="60" rx="30" fill="#f1f2f4"/>
+      <rect x="4.5" y="4.5" width="69" height="51" rx="25.5" fill="#ffffff"/>
+      <text x="39" y="38" text-anchor="middle" fill="#3370ff" font-family="Noto Sans SC, sans-serif" font-size="19" font-weight="700">今日</text>
+      <text x="108" y="38" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="19" font-weight="600">本周</text>
+      <text x="179" y="38" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="19" font-weight="600">本月</text>
+    </g>
+  </g>
+
+  <g transform="translate(648 116)">
+    <rect width="264" height="192" rx="22" fill="#f7f8fa"/>
+    <text x="20" y="34" fill="#1f242b" font-family="Nunito, Noto Sans SC, sans-serif" font-size="17" font-weight="700">C · 宽松</text>
+    <text x="20" y="58" fill="#8792a5" font-family="Nunito, Noto Sans SC, sans-serif" font-size="13">156 × 44px</text>
+    <g transform="translate(15 84)">
+      <rect width="234" height="66" rx="33" fill="#f1f2f4"/>
+      <rect x="6" y="6" width="74" height="54" rx="27" fill="#ffffff"/>
+      <text x="43" y="42" text-anchor="middle" fill="#3370ff" font-family="Noto Sans SC, sans-serif" font-size="20" font-weight="700">今日</text>
+      <text x="117" y="42" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="20" font-weight="600">本周</text>
+      <text x="194" y="42" text-anchor="middle" fill="#8792a5" font-family="Noto Sans SC, sans-serif" font-size="20" font-weight="600">本月</text>
+    </g>
+  </g>
+</svg>

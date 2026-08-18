@@ -59,7 +59,7 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   await expect(calendar.getByTestId("week-calendar")).toContainText(title);
   await calendar.locator(".segmented-control").getByRole("button", { name: "月" }).click();
   await expect(calendar.getByTestId("month-calendar")).toBeVisible();
-  await expect(calendar.getByTestId("month-calendar")).toContainText("还有");
+  await expect(calendar.getByTestId("month-calendar")).not.toContainText("还有");
   await calendar.locator(".segmented-control").getByRole("button", { name: "日" }).click();
 
   await calendar.getByRole("button", { name: new RegExp(title) }).click();

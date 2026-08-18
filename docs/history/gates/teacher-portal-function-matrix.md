@@ -1,6 +1,6 @@
 # 普通教师端功能矩阵
 
-> 状态：CURRENT。当前基线为 `gate-2-10a-verified` / `main@bbba3428602bb148a3d73a201ad97fcb29181c1b`。
+> 状态：HISTORICAL。本文只保留 Gate 2.10A 当时的功能矩阵，不再作为当前产品入口。
 > `REAL` = 真实类型化 API + PostgreSQL；`MOCK` = 前端数组、组件状态或确定性模板；`READ_ONLY` = 只读演示；`DISABLED` = 明确不可操作；`DEAD` = 有入口但无响应或伪成功。
 
 | 页面 / 功能 | REAL | MOCK | READ_ONLY | DISABLED | DEAD |

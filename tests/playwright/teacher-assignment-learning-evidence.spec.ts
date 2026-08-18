@@ -114,8 +114,12 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   await page.goto("/students");
   await expect(page.getByTestId("real-student-list")).toBeVisible();
   await page.getByTestId("real-student-list").getByRole("button").first().click();
+  await page.getByRole("button", { name: "学习证据", exact: true }).click();
   await expect(page.getByTestId("learner-confirmed-evidence")).toContainText(
-    "来源：作业 → 提交 → 逐题作答 → 教师批改"
+    "老师已确认的学习证据"
+  );
+  await expect(page.getByTestId("learner-confirmed-evidence")).toContainText(
+    "来自近期作业中老师已经确认的表现"
   );
   await expect(page.locator("body")).not.toContainText("差生");
   await expect(page.locator("body")).not.toContainText("低能力学生");

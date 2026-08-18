@@ -18,12 +18,15 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
 }) => {
   await page.goto("/settings");
   await expect(page.getByTestId("settings-page")).toBeVisible();
-  await page.getByRole("button", { name: "Agent 偏好" }).click();
+  await page.getByRole("button", { name: "教学助手偏好" }).click();
   const panel = page.getByTestId("teacher-preference-settings");
   await expect(panel).toBeVisible();
 
-  await panel.getByPlaceholder("偏好类型，例如 lesson_plan_detail")
-    .fill("lesson_plan_style");
+  await panel.getByLabel("偏好类型").click();
+  await page
+    .locator(".ant-select-dropdown:visible .ant-select-item-option")
+    .filter({ hasText: "教案表达风格" })
+    .click();
   await panel.getByPlaceholder("偏好内容，例如 简洁、突出课堂案例")
     .fill("简洁");
   await panel.getByPlaceholder("为什么记录这条偏好")
@@ -43,7 +46,7 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
   await expect(preferenceInput).toHaveValue("简洁并优先使用课堂案例");
 
   await page.reload();
-  await page.getByRole("button", { name: "Agent 偏好" }).click();
+  await page.getByRole("button", { name: "教学助手偏好" }).click();
   await expect(page.getByLabel("教案表达风格的值"))
     .toHaveValue("简洁并优先使用课堂案例");
   await page.screenshot({
@@ -57,7 +60,7 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
   await expect(panel).toContainText("简洁并优先使用课堂案例");
 
   await page.reload();
-  await page.getByRole("button", { name: "Agent 偏好" }).click();
+  await page.getByRole("button", { name: "教学助手偏好" }).click();
   await expect(page.getByLabel("教案表达风格的值")).toHaveCount(0);
   await expect(page.getByTestId("teacher-preference-settings"))
     .toContainText("简洁并优先使用课堂案例");

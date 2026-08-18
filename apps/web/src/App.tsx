@@ -79,12 +79,6 @@ const TeacherSettingsPage = lazy(() =>
     default: module.TeacherSettingsPage
   }))
 );
-const TeacherStyleGuidePage = lazy(() =>
-  import("./pages/TeacherStyleGuidePage").then((module) => ({
-    default: module.TeacherStyleGuidePage
-  }))
-);
-
 // Gate 2 semantic detail pages remain reachable but are no longer primary
 // teacher navigation. This preserves the verified proposal/diff/audit flow.
 const GoalsPage = lazy(() =>
@@ -239,7 +233,7 @@ export function App() {
               <details>
                 <summary>查看启动指南</summary>
                 <p>运行 <code>corepack pnpm app:doctor</code>，再运行 <code>corepack pnpm app:dev</code>。</p>
-                <p>完整说明：<code>docs/development.md</code></p>
+                <p>完整说明：<code>docs/engineering/README.md</code></p>
               </details>
             </div>
           }
@@ -352,17 +346,17 @@ export function App() {
         }}
         onNavigate={navigate}
       />
-      <main className={`teacher-portal-main${route === "/agent" ? " teacher-portal-main--agent" : ""}`}>
+      <main className="teacher-portal-main">
         <Suspense fallback={<PageLoading />}>
           {route === "/" || route === "/overview" ? (
             <OverviewPage workspace={workspace} navigate={navigate} navigateLesson={navigateLesson} navigateFiles={navigateFiles} navigatePreparation={navigatePreparation} />
           ) : null}
           {route === "/schedule" ? <TeacherSchedulePage navigate={navigate} /> : null}
           {route === "/teaching" || route === "/courses" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateCourseOverview={() => navigate("/teaching")} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialLessonRef={lessonRef} initialTab="course" onAction={showNotice} />
           ) : null}
           {route === "/assignments" ? (
-            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialTab="homework" onAction={showNotice} />
+            <TeachingWorkspacePage navigateFiles={navigateFiles} navigateCourseOverview={() => navigate("/teaching")} navigateLesson={navigateLesson} navigatePreparation={navigatePreparation} navigateReflection={navigateReflection} initialTab="homework" onAction={showNotice} />
           ) : null}
           {route === "/students" ? (
             <StudentWorkspacePage navigate={navigate} onAction={showNotice} />
@@ -394,7 +388,7 @@ export function App() {
                 navigateProposal={navigateProposal}
                 preparationTaskRef={preparationTaskRef}
                 navigatePreparation={navigatePreparation}
-                initialPrompt=""
+                initialPrompt={new URLSearchParams(window.location.search).get("prompt") ?? ""}
               />
             ) : (
               <AgentWorkspacePage
@@ -410,8 +404,6 @@ export function App() {
               authSession={authSession}
             />
           ) : null}
-          {route === "/style-guide" ? <TeacherStyleGuidePage /> : null}
-
           {route === "/goals" ? <GoalsPage workspace={workspace} /> : null}
           {route === "/evidence" ? <EvidencePage workspace={workspace} /> : null}
           {route === "/copilot" ? (

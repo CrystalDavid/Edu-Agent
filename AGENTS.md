@@ -6,9 +6,11 @@
 
 1. [README.md](README.md)：产品定位、业务闭环和当前限制；
 2. [docs/capabilities.md](docs/capabilities.md)：REAL / PARTIAL / MOCK 状态；
-3. [docs/architecture.md](docs/architecture.md)：七模块、Schema ownership 和数据流；
-4. [docs/development.md](docs/development.md)：目录、命令和修改路径；
-5. 与任务直接相关的 ADR、Gate 历史或局部 README。
+3. [docs/architecture/README.md](docs/architecture/README.md)：七模块、Schema ownership 和数据流；
+4. [docs/engineering/README.md](docs/engineering/README.md)：目录、命令和修改路径；
+5. 与任务直接相关的当前 ADR 或局部 README。
+
+默认不要读取 `docs/history/`。只有用户明确要求追溯历史、核对旧决策，或当前权威文档明确引用某项证据时，才读取对应的单个历史文件；不得批量扫描历史目录来指导当前实现。
 
 最新产品基线是 Gate 2.10A / `gate-2-10a-verified`。当前是可运行、可持久化并可继续部署的普通教师工作台基线；不得把尚未完成的云部署、学生端、考试或多模态写成已有能力。
 
@@ -142,9 +144,9 @@ Playwright 报告、结果和截图不得写入仓库根目录。默认 Windows 
 ## 完成任务时更新什么
 
 - 当前能力变化：`docs/capabilities.md`；
-- 架构/状态所有权变化：`docs/architecture.md`，必要时新增 ADR；
+- 架构/状态所有权变化：`docs/architecture/README.md`，必要时在 `docs/architecture/decisions/` 新增 ADR；
 - 已完成 Gate：`docs/version-history.md` 和 `CHANGELOG.md`；
 - 未来工作：只更新 `docs/roadmap.md`；
-- 命令/目录变化：`README.md`、`docs/development.md` 和相关局部 README；
-- 运维边界变化：`docs/operations.md` / `docs/operations/`；
+- 命令/目录变化：`README.md`、`docs/engineering/README.md` 和相关局部 README；
+- 运维边界变化：`docs/operations/README.md` / `docs/operations/`；
 - 不把历史 Gate 文档改写成当前事实，移动后必须修复链接。

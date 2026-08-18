@@ -5,7 +5,7 @@ Edu-Agent 使用七模块模块化单体和只向前 Migration。贡献的首要
 ## 开始之前
 
 1. 阅读 [README.md](README.md) 和 [AGENTS.md](AGENTS.md)；
-2. 根据任务阅读 [当前能力](docs/capabilities.md)、[当前架构](docs/architecture.md) 和相关 ADR；
+2. 根据任务阅读 [当前能力](docs/capabilities.md)、[当前架构](docs/architecture/README.md) 和相关当前 ADR；历史目录不作为默认输入；
 3. 确认工作区已有改动并只处理当前任务范围；
 4. 从最新 `main` 创建主题分支。
 
@@ -26,7 +26,7 @@ corepack pnpm app:doctor
 6. 更新唯一权威文档；
 7. 按主题提交，推送分支并创建 Draft PR。
 
-常用入口见 [docs/development.md](docs/development.md)。不要直接猜测内部脚本；根 `package.json` 是稳定命令注册表。
+常用入口见 [开发指南](docs/engineering/README.md)。不要直接猜测内部脚本；根 `package.json` 是稳定命令注册表。
 
 ## Migration 和数据库
 
@@ -61,12 +61,12 @@ corepack pnpm verify:markdown-links
 git diff --check
 ```
 
-涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `app:doctor`。完整矩阵见 [docs/validation.md](docs/validation.md)。
+涉及 PostgreSQL、浏览器、模型或 Demo 编排时，再运行相应的 `test:postgres`、`test:playwright`、`test:ark-fake` 和 `app:doctor`。完整矩阵见 [验证指南](docs/engineering/validation.md)。
 
 ## 文档
 
 - 当前能力只维护在 `docs/capabilities.md`；
-- 当前架构只维护在 `docs/architecture.md`；
+- 当前架构只维护在 `docs/architecture/README.md`；
 - 未来计划只维护在 `docs/roadmap.md`；
 - Verified 历史更新 `docs/version-history.md` 和 `CHANGELOG.md`；
 - 详细 Gate/UI/研究记录进入 `docs/history/`；

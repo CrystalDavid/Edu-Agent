@@ -32,7 +32,6 @@ import {
   localDate,
   TodoPanel
 } from "../components/portal/ScheduleComponents";
-import { PageHeader } from "../components/portal/PortalPrimitives";
 import type { AppRoute } from "../route";
 
 const timezone = "Asia/Shanghai";
@@ -44,7 +43,6 @@ export function TeacherSchedulePage(props: {
   const [mode, setMode] = useState<CalendarMode>(initial.mode);
   const [selectedDate, setSelectedDate] = useState(initial.date);
   const [calendar, setCalendar] = useState<TeacherCalendarItem[]>([]);
-  const [statisticsCalendar, setStatisticsCalendar] = useState<TeacherCalendarItem[]>([]);
   const [todos, setTodos] = useState<TeacherTodoView[]>([]);
   const [projections, setProjections] = useState<TeacherWorkProjectionView[]>([]);
   const [lessonOptions, setLessonOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -56,18 +54,11 @@ export function TeacherSchedulePage(props: {
     setLoading(true);
     setError(null);
     try {
-      const statistics = statisticsRange(selectedDate);
-      const [calendarResult, statisticsResult, todoResult, projectionResult, preparation] = await Promise.all([
+      const [calendarResult, todoResult, projectionResult, preparation] = await Promise.all([
         loadTeacherCalendar({
           from: range.from,
           to: range.to,
           mode,
-          timezone
-        }),
-        loadTeacherCalendar({
-          from: statistics.from,
-          to: statistics.to,
-          mode: "month",
           timezone
         }),
         loadTeacherTodos({ status: "all", includeSnoozed: "true" }),
@@ -75,7 +66,6 @@ export function TeacherSchedulePage(props: {
         loadLessonPreparationSummary()
       ]);
       setCalendar(calendarResult.items);
-      setStatisticsCalendar(statisticsResult.items);
       setTodos(todoResult.items);
       setProjections(projectionResult.items);
       setLessonOptions(preparation.recentLessons.map((lesson) => ({
@@ -87,7 +77,7 @@ export function TeacherSchedulePage(props: {
     } finally {
       setLoading(false);
     }
-  }, [mode, range.from, range.to, selectedDate]);
+  }, [mode, range.from, range.to]);
 
   useEffect(() => {
     void refresh();
@@ -155,10 +145,6 @@ export function TeacherSchedulePage(props: {
 
   return (
     <div className="portal-page schedule-page" data-testid="schedule-page">
-      <PageHeader
-        title="日程"
-        subtitle="安排课程、备课与待办，让每天的教学工作更有节奏"
-      />
       <div className="schedule-layout">
         <CalendarView
           mode={mode}
@@ -169,7 +155,6 @@ export function TeacherSchedulePage(props: {
           onModeChange={setMode}
           onPrevious={() => movePeriod(-1)}
           onNext={() => movePeriod(1)}
-          onToday={() => setSelectedDate(localDate(new Date()))}
           onDateSelect={(date) => {
             setSelectedDate(date);
             setMode("day");
@@ -189,7 +174,7 @@ export function TeacherSchedulePage(props: {
         <TodoPanel
           todos={todos}
           projections={projections}
-          calendarEvents={statisticsCalendar}
+          calendarEvents={calendar}
           selectedDate={selectedDate}
           lessonOptions={lessonOptions}
           loading={loading}
@@ -373,14 +358,4 @@ function calendarRange(date: string, mode: CalendarMode): { from: string; to: st
 
 function startIso(date: string): string {
   return new Date(`${date}T00:00:00+08:00`).toISOString();
-}
-
-function statisticsRange(date: string): { from: string; to: string } {
-  const first = `${date.slice(0, 7)}-01`;
-  const nextMonth = new Date(`${first}T12:00:00Z`);
-  nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-  return {
-    from: startIso(addDays(first, -7)),
-    to: startIso(addDays(nextMonth.toISOString().slice(0, 10), 7))
-  };
 }

@@ -10,7 +10,7 @@ import { Alert, Button, Input, Tag, Typography } from "antd";
 import { modelExecutionStatusLabel } from "../../presentation";
 import { WorkspaceIcon } from "../WorkspaceIcon";
 
-const { Paragraph, Text, Title } = Typography;
+const { Title } = Typography;
 
 export function PreparationProposalPanel(props: {
   proposal: ProposalReviewDetail | null;
@@ -51,19 +51,13 @@ export function PreparationProposalPanel(props: {
       data-testid="preparation-proposal-panel"
     >
       <header className="preparation-proposal-panel__header">
-        <div>
-          <Text className="section-kicker">备课方案</Text>
-          <Title level={3}>
-            {props.inReviewRevision
-              ? "方案已进入审核"
-              : props.proposal
-                ? "比较方案，再由你决定"
-                : "正在准备教学方案"}
-          </Title>
-          <Paragraph>
-            Agent 只生成 Proposal；采用只形成待审核版本，批准仍由教师显式完成。
-          </Paragraph>
-        </div>
+        <Title level={3}>
+          {props.inReviewRevision
+            ? "确认教学方案"
+            : props.proposal
+              ? "选择教学方案"
+              : "正在准备教学方案"}
+        </Title>
         {props.execution ? (
           <Tag color={props.execution.status === "succeeded" ? "success" : "processing"}>
             {modelExecutionStatusLabel(props.execution.status)}
@@ -75,7 +69,7 @@ export function PreparationProposalPanel(props: {
         <Alert
           type={isFailed(props.execution.status) ? "error" : "info"}
           showIcon
-          title={isFailed(props.execution.status) ? "本次方案生成未完成" : "Agent 正在生成方案"}
+          title={isFailed(props.execution.status) ? "本次方案生成未完成" : "系统正在准备方案"}
           description={props.execution.safeMessage ?? "完成后会在本页显示可比较的方案。"}
         />
       ) : null}
@@ -106,9 +100,6 @@ export function PreparationProposalPanel(props: {
                     <dl>
                       <div><dt>目标</dt><dd>{plan.objective}</dd></div>
                       <div><dt>课堂流程</dt><dd>{plan.openingActivity}</dd></div>
-                      <div><dt>活动</dt><dd>{plan.studentActivity}</dd></div>
-                      <div><dt>练习</dt><dd>{plan.independentCheck}</dd></div>
-                      <div><dt>风险</dt><dd>{strategy.unsuitableConditions.join("；")}</dd></div>
                     </dl>
                   ) : null}
                 </button>
@@ -117,27 +108,27 @@ export function PreparationProposalPanel(props: {
           </div>
 
           {selected ? (
-            <div className="preparation-proposal-detail">
-              <div>
-                <strong>为什么建议这个方案</strong>
-                <p>{selected.rationale}</p>
+            <details className="preparation-proposal-more">
+              <summary>查看方案依据</summary>
+              <div className="preparation-proposal-detail">
+                <div>
+                  <strong>建议理由</strong>
+                  <p>{selected.rationale}</p>
+                </div>
+                <div>
+                  <strong>教学动作</strong>
+                  <p>{(selected.teachingMoves ?? selected.suggestedMoves).join("；")}</p>
+                </div>
               </div>
-              <div>
-                <strong>教学动作</strong>
-                <p>{(selected.teachingMoves ?? selected.suggestedMoves).join("；")}</p>
-              </div>
-              <div>
-                <strong>已知缺口</strong>
-                <p>{selected.knownGaps.join("；")}</p>
-              </div>
-            </div>
+            </details>
           ) : null}
 
           {proposal.status === "pending" && selectedStrategyId ? (
             <div className="preparation-proposal-actions">
               {adjusting ? (
-                <div className="preparation-proposal-adjustment">
+                <div className="preparation-proposal-adjustment ai-task-composer">
                   <Input.TextArea
+                    className="ai-task-input"
                     value={adjustment}
                     maxLength={500}
                     autoSize={{ minRows: 2, maxRows: 4 }}
@@ -162,15 +153,16 @@ export function PreparationProposalPanel(props: {
                     onClick={() => props.onAccept(selectedStrategyId)}
                     data-testid="workspace-accept-proposal"
                   >
-                    采用并提交审核
+                    确认方案
                   </Button>
-                  <Button onClick={() => setAdjusting(true)}>说一句话调整</Button>
+                  <Button onClick={() => setAdjusting(true)}>交给助手调整</Button>
                   <Button
                     danger
+                    type="text"
                     loading={props.loading}
                     onClick={() => props.onReject(selectedStrategyId)}
                   >
-                    不采用本次方案
+                    不采用
                   </Button>
                 </>
               )}
@@ -184,7 +176,7 @@ export function PreparationProposalPanel(props: {
           <span className="preparation-plan-approval__icon"><WorkspaceIcon name="document" /></span>
           <div>
             <strong>{props.inReviewRevision.title}</strong>
-            <small>第 {props.inReviewRevision.revisionNumber} 版 · 待教师批准</small>
+            <small>进行中</small>
           </div>
           <Button
             type="primary"
@@ -192,7 +184,7 @@ export function PreparationProposalPanel(props: {
             onClick={props.onApprove}
             data-testid="workspace-approve-plan"
           >
-            批准教学计划
+            确认方案
           </Button>
         </div>
       ) : null}

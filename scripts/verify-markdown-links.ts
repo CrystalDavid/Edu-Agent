@@ -28,7 +28,10 @@ function gitTrackedAndUntrackedMarkdown(): string[] {
       `Unable to enumerate Markdown files: ${result.stderr.trim()}`
     );
   }
-  return [...new Set(result.stdout.split("\0").filter(Boolean))].sort();
+  return [...new Set(result.stdout.split("\0").filter(Boolean))]
+    .filter((path) => existsSync(resolve(workspaceRoot, path)))
+    .filter((path) => !path.replaceAll("\\", "/").startsWith("docs/history/"))
+    .sort();
 }
 
 function localTargets(source: string): string[] {

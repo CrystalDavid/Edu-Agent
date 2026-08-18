@@ -55,16 +55,16 @@ import { cleanDisplayText } from "../presentation";
 const { Paragraph, Text, Title } = Typography;
 
 const statusLabels = {
-  draft: "草稿",
-  published: "已发布",
-  closed: "已关闭",
-  archived: "已归档"
+  draft: "未完成",
+  published: "进行中",
+  closed: "已完成",
+  archived: "已完成"
 } as const;
 
 const submissionLabels = {
-  not_submitted: "未交",
-  submitted: "待确认批改",
-  graded: "已确认"
+  not_submitted: "未完成",
+  submitted: "进行中",
+  graded: "已完成"
 } as const;
 
 export function AssignmentWorkspace(props: {
@@ -123,8 +123,11 @@ export function AssignmentWorkspace(props: {
         loadAssignments()
       ]);
       setCourses(courseResult.items);
-      setAssignments(assignmentResult.items);
       const course = courseResult.items[0];
+      const courseAssignments = course
+        ? assignmentResult.items.filter((assignment) => assignment.courseRunRef === course.courseRunRef)
+        : [];
+      setAssignments(courseAssignments);
       if (course) {
         const unitResult = await loadCurriculumUnits(course.courseRunRef);
         setUnits(unitResult.items);
@@ -141,7 +144,7 @@ export function AssignmentWorkspace(props: {
         }
       }
       const nextRef =
-        selectedAssignmentRef ?? assignmentResult.items[0]?.assignmentRef ?? null;
+        selectedAssignmentRef ?? courseAssignments[0]?.assignmentRef ?? null;
       setSelectedAssignmentRef(nextRef);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -470,6 +473,26 @@ export function AssignmentWorkspace(props: {
     }
   }
 
+  const evidenceStageSummary = [
+    { label: "待发布", value: assignments.filter((item) => item.status === "draft").length },
+    { label: "进行中", value: assignments.filter((item) => item.status === "published").length },
+    {
+      label: "待批改",
+      value: assignments.reduce(
+        (total, item) => total + Math.max(0, item.submittedCount - item.confirmedGradeCount),
+        0
+      )
+    },
+    {
+      label: "已形成 Evidence",
+      value: assignments.reduce((total, item) => total + item.confirmedGradeCount, 0)
+    },
+    {
+      label: "已关闭",
+      value: assignments.filter((item) => item.status === "closed" || item.status === "archived").length
+    }
+  ];
+
   return (
     <Spin spinning={loading}>
       <div className="assignment-workspace" data-testid="assignment-workspace">
@@ -483,10 +506,22 @@ export function AssignmentWorkspace(props: {
             onClose={() => setError(null)}
           />
         ) : null}
+        <header className="assignment-evidence-header">
+          <div>
+            <Text className="section-kicker">ASSIGNMENTS &amp; EVIDENCE</Text>
+            <Title level={2}>作业与学习证据</Title>
+            <Paragraph>在课程范围内查看作业发布、提交、批改和已确认 Evidence；正式判断仍由教师完成。</Paragraph>
+          </div>
+          <div className="assignment-evidence-stages" aria-label="作业与证据状态概览">
+            {evidenceStageSummary.map((item) => (
+              <span key={item.label}><small>{item.label}</small><strong>{item.value}</strong></span>
+            ))}
+          </div>
+        </header>
         <div className="page-grid">
           <Card className="workspace-card" variant="borderless">
             <Space orientation="vertical" style={{ width: "100%" }}>
-              <Text className="section-kicker">课程作业</Text>
+              <Text className="section-kicker">作业流程</Text>
               <Button type="primary" onClick={startNew} data-testid="create-assignment">
                 创建作业草稿
               </Button>
@@ -505,14 +540,13 @@ export function AssignmentWorkspace(props: {
                   >
                     <strong>{cleanDisplayText(assignment.title)}</strong>
                     <small>
-                      {statusLabels[assignment.status]} · v{assignment.currentVersionNumber} ·
-                      {assignment.submittedCount}/{assignment.enrolledCount} 已交
+                      {statusLabels[assignment.status]} · {assignment.submittedCount}/{assignment.enrolledCount} 已交
                     </small>
                   </button>
                 ))}
               </div>
               {assignments.length === 0 ? (
-                <Empty description="尚无作业；请从当前课时创建草稿。" />
+                <Empty description="尚无作业。创建草稿后，提交、批改与已确认 Evidence 会在这里形成连续记录。" />
               ) : null}
             </Space>
           </Card>
@@ -579,11 +613,9 @@ export function AssignmentWorkspace(props: {
             ) : detail ? (
               <section data-testid="assignment-detail">
                 <Space wrap>
-                  <Tag color={detail.status === "draft" ? "default" : "processing"}>
+                  <Tag color={detail.status === "draft" ? "error" : detail.status === "published" ? "warning" : "success"}>
                     {statusLabels[detail.status]}
                   </Tag>
-                  <Tag>作业第 {detail.version} 版</Tag>
-                  <Tag>内容第 {detail.currentVersionNumber} 版</Tag>
                 </Space>
                 <Title level={2}>{cleanDisplayText(detail.title)}</Title>
                 <Paragraph>{cleanDisplayText(detail.currentVersion.instructions)}</Paragraph>
@@ -622,14 +654,16 @@ export function AssignmentWorkspace(props: {
                     </Button>
                   ) : null}
                 </Space>
-                <Title level={4}>版本历史</Title>
-                <Space wrap>
-                  {detail.versionHistory.map((version) => (
-                    <Tag key={version.assignmentVersionRef}>
-                      v{version.versionNumber} · {version.items.length} 题
-                    </Tag>
-                  ))}
-                </Space>
+                <details>
+                  <summary>历史记录</summary>
+                  <Space wrap>
+                    {detail.versionHistory.map((version) => (
+                      <Tag key={version.assignmentVersionRef}>
+                        第 {version.versionNumber} 版 · {version.items.length} 题
+                      </Tag>
+                    ))}
+                  </Space>
+                </details>
                 <Title level={4}>题目</Title>
                 {detail.currentVersion.items.map((item) => (
                   <Paragraph key={item.itemRef}>
@@ -638,7 +672,7 @@ export function AssignmentWorkspace(props: {
                 ))}
               </section>
             ) : (
-              <Empty description="选择作业或创建新草稿" />
+              <Empty description="选择一份作业，查看提交、批改与已确认学习证据" />
             )}
           </Card>
         </div>
@@ -657,7 +691,7 @@ export function AssignmentWorkspace(props: {
                   {
                     title: "状态",
                     render: (_, record) => (
-                      <Tag color={record.submissionState === "not_submitted" ? "default" : "blue"}>
+                      <Tag color={record.submissionState === "not_submitted" ? "error" : record.submissionState === "submitted" ? "warning" : "success"}>
                         {submissionLabels[record.submissionState]}
                       </Tag>
                     )

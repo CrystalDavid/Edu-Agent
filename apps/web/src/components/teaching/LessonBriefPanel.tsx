@@ -8,7 +8,7 @@ import { Button, Input, Tag, Typography } from "antd";
 
 import { WorkspaceIcon } from "../WorkspaceIcon";
 
-const { Paragraph, Text, Title } = Typography;
+const { Title } = Typography;
 
 export function LessonBriefPanel(props: {
   brief: LessonBriefSnapshot | null;
@@ -39,23 +39,9 @@ export function LessonBriefPanel(props: {
   if (!props.brief || props.brief.status === "deferred") {
     return (
       <section className="lesson-brief-panel is-empty" id="lesson-brief" data-testid="lesson-brief-panel">
-        <div className="lesson-brief-panel__intro">
-          <span className="lesson-brief-panel__icon"><WorkspaceIcon name="insight" /></span>
-          <div>
-            <Text className="section-kicker">教学洞察</Text>
-            <Title level={3}>让系统先帮你看懂这节课</Title>
-            <Paragraph>
-              基于当前课时目标、已授权 Evidence、已批准方案和已确认偏好，整理重点、难点与关注候选。
-            </Paragraph>
-          </div>
-        </div>
-        <div className="lesson-brief-panel__gaps">
-          <Tag>尚未接入教材知识源</Tag>
-          <Tag>尚未接入课程标准知识源</Tag>
-          <Tag>尚未接入考点知识源</Tag>
-        </div>
+        <Title level={3}>教学洞察</Title>
         <Button type="primary" loading={props.loading} onClick={props.onGenerate}>
-          生成教学洞察
+          准备教学洞察
         </Button>
       </section>
     );
@@ -65,61 +51,33 @@ export function LessonBriefPanel(props: {
   return (
     <section className="lesson-brief-panel" id="lesson-brief" data-testid="lesson-brief-panel">
       <header className="lesson-brief-panel__header">
-        <div>
-          <Text className="section-kicker">教学洞察候选</Text>
-          <Title level={3}>先判断，再进入备课方案</Title>
-          <Paragraph>
-            当前建议基于 Lesson 目标、已授权 Evidence、current approved TeachingPlan 和已确认偏好。
-          </Paragraph>
-        </div>
-        <Tag color={readOnly ? "success" : "processing"}>
-          {readOnly ? "已采用" : "待教师判断"}
+        <Title level={3}>教学洞察</Title>
+        <Tag color={readOnly ? "success" : "warning"}>
+          {readOnly ? "已完成" : "进行中"}
         </Tag>
       </header>
 
       <BriefGroup
-        title="教学重点候选"
+        title="本课重点"
         items={props.brief.teachingFocusCandidates}
         selected={selected}
         disabled={readOnly}
         onToggle={(id) => toggle(setSelected, selected, id)}
       />
       <BriefGroup
-        title="教学难点候选"
+        title="提醒"
         items={props.brief.difficultyCandidates}
         selected={selected}
         disabled={readOnly}
         onToggle={(id) => toggle(setSelected, selected, id)}
       />
 
-      {props.brief.classEvidenceSummary.length > 0 ? (
-        <div className="lesson-brief-evidence">
-          <strong>班级 Evidence 摘要</strong>
-          {props.brief.classEvidenceSummary.map((item) => (
-            <p key={item.evidenceRef}>{item.summary}</p>
-          ))}
-        </div>
-      ) : (
-        <div className="lesson-brief-evidence is-missing">
-          当前没有已授权且可追溯的班级 Evidence，难点候选仅供教师确认。
-        </div>
-      )}
-
-      <section className="lesson-brief-sources">
-        <strong>来源与信息缺口</strong>
-        <div>
-          <strong>实际使用来源</strong>
-          <p>{props.brief.sourceRefs.filter((source) => source.included).map((source) => source.ref).join("、")}</p>
-          <strong>当前缺口</strong>
-          <ul>{props.brief.knownGaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
-        </div>
-      </section>
-
       {!readOnly ? (
         <div className="lesson-brief-actions">
           {adjusting ? (
-            <div className="lesson-brief-adjustment">
+            <div className="lesson-brief-adjustment ai-task-composer">
               <Input.TextArea
+                className="ai-task-input"
                 value={adjustment}
                 maxLength={500}
                 autoSize={{ minRows: 2, maxRows: 4 }}
@@ -144,10 +102,10 @@ export function LessonBriefPanel(props: {
                 disabled={selected.size === 0}
                 onClick={() => props.onAdopt([...selected])}
               >
-                采用所选洞察
+                确认
               </Button>
-              <Button onClick={() => setAdjusting(true)}>说一句话调整</Button>
-              <Button type="text" onClick={props.onDefer}>暂不采用</Button>
+              <Button onClick={() => setAdjusting(true)}>交给助手调整</Button>
+              <Button type="text" onClick={props.onDefer}>暂不使用</Button>
             </>
           )}
         </div>

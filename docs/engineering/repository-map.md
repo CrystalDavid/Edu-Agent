@@ -3,7 +3,7 @@
 > 状态：CURRENT SUPPORTING GUIDE
 > 最新产品基线：`gate-2-10a-verified`
 
-本地图回答“文件应放在哪里”。首要入口是根 [项目 README](../../README.md)，状态所有权和数据流以 [当前架构](../architecture.md) 为准。
+本地图回答“文件应放在哪里”。首要入口是根 [项目 README](../../README.md)，状态所有权和数据流以 [当前架构](../architecture/README.md) 为准。
 
 ## 根目录
 
@@ -110,7 +110,7 @@ tests         -> contracts + sample-data + test-fixtures
 
 ## `scripts` 与稳定命令
 
-脚本实现按职责分为 `local/`、`testing/`、`quality/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](../development.md) 说明。
+脚本实现按职责分为 `local/`、`testing/`、`quality/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](README.md) 说明。
 
 不要直接恢复或复制已经失效的旧启动脚本。浏览器测试使用隔离 `test:playwright`，长期数据重置必须显式使用受保护的 `app:reset`。
 
@@ -129,30 +129,32 @@ tests         -> contracts + sample-data + test-fixtures
 | `fixtures/`、`support/` | 测试数据、Fake Ark 和 loader |
 | `config/` | 专用 Playwright/Vitest 配置和仓库外产物路径策略 |
 
-详细隔离语义见 [验证指南](../validation.md)。Gate 1A Test Container 虽不是产品 Composition Root，仍被测试使用，不属于可删除遗留代码。
+详细隔离语义见 [验证指南](validation.md)。Gate 1A Test Container 虽不是产品 Composition Root，仍被测试使用，不属于可删除遗留代码。
 
 ## `docs`
 
 ```text
 docs/
 ├── README.md
-├── architecture.md / capabilities.md / version-history.md
-├── roadmap.md / development.md / validation.md / operations.md
-├── adr/
-├── demo/
+├── capabilities.md / roadmap.md / version-history.md
+├── architecture/
+├── engineering/
 ├── operations/
-├── project/
+├── ui/
 └── history/
+    ├── architecture/
     ├── gates/
+    ├── project/
     ├── research/
     └── ui/
 ```
 
-- 当前事实只进入根层权威文档；
-- 项目同步/清理/研究记录放 `project/`；
+- 当前架构只进入 `architecture/`，当前 UI 只进入 `ui/`；
+- 开发、仓库地图和验证说明进入 `engineering/`；
 - Gate 2.10B 详细差距放 `operations/`；
-- Gate、早期研究和 UI 记录进入 `history/`；
-- ADR 通过新增文件演进，不覆写旧决策；
+- 阶段报告、早期研究和旧 UI 记录进入 `history/`；
+- `history/` 不是工程 Agent 的默认阅读范围；
+- ADR 通过 `architecture/decisions/` 的新增文件演进，不覆写旧决策；
 - 文档移动后运行 `verify:markdown-links`。
 
 ## Git ignored 本地内容
@@ -179,6 +181,5 @@ docs/
 - 新测试构造器/Fake：`packages/test-fixtures`、`tests/fixtures` 或 `tests/support`；
 - 当前功能说明：`docs/capabilities.md`；
 - 未来计划：`docs/roadmap.md`；
-- 详细历史：`docs/history/`。
-
-目标结构和明确延期项见 [目标仓库结构](target-repository-structure.md)。
+- 当前 UI 规范：`docs/ui/README.md`；
+- 详细历史：`docs/history/`（仅在明确追溯时读取）。

@@ -84,7 +84,7 @@ flowchart LR
     API --> IDP["IdentityProvider Port\nLocal 或 OIDC"]
 ```
 
-浏览器不直接连接数据库、模型、ObjectStore 或身份供应商。更完整的数据流、状态所有权和安全边界见 [当前架构](docs/architecture.md)。
+浏览器不直接连接数据库、模型、ObjectStore 或身份供应商。更完整的数据流、状态所有权和安全边界见 [当前架构](docs/architecture/README.md)。
 
 ## 仓库目录
 
@@ -105,7 +105,7 @@ flowchart LR
 
 Playwright 报告、结果、Trace、Video 和验收截图不再写入仓库根目录。在 Windows 上，如果 `C:\Code\test` 存在，默认输出到 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，也可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 显式覆盖。整理前的根目录测试产物属于可再生运行输出，当前仓库与本机均不承诺保留其外部归档。
 
-目录决策和延期项见 [目标仓库结构](docs/project/target-repository-structure.md)。
+当前目录定位见 [仓库结构地图](docs/engineering/repository-map.md)，延期项只记录在 [Roadmap](docs/roadmap.md)。
 
 ## 核心业务闭环
 
@@ -202,18 +202,18 @@ corepack pnpm app:down
 | `corepack pnpm verify:markdown-links` | 所有跟踪/待提交 Markdown 本地链接 |
 | `corepack pnpm verify:repo-sync` | 必需文件、忽略项、禁止跟踪目录、upstream 和 HEAD 同步 |
 
-测试隔离语义和推荐组合见 [验证指南](docs/validation.md)。
+测试隔离语义和推荐组合见 [验证指南](docs/engineering/validation.md)。
 
 ## 文档阅读顺序
 
 1. [文档入口](docs/README.md)：按角色选择阅读路径；
 2. [当前能力](docs/capabilities.md)：REAL / PARTIAL / MOCK 和限制；
-3. [当前架构](docs/architecture.md)：七模块、数据流和安全边界；
-4. [开发指南](docs/development.md)：目录、命令和修改路径；
-5. [验证指南](docs/validation.md)：测试证明范围；
+3. [当前架构](docs/architecture/README.md)：七模块、数据流和安全边界；
+4. [开发指南](docs/engineering/README.md)：目录、命令和修改路径；
+5. [验证指南](docs/engineering/validation.md)：测试证明范围；
 6. [版本历史](docs/version-history.md)：0 → Gate 2.10A；
 7. [Roadmap](docs/roadmap.md)：只描述未来工作；
-8. [本地运维](docs/operations.md)和 [Gate 2.10B 部署差距](docs/operations/deployment-readiness-gaps.md)。
+8. [本地运维](docs/operations/README.md)和 [Gate 2.10B 部署差距](docs/operations/deployment-readiness-gaps.md)。
 
 ## 当前限制
 

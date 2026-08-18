@@ -2,7 +2,7 @@
 
 > 状态：CURRENT
 
-本文是开发者和工程 Agent 的仓库导航与稳定命令入口。产品不变量见 [Agent 指南](../AGENTS.md)，当前架构见 [当前架构](architecture.md)。
+本文是开发者和工程 Agent 的仓库导航与稳定命令入口。产品不变量见 [Agent 指南](../../AGENTS.md)，当前架构见 [当前架构](../architecture/README.md)。
 
 ## 环境与安装
 
@@ -31,9 +31,9 @@ corepack pnpm app:doctor
 | 测试构造器 | `packages/test-fixtures`、`tests/fixtures`、`tests/support` | 产品不得依赖 |
 | 专用测试配置 | `tests/config` | 根目录只保留工具自动发现的默认配置 |
 | 本地生命周期 | 根 `package.json` → `scripts/local` / `scripts/postgres` | 不删除长期 DB/ObjectStore |
-| 当前事实文档 | `docs/capabilities.md` / `architecture.md` | 不在历史文档重复维护 |
+| 当前事实文档 | `docs/capabilities.md` / `docs/architecture/README.md` | 不在历史文档重复维护 |
 
-更细的路径见 [仓库结构地图](project/repository-map.md)。
+更细的路径见 [仓库结构地图](repository-map.md)。
 
 ## 稳定命令
 
@@ -86,7 +86,7 @@ corepack pnpm app:doctor
 
 Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test-artifacts.ts` 解析外部路径：Windows 优先 `C:\Code\test\edu-agent\playwright`，也可设置 `EDU_AGENT_TEST_OUTPUT_ROOT`；这些产物不进入仓库根目录。
 
-详细本地流程见 [运维指南](operations.md) 和 [本机运行指南](operations/local-environment.md)。
+详细本地流程见 [运维指南](../operations/README.md) 和 [本机运行指南](../operations/local-environment.md)。
 
 ## 新增能力时的路径
 
@@ -108,4 +108,4 @@ Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test
 - 大型 Composition Service、Repository、Contract 和页面；
 - `apps/web/src/pages/TeachingWorkspacePage.tsx`。
 
-后续拆分必须先固定公共契约和依赖图，保持 route/middleware 顺序、Schema 单一真值和业务语义，并有回归测试。具体延期见 [目标仓库结构](project/target-repository-structure.md)。
+后续拆分必须先固定公共契约和依赖图，保持 route/middleware 顺序、Schema 单一真值和业务语义，并有回归测试。尚未完成的工作只记录在 [Roadmap](../roadmap.md)。

@@ -91,6 +91,84 @@ export function IdentityOrganizationSettings(props: {
     void refresh();
   }, [props.session.sessionRef, props.session.currentWorkspace?.membershipRef]);
 
+  if (!isAdmin) {
+    return (
+      <div className="identity-settings identity-settings--teacher" data-testid="identity-organization-settings">
+        {error ? <Alert type="error" showIcon message={error} /> : null}
+        <div className="identity-account-summary" aria-busy={loading}>
+          <article>
+            <span>当前学校</span>
+            <strong>{school ? cleanDisplayText(school.name) : "加载中"}</strong>
+          </article>
+          <article>
+            <span>登录账号</span>
+            <strong>{props.session.user.email ?? "未提供"}</strong>
+          </article>
+        </div>
+
+        <details className="identity-advanced-settings">
+          <summary>账号安全与数据管理</summary>
+          <section>
+            <h3>登录设备</h3>
+            <ul className="account-session-list">
+              {sessions.slice(0, 3).map((session) => (
+                <li key={session.sessionRef}>
+                  <span>
+                    <strong>{session.current ? "当前设备" : "其他登录设备"}</strong>
+                    <small>{new Date(session.expiresAt).toLocaleDateString("zh-CN")} 到期</small>
+                  </span>
+                  {!session.current && !session.revokedAt ? (
+                    <Button
+                      size="small"
+                      onClick={() => void execute(async () => {
+                        await revokeAuthenticationSession(session.sessionRef, session.version);
+                        props.onAction("登录设备已退出。");
+                        await refresh();
+                      })}
+                    >退出</Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3>数据请求</h3>
+            <Space wrap>
+              <Button onClick={() => void execute(async () => {
+                const result = await createUserDataGovernanceRequest({
+                  requestType: "export",
+                  reason: "教师请求导出当前个人与组织成员数据。",
+                  idempotencyKey: `ui-export-${crypto.randomUUID()}`
+                });
+                setRequests(result.items);
+                props.onAction("数据导出请求已提交。");
+              })}>申请导出</Button>
+              <Button danger onClick={() => void execute(async () => {
+                const result = await createUserDataGovernanceRequest({
+                  requestType: "deletion",
+                  reason: "教师请求评估账号删除范围；保留依法和教学来源链必须保留的历史。",
+                  idempotencyKey: `ui-deletion-${crypto.randomUUID()}`
+                });
+                setRequests(result.items);
+                props.onAction("删除范围评估请求已提交。");
+              })}>申请删除评估</Button>
+            </Space>
+            {requests.length > 0 ? (
+              <ul className="data-governance-request-list">
+                {requests.slice(0, 3).map((request) => (
+                  <li key={request.requestRef}>
+                    <Tag>{governanceRequestTypeLabel(request.requestType)}</Tag>
+                    <span>{governanceRequestStatusLabel(request.status)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div className="identity-settings" data-testid="identity-organization-settings">
       {error ? <Alert type="error" showIcon message={error} /> : null}
@@ -348,12 +426,12 @@ function governanceRequestTypeLabel(type: string): string {
 
 function governanceRequestStatusLabel(status: string): string {
   return {
-    requested: "待审核",
-    approved: "已批准",
-    rejected: "已拒绝",
-    processing: "处理中",
+    requested: "进行中",
+    approved: "已完成",
+    rejected: "未完成",
+    processing: "进行中",
     completed: "已完成"
-  }[status] ?? "处理中";
+  }[status] ?? "进行中";
 }
 
 function securityEventTypeLabel(type: string): string {

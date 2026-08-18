@@ -8,11 +8,7 @@ import type {
 } from "@edu-agent/contracts";
 import { Button, Modal, Select, Switch } from "antd";
 
-import {
-  cleanDisplayText,
-  workProjectionStatusLabel,
-  workSourceLabel
-} from "../../presentation";
+import { cleanDisplayText } from "../../presentation";
 import { WorkspaceIcon } from "../WorkspaceIcon";
 import { ModuleCard } from "./PortalPrimitives";
 
@@ -45,7 +41,6 @@ export function CalendarView(props: {
   onModeChange: (mode: CalendarMode) => void;
   onPrevious: () => void;
   onNext: () => void;
-  onToday: () => void;
   onDateSelect: (date: string) => void;
   onCreate: (draft: CalendarEventDraft) => Promise<void>;
   onUpdate: (
@@ -80,40 +75,43 @@ export function CalendarView(props: {
   return (
     <section className="calendar-workspace" data-testid="calendar-view">
       <header className="calendar-toolbar">
-        <div className="segmented-control" aria-label="日历视图">
-          {([
-            ["day", "日"],
-            ["week", "周"],
-            ["month", "月"]
-          ] as const).map(([mode, label]) => (
-            <button
-              type="button"
-              key={mode}
-              className={props.mode === mode ? "is-active" : ""}
-              aria-pressed={props.mode === mode}
-              onClick={() => props.onModeChange(mode)}
-            >
-              {label}
+        <div className="calendar-toolbar__left">
+          <h1 className="calendar-toolbar__title">日程</h1>
+          <div className="segmented-control" aria-label="日历视图">
+            {([
+              ["day", "日"],
+              ["week", "周"],
+              ["month", "月"]
+            ] as const).map(([mode, label]) => (
+              <button
+                type="button"
+                key={mode}
+                className={props.mode === mode ? "is-active" : ""}
+                aria-pressed={props.mode === mode}
+                onClick={() => props.onModeChange(mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="calendar-period">
+            <button type="button" aria-label="上一周期" onClick={props.onPrevious}>
+              <WorkspaceIcon name="arrowLeft" variant="filled" />
             </button>
-          ))}
+            <button type="button" aria-label="下一周期" onClick={props.onNext}>
+              <WorkspaceIcon name="arrowRight" variant="filled" />
+            </button>
+            <strong>{periodLabel(props.selectedDate, props.mode)}</strong>
+          </div>
         </div>
         <Button
+          className="schedule-create-action calendar-create-button"
           type="primary"
-          icon={<WorkspaceIcon name="plus" />}
+          icon={<WorkspaceIcon name="plus" variant="filled" />}
           onClick={() => setCreateOpen(true)}
         >
           新建日程
         </Button>
-        <div className="calendar-period">
-          <button type="button" aria-label="上一周期" onClick={props.onPrevious}>
-            <WorkspaceIcon name="arrowLeft" />
-          </button>
-          <button type="button" onClick={props.onToday}>今天</button>
-          <button type="button" aria-label="下一周期" onClick={props.onNext}>
-            <WorkspaceIcon name="arrowRight" />
-          </button>
-          <strong>{periodLabel(props.selectedDate, props.mode)}</strong>
-        </div>
       </header>
 
       {props.error ? <p role="alert" className="inline-error">{props.error}</p> : null}
@@ -312,7 +310,7 @@ function DateTimeField(props: {
 
 const calendarStartHour = 6;
 const calendarEndHour = 22;
-const calendarHourHeight = 72;
+const calendarHourHeight = 64;
 const calendarGridHeight = (calendarEndHour - calendarStartHour) * calendarHourHeight;
 const calendarHours = Array.from(
   { length: calendarEndHour - calendarStartHour + 1 },
@@ -331,10 +329,6 @@ function DayCalendar(props: {
   const nowTop = props.date === localDate(new Date()) ? currentTimeTop() : null;
   return (
     <div className="day-calendar" data-testid="day-calendar">
-      <div className="calendar-day-summary">
-        <div><strong>{weekdayLabel(props.date)}</strong><span>{formatMonthDay(props.date)}</span></div>
-        <span>{events.length === 0 ? "今天留有充足时间" : `${events.length} 项安排`}</span>
-      </div>
       {allDayEvents.length > 0 ? (
         <div className="calendar-all-day-strip"><span>全天</span><div>{allDayEvents.map((event) => (
           <CalendarEntry key={eventKey(event)} item={event} compact onEdit={props.onEdit} onOpenSource={props.onOpenSource} />
@@ -409,8 +403,17 @@ function MonthCalendar(props: {
 }) {
   const dates = monthGridDates(props.date);
   const month = props.date.slice(0, 7);
+  const maxEventsInDay = Math.max(
+    0,
+    ...dates.map((date) => props.events.filter((event) => eventDate(event) === date).length)
+  );
+  const rowHeight = Math.max(132, 52 + maxEventsInDay * 25);
   return (
-    <div className="month-calendar" data-testid="month-calendar">
+    <div
+      className="month-calendar"
+      data-testid="month-calendar"
+      style={{ "--month-row-height": `${rowHeight}px` } as CSSProperties}
+    >
       <header>{["周一", "周二", "周三", "周四", "周五", "周六", "周日"].map((day) => <span key={day}>{day}</span>)}</header>
       <div className="month-calendar__grid">
         {dates.map((date) => {
@@ -420,7 +423,7 @@ function MonthCalendar(props: {
               <button type="button" className="month-day-number" onClick={() => props.onDateSelect(date)} aria-label={`查看 ${date} 日程`}>
                 {Number(date.slice(-2))}
               </button>
-              {dayEvents.slice(0, 3).map((event) => {
+              {dayEvents.map((event) => {
                 const category = calendarCategory(event);
                 return (
                   <button type="button" key={eventKey(event)} className={`month-entry calendar-category--${category.key}`} onClick={() => event.sourceKind === "manual" ? props.onEdit(event.event) : props.onOpenSource(event.deepLink)}>
@@ -428,7 +431,6 @@ function MonthCalendar(props: {
                   </button>
                 );
               })}
-              {dayEvents.length > 3 ? <button type="button" className="month-more" onClick={() => props.onDateSelect(date)}>还有 {dayEvents.length - 3} 项</button> : null}
             </article>
           );
         })}
@@ -462,7 +464,10 @@ function CalendarEntry(props: {
       title={manual ? "编辑日程" : "进入来源业务处理"}
     >
       <strong>{cleanDisplayText(eventTitle(props.item))}</strong>
-      <span>{isAllDayEvent(props.item) ? "全天" : `${formatTime(eventStart(props.item))}–${formatTime(eventEnd(props.item))}`} · {category.label}</span>
+      <span className="calendar-event__meta">
+        <span>{isAllDayEvent(props.item) ? "全天" : `${formatTime(eventStart(props.item))}–${formatTime(eventEnd(props.item))}`}</span>
+        <span>{isAllDayEvent(props.item) ? category.label : formatEventDuration(props.item)}</span>
+      </span>
     </button>
   );
 }
@@ -513,14 +518,20 @@ export function TodoPanel(props: {
   const [busyRef, setBusyRef] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const filtered = useMemo(
-    () => props.todos.filter((todo) => todo.status === filter && (filter !== "active" || !isFuture(todo.snoozedUntil))),
+    () => props.todos
+      .filter((todo) => todo.status === filter && (filter !== "active" || !isFuture(todo.snoozedUntil)))
+      .sort((left, right) => {
+        if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+        const priority = { high: 0, normal: 1, low: 2 } as const;
+        const priorityOrder = priority[left.priority] - priority[right.priority];
+        return priorityOrder !== 0 ? priorityOrder : right.updatedAt.localeCompare(left.updatedAt);
+      }),
     [filter, props.todos]
   );
   const visibleProjections = useMemo(
     () => props.projections.filter((projection) => !isFuture(projection.snoozedUntil) && !isFuture(projection.hiddenUntil)),
     [props.projections]
   );
-
   const run = async (ref: string, action: () => Promise<void>) => {
     setBusyRef(ref);
     setActionError(null);
@@ -537,8 +548,16 @@ export function TodoPanel(props: {
     <ModuleCard
       className="todo-panel"
       title="待办"
-      description="个人安排与需要处理的教学事项"
-      action={<Button size="small" icon={<WorkspaceIcon name="plus" />} onClick={() => setCreateOpen(true)}>新建</Button>}
+      action={(
+        <Button
+          className="schedule-create-action todo-create-button"
+          type="primary"
+          icon={<WorkspaceIcon name="plus" variant="filled" />}
+          onClick={() => setCreateOpen(true)}
+        >
+          新建待办
+        </Button>
+      )}
       testId="todo-panel"
     >
       <div className="todo-filter">
@@ -560,6 +579,20 @@ export function TodoPanel(props: {
       {actionError ? <p role="alert">{actionError}</p> : null}
       {props.loading ? <p className="loading-copy">正在整理待办…</p> : null}
       <div className="todo-list">
+        {filter === "active" ? visibleProjections.map((projection) => (
+          <article key={projection.projectionRef} className="todo-checklist-item source-work-item">
+            <button
+              type="button"
+              className="todo-check-circle"
+              onClick={() => props.onOpenSource(projection.deepLink)}
+              aria-label={`打开 ${cleanDisplayText(projection.title)}`}
+            />
+            <button type="button" className="todo-checklist-content todo-source-content" onClick={() => props.onOpenSource(projection.deepLink)}>
+              <strong>{projection.pinned ? "📌 " : ""}{cleanDisplayText(projection.title)}</strong>
+              <small>未完成</small>
+            </button>
+          </article>
+        )) : null}
         {filtered.map((todo) => (
           <article key={todo.todoRef} className={todo.status === "completed" ? "todo-checklist-item is-completed" : "todo-checklist-item"} data-testid={`todo-${todo.todoRef}`}>
             <button
@@ -574,33 +607,24 @@ export function TodoPanel(props: {
             >{todo.status === "completed" ? <WorkspaceIcon name="check" /> : null}</button>
             <div className="todo-checklist-content">
               <strong>{todo.pinned ? "📌 " : ""}{todo.title}</strong>
-              {todo.description ? <span>{todo.description}</span> : null}
-              <small>{todo.dueAt ? formatDateTime(todo.dueAt) : "时间待定"} · {priorityLabel(todo.priority)}{todo.resourceLinks.length > 0 ? ` · ${todo.resourceLinks.map((link) => link.label).join(" / ")}` : ""}</small>
+              <small>{todo.dueAt ? formatDateTime(todo.dueAt) : "未安排时间"}{todo.priority === "high" ? " · 重要" : ""}</small>
             </div>
-            {todo.status === "active" ? <div className="todo-actions">
-              <button type="button" title={todo.pinned ? "取消置顶" : "置顶"} onClick={() => void run(todo.todoRef, () => props.onPin(todo))}>
-                <WorkspaceIcon name="star" />
-              </button>
-              <button type="button" title="编辑待办" onClick={() => setEditTodo(todo)}><WorkspaceIcon name="edit" /></button>
-              <button type="button" title="安排到日历" onClick={() => setScheduleTodo(todo)}><WorkspaceIcon name="calendar" /></button>
-              <button type="button" title="关联课时" onClick={() => setLinkTodo(todo)}><WorkspaceIcon name="lesson" /></button>
-              <button type="button" title={todo.resourceLinks.some((link) => link.resourceKind === "lesson") ? "在 Agent 中处理" : "请先关联课时"} disabled={!todo.resourceLinks.some((link) => link.resourceKind === "lesson")} onClick={() => void run(todo.todoRef, () => props.onSendToAgent(todo))}><WorkspaceIcon name="agent" /></button>
-            </div> : null}
+            {todo.status === "active" ? (
+              <details className="todo-overflow">
+                <summary aria-label={`${todo.title}的其他操作`} title="其他操作"><WorkspaceIcon name="more" /></summary>
+                <div className="todo-actions">
+                  <button type="button" title={todo.pinned ? "取消置顶" : "置顶"} onClick={() => void run(todo.todoRef, () => props.onPin(todo))}>
+                    <WorkspaceIcon name="star" /><span>{todo.pinned ? "取消置顶" : "置顶"}</span>
+                  </button>
+                  <button type="button" onClick={() => setEditTodo(todo)}><WorkspaceIcon name="edit" /><span>编辑</span></button>
+                  <button type="button" onClick={() => setScheduleTodo(todo)}><WorkspaceIcon name="calendar" /><span>安排时间</span></button>
+                  <button type="button" onClick={() => setLinkTodo(todo)}><WorkspaceIcon name="lesson" /><span>关联课时</span></button>
+                  <button type="button" disabled={!todo.resourceLinks.some((link) => link.resourceKind === "lesson")} onClick={() => void run(todo.todoRef, () => props.onSendToAgent(todo))}><WorkspaceIcon name="agent" /><span>交给助手</span></button>
+                </div>
+              </details>
+            ) : null}
           </article>
         ))}
-        {filter === "active" ? visibleProjections.map((projection) => (
-          <article key={projection.projectionRef} className="todo-checklist-item source-work-item">
-            <button type="button" className="todo-checklist-content todo-source-content" onClick={() => props.onOpenSource(projection.deepLink)}>
-              <strong>{projection.pinned ? "📌 " : ""}{cleanDisplayText(projection.title)}</strong>
-              <span>{cleanDisplayText(projection.summary)}</span>
-              <small>系统提醒 · {workSourceLabel(projection.sourceModule)} · {workProjectionStatusLabel(projection.displayStatus)}{projection.dueAt ? ` · ${formatDateTime(projection.dueAt)}` : ""}</small>
-            </button>
-            <div className="source-work-item__actions">
-              <button type="button" title={projection.pinned ? "取消置顶" : "置顶"} onClick={() => void run(projection.projectionRef, () => props.onPinSource(projection))}><WorkspaceIcon name="star" /></button>
-              <Button size="small" type="link" onClick={() => props.onOpenSource(projection.deepLink)}>{projection.recommendedAction}</Button>
-            </div>
-          </article>
-        )) : null}
         {!props.loading && filtered.length === 0 && (filter === "completed" || visibleProjections.length === 0) ? <p className="empty-copy">{filter === "active" ? "当前没有待处理事项。" : "还没有已完成待办。"}</p> : null}
       </div>
 
@@ -679,7 +703,7 @@ function ScheduleStatistics(props: {
   return (
     <section className="schedule-statistics" aria-label="时间分布">
       <header>
-        <div><strong>时间分布</strong><span>看看教学时间主要花在哪里</span></div>
+        <div><strong>时间分布</strong></div>
         <div className="schedule-statistics__period">
           {(["day", "week", "month"] as const).map((value) => (
             <button type="button" key={value} className={period === value ? "is-active" : ""} onClick={() => setPeriod(value)}>
@@ -693,9 +717,9 @@ function ScheduleStatistics(props: {
           <div><strong>{formatDuration(total)}</strong><span>已安排</span></div>
         </div>
         <div className="schedule-statistics__legend">
-          {segments.length > 0 ? segments.slice(0, 6).map((segment) => (
+          {segments.length > 0 ? segments.slice(0, 5).map((segment) => (
             <div key={segment.key}><i style={{ background: segment.color }} /><span>{segment.label}</span><strong>{Math.round(segment.minutes / total * 100)}%</strong></div>
-          )) : <p className="empty-copy">当前周期还没有日程。</p>}
+          )) : <p className="empty-copy">暂无日程</p>}
         </div>
       </div>
     </section>
@@ -828,7 +852,6 @@ function TodoScheduleModal(props: {
       <div className="demo-form">
         <label>开始<input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></label>
         <label>结束<input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></label>
-        <p>这会创建独立 CalendarEvent；完成任一对象不会自动完成另一个。</p>
       </div>
     </Modal>
   );
@@ -861,7 +884,6 @@ function TodoLessonModal(props: {
         options={props.options}
         onChange={(value: string) => setLessonRef(value)}
       />
-      <p>关联后，Agent 只会封存待办和明确关联的资源引用，不会自动执行或完成待办。</p>
     </Modal>
   );
 }
@@ -897,6 +919,19 @@ function calendarCategory(item: TeacherCalendarItem): {
   label: string;
   color: string;
 } {
+  const title = eventTitle(item);
+  const titleKey: CalendarCategoryKey | null = /批改/u.test(title)
+    ? "grading"
+    : /作业/u.test(title)
+      ? "assignment"
+      : /备课|教材|教研|教学材料/u.test(title)
+        ? "lesson_preparation"
+        : /早读|巡班|值班/u.test(title)
+          ? "duty"
+          : /会议|集体研修/u.test(title)
+            ? "meeting"
+            : null;
+  if (titleKey) return { key: titleKey, ...calendarCategoryMeta[titleKey] };
   if (item.sourceKind === "manual") {
     const key = ({
       class: "class",
@@ -962,8 +997,8 @@ function eventPosition(item: TeacherCalendarItem): CSSProperties {
   const visibleStart = Math.max(gridStart, Math.min(gridEnd, startMinutes));
   const visibleEnd = Math.max(visibleStart + 15, Math.min(gridEnd, endMinutes));
   return {
-    top: (visibleStart - gridStart) / 60 * calendarHourHeight + 3,
-    height: Math.max(34, (visibleEnd - visibleStart) / 60 * calendarHourHeight - 6)
+    top: (visibleStart - gridStart) / 60 * calendarHourHeight + 4,
+    height: Math.max(44, (visibleEnd - visibleStart) / 60 * calendarHourHeight - 4)
   };
 }
 
@@ -994,14 +1029,6 @@ function formatDateTime(value: string): string {
   });
 }
 
-function priorityLabel(value: "high" | "normal" | "low"): string {
-  return value === "high" ? "高优先级" : value === "low" ? "低优先级" : "普通优先级";
-}
-
-function formatMonthDay(value: string): string {
-  return new Date(`${value}T12:00:00`).toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
-}
-
 function statisticsDateRange(value: string, period: "day" | "week" | "month"): { from: string; to: string } {
   if (period === "day") return { from: value, to: addDays(value, 1) };
   if (period === "week") {
@@ -1024,6 +1051,14 @@ function formatDuration(minutes: number): string {
   if (minutes === 0) return "0 小时";
   const hours = minutes / 60;
   return `${hours >= 10 ? Math.round(hours) : hours.toFixed(hours % 1 === 0 ? 0 : 1)} 小时`;
+}
+
+function formatEventDuration(item: TeacherCalendarItem): string {
+  const minutes = eventDurationMinutes(item);
+  if (minutes < 60) return `${Math.round(minutes)}分钟`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  return remainder === 0 ? `${hours}小时` : `${hours}小时${remainder}分钟`;
 }
 
 function toLocalInput(value: string): string {
@@ -1083,7 +1118,12 @@ function weekdayLabel(value: string): string {
 }
 
 function periodLabel(value: string, mode: CalendarMode): string {
-  if (mode === "day") return new Date(`${value}T12:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+  if (mode === "day") {
+    const date = new Date(`${value}T12:00:00`);
+    const calendarDate = date.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+    const weekday = date.toLocaleDateString("zh-CN", { weekday: "long" });
+    return `${calendarDate} ${weekday}`;
+  }
   if (mode === "month") return new Date(`${value.slice(0, 7)}-01T12:00:00`).toLocaleDateString("zh-CN", { year: "numeric", month: "long" });
   const dates = weekDates(value);
   const first = new Date(`${dates[0]}T12:00:00`);

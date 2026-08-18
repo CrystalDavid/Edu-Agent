@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import type { LessonPreparationTaskSummary } from "@edu-agent/contracts";
-import { Alert, Button, Empty, Spin, Tag } from "antd";
+import { Alert, Button, Input, Spin } from "antd";
 
 import { loadLessonPreparationTasks } from "../api";
-import { PageHeader } from "../components/portal/PortalPrimitives";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
 import { formatDisplayDate, lessonPreparationStatusLabel } from "../presentation";
 import type { AppRoute } from "../route";
@@ -13,12 +12,14 @@ export function AgentWorkspacePage(props: {
   navigate: (route: AppRoute) => void;
   navigatePreparation: (
     taskRef: string,
-    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs",
+    prompt?: string
   ) => void;
 }) {
   const [tasks, setTasks] = useState<LessonPreparationTaskSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -28,9 +29,7 @@ export function AgentWorkspacePage(props: {
         if (active) setTasks(result.items);
       })
       .catch((caught) => {
-        if (active) {
-          setError(caught instanceof Error ? caught.message : "无法读取备课任务。");
-        }
+        if (active) setError(caught instanceof Error ? caught.message : "无法读取备课任务。");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -46,74 +45,100 @@ export function AgentWorkspacePage(props: {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     [tasks]
   );
+  const nextTask = activeTasks[0] ?? null;
+  const recentTasks = activeTasks.slice(0, 4);
+  const suggestions = nextTask
+    ? ["完善教学目标", "调整课堂练习", "优化板书设计"]
+    : [];
+
+  const startAssistant = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!nextTask) {
+      props.navigate("/teaching");
+      return;
+    }
+    props.navigatePreparation(
+      nextTask.taskRef,
+      "/agent",
+      prompt.trim() || undefined
+    );
+  };
 
   return (
     <div className="portal-page agent-home-page" data-testid="agent-home-page">
-      <PageHeader
-        eyebrow="教学助手"
-        title="从备课任务开始"
-        subtitle="选择一项备课任务后，系统会展示本次使用的课程、目标和证据，再由你确认是否生成建议。"
-        actions={(
-          <Button type="primary" onClick={() => props.navigate("/teaching")}>
-            <WorkspaceIcon name="course" /> 从课时开始备课
-          </Button>
-        )}
-      />
-
       {error ? <Alert type="error" showIcon message={error} /> : null}
       {loading ? <Spin size="large" /> : null}
 
       {!loading ? (
-        <section className="agent-task-list" aria-label="可继续的备课任务">
-          <header>
-            <div>
-              <h2>继续处理</h2>
-              <p>选择尚未完成的备课任务，继续生成、审阅或完善教学建议。</p>
-            </div>
-            <span>{activeTasks.length} 项</span>
-          </header>
-          {activeTasks.length === 0 ? (
-            <Empty
-              description="当前没有待处理的备课任务"
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-            >
-              <Button onClick={() => props.navigate("/teaching")}>选择课时</Button>
-            </Empty>
-          ) : (
-            <div className="agent-task-list__items">
-              {activeTasks.map((task) => (
-                <article key={task.taskRef}>
-                  <div className="agent-task-list__icon">
-                    <WorkspaceIcon name="agent" />
-                  </div>
-                  <div>
-                    <h3>{task.lessonTitle}</h3>
-                    <p>{task.title}</p>
-                    <small>
-                      {task.dueAt ? `计划时间 ${formatDisplayDate(task.dueAt)}` : "未设置计划时间"}
-                    </small>
-                  </div>
-                  <Tag>{lessonPreparationStatusLabel(task.status)}</Tag>
-                  <Button
-                    type="primary"
-                    onClick={() => props.navigatePreparation(task.taskRef, "/agent")}
-                  >
-                    继续处理
-                  </Button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      ) : null}
+        <main className="agent-workspace-home">
+          <section className="agent-focus" aria-label="助手入口">
+            <h1>{nextTask ? `继续准备「${nextTask.lessonTitle}」` : "今天先做什么？"}</h1>
+            <form className="agent-composer" onSubmit={startAssistant}>
+              <button
+                type="button"
+                className="agent-composer__attach"
+                aria-label="打开资料"
+                onClick={() => props.navigate("/files")}
+              >
+                <WorkspaceIcon name="plus" variant="filled" />
+              </button>
+              <Input.TextArea
+                aria-label="告诉 Agent 你想完成什么"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                placeholder="告诉 Agent 你想完成什么…"
+              />
+              <span className="agent-composer__mode">Agent</span>
+              <span className="agent-composer__voice" aria-hidden="true">
+                <WorkspaceIcon name="voice" variant="filled" />
+              </span>
+              <Button
+                type="primary"
+                htmlType="submit"
+                aria-label={nextTask ? "继续这项工作" : "选择课时"}
+                icon={<WorkspaceIcon name="send" variant="filled" />}
+              />
+            </form>
+            {suggestions.length > 0 ? (
+              <div className="agent-prompt-suggestions" aria-label="常用需求">
+                {suggestions.map((suggestion) => (
+                  <button type="button" key={suggestion} onClick={() => setPrompt(suggestion)}>
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
 
-      <section className="agent-safety-note">
-        <WorkspaceIcon name="check" />
-        <div>
-          <strong>由教师决定最终结果</strong>
-          <p>教学助手只生成可修改的建议；批准教学计划、记录课堂事实和完成任务仍由教师明确操作。</p>
-        </div>
-      </section>
+          <section className="agent-recent-work" aria-label="最近工作">
+            <header>
+              <h2>最近工作</h2>
+              {recentTasks.length > 0 ? <span>{recentTasks.length} 项未完成</span> : null}
+            </header>
+            <div className="agent-task-list" data-testid="agent-task-list">
+              {recentTasks.length > 0 ? recentTasks.map((task) => (
+                <button
+                  type="button"
+                  key={task.taskRef}
+                  onClick={() => props.navigatePreparation(task.taskRef, "/agent")}
+                >
+                  <span>
+                    <strong>{task.lessonTitle}</strong>
+                    <small>{lessonPreparationStatusLabel(task.status)}{task.dueAt ? ` · ${formatDisplayDate(task.dueAt)}` : ""}</small>
+                  </span>
+                  <WorkspaceIcon name="arrowRight" />
+                </button>
+              )) : (
+                <button type="button" onClick={() => props.navigate("/teaching")}>
+                  <span><strong>选择一节课开始</strong><small>从课程进入新的教学工作</small></span>
+                  <WorkspaceIcon name="arrowRight" />
+                </button>
+              )}
+            </div>
+          </section>
+        </main>
+      ) : null}
     </div>
   );
 }

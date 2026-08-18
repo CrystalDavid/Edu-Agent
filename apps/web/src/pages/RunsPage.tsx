@@ -173,7 +173,7 @@ export function RunsPage(props: {
                     {explanation.modelExecution.provider ===
                     "volcengine-ark"
                       ? `Volcengine Ark · ${explanation.modelExecution.modelDisplayName}`
-                      : "离线教学助手"}
+                      : "离线助手"}
                   </dd>
                 </div>
                 <div>
@@ -351,7 +351,7 @@ function TechnicalDetails({
                       explanation.modelExecution.provider ===
                       "volcengine-ark"
                         ? "火山方舟"
-                        : "内置教学助手"
+                        : "内置助手"
                     } · ${explanation.modelExecution.modelDisplayName}`
                   },
                   {
@@ -563,8 +563,8 @@ function teacherTimeline(explanation: RunExplanation) {
       title: "生成建议草稿",
       description:
         explanation.modelExecution.provider === "volcengine-ark"
-          ? "豆包教学助手在业务事务外生成建议，经结构、证据与权限校验后才保存。"
-          : "内置教学助手生成建议，没有发起外部模型请求。",
+          ? "豆包助手在业务事务外生成建议，经结构、证据与权限校验后才保存。"
+          : "内置助手生成建议，没有发起外部模型请求。",
       color: "blue"
     },
     {

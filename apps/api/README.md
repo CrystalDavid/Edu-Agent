@@ -8,4 +8,4 @@
 - 平台 Adapter：`src/platform/`；
 - 唯一 Migration registry：`src/database/migrations.ts`；执行器：`src/platform/postgres/bootstrap.ts`。
 
-禁止跨 Schema 直接写、由 Runtime 改写领域状态、修改历史 Migration，或让 production 回退 Local/Mock/Demo。先阅读根 [Agent 指南](../../AGENTS.md) 和 [当前架构](../../docs/architecture.md)。
+禁止跨 Schema 直接写、由 Runtime 改写领域状态、修改历史 Migration，或让 production 回退 Local/Mock/Demo。先阅读根 [Agent 指南](../../AGENTS.md) 和 [当前架构](../../docs/architecture/README.md)。

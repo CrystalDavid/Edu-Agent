@@ -5,7 +5,7 @@ import {
   readdirSync,
   statSync
 } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 interface VerifiedStage {
@@ -249,7 +249,11 @@ const markdownFiles = [
   resolve(workspaceRoot, "README.md"),
   resolve(workspaceRoot, "CHANGELOG.md"),
   ...collectMarkdownFiles(resolve(workspaceRoot, "docs"))
-];
+].filter((filePath) => {
+  const historyRoot = resolve(workspaceRoot, "docs/history");
+  const pathFromHistory = relative(historyRoot, filePath);
+  return pathFromHistory.startsWith("..") || pathFromHistory === "";
+});
 for (const markdownFile of markdownFiles) {
   verifyLocalMarkdownLinks(markdownFile);
 }
