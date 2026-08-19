@@ -18,7 +18,7 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
 }) => {
   await page.goto("/settings");
   await expect(page.getByTestId("settings-page")).toBeVisible();
-  await page.getByRole("button", { name: "教学助手偏好" }).click();
+  await page.getByRole("button", { name: "助手偏好" }).click();
   const panel = page.getByTestId("teacher-preference-settings");
   await expect(panel).toBeVisible();
 
@@ -42,11 +42,14 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
   const preferenceInput = panel.getByLabel("教案表达风格的值");
   await expect(preferenceInput).toHaveValue("简洁");
   await preferenceInput.fill("简洁并优先使用课堂案例");
-  await panel.getByRole("button", { name: /保存修改/u }).click();
+  await preferenceInput
+    .locator("xpath=ancestor::article[contains(@class, 'settings-row')]")
+    .getByRole("button", { name: /保存修改/u })
+    .click();
   await expect(preferenceInput).toHaveValue("简洁并优先使用课堂案例");
 
   await page.reload();
-  await page.getByRole("button", { name: "教学助手偏好" }).click();
+  await page.getByRole("button", { name: "助手偏好" }).click();
   await expect(page.getByLabel("教案表达风格的值"))
     .toHaveValue("简洁并优先使用课堂案例");
   await page.screenshot({
@@ -56,11 +59,11 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
 
   await page.getByRole("button", { name: /删除并撤销/u }).click();
   await expect(page.getByLabel("教案表达风格的值")).toHaveCount(0);
-  await expect(panel).toContainText("已撤销");
+  await expect(panel).toContainText("已删除");
   await expect(panel).toContainText("简洁并优先使用课堂案例");
 
   await page.reload();
-  await page.getByRole("button", { name: "教学助手偏好" }).click();
+  await page.getByRole("button", { name: "助手偏好" }).click();
   await expect(page.getByLabel("教案表达风格的值")).toHaveCount(0);
   await expect(page.getByTestId("teacher-preference-settings"))
     .toContainText("简洁并优先使用课堂案例");

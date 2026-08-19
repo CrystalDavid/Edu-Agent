@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   createBuiltInSkillRegistry,
   lessonPreparationSkillV1,
-  lessonPreparationSkillV4
+  lessonPreparationSkillV4,
+  lessonPreparationSkillV5
 } from "../../apps/api/src/agent/skills/index.js";
 import {
   cloneSkillManifest,
@@ -34,22 +35,24 @@ describe("Phase 5 versioned Skill Registry", () => {
 
   it("keeps a new version alongside published versions instead of overwriting them", () => {
     const registry = createBuiltInSkillRegistry();
-    const version5 = Object.freeze({
+    const version6 = Object.freeze({
       ...lessonPreparationSkillV1,
       manifest: cloneSkillManifest({
         manifest: lessonPreparationSkillV1.manifest,
-        version: "5",
+        version: "6",
         status: "published"
       })
     });
 
-    registry.register(version5);
+    registry.register(version6);
 
     expect(registry.loadPublished("lesson-preparation@1"))
       .toBe(lessonPreparationSkillV1);
     expect(registry.loadPublished("lesson-preparation@4"))
       .toBe(lessonPreparationSkillV4);
-    expect(registry.loadPublished("lesson-preparation@5")).toBe(version5);
+    expect(registry.loadPublished("lesson-preparation@5"))
+      .toBe(lessonPreparationSkillV5);
+    expect(registry.loadPublished("lesson-preparation@6")).toBe(version6);
     expect(registry.list().map((item) => item.skillRef)).toEqual([
       "classroom-reflection@1",
       "lesson-analysis@1",
@@ -58,6 +61,7 @@ describe("Phase 5 versioned Skill Registry", () => {
       "lesson-preparation@3",
       "lesson-preparation@4",
       "lesson-preparation@5",
+      "lesson-preparation@6",
       "material-generation@1",
       "next-lesson-adjustment@1",
       "reflection-analysis@1"
@@ -77,6 +81,11 @@ describe("Phase 5 versioned Skill Registry", () => {
       .toMatchObject({
         ref: "lesson-preparation@4",
         inputSchemaRef: "lesson-preparation-input@3"
+      });
+    expect(registry.loadPublished("lesson-preparation@5").manifest)
+      .toMatchObject({
+        ref: "lesson-preparation@5",
+        inputSchemaRef: "lesson-preparation-input@4"
       });
   });
 

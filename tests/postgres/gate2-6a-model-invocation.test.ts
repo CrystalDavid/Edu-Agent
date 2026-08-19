@@ -63,6 +63,821 @@ afterAll(async () => {
 });
 
 describe("Gate 2.6A durable ModelExecution", () => {
+  it("keeps same-thread lesson preparation context across refresh and service restart", async () => {
+    const candidate = await request(app)
+      .post(apiRoutes.teacher.memoryCandidates)
+      .set(demoHeaders)
+      .send({
+        summary: "合成教师明确要求教案保持简洁。",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "简洁",
+        purpose: "personalization.candidate.create",
+        idempotencyKey: `memory-observability:create:${randomUUID()}`
+      })
+      .expect(201);
+    const confirmedPreference = await request(app)
+      .post(
+        apiRoutes.teacher.memoryCandidateConfirm(
+          candidate.body.candidate.candidateRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        expectedVersion: candidate.body.candidate.version,
+        purpose: "personalization.candidate.confirm",
+        idempotencyKey: `memory-observability:confirm:${randomUUID()}`
+      })
+      .expect(200);
+    const task = await createStartedTask(app);
+    const createdConversation = await request(app)
+      .post(apiRoutes.teacher.conversations)
+      .set(demoHeaders)
+      .send({
+        taskRef: task.taskRef,
+        purposeFamily: "lesson_preparation",
+        courseRunRef: task.courseRunRef,
+        lessonRef: task.lessonRef,
+        purpose: "teacher-copilot.conversation.create",
+        idempotencyKey: `conversation:create:${randomUUID()}`
+      })
+      .expect(201);
+    const firstText =
+      "请强化斜率变化与图像陡峭程度的联系，并保留两个可比较方案。";
+    const firstTurn = await request(app)
+      .post(
+        apiRoutes.teacher.conversationTurns(
+          createdConversation.body.conversation.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        teacherText: firstText,
+        parentTurnRef: null,
+        expectedConversationVersion:
+          createdConversation.body.conversation.version,
+        purpose: "teacher-copilot.conversation.append-turn",
+        idempotencyKey: `conversation:turn:${randomUUID()}`
+      })
+      .expect(201);
+    const firstCommand = {
+      ...invocationCommand(task),
+      requestText: firstText,
+      requestVersion: 2,
+      conversationRef:
+        firstTurn.body.conversation.conversationRef,
+      turnRef: firstTurn.body.turn.turnRef,
+      parentTurnRef: firstTurn.body.turn.parentTurnRef,
+      conversationVersion:
+        firstTurn.body.conversation.version
+    };
+    const firstQueued = await request(app)
+      .post(apiRoutes.teacher.modelInvocations)
+      .set(demoHeaders)
+      .send(firstCommand)
+      .expect(202);
+    expect(firstQueued.body.execution).toMatchObject({
+      conversationRef: firstTurn.body.conversation.conversationRef,
+      turnRef: firstTurn.body.turn.turnRef,
+      promptBundleVersion: 4
+    });
+    await product.workers.copilotOutbox.processAvailable(100);
+
+    const afterFirst = await request(app)
+      .get(
+        apiRoutes.teacher.conversation(
+          firstTurn.body.conversation.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200);
+    expect(afterFirst.body.turns).toHaveLength(2);
+    expect(afterFirst.body.turns[1]).toMatchObject({
+      actorKind: "assistant_surface",
+      contentKind: "result_link",
+      teacherText: null
+    });
+    expect(afterFirst.body.workingMemory.activeGoal.text).toBe(
+      firstText
+    );
+
+    const restartedProduct = createProductContainer(postgresEnvironment);
+    try {
+      const restartedApp = createApp({ product: restartedProduct });
+      await request(restartedApp)
+        .get(
+          apiRoutes.teacher.conversation(
+            firstTurn.body.conversation.conversationRef
+          )
+        )
+        .set(demoHeaders)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.turns).toHaveLength(2);
+          expect(body.workingMemory.contentHash).toHaveLength(64);
+        });
+    } finally {
+      await restartedProduct.close();
+    }
+
+    const refreshedTask = await request(app)
+      .get(apiRoutes.teacher.preparationTask(task.taskRef))
+      .set(demoHeaders)
+      .expect(200);
+    const secondText = "再短一点，保留独立检查。";
+    const secondTurn = await request(app)
+      .post(
+        apiRoutes.teacher.conversationTurns(
+          afterFirst.body.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        teacherText: secondText,
+        parentTurnRef: afterFirst.body.lastTurnRef,
+        expectedConversationVersion: afterFirst.body.version,
+        purpose: "teacher-copilot.conversation.append-turn",
+        idempotencyKey: `conversation:turn:${randomUUID()}`
+      })
+      .expect(201);
+    const secondCommand = {
+      ...invocationCommand(refreshedTask.body),
+      requestText: secondText,
+      requestVersion: 2,
+      conversationRef: afterFirst.body.conversationRef,
+      turnRef: secondTurn.body.turn.turnRef,
+      parentTurnRef: secondTurn.body.turn.parentTurnRef,
+      conversationVersion: secondTurn.body.conversation.version
+    };
+    const secondQueued = await request(app)
+      .post(apiRoutes.teacher.modelInvocations)
+      .set(demoHeaders)
+      .send(secondCommand)
+      .expect(202);
+    await product.workers.copilotOutbox.processAvailable(25);
+
+    const recovered = await request(app)
+      .get(
+        apiRoutes.teacher.conversation(
+          afterFirst.body.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200);
+    expect(recovered.body.turns).toHaveLength(4);
+    expect(recovered.body.workingMemory).toMatchObject({
+      activeGoal: {
+        text: firstText,
+        sourceTurnRef: firstTurn.body.turn.turnRef
+      },
+      pendingIntents: [secondText]
+    });
+    expect(
+      recovered.body.workingMemory.temporaryOverrides.join(" ")
+    ).toContain("短一点");
+    expect(
+      recovered.body.workingMemory.latestAssistantResult.resultRefs
+        .proposalRevisionRef
+    ).toBeTruthy();
+
+    await expect(
+      product.services.conversations.get({
+        tenantRef: gate2DemoRefs.tenantRef,
+        actorRef: "user:teacher-foreign",
+        conversationRef: afterFirst.body.conversationRef
+      })
+    ).rejects.toMatchObject({ name: "NotFoundError" });
+
+    const persisted = await adminPool.query<{
+      skill_ref: string;
+      snapshot_ref: string;
+      snapshot_hash: string;
+      source_sequence: number;
+      active_snapshots: string;
+      all_snapshots: string;
+      teacher_turns: string;
+      assistant_turns: string;
+      context_engineering: Record<string, unknown>;
+    }>(
+      `SELECT execution.input_summary->>'skillRef' AS skill_ref,
+              execution.input_summary->>'workingMemorySnapshotRef' AS snapshot_ref,
+              execution.input_summary->>'workingMemoryContentHash' AS snapshot_hash,
+              (execution.input_summary->>'workingMemorySourceTurnSequence')::integer AS source_sequence,
+              (SELECT count(*)::text FROM runtime.working_memory_snapshot
+                WHERE conversation_ref = $1 AND status = 'active') AS active_snapshots,
+              (SELECT count(*)::text FROM runtime.working_memory_snapshot
+                WHERE conversation_ref = $1) AS all_snapshots,
+              (SELECT count(*)::text FROM work.conversation_turn
+                WHERE conversation_ref = $1 AND actor_kind = 'teacher') AS teacher_turns,
+              (SELECT count(*)::text FROM work.conversation_turn
+                WHERE conversation_ref = $1 AND actor_kind = 'assistant_surface') AS assistant_turns,
+              run.output->'contextEngineering' AS context_engineering
+         FROM capability.model_execution AS execution
+         JOIN runtime.agent_run AS run
+           ON run.agent_run_ref = execution.agent_run_ref
+        WHERE execution.execution_ref = $2`,
+      [afterFirst.body.conversationRef, secondQueued.body.execution.modelExecutionRef]
+    );
+    expect(persisted.rows[0]).toMatchObject({
+      skill_ref: "lesson-preparation@5",
+      source_sequence: 3,
+      active_snapshots: "1",
+      all_snapshots: "4",
+      teacher_turns: "2",
+      assistant_turns: "2"
+    });
+    expect(persisted.rows[0]?.snapshot_ref).toMatch(
+      /^working-memory:/u
+    );
+    expect(persisted.rows[0]?.snapshot_hash).toHaveLength(64);
+    expect(
+      persisted.rows[0]?.context_engineering["conversationManifest"]
+    ).toMatchObject({
+      schemaVersion: 4,
+      conversationRef: afterFirst.body.conversationRef,
+      turnRef: secondTurn.body.turn.turnRef,
+      sourceTurnSequence: 3
+    });
+    const secondProposalRef = recovered.body.workingMemory
+      .latestAssistantResult.resultRefs.proposalRevisionRef as string;
+    const proposal = await request(app)
+      .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+      .set(demoHeaders)
+      .expect(200);
+    expect(proposal.body.memoryContext).toMatchObject({
+      currentTurn: {
+        turnRef: secondTurn.body.turn.turnRef,
+        displaySummary: secondText
+      },
+      workingMemory: [
+        expect.objectContaining({
+          sourceKind: "working_memory",
+          decision: "injected",
+          reasonCode: "same_task_working_memory"
+        })
+      ],
+      durablePreferences: [
+        expect.objectContaining({
+          preferenceRef:
+            confirmedPreference.body.preference.preferenceRef,
+          preferenceValue: "简洁",
+          currentStatus: "active",
+          decision: "injected",
+          reasonCode: "active_confirmed_preference"
+        })
+      ]
+    });
+    expect(proposal.body.memoryContext.packContentHash).toHaveLength(64);
+    const runExplanation = await request(app)
+      .get(apiRoutes.demo.runExplanation(task.taskRef))
+      .set(demoHeaders)
+      .expect(200);
+    expect(runExplanation.body.memoryContext).toMatchObject({
+      packRef: proposal.body.memoryContext.packRef,
+      packContentHash: proposal.body.memoryContext.packContentHash
+    });
+    await product.services.modelInvocations.processExecution(
+      secondQueued.body.execution.modelExecutionRef
+    );
+    const applicationCount = await adminPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM personalization.memory_application
+        WHERE agent_run_ref = $1
+          AND preference_ref = $2
+          AND preference_version = $3
+          AND decision = 'injected'`,
+      [
+        proposal.body.agentRunRef,
+        confirmedPreference.body.preference.preferenceRef,
+        confirmedPreference.body.preference.version
+      ]
+    );
+    expect(applicationCount.rows[0]?.count).toBe("1");
+
+    const restartedObservabilityProduct = createProductContainer(
+      postgresEnvironment
+    );
+    try {
+      const restartedApp = createApp({
+        product: restartedObservabilityProduct
+      });
+      await request(restartedApp)
+        .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+        .set(demoHeaders)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.memoryContext.packRef).toBe(
+            proposal.body.memoryContext.packRef
+          );
+          expect(body.memoryContext.packContentHash).toBe(
+            proposal.body.memoryContext.packContentHash
+          );
+        });
+    } finally {
+      await restartedObservabilityProduct.close();
+    }
+
+    await request(app)
+      .post(apiRoutes.demo.suggestionDisposition(secondProposalRef))
+      .set(demoHeaders)
+      .send({
+        purpose: "teacher-copilot.review-suggestion",
+        idempotencyKey: `memory-observability:reject:${randomUUID()}`,
+        disposition: "rejected",
+        selectedStrategyId: proposal.body.strategies[0].strategyId,
+        expectedProposalRevisionNumber: proposal.body.proposalRevisionNumber,
+        teacherEdits: {}
+      })
+      .expect(201);
+    await product.workers.copilotOutbox.processAvailable(100);
+    const outcomeCount = await adminPool.query<{
+      count: string;
+      status: string;
+    }>(
+      `SELECT count(*)::text AS count,
+              max(outcome_status) AS status
+         FROM personalization.memory_application_outcome
+        WHERE agent_run_ref = $1`,
+      [proposal.body.agentRunRef]
+    );
+    expect(outcomeCount.rows[0]).toMatchObject({
+      count: "1",
+      status: "rejected"
+    });
+
+    await request(app)
+      .post(
+        apiRoutes.teacher.teacherPreferenceRevoke(
+          confirmedPreference.body.preference.preferenceRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        expectedVersion: confirmedPreference.body.preference.version,
+        purpose: "personalization.preference.revoke",
+        idempotencyKey: `memory-observability:revoke:${randomUUID()}`
+      })
+      .expect(200);
+    await request(app)
+      .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.memoryContext.durablePreferences[0]).toMatchObject({
+          preferenceValue: "简洁",
+          currentStatus: "revoked",
+          outcomeStatus: "rejected"
+        });
+        expect(body.memoryContext.outcomeStatus).toBe("rejected");
+      });
+    expect(
+      await product.services.personalization.listConfirmedPreferences({
+        tenantRef: gate2DemoRefs.tenantRef,
+        teacherRef: gate2DemoRefs.teacherRef
+      })
+    ).toEqual([]);
+
+    await request(app)
+      .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+      .set({
+        ...demoHeaders,
+        "x-demo-actor": "user:teacher-foreign"
+      })
+      .expect(403);
+  });
+
+  it("keeps ModelExecution successful when memory application recording is degraded", async () => {
+    const candidate = await request(app)
+      .post(apiRoutes.teacher.memoryCandidates)
+      .set(demoHeaders)
+      .send({
+        summary: "合成教师确认教案应保持简洁。",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "简洁",
+        purpose: "personalization.candidate.create",
+        idempotencyKey: `memory-observability:degraded:create:${randomUUID()}`
+      })
+      .expect(201);
+    await request(app)
+      .post(
+        apiRoutes.teacher.memoryCandidateConfirm(
+          candidate.body.candidate.candidateRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        expectedVersion: candidate.body.candidate.version,
+        purpose: "personalization.candidate.confirm",
+        idempotencyKey: `memory-observability:degraded:confirm:${randomUUID()}`
+      })
+      .expect(200);
+    const task = await createStartedTask(app);
+    const teacherText = "请保持简洁，并保留一个独立检查。";
+    const context = await createConversationTurn(app, task, teacherText);
+    const queued = await request(app)
+      .post(apiRoutes.teacher.modelInvocations)
+      .set(demoHeaders)
+      .send({
+        ...invocationCommand(task),
+        requestText: teacherText,
+        requestVersion: 2,
+        conversationRef: context.conversation.conversationRef,
+        turnRef: context.turn.turnRef,
+        parentTurnRef: context.turn.parentTurnRef,
+        conversationVersion: context.conversation.version
+      })
+      .expect(202);
+
+    await adminPool.query(`
+      CREATE OR REPLACE FUNCTION personalization.reject_synthetic_memory_application()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'synthetic memory application observability failure';
+      END;
+      $function$;
+      CREATE TRIGGER reject_synthetic_memory_application
+      BEFORE INSERT ON personalization.memory_application
+      FOR EACH ROW
+      EXECUTE FUNCTION personalization.reject_synthetic_memory_application()
+    `);
+    try {
+      await product.workers.copilotOutbox.processAvailable(100);
+    } finally {
+      await adminPool.query(`
+        DROP TRIGGER IF EXISTS reject_synthetic_memory_application
+          ON personalization.memory_application;
+        DROP FUNCTION IF EXISTS personalization.reject_synthetic_memory_application()
+      `);
+    }
+
+    await request(app)
+      .get(
+        apiRoutes.teacher.modelInvocation(
+          queued.body.execution.modelExecutionRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("succeeded");
+        expect(body.proposalRevisionRef).toBeTruthy();
+      });
+    const persisted = await adminPool.query<{
+      application_count: string;
+      observability_status: string | null;
+    }>(
+      `SELECT
+         (SELECT count(*)::text
+            FROM personalization.memory_application
+           WHERE agent_run_ref = execution.agent_run_ref) AS application_count,
+         run.output->'contextEngineering'->'memoryApplicationObservability'->>'status'
+           AS observability_status
+         FROM capability.model_execution AS execution
+         JOIN runtime.agent_run AS run
+           ON run.agent_run_ref = execution.agent_run_ref
+        WHERE execution.execution_ref = $1`,
+      [queued.body.execution.modelExecutionRef]
+    );
+    expect(persisted.rows[0]).toMatchObject({
+      application_count: "0",
+      observability_status: "degraded"
+    });
+  });
+
+  it("fails closed on owner, task, turn, snapshot reference, source sequence, and snapshot hash mismatches", async () => {
+    const task = await createStartedTask(app);
+    const text = "请保留独立检查。";
+    const context = await createConversationTurn(app, task, text);
+    const base = {
+      tenantRef: gate2DemoRefs.tenantRef,
+      teacherRef: gate2DemoRefs.teacherRef,
+      conversationRef: context.conversation.conversationRef,
+      turnRef: context.turn.turnRef,
+      conversationVersion: context.conversation.version,
+      requestText: text,
+      taskRef: task.taskRef,
+      courseRunRef: task.courseRunRef,
+      lessonRef: task.lessonRef
+    };
+
+    await expect(
+      product.services.conversations.requireInvocationContext(
+        adminPool,
+        base
+      )
+    ).resolves.toMatchObject({
+      turn: { turnRef: context.turn.turnRef },
+      workingMemory: {
+        snapshotRef: context.workingMemory.snapshotRef
+      }
+    });
+    for (const mismatch of [
+      { tenantRef: "tenant:foreign" },
+      { teacherRef: "user:teacher-foreign" }
+    ]) {
+      await expect(
+        product.services.conversations.requireInvocationContext(
+          adminPool,
+          { ...base, ...mismatch }
+        )
+      ).rejects.toMatchObject({ name: "NotFoundError" });
+    }
+    for (const mismatch of [
+      { taskRef: "preparation-task:foreign" },
+      { turnRef: "turn:foreign" },
+      { requestText: "不同的教师请求" },
+      { conversationVersion: context.conversation.version + 1 }
+    ]) {
+      await expect(
+        product.services.conversations.requireInvocationContext(
+          adminPool,
+          { ...base, ...mismatch }
+        )
+      ).rejects.toMatchObject({
+        name: "DomainConflictError",
+        code: "CONVERSATION_CONTEXT_CONFLICT"
+      });
+    }
+
+    const sealed = {
+      tenantRef: gate2DemoRefs.tenantRef,
+      teacherRef: gate2DemoRefs.teacherRef,
+      conversationRef: context.conversation.conversationRef,
+      snapshotRef: context.workingMemory.snapshotRef,
+      expectedVersion: 1,
+      expectedContentHash: context.workingMemory.contentHash,
+      expectedSourceTurnSequence:
+        context.workingMemory.sourceTurnSequence
+    };
+    await expect(
+      product.services.conversations.loadSealedWorkingMemory(
+        adminPool,
+        sealed
+      )
+    ).resolves.toMatchObject({
+      contentHash: context.workingMemory.contentHash
+    });
+    for (const mismatch of [
+      { snapshotRef: "working-memory:foreign" },
+      { expectedContentHash: "0".repeat(64) },
+      {
+        expectedSourceTurnSequence:
+          context.workingMemory.sourceTurnSequence + 1
+      },
+      { teacherRef: "user:teacher-foreign" }
+    ]) {
+      await expect(
+        product.services.conversations.loadSealedWorkingMemory(
+          adminPool,
+          { ...sealed, ...mismatch }
+        )
+      ).rejects.toThrow(
+        "The sealed WorkingMemorySnapshot cannot be reconstructed."
+      );
+    }
+
+    await expect(
+      adminPool.query(
+        `UPDATE work.conversation_turn
+            SET teacher_text = 'tampered'
+          WHERE turn_ref = $1`,
+        [context.turn.turnRef]
+      )
+    ).rejects.toThrow(/ConversationTurn is immutable/iu);
+    await expect(
+      adminPool.query(
+        `UPDATE runtime.working_memory_snapshot
+            SET content_hash = $2
+          WHERE snapshot_ref = $1`,
+        [context.workingMemory.snapshotRef, "0".repeat(64)]
+      )
+    ).rejects.toThrow(/payloads are immutable/iu);
+
+    const isolated = await request(app)
+      .post(apiRoutes.teacher.conversations)
+      .set(demoHeaders)
+      .send({
+        taskRef: task.taskRef,
+        purposeFamily: "lesson_preparation",
+        courseRunRef: task.courseRunRef,
+        lessonRef: task.lessonRef,
+        purpose: "teacher-copilot.conversation.create",
+        idempotencyKey: `conversation:isolated:${randomUUID()}`
+      })
+      .expect(201);
+    expect(isolated.body.conversation).toMatchObject({
+      turns: [],
+      workingMemory: null,
+      lastTurnSequence: 0
+    });
+  });
+
+  it("closes a conversation, invalidates active memory, and recovers a Provider retry from the sealed snapshot", async () => {
+    const task = await createStartedTask(app);
+    const text = "请给出两个方案，并保留独立检查。";
+    const context = await createConversationTurn(app, task, text);
+    const queued = await request(app)
+      .post(apiRoutes.teacher.modelInvocations)
+      .set(demoHeaders)
+      .send({
+        ...invocationCommand(task),
+        requestText: text,
+        requestVersion: 2,
+        conversationRef: context.conversation.conversationRef,
+        turnRef: context.turn.turnRef,
+        parentTurnRef: context.turn.parentTurnRef,
+        conversationVersion: context.conversation.version
+      })
+      .expect(202);
+    await request(app)
+      .post(
+        apiRoutes.teacher.modelInvocationCancel(
+          queued.body.execution.modelExecutionRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        purpose: "teacher-copilot.cancel-model",
+        idempotencyKey: `conversation:cancel:${randomUUID()}`,
+        expectedStatus: "queued"
+      })
+      .expect(200);
+
+    const closed = await request(app)
+      .post(
+        apiRoutes.teacher.conversationClose(
+          context.conversation.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        expectedConversationVersion: context.conversation.version,
+        purpose: "teacher-copilot.conversation.close",
+        idempotencyKey: `conversation:close:${randomUUID()}`
+      })
+      .expect(201);
+    expect(closed.body.conversation).toMatchObject({
+      status: "closed",
+      workingMemory: null,
+      turns: [{ turnRef: context.turn.turnRef }]
+    });
+    await request(app)
+      .post(
+        apiRoutes.teacher.conversationTurns(
+          context.conversation.conversationRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        teacherText: "关闭后不能追加",
+        parentTurnRef: context.turn.turnRef,
+        expectedConversationVersion:
+          closed.body.conversation.version,
+        purpose: "teacher-copilot.conversation.append-turn",
+        idempotencyKey: `conversation:closed-turn:${randomUUID()}`
+      })
+      .expect(409);
+
+    const retry = await request(app)
+      .post(
+        apiRoutes.teacher.modelInvocationRetry(
+          queued.body.execution.modelExecutionRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        purpose: "teacher-copilot.retry-model",
+        idempotencyKey: `conversation:retry:${randomUUID()}`,
+        expectedStatus: "cancelled"
+      })
+      .expect(202);
+    expect(retry.body.execution).toMatchObject({
+      conversationRef: context.conversation.conversationRef,
+      turnRef: context.turn.turnRef,
+      retryOfModelExecutionRef:
+        queued.body.execution.modelExecutionRef
+    });
+    await product.workers.copilotOutbox.processAvailable(25);
+    await request(app)
+      .get(
+        apiRoutes.teacher.modelInvocation(
+          retry.body.execution.modelExecutionRef
+        )
+      )
+      .set(demoHeaders)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("succeeded");
+      });
+
+    const persisted = await adminPool.query<{
+      execution_ref: string;
+      snapshot_ref: string;
+      snapshot_hash: string;
+    }>(
+      `SELECT execution_ref,
+              input_summary->>'workingMemorySnapshotRef' AS snapshot_ref,
+              input_summary->>'workingMemoryContentHash' AS snapshot_hash
+         FROM capability.model_execution
+        WHERE execution_ref = ANY($1::text[])
+        ORDER BY execution_ref`,
+      [[
+        queued.body.execution.modelExecutionRef,
+        retry.body.execution.modelExecutionRef
+      ]]
+    );
+    expect(new Set(persisted.rows.map((row) => row.snapshot_ref))).toEqual(
+      new Set([context.workingMemory.snapshotRef])
+    );
+    expect(new Set(persisted.rows.map((row) => row.snapshot_hash))).toEqual(
+      new Set([context.workingMemory.contentHash])
+    );
+    const snapshotStatus = await adminPool.query<{ status: string }>(
+      `SELECT status
+         FROM runtime.working_memory_snapshot
+        WHERE snapshot_ref = $1`,
+      [context.workingMemory.snapshotRef]
+    );
+    expect(snapshotStatus.rows[0]?.status).toBe("invalidated");
+  });
+
+  it("applies configured retention and excludes expired turns and snapshots", async () => {
+    const expiringProduct = createProductContainer(postgresEnvironment, {
+      conversationRetentionSettings: {
+        durationMilliseconds: 1_000,
+        policyVersion: "conversation-retention@1"
+      }
+    });
+    const expiringApp = createApp({ product: expiringProduct });
+    try {
+      const task = await createStartedTask(expiringApp);
+      const context = await createConversationTurn(
+        expiringApp,
+        task,
+        "这条短期要求到期后不再可用。"
+      );
+      expect(
+        Date.parse(context.workingMemory.expiresAt)
+      ).toBeLessThanOrEqual(
+        Date.parse(context.conversation.retentionUntil)
+      );
+
+      await wait(1_100);
+      const expired = await request(expiringApp)
+        .get(
+          apiRoutes.teacher.conversation(
+            context.conversation.conversationRef
+          )
+        )
+        .set(demoHeaders)
+        .expect(200);
+      expect(expired.body).toMatchObject({
+        status: "expired",
+        turns: [],
+        workingMemory: null
+      });
+      await request(expiringApp)
+        .post(
+          apiRoutes.teacher.conversationTurns(
+            context.conversation.conversationRef
+          )
+        )
+        .set(demoHeaders)
+        .send({
+          teacherText: "到期后不能追加",
+          parentTurnRef: context.turn.turnRef,
+          expectedConversationVersion:
+            context.conversation.version,
+          purpose: "teacher-copilot.conversation.append-turn",
+          idempotencyKey: `conversation:expired-turn:${randomUUID()}`
+        })
+        .expect(409)
+        .expect(({ body }) => {
+          expect(body.code).toBe("CONVERSATION_EXPIRED");
+        });
+      await expect(
+        expiringProduct.services.conversations.loadSealedWorkingMemory(
+          adminPool,
+          {
+            tenantRef: gate2DemoRefs.tenantRef,
+            teacherRef: gate2DemoRefs.teacherRef,
+            conversationRef: context.conversation.conversationRef,
+            snapshotRef: context.workingMemory.snapshotRef,
+            expectedVersion: 1,
+            expectedContentHash: context.workingMemory.contentHash,
+            expectedSourceTurnSequence:
+              context.workingMemory.sourceTurnSequence
+          }
+        )
+      ).rejects.toThrow(
+        "The sealed WorkingMemorySnapshot cannot be reconstructed."
+      );
+    } finally {
+      await expiringProduct.close();
+    }
+  });
+
   it("queues outside the request transaction, runs Mock through the Worker, and creates one Proposal", async () => {
     const task = await createStartedTask(app);
     const command = invocationCommand(task);
@@ -901,6 +1716,42 @@ async function createStartedTask(
     })
     .expect(201);
   return started.body.task;
+}
+
+async function createConversationTurn(
+  targetApp: ReturnType<typeof createApp>,
+  task: Awaited<ReturnType<typeof createStartedTask>>,
+  teacherText: string
+) {
+  const created = await request(targetApp)
+    .post(apiRoutes.teacher.conversations)
+    .set(demoHeaders)
+    .send({
+      taskRef: task.taskRef,
+      purposeFamily: "lesson_preparation",
+      courseRunRef: task.courseRunRef,
+      lessonRef: task.lessonRef,
+      purpose: "teacher-copilot.conversation.create",
+      idempotencyKey: `conversation:create:${randomUUID()}`
+    })
+    .expect(201);
+  const appended = await request(targetApp)
+    .post(
+      apiRoutes.teacher.conversationTurns(
+        created.body.conversation.conversationRef
+      )
+    )
+    .set(demoHeaders)
+    .send({
+      teacherText,
+      parentTurnRef: null,
+      expectedConversationVersion:
+        created.body.conversation.version,
+      purpose: "teacher-copilot.conversation.append-turn",
+      idempotencyKey: `conversation:turn:${randomUUID()}`
+    })
+    .expect(201);
+  return appended.body;
 }
 
 function invocationCommand(task: {

@@ -165,7 +165,7 @@ describe("Phase 8A-2 Lesson Brief → Lesson Preparation journey", () => {
       "contextEngineering"
     ] as Record<string, unknown> | undefined;
     expect(checkpoint).toMatchObject({
-      agentDefinitionVersion: "4",
+      agentDefinitionVersion: "5",
       skillVersion: "4",
       skillRef: "lesson-preparation@4",
       status: "waiting_for_human"

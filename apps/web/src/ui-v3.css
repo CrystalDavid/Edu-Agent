@@ -3894,6 +3894,210 @@ textarea:focus-visible,
   margin-bottom: 0;
 }
 
+/* Teacher-visible context application disclosure. The compact and detailed
+   variants share one structure so Proposal and Runs never drift in wording. */
+
+.memory-use-disclosure {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-subtle);
+}
+
+.copilot-main-column > .memory-use-disclosure {
+  margin-bottom: var(--space-16);
+}
+
+.run-layout > .memory-use-disclosure {
+  grid-column: 1 / -1;
+}
+
+.memory-use-disclosure details > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-12) var(--space-16);
+  list-style: none;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  cursor: pointer;
+  font-size: var(--font-body);
+  font-weight: var(--font-weight-content);
+}
+
+.memory-use-disclosure details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.memory-use-disclosure details > summary::after {
+  content: "⌄";
+  color: var(--color-text-muted);
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.memory-use-disclosure details[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.memory-use-disclosure details > summary strong {
+  color: var(--color-brand);
+  font-weight: var(--font-weight-section);
+}
+
+.memory-use-disclosure__hint {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-body);
+}
+
+.memory-use-disclosure__body {
+  display: grid;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border-top: 1px solid var(--color-divider);
+}
+
+.memory-use-group {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.memory-use-group h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-body);
+  font-weight: var(--font-weight-section);
+}
+
+.memory-use-group--muted h3 {
+  color: var(--color-text-secondary);
+}
+
+.memory-use-group__items {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.memory-use-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-12);
+  padding: var(--space-12);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.memory-use-item__content {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.memory-use-item p,
+.memory-use-item small,
+.memory-use-disclosure__disclaimer {
+  margin: 0;
+}
+
+.memory-use-item p {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.memory-use-item small {
+  color: var(--color-text-muted);
+  font-size: var(--font-caption);
+  line-height: 1.55;
+}
+
+.memory-use-item .memory-use-item__revoked {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-content);
+}
+
+.memory-use-decision.ant-tag {
+  margin: 0;
+  border: 0;
+  font-size: 11px;
+  line-height: 22px;
+}
+
+.memory-use-decision--injected.ant-tag {
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.memory-use-decision--selected.ant-tag {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.memory-use-decision--excluded.ant-tag,
+.memory-use-decision--overridden.ant-tag {
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.memory-use-disclosure__metadata {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-8);
+  padding-top: var(--space-4);
+}
+
+.memory-use-disclosure__metadata > div {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.memory-use-disclosure__metadata span {
+  color: var(--color-text-muted);
+  font-size: var(--font-caption);
+}
+
+.memory-use-disclosure__metadata strong {
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-content);
+}
+
+.memory-use-disclosure__disclaimer {
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-text-muted);
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+  .memory-use-disclosure__hint {
+    display: none;
+  }
+
+  .memory-use-disclosure__metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-use-item {
+    gap: var(--space-8);
+    padding: var(--space-8) var(--space-12);
+  }
+}
+
 /* Stable schedule split: a white calendar on the gray canvas and a quiet side rail. */
 
 .schedule-page .calendar-scroll-region {

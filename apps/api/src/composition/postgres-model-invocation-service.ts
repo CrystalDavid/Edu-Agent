@@ -17,6 +17,7 @@ import {
   type CreateModelInvocationResult,
   type FormalWriteReceipt,
   type LessonBriefSnapshot,
+  type MemoryContextPackManifest,
   type ModelExecutionView,
   type ModelFailureCategory,
   type ModelProviderName,
@@ -32,6 +33,7 @@ import {
   createBuiltInSkillRegistry,
   LessonPreparationContextBuildError,
   legacyLessonPreparationSkillRef,
+  lessonBriefPreparationSkillRef,
   lessonPreparationSkillRef,
   loadReflectionAnalysisSkill,
   loadHistoricalLessonPreparationSkill,
@@ -44,6 +46,7 @@ import {
   type LessonPreparationEngineeringManifest,
   type LessonBriefContextEvaluation,
   type LessonBriefPreparationManifest,
+  type ConversationPreparationManifest,
   type PersonalizedLessonPreparationManifest,
   type PreferenceContextEvaluation,
   type LessonPreparationSkillVersion,
@@ -60,11 +63,28 @@ import type {
 } from "../modules/agent-runtime-context/domain/runtime-kernel.js";
 import type { ConfirmedLessonBriefContextProvider } from "../modules/agent-runtime-context/application/confirmed-lesson-brief-provider.js";
 import type {
+  ConfirmedTeacherPreferenceSnapshot,
   PersonalizationContextProvider
 } from "../modules/personalization-memory-analytics/application/personalization-context-provider.js";
 import {
+  estimateContextTokens
+} from "../agent/skills/lesson-preparation/context-builder.js";
+import type {
+  MemoryApplicationRecorder,
+  MemoryApplicationSelection
+} from "../modules/personalization-memory-analytics/application/memory-application-recorder.js";
+import type {
+  TeacherPreferenceRevisionReader
+} from "../modules/personalization-memory-analytics/application/teacher-preference-revision-reader.js";
+import {
+  buildMemoryContextPackManifest
+} from "../modules/agent-runtime-context/domain/memory-context-pack.js";
+import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
+import type {
+  PersistedWorkingMemorySnapshot
+} from "../modules/agent-runtime-context/infrastructure/postgres-working-memory-repository.js";
 import {
   PostgresRuntimeCheckpointAdapter
 } from "../modules/agent-runtime-context/infrastructure/postgres-runtime-checkpoint-adapter.js";
@@ -145,6 +165,7 @@ import {
 import type { PostgresClient } from "../platform/postgres/types.js";
 import { buildDiff } from "./postgres-gate2-teacher-copilot-service.js";
 import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
 
 const GENERATE_PURPOSE =
   "teacher-copilot.adjust-next-lesson";
@@ -175,7 +196,10 @@ interface ModelInvocationDependencies {
   runtimeKernel?: RuntimeKernelService<PostgresClient>;
   skills?: VersionedSkillRegistry;
   personalization?: PersonalizationContextProvider;
+  memoryApplications?: MemoryApplicationRecorder & TeacherPreferenceRevisionReader;
+  memoryApplicationObservabilityEnabled?: boolean;
   lessonBriefs?: ConfirmedLessonBriefContextProvider;
+  conversations?: PostgresConversationService;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -197,6 +221,23 @@ type LessonPreparationContextEngineering = {
   readonly preferenceEvaluation?: PreferenceContextEvaluation;
   readonly lessonBriefManifest?: LessonBriefPreparationManifest;
   readonly lessonBriefEvaluation?: LessonBriefContextEvaluation;
+  readonly conversationManifest?: ConversationPreparationManifest;
+  readonly memoryContextPackManifest?: MemoryContextPackManifest;
+  readonly memoryApplicationObservability?: {
+    readonly status: "disabled" | "pending" | "recorded" | "degraded";
+    readonly safeErrorCategory?: "MEMORY_APPLICATION_RECORDING_FAILED";
+  };
+};
+
+type LessonPreparationPromptContext = {
+  readonly request: ModelRequestV2;
+  readonly baseline: {
+    readonly revisionRef: string;
+    readonly artifactRef: string;
+    readonly content: TeachingPlan;
+  };
+  readonly contextEngineering?: LessonPreparationContextEngineering;
+  readonly memoryApplicationSelections?: readonly MemoryApplicationSelection[];
 };
 
 export class PostgresModelInvocationService
@@ -212,7 +253,12 @@ export class PostgresModelInvocationService
   private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
   private readonly reflectionAnalysisSkill: ReflectionAnalysisSkillVersion;
   private readonly personalization: PersonalizationContextProvider;
+  private readonly memoryApplications:
+    | (MemoryApplicationRecorder & TeacherPreferenceRevisionReader)
+    | undefined;
+  private readonly memoryApplicationObservabilityEnabled: boolean;
   private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
+  private readonly conversations: PostgresConversationService;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -261,8 +307,13 @@ export class PostgresModelInvocationService
         return [];
       }
     };
+    this.memoryApplications = dependencies.memoryApplications;
+    this.memoryApplicationObservabilityEnabled =
+      dependencies.memoryApplicationObservabilityEnabled ?? false;
     this.lessonBriefs =
       dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
+    this.conversations =
+      dependencies.conversations ?? new PostgresConversationService(pool);
     this.runtimeKernel =
       dependencies.runtimeKernel ??
       new RuntimeKernelService(
@@ -743,11 +794,26 @@ export class PostgresModelInvocationService
         );
       }
       const lessonBriefRef = lessonBriefRefs[0] ?? null;
+      const sealedConversation = input.request.requestVersion === 2
+        ? await this.conversations.requireInvocationContext(client, {
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
+            conversationRef: input.request.conversationRef!,
+            turnRef: input.request.turnRef!,
+            conversationVersion: input.request.conversationVersion!,
+            requestText: input.request.requestText,
+            taskRef: preparationTask.taskRef,
+            courseRunRef: preparationTask.courseRunRef,
+            lessonRef: preparationTask.lessonRef
+          })
+        : null;
       const lessonPreparationSkill = loadLessonPreparationSkill(
         this.skills,
-        lessonBriefRef
+        input.request.requestVersion === 2
           ? lessonPreparationSkillRef
-          : legacyLessonPreparationSkillRef
+          : lessonBriefRef
+            ? lessonBriefPreparationSkillRef
+            : legacyLessonPreparationSkillRef
       );
       const adoptedLessonBrief = lessonBriefRef
         ? await this.lessonBriefs.loadAdopted({
@@ -836,6 +902,13 @@ export class PostgresModelInvocationService
       const evidenceRefs = [
         ...new Set(input.request.selectedEvidenceRefs)
       ];
+      const conversationResourceRefs = sealedConversation
+        ? [
+            sealedConversation.thread.conversationRef,
+            sealedConversation.turn.turnRef,
+            sealedConversation.workingMemory.snapshotRef
+          ]
+        : [];
       const knownGaps = [
         ...new Set(
           educationContext.observations.flatMap(
@@ -867,7 +940,8 @@ export class PostgresModelInvocationService
             ...(preparationTask.workingSet.sourceTodoRef
               ? [preparationTask.workingSet.sourceTodoRef]
               : []),
-            ...(preparationTask.workingSet.sourceResourceRefs ?? [])
+            ...(preparationTask.workingSet.sourceResourceRefs ?? []),
+            ...conversationResourceRefs
           ],
           authorizedEvidenceRefs: evidenceRefs,
           deniedResourceRefs: [],
@@ -895,7 +969,8 @@ export class PostgresModelInvocationService
               ...(preparationTask.workingSet.sourceTodoRef
                 ? [preparationTask.workingSet.sourceTodoRef]
                 : []),
-              ...(preparationTask.workingSet.sourceResourceRefs ?? [])
+              ...(preparationTask.workingSet.sourceResourceRefs ?? []),
+              ...conversationResourceRefs
             ],
             evidenceRefs,
             requestedFieldMask:
@@ -942,6 +1017,8 @@ export class PostgresModelInvocationService
         promptBundleVersion:
           lessonPreparationSkill.promptBundle.version,
         lessonBriefContentHash: adoptedLessonBrief?.contentHash ?? null,
+        workingMemoryContentHash:
+          sealedConversation?.workingMemory.contentHash ?? null,
         contextManifestHash:
           authorizedContextPlan.contentHash,
         provider,
@@ -1239,6 +1316,26 @@ export class PostgresModelInvocationService
               requestTextHash: hash(taskRequest.requestText),
               contextManifestHash:
                 authorizedContextPlan.contentHash,
+              ...(sealedConversation
+                ? {
+                    conversationRef:
+                      sealedConversation.thread.conversationRef,
+                    turnRef: sealedConversation.turn.turnRef,
+                    turnSequence: sealedConversation.turn.sequence,
+                    turnContentHash:
+                      sealedConversation.turn.contentHash,
+                    conversationVersion:
+                      sealedConversation.thread.version,
+                    workingMemorySnapshotRef:
+                      sealedConversation.workingMemory.snapshotRef,
+                    workingMemoryVersion:
+                      sealedConversation.workingMemory.version,
+                    workingMemoryContentHash:
+                      sealedConversation.workingMemory.contentHash,
+                    workingMemorySourceTurnSequence:
+                      sealedConversation.workingMemory.sourceTurnSequence
+                  }
+                : {}),
               skillRef: lessonPreparationSkill.manifest.ref,
               skillContentHash:
                 lessonPreparationSkill.manifest.contentHash,
@@ -1343,6 +1440,9 @@ export class PostgresModelInvocationService
         outputSchemaVersion:
           lessonPreparationSkill.promptBundle.outputSchemaVersion,
         proposalRevisionRef: null,
+        conversationRef:
+          sealedConversation?.thread.conversationRef ?? null,
+        turnRef: sealedConversation?.turn.turnRef ?? null,
         retryOfModelExecutionRef: null,
         queuedAt: now,
         startedAt: null,
@@ -2346,6 +2446,12 @@ export class PostgresModelInvocationService
         if (execution.status !== "running") {
           return;
         }
+        if (execution.resultKind === "teaching_proposal") {
+          await this.recordMemoryApplicationSelections(
+            execution,
+            context as LessonPreparationPromptContext
+          );
+        }
         const result = await this.provider.invoke(request, {
           signal: controller.signal
         });
@@ -2579,15 +2685,7 @@ export class PostgresModelInvocationService
 
   private async loadPromptContext(
     execution: StoredModelExecution
-  ): Promise<{
-    request: ModelRequestV2;
-    baseline: {
-      revisionRef: string;
-      artifactRef: string;
-      content: TeachingPlan;
-    };
-    contextEngineering?: LessonPreparationContextEngineering;
-  }> {
+  ): Promise<LessonPreparationPromptContext> {
     const tenantRef = await this.executionTenantRef(execution);
     const taskRun = await this.gate25Work.getTaskRun(
       this.pool,
@@ -2737,12 +2835,14 @@ export class PostgresModelInvocationService
           briefRef: lessonBriefRef
         })
       : null;
-    if (skill.manifest.ref === lessonPreparationSkillRef) {
+    if (skill.manifest.ref === lessonBriefPreparationSkillRef) {
       if (!lessonBriefRef || !adoptedLessonBrief) {
         throw new Error(
           "lesson-preparation@4 requires an adopted Lesson Brief bound to the sealed TaskWorkingSet."
         );
       }
+    }
+    if (lessonBriefRef && adoptedLessonBrief) {
       if (
         execution.inputSummary["lessonBriefContentHash"] !==
         adoptedLessonBrief.contentHash
@@ -2750,12 +2850,51 @@ export class PostgresModelInvocationService
         throw new Error("The adopted Lesson Brief hash no longer matches the bound ModelExecution.");
       }
     }
+    const sealedWorkingMemory = skill.manifest.ref === lessonPreparationSkillRef
+      ? await this.conversations.loadSealedWorkingMemory(this.pool, {
+          tenantRef,
+          teacherRef: execution.actorRef,
+          conversationRef: requiredSummaryString(
+            execution,
+            "conversationRef"
+          ),
+          snapshotRef: requiredSummaryString(
+            execution,
+            "workingMemorySnapshotRef"
+          ),
+          expectedVersion: requiredSummaryNumber(
+            execution,
+            "workingMemoryVersion"
+          ),
+          expectedContentHash: requiredSummaryString(
+            execution,
+            "workingMemoryContentHash"
+          ),
+          expectedSourceTurnSequence: requiredSummaryNumber(
+            execution,
+            "workingMemorySourceTurnSequence"
+          )
+        })
+      : null;
+    const sealedMemoryContextPack =
+      skill.manifest.ref === lessonPreparationSkillRef
+        ? await this.gate2Runtime.getMemoryContextPackManifest(
+            this.pool,
+            execution.agentRunRef
+          )
+        : null;
     const confirmedPreferences =
       skill.manifest.memoryPolicy.mode === "authorized_context_only"
-        ? await this.personalization.listConfirmedPreferences({
-            tenantRef,
-            teacherRef: execution.actorRef
-          })
+        ? sealedMemoryContextPack
+          ? await this.loadSealedPreferenceSnapshots({
+              execution,
+              tenantRef,
+              manifest: sealedMemoryContextPack
+            })
+          : await this.personalization.listConfirmedPreferences({
+              tenantRef,
+              teacherRef: execution.actorRef
+            })
         : [];
     const skillInput = skill.inputSchema.parse({
         invocationRef: execution.executionRef,
@@ -2822,6 +2961,31 @@ export class PostgresModelInvocationService
                 authorizedEvidenceRefs: contextManifest.evidenceRefs
               })
             }
+          : {}),
+        ...(sealedWorkingMemory
+          ? {
+              conversationContext: {
+                conversationRef: sealedWorkingMemory.conversationRef,
+                turnRef: requiredSummaryString(execution, "turnRef"),
+                workingMemorySnapshotRef:
+                  sealedWorkingMemory.snapshotRef,
+                snapshotContentHash:
+                  sealedWorkingMemory.contentHash,
+                sourceTurnSequence:
+                  sealedWorkingMemory.sourceTurnSequence,
+                activeGoal: sealedWorkingMemory.activeGoal,
+                recentTeacherRequests:
+                  sealedWorkingMemory.recentTeacherRequests,
+                referents: sealedWorkingMemory.referents,
+                pendingIntents: sealedWorkingMemory.pendingIntents,
+                selectedOptions: sealedWorkingMemory.selectedOptions,
+                temporaryOverrides:
+                  sealedWorkingMemory.temporaryOverrides,
+                latestAssistantResult:
+                  sealedWorkingMemory.latestAssistantResult,
+                rollingSummary: sealedWorkingMemory.rollingSummary
+              }
+            }
           : {})
       });
     const contextBuild = skill.buildContext?.({
@@ -2853,6 +3017,26 @@ export class PostgresModelInvocationService
       baselineRevisionRef: baseline.revisionRef,
       confirmedPreferences
     });
+    const memoryObservability =
+      contextBuild &&
+      sealedWorkingMemory &&
+      "personalizationManifest" in contextBuild &&
+      "conversationManifest" in contextBuild &&
+      (this.memoryApplicationObservabilityEnabled || sealedMemoryContextPack)
+        ? this.buildMemoryApplicationObservability({
+            execution,
+            tenantRef,
+            skill,
+            requestText: taskRun.request.requestText,
+            workingMemory: sealedWorkingMemory,
+            personalizationManifest: contextBuild.personalizationManifest,
+            conversationManifest: contextBuild.conversationManifest,
+            confirmedPreferences,
+            authorizationDecisionRef:
+              authorizedContextPlan.authorizationDecisionRef,
+            sealedManifest: sealedMemoryContextPack
+          })
+        : null;
     return {
       request: skill.assembleRequest(
         contextBuild?.input ?? skillInput
@@ -2880,10 +3064,300 @@ export class PostgresModelInvocationService
                     lessonBriefManifest: contextBuild.lessonBriefManifest,
                     lessonBriefEvaluation: contextBuild.lessonBriefEvaluation
                   }
+                : {}),
+              ...("conversationManifest" in contextBuild
+                ? {
+                    conversationManifest:
+                      contextBuild.conversationManifest
+                  }
+                : {}),
+              ...(memoryObservability
+                ? {
+                    memoryContextPackManifest:
+                      memoryObservability.manifest,
+                    memoryApplicationObservability: {
+                      status: this.memoryApplicationObservabilityEnabled
+                        ? "pending" as const
+                        : "disabled" as const
+                    }
+                  }
                 : {})
             }
           }
+        : {}),
+      ...(memoryObservability && this.memoryApplicationObservabilityEnabled
+        ? {
+            memoryApplicationSelections:
+              memoryObservability.selections
+          }
         : {})
+    };
+  }
+
+  private async loadSealedPreferenceSnapshots(input: {
+    readonly execution: StoredModelExecution;
+    readonly tenantRef: string;
+    readonly manifest: MemoryContextPackManifest;
+  }): Promise<readonly ConfirmedTeacherPreferenceSnapshot[]> {
+    if (
+      input.manifest.owner.tenantRef !== input.tenantRef ||
+      input.manifest.owner.teacherRef !== input.execution.actorRef ||
+      input.manifest.conversationRef !==
+        requiredSummaryString(input.execution, "conversationRef") ||
+      input.manifest.currentTurnRef !==
+        requiredSummaryString(input.execution, "turnRef")
+    ) {
+      throw new Error(
+        "The sealed MemoryContextPack owner or conversation binding does not match."
+      );
+    }
+    const uniqueSources = new Map<
+      string,
+      MemoryContextPackManifest["preferenceDecisions"][number]
+    >();
+    for (const decision of input.manifest.preferenceDecisions) {
+      const key = [
+        decision.sourceRef,
+        decision.sourceVersion,
+        decision.sourceContentHash
+      ].join("|");
+      uniqueSources.set(key, decision);
+    }
+    if (uniqueSources.size === 0) return [];
+    if (!this.memoryApplications) {
+      throw new Error(
+        "The sealed MemoryContextPack preference resolver is unavailable."
+      );
+    }
+    const snapshots: ConfirmedTeacherPreferenceSnapshot[] = [];
+    for (const decision of uniqueSources.values()) {
+      const revision = await this.memoryApplications.resolvePreferenceRevision({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        expectedContentHash: decision.sourceContentHash
+      });
+      if (!revision || revision.statusAtRun !== "active") {
+        throw new Error(
+          "The sealed TeacherPreference revision cannot be reconstructed."
+        );
+      }
+      snapshots.push({
+        tenantRef: input.tenantRef,
+        teacherRef: input.execution.actorRef,
+        preferenceRef: revision.preferenceRef,
+        preferenceKey: revision.preferenceKey,
+        preferenceValue: revision.preferenceValue,
+        version: revision.preferenceVersion,
+        contentHash: revision.preferenceContentHash,
+        sourceCandidateRef: revision.sourceCandidateRef,
+        confirmedAt: revision.confirmedAt,
+        updatedAt: revision.updatedAt
+      });
+    }
+    return Object.freeze(snapshots);
+  }
+
+  private buildMemoryApplicationObservability(input: {
+    readonly execution: StoredModelExecution;
+    readonly tenantRef: string;
+    readonly skill: LessonPreparationSkillVersion;
+    readonly requestText: string;
+    readonly workingMemory: PersistedWorkingMemorySnapshot;
+    readonly personalizationManifest: PersonalizedLessonPreparationManifest;
+    readonly conversationManifest: ConversationPreparationManifest;
+    readonly confirmedPreferences: readonly ConfirmedTeacherPreferenceSnapshot[];
+    readonly authorizationDecisionRef: string;
+    readonly sealedManifest: MemoryContextPackManifest | null;
+  }): {
+    readonly manifest: MemoryContextPackManifest;
+    readonly selections: readonly MemoryApplicationSelection[];
+  } {
+    const currentTurnRef = requiredSummaryString(
+      input.execution,
+      "turnRef"
+    );
+    const currentTurnSequence = requiredSummaryNumber(
+      input.execution,
+      "turnSequence"
+    );
+    const currentTurnContentHash = requiredSummaryString(
+      input.execution,
+      "turnContentHash"
+    );
+    const workingMemoryVersion = requiredSummaryNumber(
+      input.execution,
+      "workingMemoryVersion"
+    );
+    if (
+      input.conversationManifest.conversationRef !==
+        requiredSummaryString(input.execution, "conversationRef") ||
+      input.conversationManifest.turnRef !== currentTurnRef ||
+      input.conversationManifest.snapshotRef !== input.workingMemory.snapshotRef ||
+      input.conversationManifest.snapshotContentHash !==
+        input.workingMemory.contentHash ||
+      input.workingMemory.version !== workingMemoryVersion
+    ) {
+      throw new Error(
+        "The MemoryContextPack sources do not match the sealed conversation context."
+      );
+    }
+    const preferenceByRef = new Map(
+      input.confirmedPreferences.map((preference) => [
+        preference.preferenceRef,
+        preference
+      ])
+    );
+    const preferenceDecisions: MemoryContextPackManifest["preferenceDecisions"] = [
+      ...input.personalizationManifest.confirmedPreferences.map((entry) => ({
+        sourceKind: "teacher_preference" as const,
+        sourceRef: entry.preferenceRef,
+        sourceVersion: entry.version,
+        sourceContentHash: entry.contentHash,
+        decision: "injected" as const,
+        reasonCode: "active_confirmed_preference" as const,
+        targetFields: ["prompt.context.confirmedPreferences"],
+        allowedEffects: ["prompt_context"],
+        estimatedTokens: entry.estimatedTokens
+      })),
+      ...input.personalizationManifest.excludedPreferences.map((entry) => {
+        const preference = preferenceByRef.get(entry.preferenceRef);
+        if (!preference || entry.reason === "owner_mismatch") {
+          throw new Error(
+            "A successful MemoryContextPack cannot contain an unresolved or foreign Preference."
+          );
+        }
+        return {
+          sourceKind: "teacher_preference" as const,
+          sourceRef: preference.preferenceRef,
+          sourceVersion: preference.version,
+          sourceContentHash: preference.contentHash,
+          decision: "excluded" as const,
+          reasonCode: entry.reason,
+          targetFields: ["prompt.context.confirmedPreferences"],
+          allowedEffects: [] as string[],
+          estimatedTokens: estimateContextTokens({
+            preferenceRef: preference.preferenceRef,
+            preferenceKey: preference.preferenceKey,
+            preferenceValue: preference.preferenceValue,
+            version: preference.version,
+            contentHash: preference.contentHash,
+            sourceCandidateRef: preference.sourceCandidateRef
+          })
+        };
+      })
+    ];
+    const manifest = buildMemoryContextPackManifest({
+      owner: {
+        tenantRef: input.tenantRef,
+        teacherRef: input.execution.actorRef
+      },
+      useCase: "lesson_preparation",
+      policyVersion: "memory-context-pack-policy@1",
+      skillRef: input.skill.manifest.ref,
+      skillVersion: input.skill.manifest.version,
+      skillContentHash: input.skill.manifest.contentHash,
+      conversationRef: requiredSummaryString(
+        input.execution,
+        "conversationRef"
+      ),
+      currentTurnRef,
+      currentTurnSequence,
+      currentTurnContentHash,
+      workingMemorySnapshotRef: input.workingMemory.snapshotRef,
+      workingMemorySnapshotVersion: workingMemoryVersion,
+      workingMemorySnapshotContentHash: input.workingMemory.contentHash,
+      contextDecisions: [
+        {
+          sourceKind: "current_instruction",
+          sourceRef: currentTurnRef,
+          sourceVersion: currentTurnSequence,
+          sourceContentHash: currentTurnContentHash,
+          decision: "injected",
+          reasonCode: "current_instruction",
+          targetFields: ["prompt.context.currentInstruction"],
+          allowedEffects: ["prompt_context"],
+          estimatedTokens: estimateContextTokens(input.requestText)
+        },
+        {
+          sourceKind: "working_memory",
+          sourceRef: input.workingMemory.snapshotRef,
+          sourceVersion: workingMemoryVersion,
+          sourceContentHash: input.workingMemory.contentHash,
+          decision: "injected",
+          reasonCode: "same_task_working_memory",
+          targetFields: ["prompt.context.workingMemory"],
+          allowedEffects: ["prompt_context"],
+          estimatedTokens: input.conversationManifest.estimatedTokens
+        }
+      ],
+      preferenceDecisions,
+      createdAt:
+        input.sealedManifest?.createdAt ?? this.clock().toISOString()
+    });
+    if (
+      input.sealedManifest &&
+      (manifest.packRef !== input.sealedManifest.packRef ||
+        manifest.packContentHash !== input.sealedManifest.packContentHash)
+    ) {
+      throw new Error(
+        "The sealed MemoryContextPack cannot be deterministically reconstructed."
+      );
+    }
+    const scopeHash = hash([
+      input.tenantRef,
+      input.execution.actorRef,
+      manifest.conversationRef,
+      input.execution.taskRef,
+      manifest.skillRef
+    ]);
+    const selections = manifest.preferenceDecisions.map((decision) => {
+      const reasonCode = preferenceApplicationReasonCode(decision.reasonCode);
+      return {
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        conversationRef: manifest.conversationRef,
+        turnRef: manifest.currentTurnRef,
+        taskRef: input.execution.taskRef,
+        agentRunRef: input.execution.agentRunRef,
+        modelExecutionRef: null,
+        skillRef: manifest.skillRef,
+        useCase: manifest.useCase,
+        scopeHash,
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        preferenceContentHash: decision.sourceContentHash,
+        packRef: manifest.packRef,
+        packContentHash: manifest.packContentHash,
+        decision: decision.decision,
+        reasonCode,
+        targetFields: [...decision.targetFields],
+        estimatedTokens: decision.estimatedTokens,
+        policyVersion: manifest.policyVersion,
+        idempotencyKey: `memory-application:${hash([
+          input.execution.agentRunRef,
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision
+        ])}`,
+        authorizationDecisionRef: input.authorizationDecisionRef,
+        auditRef: `audit:${hash([
+          input.execution.agentRunRef,
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision,
+          manifest.packContentHash
+        ]).slice(0, 40)}`
+      };
+    });
+    return {
+      manifest,
+      selections: Object.freeze(selections)
     };
   }
 
@@ -3293,6 +3767,46 @@ export class PostgresModelInvocationService
     }
   }
 
+  private async recordMemoryApplicationSelections(
+    execution: StoredModelExecution,
+    context: LessonPreparationPromptContext
+  ): Promise<void> {
+    if (
+      !this.memoryApplicationObservabilityEnabled ||
+      !context.contextEngineering?.memoryContextPackManifest
+    ) {
+      return;
+    }
+    let status: "recorded" | "degraded" = "recorded";
+    try {
+      if (!this.memoryApplications) {
+        throw new Error("MemoryApplicationRecorder is not configured.");
+      }
+      for (const selection of context.memoryApplicationSelections ?? []) {
+        await this.memoryApplications.recordSelection(selection);
+      }
+    } catch {
+      status = "degraded";
+    }
+    try {
+      await this.gate2Runtime.updateMemoryApplicationObservabilityStatus(
+        this.pool,
+        {
+          agentRunRef: execution.agentRunRef,
+          status,
+          updatedAt: this.clock().toISOString()
+        }
+      );
+    } catch {
+      status = "degraded";
+    }
+    if (status === "degraded") {
+      process.stderr.write(
+        "Memory application observability degraded; model execution continues.\n"
+      );
+    }
+  }
+
   private async recoverAgentRun(
     execution: StoredModelExecution
   ): Promise<void> {
@@ -3624,9 +4138,24 @@ export class PostgresModelInvocationService
           },
           operation: "model-result-reused-runtime-checkpoint"
         });
+        const reusedConversationReceipts =
+          typeof execution.inputSummary["conversationRef"] === "string"
+            ? await this.conversations.appendAssistantResult(client, {
+                tenantRef: await this.executionTenantRef(execution, client),
+                teacherRef: execution.actorRef,
+                conversationRef: execution.inputSummary["conversationRef"],
+                taskRunRef: execution.taskRunRef,
+                agentRunRef: execution.agentRunRef,
+                modelExecutionRef: execution.executionRef,
+                proposalRevisionRef: existing.proposalRevisionRef,
+                writeContext,
+                createdAt: now
+              })
+            : [];
         await this.governance.saveAudits(client, [
           receipt,
-          ...(runtimeReceipt ? [runtimeReceipt] : [])
+          ...(runtimeReceipt ? [runtimeReceipt] : []),
+          ...reusedConversationReceipts
         ]);
         await client.query("COMMIT");
         return;
@@ -3792,6 +4321,21 @@ export class PostgresModelInvocationService
         operation: "model-proposal-runtime-checkpoint"
       });
       if (runtimeReceipt) receipts.push(runtimeReceipt);
+      if (typeof execution.inputSummary["conversationRef"] === "string") {
+        receipts.push(
+          ...(await this.conversations.appendAssistantResult(client, {
+            tenantRef: preparation.tenantRef,
+            teacherRef: execution.actorRef,
+            conversationRef: execution.inputSummary["conversationRef"],
+            taskRunRef: execution.taskRunRef,
+            agentRunRef: execution.agentRunRef,
+            modelExecutionRef: execution.executionRef,
+            proposalRevisionRef,
+            writeContext,
+            createdAt: now
+          }))
+        );
+      }
       receipts.push(
         await this.executions.markTerminal(client, {
           executionRef,
@@ -4455,6 +4999,16 @@ function createTaskRequest(
     ...(request.workingSetVersion !== undefined
       ? { workingSetVersion: request.workingSetVersion }
       : {}),
+    ...(request.conversationRef
+      ? { conversationRef: request.conversationRef }
+      : {}),
+    ...(request.turnRef ? { turnRef: request.turnRef } : {}),
+    ...(request.parentTurnRef !== undefined
+      ? { parentTurnRef: request.parentTurnRef }
+      : {}),
+    ...(request.conversationVersion !== undefined
+      ? { conversationVersion: request.conversationVersion }
+      : {}),
     createdAt,
     requestVersion: request.requestVersion
   };
@@ -4525,6 +5079,14 @@ function toExecutionView(
     resultKind: execution.resultKind,
     resultRef: execution.resultRef,
     proposalRevisionRef: execution.proposalRevisionRef,
+    conversationRef:
+      typeof execution.inputSummary["conversationRef"] === "string"
+        ? execution.inputSummary["conversationRef"]
+        : null,
+    turnRef:
+      typeof execution.inputSummary["turnRef"] === "string"
+        ? execution.inputSummary["turnRef"]
+        : null,
     retryOfModelExecutionRef:
       execution.retryOfExecutionRef,
     queuedAt: execution.queuedAt,
@@ -4532,6 +5094,54 @@ function toExecutionView(
     completedAt: execution.completedAt,
     cancelledAt: execution.cancelledAt
   });
+}
+
+function requiredSummaryString(
+  execution: StoredModelExecution,
+  key: string
+): string {
+  const value = execution.inputSummary[key];
+  if (typeof value !== "string" || !value) {
+    throw new Error(
+      `ModelExecution ${execution.executionRef} is missing ${key}.`
+    );
+  }
+  return value;
+}
+
+function requiredSummaryNumber(
+  execution: StoredModelExecution,
+  key: string
+): number {
+  const value = execution.inputSummary[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new Error(
+      `ModelExecution ${execution.executionRef} is missing ${key}.`
+    );
+  }
+  return value;
+}
+
+function preferenceApplicationReasonCode(
+  reasonCode: MemoryContextPackManifest["preferenceDecisions"][number]["reasonCode"]
+): MemoryApplicationSelection["reasonCode"] {
+  switch (reasonCode) {
+    case "active_confirmed_preference":
+    case "duplicate_key":
+    case "token_budget":
+    case "skill_not_allowed":
+    case "current_instruction_override":
+    case "expired":
+    case "revoked":
+    case "superseded":
+      return reasonCode;
+    case "current_instruction":
+    case "same_task_working_memory":
+    case "owner_mismatch":
+      throw new Error(
+        "MemoryContextPack contains an invalid TeacherPreference reason code."
+      );
+  }
 }
 
 function activeModelId(

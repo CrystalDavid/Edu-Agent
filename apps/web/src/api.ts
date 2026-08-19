@@ -58,6 +58,11 @@ import {
   CreateAssignmentRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateModelInvocationResultSchema,
+  CreateTeacherConversationRequestSchema,
+  CreateTeacherConversationResultSchema,
+  AppendTeacherConversationTurnRequestSchema,
+  AppendTeacherConversationTurnResultSchema,
+  ConversationThreadViewSchema,
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
   CurriculumUnitListSchema,
@@ -199,6 +204,11 @@ import {
   type CreateAssignmentRequest,
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
+  type CreateTeacherConversationRequest,
+  type CreateTeacherConversationResult,
+  type AppendTeacherConversationTurnRequest,
+  type AppendTeacherConversationTurnResult,
+  type ConversationThreadView,
   type CreateReflectionDraftRequest,
   type CreateReflectionFollowUpRequest,
   type GenerateNextLessonActionsRequest,
@@ -1001,6 +1011,47 @@ export function createModelInvocation(
     "创建模型调用",
     apiRoutes.teacher.modelInvocations,
     CreateModelInvocationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function createTeacherConversation(
+  input: CreateTeacherConversationRequest
+): Promise<CreateTeacherConversationResult> {
+  CreateTeacherConversationRequestSchema.parse(input);
+  return request(
+    "创建备课连续会话",
+    apiRoutes.teacher.conversations,
+    CreateTeacherConversationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function loadTeacherConversation(
+  conversationRef: string
+): Promise<ConversationThreadView> {
+  return request(
+    "恢复备课连续会话",
+    apiRoutes.teacher.conversation(conversationRef),
+    ConversationThreadViewSchema
+  );
+}
+
+export function appendTeacherConversationTurn(
+  conversationRef: string,
+  input: AppendTeacherConversationTurnRequest
+): Promise<AppendTeacherConversationTurnResult> {
+  AppendTeacherConversationTurnRequestSchema.parse(input);
+  return request(
+    "追加备课会话要求",
+    apiRoutes.teacher.conversationTurns(conversationRef),
+    AppendTeacherConversationTurnResultSchema,
     {
       method: "POST",
       body: JSON.stringify(input)

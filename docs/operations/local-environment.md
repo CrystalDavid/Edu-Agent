@@ -70,6 +70,16 @@ MODEL_DEBUG_CONTENT=false
 
 请只在本机填写 `ARK_API_KEY`，不要粘贴到终端输出、文档、测试或聊天。Ark 配置不完整时本机环境可使用离线 Provider；production 则启动失败。
 
+## 备课会话保留配置
+
+`CONVERSATION_RETENTION_DAYS` 控制新建备课 Conversation/Turn 的最长保留窗口，Runtime WorkingMemorySnapshot 绝不晚于其来源 Conversation/Turn 到期。当前未配置时使用 `30` 天的临时运行默认值；正式期限、学校级覆盖、到期后的物理清理与导出/删除 SLA 均为**待产品确认**，不得把该默认值解释为正式隐私政策。
+
+到期 Conversation 不再返回 Turn 内容，也不能追加 Turn 或创建新的模型调用；显式关闭会立即停止新 Turn，并让 active WorkingMemorySnapshot 失效。已封存且仍在保留窗口内的快照可继续完成已经排队的 Provider 重试，Provider 自身的 continuation state 不作为平台真值。
+
+`MEMORY_APPLICATION_OBSERVABILITY_ENABLED` 控制是否新增 TeacherPreference application/outcome 观测并向 Web 返回“本次参考”区域。关闭后不改变生成、审批或 Conversation/WorkingMemory，只停止新增观测并隐藏 UI，既有表和历史记录保留。local/test 未显式配置时默认启用；production 未显式配置时默认关闭，不会静默开启新数据收集。
+
+`MEMORY_APPLICATION_RETENTION_DAYS` 控制新 application 的逻辑读取期限，当前运行默认值为 365 天；outcome 通过所属 application 继承读取边界。生产期限、学校级覆盖、审计最低期限、Legal Hold、redaction/tombstone 与获批清理 Worker 均为**待产品确认**。现有 application/outcome 是 append-only，不能用 UPDATE 或物理 DELETE 绕过审计。
+
 ## 本地身份与服务端会话
 
 产品 API 默认要求有效的服务端 Session Cookie。未登录访问教师门户会显示登录页；登录成功后 API 建立随机不透明 Session，浏览器只持有 HttpOnly Cookie，数据库只保存 token hash。刷新和 API 重启后从 PostgreSQL 恢复 User、School、Membership、Role 和 CourseRun access。

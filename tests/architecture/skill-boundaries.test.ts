@@ -68,6 +68,7 @@ describe("Phase 5 Skill boundaries", () => {
     expect(manifest).toContain('ref: "lesson-preparation@2"');
     expect(manifest).toContain('ref: "lesson-preparation@3"');
     expect(manifest).toContain('ref: "lesson-preparation@4"');
+    expect(manifest).toContain('ref: "lesson-preparation@5"');
     expect(manifest).toContain('mode: "authorized_context_only"');
     expect(manifest).toContain('status: "published"');
     expect(manifest).toContain('mode: "disabled"');
@@ -92,6 +93,7 @@ describe("Phase 5 Skill boundaries", () => {
     expect(orchestration).toContain("lessonBriefEvaluation");
     expect(runtime).toContain('"lesson-preparation@3"');
     expect(runtime).toContain('"lesson-preparation@4"');
+    expect(runtime).toContain('"lesson-preparation@5"');
     expect(providerPort).toContain("interface ConfirmedLessonBriefContextProvider");
     expect(providerPort).not.toMatch(/postgres|repository|pool|query/iu);
   });
@@ -110,7 +112,7 @@ describe("Phase 5 Skill boundaries", () => {
     expect(validatorCompatibility).not.toContain("prohibitedFactPatterns");
   });
 
-  it("does not replace the 43 historical Migrations when Phase 7A adds one", () => {
+  it("does not replace the 43 historical Migrations as the memory track moves forward", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
     const phase7a = migrations.filter((path) =>
@@ -122,14 +124,25 @@ describe("Phase 5 Skill boundaries", () => {
     const nextLessonActionMigration = migrations.filter((path) =>
       path.endsWith("0011_next_lesson_action_candidates.sql")
     );
-    expect(migrations).toHaveLength(46);
+    const conversationMigrations = migrations.filter((path) =>
+      path.endsWith("0012_conversation_thread_turn.sql") ||
+      path.endsWith("0007_working_memory_snapshot.sql")
+    );
+    const observabilityMigration = migrations.filter((path) =>
+      path.endsWith("0003_memory_application_observability.sql")
+    );
+    expect(migrations).toHaveLength(49);
     expect(phase7a).toHaveLength(1);
     expect(calendarCategoryMigration).toHaveLength(1);
     expect(nextLessonActionMigration).toHaveLength(1);
+    expect(conversationMigrations).toHaveLength(2);
+    expect(observabilityMigration).toHaveLength(1);
     expect(migrations.filter((path) =>
       !phase7a.includes(path) &&
       !calendarCategoryMigration.includes(path) &&
-      !nextLessonActionMigration.includes(path)
+      !nextLessonActionMigration.includes(path) &&
+      !conversationMigrations.includes(path) &&
+      !observabilityMigration.includes(path)
     )).toHaveLength(43);
   });
 });

@@ -1142,6 +1142,14 @@ export class PostgresGate2TeacherCopilotService
       if (!goal) {
         throw new NotFoundError("当前租户无权访问该建议。");
       }
+      const runtimeRun =
+        await this.gate2Runtime.getRunExplanation(
+          client,
+          taskResult.taskRunRef
+        );
+      if (!runtimeRun) {
+        throw new NotFoundError("建议关联的 AgentRun 不存在。");
+      }
       const proposal = await this.artifacts.getProposal(
         client,
         input.proposalRevisionRef,
@@ -1340,12 +1348,16 @@ export class PostgresGate2TeacherCopilotService
           }
         )
       );
+      const dispositionOutboxRef = `outbox:${randomUUID()}`;
       receipts.push(
         await this.gate2Work.insertOutbox(client, {
-          outboxRef: `outbox:${randomUUID()}`,
+          outboxRef: dispositionOutboxRef,
           eventName: "SuggestionDisposed",
           aggregateRef: dispositionRef,
           payload: {
+            agentRunRef: runtimeRun.agentRunRef,
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
             proposalRevisionRef: input.proposalRevisionRef,
             disposition: input.request.disposition,
             implementationObserved: false,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   PedagogicalStrategy,
+  ConversationThreadView,
   LessonPreparationTaskDetail,
   ModelExecutionStatus,
   ModelExecutionView,
@@ -30,11 +31,14 @@ import {
 import {
   ApiError,
   cancelModelInvocation,
+  appendTeacherConversationTurn,
+  createTeacherConversation,
   createModelInvocation,
   createTeacherCopilotTask,
   disposeSuggestion,
   loadLessonPreparationTask,
   loadModelInvocation,
+  loadTeacherConversation,
   loadPendingProposals,
   loadProposalDetail,
   retryModelInvocation,
@@ -45,6 +49,7 @@ import {
   planFieldLabels,
   TeachingPlanDiffView
 } from "../components/TeachingPlanView";
+import { MemoryUseDisclosure } from "../components/memory/MemoryUseDisclosure";
 import {
   cleanDisplayText,
   lessonPreparationStatusLabel
@@ -104,6 +109,14 @@ export function CopilotPage(props: {
       )
     );
   const [modelAction, setModelAction] = useState(false);
+  const [conversationRef, setConversationRef] = useState<string | null>(
+    () =>
+      new URLSearchParams(window.location.search).get(
+        "conversation"
+      )
+  );
+  const [conversation, setConversation] =
+    useState<ConversationThreadView | null>(null);
 
   function applyProposalDetail(detail: ProposalReviewDetail) {
     props.setTask(detail);
@@ -129,6 +142,21 @@ export function CopilotPage(props: {
         : null
     );
   }
+
+  useEffect(() => {
+    if (!conversationRef) return;
+    let active = true;
+    void loadTeacherConversation(conversationRef)
+      .then((result) => {
+        if (active) setConversation(result);
+      })
+      .catch((caught) => {
+        if (active) setError(errorMessage(caught));
+      });
+    return () => {
+      active = false;
+    };
+  }, [conversationRef]);
 
   useEffect(() => {
     if (!modelExecutionRef) return;
@@ -161,8 +189,24 @@ export function CopilotPage(props: {
               )
             );
           }
+          if (execution.conversationRef) {
+            const recoveredConversation =
+              await loadTeacherConversation(
+                execution.conversationRef
+              );
+            if (!active) return;
+            setConversation(recoveredConversation);
+            setConversationRef(
+              recoveredConversation.conversationRef
+            );
+            setTaskPrompt("");
+          }
           props.navigateProposal(
             execution.proposalRevisionRef
+          );
+          replaceConversationSearch(
+            execution.conversationRef,
+            null
           );
           return;
         }
@@ -193,6 +237,13 @@ export function CopilotPage(props: {
       setModelExecution(null);
       setModelExecutionRef(null);
     }
+    const urlConversationRef = new URLSearchParams(
+      window.location.search
+    ).get("conversation");
+    if (!urlConversationRef) {
+      setConversation(null);
+      setConversationRef(null);
+    }
     void loadLessonPreparationTask(props.preparationTaskRef)
       .then((result) => {
         if (!active) return;
@@ -201,8 +252,15 @@ export function CopilotPage(props: {
           result.latestProposalRevisionRef &&
           !props.proposalRevisionRef
         ) {
+          const currentSearch = new URLSearchParams(
+            window.location.search
+          );
           props.navigateProposal(
             result.latestProposalRevisionRef
+          );
+          replaceConversationSearch(
+            currentSearch.get("conversation"),
+            currentSearch.get("modelExecution")
           );
         }
       })
@@ -313,6 +371,10 @@ export function CopilotPage(props: {
     props.task !== null &&
     "status" in props.task &&
     props.task.status === "disposed";
+  const proposalMemoryContext =
+    props.task && "memoryContext" in props.task
+      ? props.task.memoryContext
+      : undefined;
   const modelExecutionActive = Boolean(
     modelExecution && !terminalModelStatuses.has(modelExecution.status)
   );
@@ -346,6 +408,63 @@ export function CopilotPage(props: {
     setError(null);
     setDisposition(null);
     try {
+      let turnContext:
+        | {
+            conversationRef: string;
+            turnRef: string;
+            parentTurnRef: string | null;
+            conversationVersion: number;
+          }
+        | null = null;
+      if (preparationTask) {
+        let activeConversation =
+          conversation?.taskRef === preparationTask.taskRef
+            ? conversation
+            : null;
+        if (!activeConversation && conversationRef) {
+          const recovered = await loadTeacherConversation(
+            conversationRef
+          );
+          if (recovered.taskRef === preparationTask.taskRef) {
+            activeConversation = recovered;
+          }
+        }
+        if (!activeConversation) {
+          activeConversation = (
+            await createTeacherConversation({
+              taskRef: preparationTask.taskRef,
+              purposeFamily: "lesson_preparation",
+              courseRunRef:
+                preparationTask.workingSet.courseRunRef,
+              lessonRef: preparationTask.lessonRef,
+              purpose: "teacher-copilot.conversation.create",
+              idempotencyKey:
+                `ui:conversation:create:${crypto.randomUUID()}`
+            })
+          ).conversation;
+        }
+        const appended = await appendTeacherConversationTurn(
+          activeConversation.conversationRef,
+          {
+            teacherText: taskPrompt,
+            parentTurnRef: activeConversation.lastTurnRef,
+            expectedConversationVersion:
+              activeConversation.version,
+            purpose: "teacher-copilot.conversation.append-turn",
+            idempotencyKey:
+              `ui:conversation:turn:${crypto.randomUUID()}`
+          }
+        );
+        activeConversation = appended.conversation;
+        setConversation(activeConversation);
+        setConversationRef(activeConversation.conversationRef);
+        turnContext = {
+          conversationRef: activeConversation.conversationRef,
+          turnRef: appended.turn.turnRef,
+          parentTurnRef: appended.turn.parentTurnRef,
+          conversationVersion: activeConversation.version
+        };
+      }
       const command: CreateTeacherCopilotTaskRequest = {
         requestText: taskPrompt,
         courseRunRef:
@@ -366,7 +485,7 @@ export function CopilotPage(props: {
               (item) => item.claimRef
             )
           ],
-        requestVersion: 1,
+        requestVersion: turnContext ? 2 : 1,
         purpose: "teacher-copilot.adjust-next-lesson",
         idempotencyKey: `ui:teacher-copilot:${crypto.randomUUID()}`,
         ...(preparationTask
@@ -380,7 +499,8 @@ export function CopilotPage(props: {
               expectedPreparationTaskVersion:
                 preparationTask.version
             }
-          : {})
+          : {}),
+        ...(turnContext ?? {})
       };
       if (preparationTask) {
         const queued = await createModelInvocation(command);
@@ -388,17 +508,9 @@ export function CopilotPage(props: {
         setModelExecutionRef(
           queued.execution.modelExecutionRef
         );
-        const search = new URLSearchParams(
-          window.location.search
-        );
-        search.set(
-          "modelExecution",
+        replaceConversationSearch(
+          queued.execution.conversationRef,
           queued.execution.modelExecutionRef
-        );
-        window.history.replaceState(
-          {},
-          "",
-          `${window.location.pathname}?${search.toString()}`
         );
         return;
       }
@@ -494,17 +606,9 @@ export function CopilotPage(props: {
       setModelExecutionRef(
         result.execution.modelExecutionRef
       );
-      const search = new URLSearchParams(
-        window.location.search
-      );
-      search.set(
-        "modelExecution",
+      replaceConversationSearch(
+        result.execution.conversationRef ?? conversationRef,
         result.execution.modelExecutionRef
-      );
-      window.history.replaceState(
-        {},
-        "",
-        `${window.location.pathname}?${search.toString()}`
       );
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
@@ -704,6 +808,38 @@ export function CopilotPage(props: {
         />
       )}
 
+      {conversation && conversation.turns.length > 0 ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="copilot-conversation"
+        >
+          <div className="section-heading">
+            <div>
+              <Title level={3}>本次备课对话</Title>
+              <Text type="secondary">
+                刷新页面后仍会保留；这里只显示教师原话和安全结果摘要。
+              </Text>
+            </div>
+            <Tag color="blue">
+              {conversation.turns.length} 轮记录
+            </Tag>
+          </div>
+          <Space orientation="vertical" size="small">
+            {conversation.turns.slice(-8).map((turn) => (
+              <div key={turn.turnRef} data-testid="conversation-turn">
+                <Text strong>
+                  {turn.actorKind === "teacher" ? "你" : "Agent"}
+                </Text>
+                <Paragraph>
+                  {turn.teacherText ?? turn.surfaceSummary}
+                </Paragraph>
+              </div>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
+
       <Card className="task-composer ai-task-composer" variant="borderless">
         <div>
           <Text strong>告诉 Agent 你想完成什么</Text>
@@ -825,6 +961,8 @@ export function CopilotPage(props: {
               </div>
               <Tag>选择后可继续修改</Tag>
             </div>
+
+            <MemoryUseDisclosure memoryContext={proposalMemoryContext} />
 
             <div className="strategy-comparison-grid">
               {props.task.strategies.map((strategy, index) => (
@@ -1233,6 +1371,29 @@ function shortEvidenceLabel(reference: string): string {
     return "待复核解释";
   }
   return "其他依据";
+}
+
+function replaceConversationSearch(
+  conversationRef: string | null,
+  modelExecutionRef: string | null
+): void {
+  const search = new URLSearchParams(window.location.search);
+  if (conversationRef) {
+    search.set("conversation", conversationRef);
+  } else {
+    search.delete("conversation");
+  }
+  if (modelExecutionRef) {
+    search.set("modelExecution", modelExecutionRef);
+  } else {
+    search.delete("modelExecution");
+  }
+  const query = search.toString();
+  window.history.replaceState(
+    {},
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}`
+  );
 }
 
 function errorMessage(error: unknown): string {

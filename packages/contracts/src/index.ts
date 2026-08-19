@@ -1,4 +1,5 @@
 export * from "./api-routes.js";
+export * from "./conversation.js";
 export * from "./execution.js";
 export * from "./gate2.js";
 export * from "./gate2-5.js";
@@ -10,6 +11,7 @@ export * from "./gate2-9.js";
 export * from "./governance.js";
 export * from "./ingress.js";
 export * from "./identity.js";
+export * from "./memory-application.js";
 export * from "./personalization.js";
 export * from "./teaching-workspace.js";
 export * from "./records.js";

@@ -21,15 +21,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   await page.goto("/teaching");
   await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
-  await page
-    .getByTestId("lesson-stage-overview")
-    .getByRole("button", { name: /上课/u })
-    .click();
-
-  const panel = page.getByTestId("class-materials-panel");
-  await expect(panel).toBeVisible();
-  await expect(panel).toContainText("本课课堂资源");
-  await panel.getByTestId("generate-class-materials").click();
+  await page.getByTestId("lesson-package-primary-action").click();
 
   await expect.poll(async () => {
     const response = await page.request.get(
@@ -41,8 +33,14 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
     return bundle.items.filter((item) => item.status === "draft").length;
   }).toBeGreaterThanOrEqual(4);
 
+  await page.getByRole("tab", { name: "课上" }).click();
+
+  const panel = page.getByTestId("class-materials-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("课堂文件");
+
   const board = panel.getByTestId("material-item-board_design");
-  await expect(board).toContainText("待确认");
+  await expect(board).toContainText("待验收");
   const initialBundle = await loadBundle(page);
   const initialBoard = requiredBoard(initialBundle);
 
@@ -51,7 +49,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   await adjustmentPreview.getByPlaceholder(/第二题简单一点/u).fill(
     "板书减少一些内容，只保留目标、关键步骤和检查。"
   );
-  await adjustmentPreview.getByRole("button", { name: "让教学助手调整" }).click();
+  await adjustmentPreview.getByRole("button", { name: "交给助手修改" }).click();
   await expect.poll(async () => {
     const latest = requiredBoard(await loadBundle(page));
     return latest.versionNumber;
@@ -77,7 +75,7 @@ test("approved TeachingPlan produces a versioned, teacher-controlled Material Bu
   await expect.poll(async () =>
     requiredBoard(await loadBundle(page)).status
   ).toBe("adopted");
-  await expect(board).toContainText("已采用");
+  await expect(board).toContainText("已验收");
 
   await mkdir(screenshotRoot, { recursive: true });
   await page.screenshot({

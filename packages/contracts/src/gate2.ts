@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MemoryContextExplanationSchema } from "./memory-application.js";
+
 export const Gate2DemoIdentitySchema = z.object({
   tenantRef: z.string().min(1),
   schoolName: z.string().min(1),
@@ -126,7 +128,24 @@ export const TeacherTaskRequestSchema = z.object({
   baselineTeachingPlanRef: z.string().min(1).optional(),
   workingSetVersion: z.number().int().positive().optional(),
   createdAt: z.string().datetime(),
-  requestVersion: z.literal(1)
+  requestVersion: z.union([z.literal(1), z.literal(2)]),
+  conversationRef: z.string().min(1).optional(),
+  turnRef: z.string().min(1).optional(),
+  parentTurnRef: z.string().min(1).nullable().optional(),
+  conversationVersion: z.number().int().positive().optional()
+}).superRefine((request, context) => {
+  if (
+    request.requestVersion === 2 &&
+    (!request.conversationRef ||
+      !request.turnRef ||
+      request.conversationVersion === undefined)
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "Conversation, turn, and conversation version are required for requestVersion 2."
+    });
+  }
 });
 
 export const TeachingPlanRevisionViewSchema = z.object({
@@ -209,7 +228,7 @@ export const CreateTeacherCopilotTaskRequestSchema = z.object({
   goalRef: z.string().min(1),
   learningObjectiveRefs: z.array(z.string().min(1)).min(1),
   selectedEvidenceRefs: z.array(z.string().min(1)).min(1),
-  requestVersion: z.literal(1).default(1),
+  requestVersion: z.union([z.literal(1), z.literal(2)]).default(1),
   purpose: z.string().min(1),
   idempotencyKey: z.string().min(8),
   preparationTaskRef: z.string().min(1).optional(),
@@ -220,7 +239,24 @@ export const CreateTeacherCopilotTaskRequestSchema = z.object({
     .number()
     .int()
     .positive()
-    .optional()
+    .optional(),
+  conversationRef: z.string().min(1).optional(),
+  turnRef: z.string().min(1).optional(),
+  parentTurnRef: z.string().min(1).nullable().optional(),
+  conversationVersion: z.number().int().positive().optional()
+}).superRefine((request, context) => {
+  if (
+    request.requestVersion === 2 &&
+    (!request.conversationRef ||
+      !request.turnRef ||
+      request.conversationVersion === undefined)
+  ) {
+    context.addIssue({
+      code: "custom",
+      message:
+        "Conversation, turn, and conversation version are required for requestVersion 2."
+    });
+  }
 });
 
 export const CreateTeacherCopilotTaskResultSchema = z.object({
@@ -319,7 +355,8 @@ export const ProposalReviewDetailSchema = z.object({
   baselineRevision: TeachingPlanRevisionViewSchema,
   draftRevision: TeachingPlanRevisionViewSchema,
   disposition: SuggestionDispositionViewSchema.nullable(),
-  inReviewRevision: TeachingPlanRevisionViewSchema.nullable()
+  inReviewRevision: TeachingPlanRevisionViewSchema.nullable(),
+  memoryContext: MemoryContextExplanationSchema.optional()
 });
 
 export const PendingProposalListSchema = z.object({
@@ -510,7 +547,8 @@ export const RunExplanationSchema = z.object({
         ])
         .nullable()
     })
-    .optional()
+    .optional(),
+  memoryContext: MemoryContextExplanationSchema.optional()
 });
 
 export type TeachingPlan = z.infer<typeof TeachingPlanSchema>;

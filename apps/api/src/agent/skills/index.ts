@@ -4,10 +4,12 @@ import {
   lessonPreparationSkillV2,
   lessonPreparationSkillV3,
   lessonPreparationSkillV4,
+  lessonPreparationSkillV5,
   type LessonPreparationContextEvaluation,
   type LessonPreparationEngineeringManifest,
   type LessonBriefContextEvaluation,
   type LessonBriefPreparationManifest,
+  type ConversationPreparationManifest,
   type PersonalizedLessonPreparationManifest,
   type PreferenceContextEvaluation,
   type LessonPreparationSkillInput,
@@ -53,7 +55,8 @@ import {
   type NextLessonAdjustmentSkillVersion
 } from "./next-lesson-adjustment/index.js";
 
-export const lessonPreparationSkillRef = "lesson-preparation@4";
+export const lessonPreparationSkillRef = "lesson-preparation@5";
+export const lessonBriefPreparationSkillRef = "lesson-preparation@4";
 export const legacyLessonPreparationSkillRef = "lesson-preparation@3";
 export const lessonAnalysisSkillRef = "lesson-analysis@1";
 export const materialGenerationSkillRef = "material-generation@1";
@@ -67,6 +70,7 @@ export function createBuiltInSkillRegistry(): VersionedSkillRegistry {
   registry.register(lessonPreparationSkillV2);
   registry.register(lessonPreparationSkillV3);
   registry.register(lessonPreparationSkillV4);
+  registry.register(lessonPreparationSkillV5);
   registry.register(lessonAnalysisSkillV1);
   registry.register(materialGenerationSkillV1);
   registry.register(classroomReflectionSkillV1);
@@ -173,6 +177,7 @@ export {
   lessonPreparationSkillV2,
   lessonPreparationSkillV3,
   lessonPreparationSkillV4,
+  lessonPreparationSkillV5,
   lessonAnalysisSkillV1,
   materialGenerationSkillV1,
   classroomReflectionSkillV1,
@@ -189,6 +194,7 @@ export type {
   LessonPreparationEngineeringManifest,
   LessonBriefContextEvaluation,
   LessonBriefPreparationManifest,
+  ConversationPreparationManifest,
   PersonalizedLessonPreparationManifest,
   PreferenceContextEvaluation,
   LessonPreparationSkillInput,

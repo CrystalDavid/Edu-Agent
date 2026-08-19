@@ -112,6 +112,7 @@ describe("Phase 3 application boundaries", () => {
       "postgres-artifact-revision-service.ts",
       "postgres-assignment-learning-service.ts",
       "postgres-classroom-reflection-service.ts",
+      "postgres-conversation-service.ts",
       "postgres-file-artifact-service.ts",
       "postgres-gate1b-command-service.ts",
       "postgres-gate1b-education-service.ts",

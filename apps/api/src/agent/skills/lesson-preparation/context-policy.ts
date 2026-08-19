@@ -59,6 +59,23 @@ export const lessonPreparationContextPolicyV4: SkillContextPolicy =
     ]
   });
 
+export const lessonPreparationContextPolicyV5: SkillContextPolicy =
+  Object.freeze({
+    ...lessonPreparationContextPolicyV3,
+    version: "lesson-preparation-context-policy@5",
+    requiredResourceKinds: [
+      ...lessonPreparationContextPolicyV3.requiredResourceKinds,
+      "conversation_thread",
+      "conversation_turn",
+      "working_memory_snapshot"
+    ],
+    allowedFieldGroups: [
+      ...lessonPreparationContextPolicyV3.allowedFieldGroups,
+      "confirmed_lesson_brief",
+      "conversation_working_context"
+    ]
+  });
+
 export function validateLessonPreparationContext(
   input: LessonPreparationSkillInput
 ): readonly string[] {

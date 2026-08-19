@@ -13,6 +13,8 @@ export const lessonPreparationInputSchemaRefV2 =
   "lesson-preparation-input@2";
 export const lessonPreparationInputSchemaRefV3 =
   "lesson-preparation-input@3";
+export const lessonPreparationInputSchemaRefV4 =
+  "lesson-preparation-input@4";
 
 export const LessonPreparationSkillInputSchema = z.object({
   invocationRef: z.string().min(1),
@@ -117,6 +119,50 @@ export const LessonPreparationSkillInputSchemaV3 =
     confirmedLessonBrief: ConfirmedLessonBriefContextSchema
   });
 
+export const ConversationWorkingContextSchema = z.object({
+  conversationRef: z.string().min(1),
+  turnRef: z.string().min(1),
+  workingMemorySnapshotRef: z.string().min(1),
+  snapshotContentHash: z.string().min(16),
+  sourceTurnSequence: z.number().int().positive(),
+  activeGoal: z.object({
+    text: z.string().min(1).max(2000),
+    sourceTurnRef: z.string().min(1)
+  }),
+  recentTeacherRequests: z.array(z.object({
+    turnRef: z.string().min(1),
+    sequence: z.number().int().positive(),
+    text: z.string().min(1).max(2000)
+  })).max(6),
+  referents: z.array(z.object({
+    label: z.string().min(1).max(80),
+    targetRef: z.string().min(1),
+    sourceTurnRef: z.string().min(1)
+  })),
+  pendingIntents: z.array(z.string().min(1).max(240)),
+  selectedOptions: z.array(z.string().min(1).max(240)),
+  temporaryOverrides: z.array(z.string().min(1).max(240)),
+  latestAssistantResult: z.object({
+    turnRef: z.string().min(1),
+    surfaceSummary: z.string().min(1).max(1000),
+    resultRefs: z.object({
+      modelExecutionRef: z.string().min(1).optional(),
+      proposalRevisionRef: z.string().min(1).optional()
+    })
+  }).nullable(),
+  rollingSummary: z.string().min(1).max(4000)
+});
+
+export const LessonPreparationSkillInputSchemaV4 =
+  LessonPreparationSkillInputSchemaV2.extend({
+    taskWorkingSet:
+      LessonPreparationSkillInputSchema.shape.taskWorkingSet.extend({
+        sourceResourceRefs: z.array(z.string().min(1))
+      }),
+    confirmedLessonBrief: ConfirmedLessonBriefContextSchema.optional(),
+    conversationContext: ConversationWorkingContextSchema
+  });
+
 export type ConfirmedTeacherPreference = z.infer<
   typeof ConfirmedTeacherPreferenceSchema
 >;
@@ -128,4 +174,10 @@ export type ConfirmedLessonBriefContext = z.infer<
 >;
 export type LessonPreparationSkillInputV3 = z.infer<
   typeof LessonPreparationSkillInputSchemaV3
+>;
+export type ConversationWorkingContext = z.infer<
+  typeof ConversationWorkingContextSchema
+>;
+export type LessonPreparationSkillInputV4 = z.infer<
+  typeof LessonPreparationSkillInputSchemaV4
 >;

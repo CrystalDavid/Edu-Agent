@@ -112,3 +112,33 @@ export const authorizedContextPlanTable = runtimeSchema.table(
     ...formalWriteColumns()
   }
 );
+
+export const workingMemorySnapshotTable = runtimeSchema.table(
+  "working_memory_snapshot",
+  {
+    snapshotRef: text("snapshot_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    teacherRef: text("teacher_ref").notNull(),
+    conversationRef: text("conversation_ref").notNull(),
+    sourceTurnSequence: integer("source_turn_sequence").notNull(),
+    status: text("status").notNull(),
+    activeGoal: jsonb("active_goal").notNull(),
+    recentTeacherRequests: jsonb("recent_teacher_requests").notNull(),
+    referents: jsonb("referents").notNull(),
+    pendingIntents: jsonb("pending_intents").notNull(),
+    selectedOptions: jsonb("selected_options").notNull(),
+    temporaryOverrides: jsonb("temporary_overrides").notNull(),
+    latestAssistantResult: jsonb("latest_assistant_result"),
+    rollingSummary: text("rolling_summary").notNull(),
+    builderVersion: text("builder_version").notNull(),
+    policyVersion: text("policy_version").notNull(),
+    sourceRefs: jsonb("source_refs").notNull(),
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    version: integer("version").notNull(),
+    contentHash: text("content_hash").notNull(),
+    ...formalWriteColumns()
+  }
+);

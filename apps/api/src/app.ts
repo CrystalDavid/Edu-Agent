@@ -17,6 +17,9 @@ import {
   CreateAssignmentRequestSchema,
   CreateAdjustmentTaskRequestSchema,
   CreateModelInvocationRequestSchema,
+  CreateTeacherConversationRequestSchema,
+  AppendTeacherConversationTurnRequestSchema,
+  CloseTeacherConversationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
   LinkTeacherTodoResourceRequestSchema,
@@ -907,6 +910,7 @@ export function createApp(
     const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
+    const conversations = product.services.conversations;
     const withProductContext = async (request: Request, response?: Response) => {
       const identity = await productContextsFromRequest(
         request,
@@ -2102,6 +2106,93 @@ export function createApp(
           response
             .status(result.replayed ? 200 : 202)
             .json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversations,
+      markRoute("product.teacher-conversations.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.create({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateTeacherConversationRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.conversationPattern,
+      markRoute("product.teacher-conversations.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await conversations.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              conversationRef: routeParameter(
+                request.params["conversationRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationTurnsPattern,
+      markRoute("product.teacher-conversations.append-turn"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.appendTeacherTurn({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            request: AppendTeacherConversationTurnRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationClosePattern,
+      markRoute("product.teacher-conversations.close"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.close({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            request: CloseTeacherConversationRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
         } catch (error) {
           next(error);
         }

@@ -8,6 +8,7 @@ import type {
 import { Alert, Button, Input, Tag, Typography } from "antd";
 
 import { modelExecutionStatusLabel } from "../../presentation";
+import { MemoryUseDisclosure } from "../memory/MemoryUseDisclosure";
 import { WorkspaceIcon } from "../WorkspaceIcon";
 
 const { Title } = Typography;
@@ -64,6 +65,8 @@ export function PreparationProposalPanel(props: {
           </Tag>
         ) : null}
       </header>
+
+      <MemoryUseDisclosure memoryContext={props.proposal?.memoryContext} />
 
       {props.execution && props.execution.status !== "succeeded" ? (
         <Alert

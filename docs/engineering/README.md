@@ -23,7 +23,7 @@ corepack pnpm app:doctor
 | HTTP route / middleware | `apps/api/src/app.ts` | contracts、auth、route order、HTTP tests |
 | 服务组装 / Application Service | `apps/api/src/composition/` | owning module Port、transaction/outbox、PostgreSQL tests |
 | 模块状态 / Repository | `apps/api/src/modules/<module>/` | Schema ownership、Migration、architecture tests |
-| Migration | `<module>/infrastructure/migrations/` + `apps/api/src/database/migrations.ts` | 序号、owner、43 个 Verified 基线文件不变；当前另含 Phase 7A、日历分类与 Phase 8A-6 行动候选前向文件，共 46 个 |
+| Migration | `<module>/infrastructure/migrations/` + `apps/api/src/database/migrations.ts` | 序号、owner、43 个 Verified 基线文件不变；当前另含 Phase 7A、日历分类、Phase 8A-6 行动候选、Conversation/WorkingMemory 与教师记忆应用观测前向文件，共 49 个 |
 | Web 页面 / 路由 | `apps/web/src/App.tsx`、`route.ts`、`pages/` | lazy import、AppRoute、Playwright |
 | Web API client | `apps/web/src/api.ts` | shared transport/error/session、contract、build |
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |

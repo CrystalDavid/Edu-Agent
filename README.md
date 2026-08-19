@@ -8,7 +8,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 - 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
 - 当前工程阶段：Phase 8 Teaching Workspace；云部署与小范围试点在工作流验收后进入
 
-详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A、日历分类与 Phase 8A-6 下一课行动候选各追加 1 个前向 Migration，当前合计 46 个。
+详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A、日历分类、Phase 8A-6 下一课行动候选、第一轮会话/工作记忆和教师记忆应用观测共追加 6 个前向 Migration，当前合计 49 个。
 
 ## 项目定位
 
@@ -42,8 +42,10 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 | 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、版本化下一课行动候选与显式 follow-up | 反思不能倒推伪造课堂事实；确认 Reflection 不会自动创建行动 |
 | 学校管理员 | REAL（最小） | 成员查看/创建/激活/停用、普通教师角色与 CourseRun access | 无邮件邀请、MFA、SCIM 或完整后台 |
 | 教师偏好与个性化 | REAL（最小） | 查看 MemoryCandidate，确认、修改、拒绝或撤销 TeacherPreference；跨重启恢复；已确认偏好受控进入备课 Context | 无学生长期画像、向量数据库或自动人格分析 |
+| 备课会话记忆 | REAL（第一轮） | 同一备课 Task 内保存 Conversation/Turn，用可重建 WorkingMemory 理解延续要求，刷新与服务重启恢复，支持 close/到期排除和新会话隔离 | 不是跨任务长期习惯；正式保留期待产品确认；无自动人格学习或向量检索 |
+| 教师记忆应用观测 | REAL（M0-lite） | Proposal 与 Runs 显示“本次参考”的当前要求、同任务上下文和已确认偏好；封存 pack/hash；记录 Preference selection 与老师后续处置；刷新、重启和重试可恢复 | “选入输入”不代表模型一定遵循；不增加记忆类型、检索权重或显式记住/忘记 |
 | 考试 | DISABLED | 一级入口明确标记暂未开放 | 无正式考试、提交、批改和持久化 |
-| 教学助手 | REAL（任务入口） | 一级页读取服务器中的备课任务；Task/Reflection 入口使用重新授权和封存上下文 | 无无上下文聊天、多 Agent 或自动化平台 |
+| 教学助手 | REAL（任务入口） | 一级页读取服务器中的备课任务；备课 Copilot 支持 owner-scoped 连续会话；Task/Reflection 入口使用重新授权和封存上下文 | 无脱离正式 Task 的开放聊天、多 Agent 或自动化平台 |
 | 学生端、家长端 | NOT STARTED | 无 | 不是当前 MVP 范围 |
 | 多模态、OCR | NOT STARTED | 文件元数据/下载已存在 | 文件理解尚未产品化 |
 
@@ -134,7 +136,7 @@ flowchart TB
 | Workspace | Node.js 24（本轮验证 24.14.0）、Corepack、pnpm 11.9.0、TypeScript 7 |
 | Web | React 19、Vite 8、Ant Design 6、原生 history router |
 | API | Express 5、Zod 4、OpenAI-compatible client、openid-client |
-| 数据 | PostgreSQL 18、Drizzle ORM、46 个只向前 Migration（43 个 Verified 基线 + Phase 7A + 日历分类 + Phase 8A-6 行动候选） |
+| 数据 | PostgreSQL 18、Drizzle ORM、49 个只向前 Migration（43 个 Verified 基线 + 6 个后续前向 Migration） |
 | 文件 | LocalObjectStore、`docx`、JSZip |
 | 测试 | Vitest 4、PGlite、Supertest、Node test runner、Playwright 1.62 |
 | 本地环境 | Docker Desktop / Docker Compose |

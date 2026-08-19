@@ -170,7 +170,7 @@ async function submitModelRequest(
   requestText: string
 ) {
   const input = page.getByRole("textbox", {
-    name: "教师助手任务说明"
+    name: "告诉 Agent 你想完成什么"
   });
   await input.fill(requestText);
   const responsePromise = page.waitForResponse(

@@ -85,6 +85,16 @@ import { PostgresNextLessonActionRuntimePort } from "../modules/agent-runtime-co
 import { PostgresNextLessonActionGovernancePort } from "../modules/identity-governance-audit/infrastructure/postgres-next-lesson-action-governance-port.js";
 import { PostgresNextLessonActionWorkPort } from "../modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-work-port.js";
 import { PostgresNextLessonActionStore } from "./postgres-next-lesson-action-store.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
+import {
+  readConversationRetentionSettings,
+  type ConversationRetentionSettings
+} from "../modules/work-assistant-durable-execution/infrastructure/conversation-retention-config.js";
+import {
+  readMemoryApplicationObservabilitySettings,
+  type MemoryApplicationObservabilitySettings
+} from "../modules/personalization-memory-analytics/infrastructure/memory-application-observability-config.js";
+import { PostgresMemoryApplicationService } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -95,6 +105,8 @@ export function createProductContainer(
     objectStore?: ObjectStore;
     identitySettings?: IdentitySettings;
     identityProvider?: IdentityProvider;
+    conversationRetentionSettings?: ConversationRetentionSettings;
+    memoryApplicationObservabilitySettings?: MemoryApplicationObservabilitySettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -113,6 +125,17 @@ export function createProductContainer(
   const skillRegistry = createBuiltInSkillRegistry();
   const personalization = new PostgresPersonalizationService(appPool);
   const lessonBriefStore = new PostgresLessonBriefStore(appPool);
+  const conversationRetentionSettings =
+    options.conversationRetentionSettings ??
+    readConversationRetentionSettings();
+  const conversations = new PostgresConversationService(appPool, {
+    retention: conversationRetentionSettings
+  });
+  const memoryApplications = new PostgresMemoryApplicationService(
+    appPool,
+    options.memoryApplicationObservabilitySettings ??
+      readMemoryApplicationObservabilitySettings()
+  );
   const modelInvocationService = new PostgresModelInvocationService(
     appPool,
     modelProvider,
@@ -120,7 +143,10 @@ export function createProductContainer(
     {
       skills: skillRegistry,
       personalization,
-      lessonBriefs: lessonBriefStore
+      memoryApplications,
+      memoryApplicationObservabilityEnabled: memoryApplications.enabled,
+      lessonBriefs: lessonBriefStore,
+      conversations
     }
   );
   const modelInvocations: ModelInvocationApplicationFacade =
@@ -144,7 +170,10 @@ export function createProductContainer(
     configuredIdentityProviders.localIdentityProvider
   );
   const lessonPreparation = new PostgresLessonPreparationService(appPool);
-  const read = new PostgresGate2ReadService(appPool);
+  const read = new PostgresGate2ReadService(appPool, {
+    memoryApplications,
+    conversations
+  });
   const teacherWorkbench = new PostgresTeacherWorkbenchService(
     appPool,
     lessonPreparation
@@ -234,7 +263,8 @@ export function createProductContainer(
         projectionCount += await teacherWorkbench.refreshProjections(scope);
       }
       return projectionCount;
-    }
+    },
+    memoryApplications
   );
   return {
     services: {
@@ -254,6 +284,8 @@ export function createProductContainer(
       classroomFeedback,
       nextLessonOptimization,
       personalization,
+      memoryApplications,
+      conversations,
       files
     },
     infrastructure: {

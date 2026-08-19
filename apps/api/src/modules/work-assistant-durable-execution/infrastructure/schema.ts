@@ -310,3 +310,55 @@ export const nextLessonActionHistoryTable = workSchema.table(
     ...formalWriteColumns()
   }
 );
+
+export const conversationThreadTable = workSchema.table(
+  "conversation_thread",
+  {
+    conversationRef: text("conversation_ref").primaryKey(),
+    tenantRef: text("tenant_ref").notNull(),
+    teacherRef: text("teacher_ref").notNull(),
+    taskRef: text("task_ref").notNull(),
+    purposeFamily: text("purpose_family").notNull(),
+    status: text("status").notNull(),
+    courseRunRef: text("course_run_ref").notNull(),
+    lessonRef: text("lesson_ref").notNull(),
+    currentVersion: integer("current_version").notNull(),
+    lastTurnSequence: integer("last_turn_sequence").notNull(),
+    lastTurnRef: text("last_turn_ref"),
+    retentionUntil: timestamp("retention_until", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    policyVersion: text("policy_version").notNull(),
+    contentHash: text("content_hash").notNull(),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string"
+    }).notNull(),
+    closedAt: timestamp("closed_at", {
+      withTimezone: true,
+      mode: "string"
+    }),
+    ...formalWriteColumns()
+  }
+);
+
+export const conversationTurnTable = workSchema.table(
+  "conversation_turn",
+  {
+    turnRef: text("turn_ref").primaryKey(),
+    conversationRef: text("conversation_ref").notNull(),
+    sequence: integer("sequence").notNull(),
+    parentTurnRef: text("parent_turn_ref"),
+    actorKind: text("actor_kind").notNull(),
+    contentKind: text("content_kind").notNull(),
+    teacherText: text("teacher_text"),
+    surfaceSummary: text("surface_summary"),
+    taskRunRef: text("task_run_ref"),
+    agentRunRef: text("agent_run_ref"),
+    modelExecutionRef: text("model_execution_ref"),
+    proposalRevisionRef: text("proposal_revision_ref"),
+    contentHash: text("content_hash").notNull(),
+    ...formalWriteColumns()
+  }
+);

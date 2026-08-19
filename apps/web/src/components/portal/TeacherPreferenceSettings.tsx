@@ -13,13 +13,14 @@ import {
   revokeTeacherPreference,
   updateTeacherPreference
 } from "../../api";
+import { teacherPreferenceLabel } from "../../presentation";
 
-const preferenceLabels: Record<string, string> = {
-  lesson_plan_detail: "教案详细程度",
-  lesson_plan_style: "教案表达风格",
-  example_preference: "案例偏好",
-  response_length: "建议篇幅"
-};
+const preferenceKeys = [
+  "lesson_plan_detail",
+  "lesson_plan_style",
+  "example_preference",
+  "response_length"
+] as const;
 
 export function TeacherPreferenceSettings(props: {
   onAction: (message: string) => void;
@@ -117,11 +118,11 @@ export function TeacherPreferenceSettings(props: {
               return (
                 <article className="settings-row" key={preference.preferenceRef} data-testid={`preference-${preference.preferenceRef}`}>
                   <span>
-                    <strong>{preferenceLabel(preference.preferenceKey)}</strong>
+                    <strong>{teacherPreferenceLabel(preference.preferenceKey)}</strong>
                   </span>
                   <Space wrap>
                     <Input
-                      aria-label={`${preferenceLabel(preference.preferenceKey)}的值`}
+                      aria-label={`${teacherPreferenceLabel(preference.preferenceKey)}的值`}
                       value={value}
                       onChange={(event) => setEditing((current) => ({
                         ...current,
@@ -172,7 +173,10 @@ export function TeacherPreferenceSettings(props: {
             aria-label="偏好类型"
             value={draftKey}
             onChange={setDraftKey}
-            options={Object.entries(preferenceLabels).map(([value, label]) => ({ value, label }))}
+            options={preferenceKeys.map((value) => ({
+              value,
+              label: teacherPreferenceLabel(value)
+            }))}
           />
           <Input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="偏好内容，例如 简洁、突出课堂案例" />
           <Input.TextArea value={draftSummary} onChange={(event) => setDraftSummary(event.target.value)} placeholder="为什么记录这条偏好" autoSize={{ minRows: 2, maxRows: 4 }} />
@@ -201,7 +205,7 @@ export function TeacherPreferenceSettings(props: {
           <h3>已删除</h3>
           <Space wrap>
             {revokedPreferences.map((preference) => (
-              <Tag key={preference.preferenceRef}>{preferenceLabel(preference.preferenceKey)}：{preference.preferenceValue}</Tag>
+              <Tag key={preference.preferenceRef}>{teacherPreferenceLabel(preference.preferenceKey)}：{preference.preferenceValue}</Tag>
             ))}
           </Space>
         </section>
@@ -218,7 +222,7 @@ function CandidateRow(props: {
   return (
     <article className="settings-row" data-testid={`memory-candidate-${props.candidate.candidateRef}`}>
       <span>
-        <strong>{preferenceLabel(props.candidate.preferenceKey ?? "preference")}</strong>
+        <strong>{teacherPreferenceLabel(props.candidate.preferenceKey ?? "preference")}</strong>
         <small>{props.candidate.preferenceValue} · {props.candidate.summary}</small>
       </span>
       <Space>
@@ -227,8 +231,4 @@ function CandidateRow(props: {
       </Space>
     </article>
   );
-}
-
-function preferenceLabel(key: string): string {
-  return preferenceLabels[key] ?? "自定义偏好";
 }

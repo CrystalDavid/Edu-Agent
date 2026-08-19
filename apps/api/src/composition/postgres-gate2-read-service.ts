@@ -1,10 +1,13 @@
 import {
   PendingProposalListSchema,
+  MemoryContextExplanationSchema,
   ProposalReviewDetailSchema,
   RunExplanationSchema,
   TeachingPlanStateViewSchema,
   TeacherWorkspaceSchema,
   type PendingProposalList,
+  type MemoryContextExplanation,
+  type MemoryContextPackManifest,
   type ProposalReviewDetail,
   type RunExplanation,
   type LessonPreparationStatus,
@@ -46,25 +49,33 @@ import {
   DomainConflictError,
   NotFoundError
 } from "../platform/errors.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
+import { PostgresMemoryApplicationService } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.js";
 
 export class PostgresGate2ReadService {
+  private readonly work = new PostgresGate2WorkRepository();
+  private readonly gate25Work = new PostgresGate25WorkRepository();
+  private readonly runtime = new PostgresGate2RuntimeRepository();
+  private readonly capability = new PostgresGate2CapabilityRepository();
+  private readonly artifacts = new PostgresGate2ArtifactRepository();
+  private readonly education = new PostgresEducationRepository();
+  private readonly gate25Education = new PostgresGate25EducationRepository();
+  private readonly governance = new PostgresGate2GovernanceRepository();
+  private readonly memoryApplications: PostgresMemoryApplicationService;
+  private readonly conversations: PostgresConversationService;
+
   constructor(
     private readonly pool: Pool,
-    private readonly work = new PostgresGate2WorkRepository(),
-    private readonly gate25Work =
-      new PostgresGate25WorkRepository(),
-    private readonly runtime =
-      new PostgresGate2RuntimeRepository(),
-    private readonly capability =
-      new PostgresGate2CapabilityRepository(),
-    private readonly artifacts =
-      new PostgresGate2ArtifactRepository(),
-    private readonly education = new PostgresEducationRepository(),
-    private readonly gate25Education =
-      new PostgresGate25EducationRepository(),
-    private readonly governance =
-      new PostgresGate2GovernanceRepository()
-  ) {}
+    dependencies: {
+      readonly memoryApplications?: PostgresMemoryApplicationService;
+      readonly conversations?: PostgresConversationService;
+    } = {}
+  ) {
+    this.memoryApplications = dependencies.memoryApplications ??
+      new PostgresMemoryApplicationService(pool);
+    this.conversations = dependencies.conversations ??
+      new PostgresConversationService(pool);
+  }
 
   async getWorkspace(input: {
     tenantRef: string;
@@ -366,6 +377,14 @@ export class PostgresGate2ReadService {
             disposition.resultingRevisionRef
           )) ?? null
         : null;
+    const memoryContext = await this.composeMemoryContext({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      taskRef: work.taskRef,
+      agentRunRef: runtime.agentRunRef,
+      manifest: runtime.memoryContextPackManifest,
+      disposition: disposition?.kind ?? null
+    });
 
     return ProposalReviewDetailSchema.parse({
       proposalArtifactRef: work.proposalArtifactRef,
@@ -406,7 +425,8 @@ export class PostgresGate2ReadService {
             createdAt: disposition.createdAt
           }
         : null,
-      inReviewRevision
+      inReviewRevision,
+      ...(memoryContext ? { memoryContext } : {})
     });
   }
 
@@ -643,6 +663,14 @@ export class PostgresGate2ReadService {
         planStatus: scopedRevision?.lifecycleStatus ?? null
       };
     }
+    const memoryContext = await this.composeMemoryContext({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      taskRef: work.taskRef,
+      agentRunRef: runtime.agentRunRef,
+      manifest: runtime.memoryContextPackManifest,
+      disposition: work.disposition?.kind ?? null
+    });
 
     return RunExplanationSchema.parse({
       task: {
@@ -744,7 +772,163 @@ export class PostgresGate2ReadService {
         : null,
       outbox,
       auditTimeline,
-      ...(lessonPreparation ? { lessonPreparation } : {})
+      ...(lessonPreparation ? { lessonPreparation } : {}),
+      ...(memoryContext ? { memoryContext } : {})
+    });
+  }
+
+  private async composeMemoryContext(input: {
+    readonly tenantRef: string;
+    readonly actorRef: string;
+    readonly taskRef: string;
+    readonly agentRunRef: string;
+    readonly manifest: MemoryContextPackManifest | null;
+    readonly disposition:
+      | "accepted"
+      | "accepted_with_changes"
+      | "rejected"
+      | "deferred"
+      | null;
+  }): Promise<MemoryContextExplanation | undefined> {
+    const manifest = input.manifest;
+    if (!this.memoryApplications.enabled || !manifest) return undefined;
+    if (
+      manifest.owner.tenantRef !== input.tenantRef ||
+      manifest.owner.teacherRef !== input.actorRef
+    ) {
+      throw new NotFoundError("The memory context is not available.");
+    }
+    const display = await this.conversations.resolveMemoryContextDisplay(
+      this.pool,
+      {
+        tenantRef: input.tenantRef,
+        teacherRef: input.actorRef,
+        taskRef: input.taskRef,
+        conversationRef: manifest.conversationRef,
+        turnRef: manifest.currentTurnRef,
+        turnSequence: manifest.currentTurnSequence,
+        turnContentHash: manifest.currentTurnContentHash,
+        snapshotRef: manifest.workingMemorySnapshotRef,
+        snapshotVersion: manifest.workingMemorySnapshotVersion,
+        snapshotContentHash: manifest.workingMemorySnapshotContentHash
+      }
+    );
+    const [applications, outcomes] = await Promise.all([
+      this.memoryApplications.listApplicationsForRun({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        agentRunRef: input.agentRunRef
+      }),
+      this.memoryApplications.listOutcomesForRun({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        agentRunRef: input.agentRunRef
+      })
+    ]);
+    const applicationByDecision = new Map(
+      applications.map((application) => [
+        preferenceDecisionKey(
+          application.preferenceRef,
+          application.preferenceVersion,
+          application.decision
+        ),
+        application
+      ])
+    );
+    const outcomeByApplication = new Map(
+      outcomes.map((outcome) => [outcome.applicationRef, outcome])
+    );
+    const durablePreferences: MemoryContextExplanation["durablePreferences"] = [];
+    for (const decision of manifest.preferenceDecisions) {
+      const revision = await this.memoryApplications.resolvePreferenceRevision({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        expectedContentHash: decision.sourceContentHash
+      });
+      if (!revision) {
+        throw new NotFoundError("The memory context is not available.");
+      }
+      const application = applicationByDecision.get(
+        preferenceDecisionKey(
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision
+        )
+      );
+      const outcome = application
+        ? outcomeByApplication.get(application.applicationRef)
+        : undefined;
+      durablePreferences.push({
+        preferenceRef: revision.preferenceRef,
+        preferenceVersion: revision.preferenceVersion,
+        preferenceKey: revision.preferenceKey,
+        preferenceValue: revision.preferenceValue,
+        currentStatus: revision.currentStatus,
+        decision: decision.decision,
+        reasonCode: decision.reasonCode,
+        outcomeStatus: outcome?.outcomeStatus ?? null,
+        targetFields: [...decision.targetFields]
+      });
+    }
+    const included = (decision: string) =>
+      decision === "selected" || decision === "injected";
+    const currentTurnIncluded = manifest.contextDecisions.some(
+      (decision) =>
+        decision.sourceKind === "current_instruction" &&
+        included(decision.decision)
+    );
+    const workingMemoryDecision = manifest.contextDecisions.find(
+      (decision) => decision.sourceKind === "working_memory"
+    );
+    const recordedOutcome = outcomes.at(-1)?.outcomeStatus ?? null;
+    return MemoryContextExplanationSchema.parse({
+      packRef: manifest.packRef,
+      packContentHash: manifest.packContentHash,
+      manifestVersion: manifest.manifestVersion,
+      policyVersion: manifest.policyVersion,
+      skillRef: manifest.skillRef,
+      skillVersion: manifest.skillVersion,
+      currentTurn:
+        currentTurnIncluded && display.currentTurn
+          ? display.currentTurn
+          : null,
+      workingMemory:
+        workingMemoryDecision && display.workingMemory
+          ? [
+              {
+                sourceRef: display.workingMemory.sourceRef,
+                sourceKind: "working_memory",
+                displaySummary: display.workingMemory.displaySummary,
+                decision: workingMemoryDecision.decision,
+                reasonCode: workingMemoryDecision.reasonCode
+              }
+            ]
+          : [],
+      durablePreferences,
+      excluded: [
+        ...manifest.contextDecisions,
+        ...manifest.preferenceDecisions
+      ]
+        .filter(
+          (decision) =>
+            decision.decision === "excluded" ||
+            decision.decision === "overridden"
+        )
+        .map((decision) => ({
+          sourceKind: decision.sourceKind,
+          sourceRef: decision.sourceRef,
+          reasonCode: decision.reasonCode
+        })),
+      outcomeStatus:
+        recordedOutcome ?? outcomeStatusFromDisposition(input.disposition)
     });
   }
 
@@ -933,5 +1117,35 @@ export class PostgresGate2ReadService {
         "The authenticated user has no active teacher membership in this school."
       );
     }
+  }
+}
+
+function preferenceDecisionKey(
+  preferenceRef: string,
+  preferenceVersion: number,
+  decision: string
+): string {
+  return `${preferenceRef}|${preferenceVersion}|${decision}`;
+}
+
+function outcomeStatusFromDisposition(
+  disposition:
+    | "accepted"
+    | "accepted_with_changes"
+    | "rejected"
+    | "deferred"
+    | null
+): MemoryContextExplanation["outcomeStatus"] {
+  switch (disposition) {
+    case "accepted":
+      return "adopted";
+    case "accepted_with_changes":
+      return "edited";
+    case "rejected":
+      return "rejected";
+    case "deferred":
+      return "deferred";
+    case null:
+      return null;
   }
 }

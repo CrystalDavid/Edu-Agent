@@ -21,6 +21,7 @@ import {
   loadRunExplanation,
   type RecoverableCopilotTask
 } from "../api";
+import { MemoryUseDisclosure } from "../components/memory/MemoryUseDisclosure";
 import {
   lessonPlanProjectionStatusLabel,
   lessonPreparationStatusLabel,
@@ -197,6 +198,11 @@ export function RunsPage(props: {
                 不展示隐藏思维链、密钥、数据库连接或内部堆栈。
               </div>
             </Card>
+
+            <MemoryUseDisclosure
+              memoryContext={explanation.memoryContext}
+              variant="detailed"
+            />
 
             <Card
               className="workspace-card run-details-card"

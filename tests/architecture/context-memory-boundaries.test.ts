@@ -89,7 +89,7 @@ describe("Phase 6 Context and Memory boundaries", () => {
     expect(productContainer).not.toContain("MemoryCandidateService");
   });
 
-  it("keeps 43 historical Migrations and adds exactly one forward Phase 7A Migration", () => {
+  it("keeps 43 historical Migrations and registers only the approved forward memory Migrations", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
     const phase7a = migrations.filter((path) =>
@@ -101,14 +101,25 @@ describe("Phase 6 Context and Memory boundaries", () => {
     const nextLessonActionMigration = migrations.filter((path) =>
       path.endsWith("0011_next_lesson_action_candidates.sql")
     );
-    expect(migrations).toHaveLength(46);
+    const conversationMigrations = migrations.filter((path) =>
+      path.endsWith("0012_conversation_thread_turn.sql") ||
+      path.endsWith("0007_working_memory_snapshot.sql")
+    );
+    const observabilityMigration = migrations.filter((path) =>
+      path.endsWith("0003_memory_application_observability.sql")
+    );
+    expect(migrations).toHaveLength(49);
     expect(phase7a).toHaveLength(1);
     expect(calendarCategoryMigration).toHaveLength(1);
     expect(nextLessonActionMigration).toHaveLength(1);
+    expect(conversationMigrations).toHaveLength(2);
+    expect(observabilityMigration).toHaveLength(1);
     expect(migrations.filter((path) =>
       !phase7a.includes(path) &&
       !calendarCategoryMigration.includes(path) &&
-      !nextLessonActionMigration.includes(path)
+      !nextLessonActionMigration.includes(path) &&
+      !conversationMigrations.includes(path) &&
+      !observabilityMigration.includes(path)
     )).toHaveLength(43);
   });
 

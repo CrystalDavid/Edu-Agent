@@ -108,6 +108,15 @@ export function calendarEventTypeLabel(eventType: string): string {
   }[eventType] ?? "日程";
 }
 
+export function teacherPreferenceLabel(preferenceKey: string): string {
+  return {
+    lesson_plan_detail: "教案详细程度",
+    lesson_plan_style: "教案表达风格",
+    example_preference: "案例偏好",
+    response_length: "建议篇幅"
+  }[preferenceKey] ?? "自定义偏好";
+}
+
 export function workSourceLabel(source: string): string {
   return {
     work: "教学任务",

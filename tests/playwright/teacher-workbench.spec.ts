@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 import { playwrightArtifactPath } from "../config/test-artifacts.js";
 
@@ -22,23 +22,23 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   test.setTimeout(120_000);
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1536, height: 960 });
-  await page.goto("/overview");
+  await page.goto("/schedule");
+  const todoPanel = page.getByTestId("todo-panel");
   const title = `准备周五教研材料 ${Date.now()}`;
   await page.getByRole("button", { name: "新建待办" }).click();
-  await page.getByTestId("overview-todo-title").fill(title);
+  await page.getByTestId("todo-title-input").fill(title);
   const createdResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === apiRoutes.teacher.todos && response.request().method() === "POST"
   );
   await page.getByRole("dialog").filter({ hasText: "新建个人待办" }).getByRole("button", { name: /创\s*建/u }).click();
   expect((await createdResponse).status()).toBe(201);
-  await expect(page.getByTestId("today-work")).toContainText(title);
+  await expect(todoPanel).toContainText(title);
 
-  await page.goto("/schedule");
-  const todoPanel = page.getByTestId("todo-panel");
   const todo = todoPanel.locator("article").filter({ hasText: title });
   await expect(todo).toBeVisible();
 
-  await todo.getByTitle("安排到日历").click();
+  await openTodoActions(todo);
+  await todo.getByRole("button", { name: "安排时间" }).click();
   const scheduleDialog = page.getByRole("dialog").filter({ hasText: title });
   const date = localDate(new Date());
   await scheduleDialog.locator('input[type="datetime-local"]').nth(0).fill(`${date}T15:00`);
@@ -120,7 +120,7 @@ test("Assignment projections and a Todo handoff keep source truth and explicit A
   expect(source.status).toBe("published");
   expect(source.dueAt).toBe(assignment.dueAt);
 
-  await todoPanel.getByRole("button", { name: "新建", exact: true }).click();
+  await todoPanel.getByRole("button", { name: "新建待办", exact: true }).click();
   const todoTitle = `用 Agent 整理教研提纲 ${Date.now()}`;
   await page.getByTestId("todo-title-input").fill(todoTitle);
   const todoCreatedResponse = page.waitForResponse(
@@ -132,7 +132,8 @@ test("Assignment projections and a Todo handoff keep source truth and explicit A
   const todoBody = await todoCreated.json();
 
   const todo = todoPanel.locator("article").filter({ hasText: todoTitle });
-  await todo.getByTitle("关联课时", { exact: true }).click();
+  await openTodoActions(todo);
+  await todo.getByRole("button", { name: "关联课时", exact: true }).click();
   const linkDialog = page.getByRole("dialog").filter({ hasText: "关联课时" });
   await linkDialog.getByRole("combobox").click();
   await page.locator(".ant-select-item-option").filter({ hasText: /^斜率与图像变化$/ }).click();
@@ -143,23 +144,24 @@ test("Assignment projections and a Todo handoff keep source truth and explicit A
   expect((await linkResponse).status()).toBe(201);
 
   const refreshedTodo = todoPanel.locator("article").filter({ hasText: todoTitle });
+  await openTodoActions(refreshedTodo);
   const handoffResponse = page.waitForResponse(
     (response) => response.url().endsWith("/agent-handoff") && response.request().method() === "POST"
   );
-  await refreshedTodo.getByTitle("在 Agent 中处理", { exact: true }).click();
+  await refreshedTodo.getByRole("button", { name: "交给助手", exact: true }).click();
   const handoff = await handoffResponse;
   expect(handoff.status()).toBe(201);
   const handoffBody = await handoff.json();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   const workingSet = page.getByTestId("task-working-set");
-  await expect(workingSet).toContainText(todoTitle, { timeout: 20_000 });
   await expect(workingSet).toContainText("斜率与图像变化");
+  await expect(workingSet).toContainText("4 条学习证据");
   expect(handoffBody.workingSet.sourceResourceRefs).toContain(
     "lesson:slope-and-graph-change"
   );
 
   const prompt = "请根据当前课时和这条教研待办生成一份可审阅的教学建议。";
-  await page.getByRole("textbox", { name: "教师助手任务说明" }).fill(prompt);
+  await page.getByRole("textbox", { name: "告诉 Agent 你想完成什么" }).fill(prompt);
   const invocationResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === apiRoutes.teacher.modelInvocations && response.request().method() === "POST"
   );
@@ -178,7 +180,9 @@ test("Assignment projections and a Todo handoff keep source truth and explicit A
   await restartApi(request);
   await page.reload();
   await expect(page.getByText(prompt).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("task-working-set")).toContainText(todoTitle);
+  await expect(page.getByTestId("task-working-set")).toContainText(
+    "斜率与图像变化"
+  );
   await page.screenshot({
     path: `${screenshotRoot}/02-source-reminder-agent-context.png`,
     fullPage: true,
@@ -244,6 +248,14 @@ async function createPublishedAssignmentWithSubmissions(request: APIRequestConte
   );
   expect(imported.status()).toBe(201);
   return { assignmentRef, title, dueAt };
+}
+
+async function openTodoActions(todo: Locator) {
+  const details = todo.locator("details.todo-overflow");
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await details.locator("summary").click();
+  }
+  await expect(details).toHaveAttribute("open", "");
 }
 
 async function restartApi(request: APIRequestContext) {

@@ -3,17 +3,20 @@ import {
   lessonPreparationContextPolicy,
   lessonPreparationContextPolicyV2,
   lessonPreparationContextPolicyV3,
-  lessonPreparationContextPolicyV4
+  lessonPreparationContextPolicyV4,
+  lessonPreparationContextPolicyV5
 } from "./context-policy.js";
 import {
   lessonPreparationInputSchemaRef,
   lessonPreparationInputSchemaRefV2,
-  lessonPreparationInputSchemaRefV3
+  lessonPreparationInputSchemaRefV3,
+  lessonPreparationInputSchemaRefV4
 } from "./input-schema.js";
 import { lessonPreparationOutputSchemaRef } from "./output-schema.js";
 import {
   lessonPreparationPromptBundle,
   lessonBriefPreparationPromptBundle,
+  conversationLessonPreparationPromptBundle,
   personalizedLessonPreparationPromptBundle
 } from "./prompt.js";
 
@@ -131,6 +134,40 @@ export const lessonPreparationSkillManifestV4 = createSkillManifest({
   promptBundleVersion: lessonBriefPreparationPromptBundle.version,
   promptBundleContentHash: lessonBriefPreparationPromptBundle.contentHash,
   contextPolicy: lessonPreparationContextPolicyV4,
+  toolPolicy: {
+    mode: "disabled",
+    allowedTools: []
+  },
+  memoryPolicy: {
+    mode: "authorized_context_only"
+  },
+  budgetPolicy: {
+    source: "runtime_context_and_model_budget",
+    mayIncreaseRuntimeBudget: false
+  },
+  approvalPolicy: {
+    outputKind: "proposal",
+    humanApprovalRequired: true
+  },
+  evaluationPolicy: {
+    version: "lesson-preparation-evaluation@1",
+    dimensions: ["contract", "policy", "quality", "operation"],
+    qualityBlocksProposal: false
+  }
+});
+
+export const lessonPreparationSkillManifestV5 = createSkillManifest({
+  id: "lesson-preparation",
+  version: "5",
+  ref: "lesson-preparation@5",
+  status: "published",
+  purpose: "lesson_preparation",
+  inputSchemaRef: lessonPreparationInputSchemaRefV4,
+  outputSchemaRef: lessonPreparationOutputSchemaRef,
+  promptBundleRef: conversationLessonPreparationPromptBundle.promptBundleRef,
+  promptBundleVersion: conversationLessonPreparationPromptBundle.version,
+  promptBundleContentHash: conversationLessonPreparationPromptBundle.contentHash,
+  contextPolicy: lessonPreparationContextPolicyV5,
   toolPolicy: {
     mode: "disabled",
     allowedTools: []

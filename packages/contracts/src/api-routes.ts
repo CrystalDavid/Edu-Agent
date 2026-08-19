@@ -18,6 +18,11 @@ const teacherModelInvocationRoute = (
     modelExecutionRef
   )}`;
 
+const teacherConversationRoute = (conversationRef: string): string =>
+  `/api/v1/teacher/conversations/${encodeRouteSegment(
+    conversationRef
+  )}`;
+
 const teacherFileRoute = (assetRef: string): string =>
   `/api/v1/teacher/files/${encodeRouteSegment(assetRef)}`;
 
@@ -231,6 +236,18 @@ export const apiRoutes = {
       "/api/v1/teacher/model-provider/usage",
     modelInvocations:
       "/api/v1/teacher/model-invocations",
+    conversations: "/api/v1/teacher/conversations",
+    conversationPattern:
+      "/api/v1/teacher/conversations/:conversationRef",
+    conversation: teacherConversationRoute,
+    conversationTurnsPattern:
+      "/api/v1/teacher/conversations/:conversationRef/turns",
+    conversationTurns: (conversationRef: string): string =>
+      `${teacherConversationRoute(conversationRef)}/turns`,
+    conversationClosePattern:
+      "/api/v1/teacher/conversations/:conversationRef/close",
+    conversationClose: (conversationRef: string): string =>
+      `${teacherConversationRoute(conversationRef)}/close`,
     modelInvocationPattern:
       "/api/v1/teacher/model-invocations/:modelExecutionRef",
     modelInvocation: teacherModelInvocationRoute,

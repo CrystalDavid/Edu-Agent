@@ -34,12 +34,10 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
 
   await page.goto(`/teaching/lessons/${encodeURIComponent(lessonRef)}`);
   await expect(page.getByTestId("lesson-detail")).toContainText("斜率与图像变化");
-  await page
-    .getByTestId("lesson-stage-overview")
-    .getByRole("button", { name: /课后/u })
-    .click();
+  await page.getByRole("tab", { name: "课上" }).click();
+  await page.getByText("记录课堂情况", { exact: true }).click();
   const classroom = page.getByTestId("classroom-reflection-panel");
-  await expect(classroom).toContainText("老师确认的教学方案仍然只是课前方案");
+  await expect(classroom).toContainText("课堂情况");
 
   const quickFeedback = page.getByTestId("quick-classroom-feedback");
   await expect(quickFeedback).toBeVisible();
@@ -49,6 +47,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
     .locator(".ant-segmented-item").nth(1).click();
   await page.getByTestId("classroom-feedback-student-response")
     .locator(".ant-segmented-item").nth(1).click();
+  await page.getByText("补充情况（可选）", { exact: true }).click();
   await page.getByTestId("classroom-feedback-abnormal-sections")
     .locator("label").nth(3).click();
   await page.getByTestId("classroom-feedback-note").fill(
@@ -78,7 +77,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.getByTestId("confirm-lesson-delivery").click();
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await deliveryConfirmed).status()).toBe(200);
-  await expect(page.getByTestId("lesson-delivery-card")).toContainText("教师已确认");
+  await expect(page.getByTestId("lesson-delivery-card")).toContainText("已完成");
   await expect(page.getByTestId("lesson-delivery-card")).toContainText("现场调整");
 
   await page.getByTestId("create-classroom-observation").click();
@@ -100,8 +99,9 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   expect(observationConfirmedResponse.status()).toBe(200);
   const observationConfirmedBody = await observationConfirmedResponse.json();
   const observationRevisionRef = observationConfirmedBody.observation.currentConfirmed.observationRevisionRef as string;
-  await expect(page.getByTestId("classroom-observation-card")).toContainText("已确认");
+  await expect(page.getByTestId("classroom-observation-card")).toContainText("已完成");
 
+  await page.getByText("选择反思依据", { exact: true }).click();
   await expect(
     page.getByTestId("lesson-reflection-card").getByRole("checkbox", { name: observationText })
   ).toBeChecked();
@@ -121,7 +121,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
     animations: "disabled"
   });
 
-  await page.getByLabel("一句话告诉教学助手需要关注或调整什么").fill(
+  await page.getByLabel("告诉 Agent 需要关注什么").fill(
     "只整理教师确认的课堂事实，并保留证据缺口。"
   );
   const generationCreated = page.waitForResponse(
@@ -141,9 +141,9 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.reload();
   await expect(page).toHaveURL(new RegExp(`/agent/reflections/${encodeURIComponent(reflectionRef)}`));
   await expect(page.getByTestId("reflection-context")).toContainText("已完成", { timeout: 20_000 });
-  await expect(page.getByTestId("reflection-draft-editor")).toContainText("教学助手整理");
+  await expect(page.getByTestId("reflection-draft-editor")).toContainText("助手整理");
   await expect(page.getByTestId("reflection-facts")).toContainText("发生了什么");
-  await expect(page.getByTestId("reflection-interpretation")).toContainText("教学助手的解释");
+  await expect(page.getByTestId("reflection-interpretation")).toContainText("助手的解释");
   await expect(page.getByTestId("reflection-action-candidates")).toContainText("候选尚未执行");
   await expect(page.getByTestId("reflection-teacher-decision")).toContainText("只有“准确”会确认课后反思");
   await page.screenshot({
@@ -167,8 +167,8 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   await page.getByTestId("confirm-reflection").click();
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await reflectionConfirmed).status()).toBe(200);
-  await expect(page.getByTestId("reflection-draft-editor")).toContainText("教师已确认课后反思");
-  await expect(page.getByTestId("reflection-follow-ups")).toContainText("生成候选不会自动创建任何任务");
+  await expect(page.getByTestId("reflection-draft-editor")).toContainText("课后反思已完成");
+  await expect(page.getByTestId("reflection-follow-ups")).toContainText("实际来源已封存");
 
   const reflectionBeforeActions = await request.get(
     apiRoutes.teacher.reflection(reflectionRef),
@@ -210,8 +210,8 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   expect(followUp.status).toBe("accepted");
   expect(followUp.targetRef).toBeTruthy();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
-  await expect(page.getByTestId("task-working-set")).toContainText("课后反思来源");
-  await expect(page.getByTestId("task-working-set")).toContainText("1 条教师确认观察");
+  await expect(page.getByTestId("task-working-set")).toContainText("待定系数法");
+  await expect(page.getByTestId("task-working-set")).toContainText("1 条学习证据");
   const followUpTaskResponse = await request.get(
     apiRoutes.teacher.preparationTask(followUp.targetRef),
     { headers }
@@ -231,7 +231,7 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
   expect(planAfter.currentApproved.content).toEqual(planBefore.currentApproved.content);
 
   await page.goto("/overview");
-  await expect(page.getByTestId("today-work")).toBeVisible();
+  await expect(page.getByTestId("overview-page")).toBeVisible();
   const workbenchResponse = await request.get(apiRoutes.teacher.workbenchOverview, {
     headers
   });
@@ -254,13 +254,10 @@ test("approved plan -> confirmed classroom facts -> recoverable Reflection -> ex
 
   await restartApi(request);
   await page.goto(`/teaching/lessons/${encodeURIComponent(lessonRef)}`);
-  await page
-    .getByTestId("lesson-stage-overview")
-    .getByRole("button", { name: /课后/u })
-    .click();
-  await expect(page.getByTestId("lesson-delivery-card")).toContainText("教师已确认", { timeout: 20_000 });
+  await page.getByRole("tab", { name: "课后" }).click();
+  await expect(page.getByTestId("lesson-delivery-card")).toContainText("已完成", { timeout: 20_000 });
   await expect(page.getByTestId("classroom-observation-card")).toContainText(observationText);
-  await expect(page.getByTestId("lesson-reflection-card")).toContainText("正式反思已确认");
+  await expect(page.getByTestId("lesson-reflection-card")).toContainText("已完成");
   const followUpTask = await request.get(
     apiRoutes.teacher.preparationTask(followUp.targetRef),
     { headers }
