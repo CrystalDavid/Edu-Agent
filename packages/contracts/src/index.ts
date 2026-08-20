@@ -12,6 +12,7 @@ export * from "./governance.js";
 export * from "./ingress.js";
 export * from "./identity.js";
 export * from "./memory-application.js";
+export * from "./memory-scope.js";
 export * from "./personalization.js";
 export * from "./teaching-workspace.js";
 export * from "./records.js";

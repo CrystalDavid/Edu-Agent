@@ -69,6 +69,7 @@ describe("Phase 5 Skill boundaries", () => {
     expect(manifest).toContain('ref: "lesson-preparation@3"');
     expect(manifest).toContain('ref: "lesson-preparation@4"');
     expect(manifest).toContain('ref: "lesson-preparation@5"');
+    expect(manifest).toContain('ref: "lesson-preparation@6"');
     expect(manifest).toContain('mode: "authorized_context_only"');
     expect(manifest).toContain('status: "published"');
     expect(manifest).toContain('mode: "disabled"');
@@ -94,6 +95,7 @@ describe("Phase 5 Skill boundaries", () => {
     expect(runtime).toContain('"lesson-preparation@3"');
     expect(runtime).toContain('"lesson-preparation@4"');
     expect(runtime).toContain('"lesson-preparation@5"');
+    expect(runtime).toContain('"lesson-preparation@6"');
     expect(providerPort).toContain("interface ConfirmedLessonBriefContextProvider");
     expect(providerPort).not.toMatch(/postgres|repository|pool|query/iu);
   });
@@ -131,18 +133,23 @@ describe("Phase 5 Skill boundaries", () => {
     const observabilityMigration = migrations.filter((path) =>
       path.endsWith("0003_memory_application_observability.sql")
     );
-    expect(migrations).toHaveLength(49);
+    const scopedPreferenceMigration = migrations.filter((path) =>
+      path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
+    );
+    expect(migrations).toHaveLength(50);
     expect(phase7a).toHaveLength(1);
     expect(calendarCategoryMigration).toHaveLength(1);
     expect(nextLessonActionMigration).toHaveLength(1);
     expect(conversationMigrations).toHaveLength(2);
     expect(observabilityMigration).toHaveLength(1);
+    expect(scopedPreferenceMigration).toHaveLength(1);
     expect(migrations.filter((path) =>
       !phase7a.includes(path) &&
       !calendarCategoryMigration.includes(path) &&
       !nextLessonActionMigration.includes(path) &&
       !conversationMigrations.includes(path) &&
-      !observabilityMigration.includes(path)
+      !observabilityMigration.includes(path) &&
+      !scopedPreferenceMigration.includes(path)
     )).toHaveLength(43);
   });
 });

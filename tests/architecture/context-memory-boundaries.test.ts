@@ -108,18 +108,23 @@ describe("Phase 6 Context and Memory boundaries", () => {
     const observabilityMigration = migrations.filter((path) =>
       path.endsWith("0003_memory_application_observability.sql")
     );
-    expect(migrations).toHaveLength(49);
+    const scopedPreferenceMigration = migrations.filter((path) =>
+      path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
+    );
+    expect(migrations).toHaveLength(50);
     expect(phase7a).toHaveLength(1);
     expect(calendarCategoryMigration).toHaveLength(1);
     expect(nextLessonActionMigration).toHaveLength(1);
     expect(conversationMigrations).toHaveLength(2);
     expect(observabilityMigration).toHaveLength(1);
+    expect(scopedPreferenceMigration).toHaveLength(1);
     expect(migrations.filter((path) =>
       !phase7a.includes(path) &&
       !calendarCategoryMigration.includes(path) &&
       !nextLessonActionMigration.includes(path) &&
       !conversationMigrations.includes(path) &&
-      !observabilityMigration.includes(path)
+      !observabilityMigration.includes(path) &&
+      !scopedPreferenceMigration.includes(path)
     )).toHaveLength(43);
   });
 

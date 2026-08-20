@@ -95,6 +95,13 @@ import {
   type MemoryApplicationObservabilitySettings
 } from "../modules/personalization-memory-analytics/infrastructure/memory-application-observability-config.js";
 import { PostgresMemoryApplicationService } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.js";
+import {
+  readMemoryScopedPreferencesSettings,
+  type MemoryScopedPreferencesSettings
+} from "../modules/personalization-memory-analytics/infrastructure/memory-scoped-preferences-config.js";
+import {
+  TeacherPreferenceScopeAuthorizationAdapter
+} from "./teacher-preference-scope-authorization-adapter.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -107,6 +114,7 @@ export function createProductContainer(
     identityProvider?: IdentityProvider;
     conversationRetentionSettings?: ConversationRetentionSettings;
     memoryApplicationObservabilitySettings?: MemoryApplicationObservabilitySettings;
+    memoryScopedPreferencesSettings?: MemoryScopedPreferencesSettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -123,7 +131,17 @@ export function createProductContainer(
     options.modelProvider ??
     createConfiguredModelProvider(modelSettings);
   const skillRegistry = createBuiltInSkillRegistry();
-  const personalization = new PostgresPersonalizationService(appPool);
+  const lessonPreparation = new PostgresLessonPreparationService(appPool);
+  const scopedPreferencesSettings =
+    options.memoryScopedPreferencesSettings ??
+    readMemoryScopedPreferencesSettings();
+  const personalization = new PostgresPersonalizationService(
+    appPool,
+    undefined,
+    undefined,
+    new TeacherPreferenceScopeAuthorizationAdapter(lessonPreparation),
+    scopedPreferencesSettings
+  );
   const lessonBriefStore = new PostgresLessonBriefStore(appPool);
   const conversationRetentionSettings =
     options.conversationRetentionSettings ??
@@ -145,6 +163,7 @@ export function createProductContainer(
       personalization,
       memoryApplications,
       memoryApplicationObservabilityEnabled: memoryApplications.enabled,
+      scopedPreferencesEnabled: scopedPreferencesSettings.enabled,
       lessonBriefs: lessonBriefStore,
       conversations
     }
@@ -169,7 +188,6 @@ export function createProductContainer(
     identityProvider,
     configuredIdentityProviders.localIdentityProvider
   );
-  const lessonPreparation = new PostgresLessonPreparationService(appPool);
   const read = new PostgresGate2ReadService(appPool, {
     memoryApplications,
     conversations

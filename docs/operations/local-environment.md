@@ -80,6 +80,8 @@ MODEL_DEBUG_CONTENT=false
 
 `MEMORY_APPLICATION_RETENTION_DAYS` 控制新 application 的逻辑读取期限，当前运行默认值为 365 天；outcome 通过所属 application 继承读取边界。生产期限、学校级覆盖、审计最低期限、Legal Hold、redaction/tombstone 与获批清理 Worker 均为**待产品确认**。现有 application/outcome 是 append-only，不能用 UPDATE 或物理 DELETE 绕过审计。
 
+`MEMORY_SCOPED_PREFERENCES_ENABLED` 控制新建/修改 scoped 或 Skill-constrained TeacherPreference，以及新 Lesson Preparation 是否使用 `lesson-preparation@6` + Pack V2。local/test 未显式配置时默认启用；production 未显式配置时默认关闭。关闭后设置页隐藏 Scope 控件，新偏好只能写 unrestricted global（`skillIds=[]`），Lesson Preparation 回到 `@5` 的 global 兼容路径；已有 scoped row、历史 V2 Run 和 application/outcome 不删除、不逆向 Migration，Conversation/WorkingMemory 与 M0-lite 观测语义不变。该值是非敏感服务端 feature flag，浏览器返回的布尔值只用于显示，不能作为授权真值。
+
 ## 本地身份与服务端会话
 
 产品 API 默认要求有效的服务端 Session Cookie。未登录访问教师门户会显示登录页；登录成功后 API 建立随机不透明 Session，浏览器只持有 HttpOnly Cookie，数据库只保存 token hash。刷新和 API 重启后从 PostgreSQL 恢复 User、School、Membership、Role 和 CourseRun access。

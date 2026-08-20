@@ -114,6 +114,7 @@ describe("first-round conversation memory boundaries", () => {
       "apps/api/src/agent/skills/lesson-preparation/prompt.ts"
     );
     expect(manifest).toContain('ref: "lesson-preparation@5"');
+    expect(manifest).toContain('ref: "lesson-preparation@6"');
     expect(manifest).toContain(
       'inputSchemaRef: lessonPreparationInputSchemaRefV4'
     );

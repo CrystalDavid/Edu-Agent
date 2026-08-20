@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { FormalWriteMetadata } from "@edu-agent/contracts";
 
 import type {
@@ -9,6 +11,7 @@ import type {
   MemorySourceReference,
   TeacherPreference
 } from "../domain/index.js";
+import { createMemoryScope } from "../domain/memory-scope.js";
 import type { SqlExecutor } from "../../../platform/postgres/types.js";
 
 type MetadataFactory = (suffix: string) => FormalWriteMetadata;
@@ -40,6 +43,21 @@ type PreferenceRow = {
   teacher_ref: string;
   preference_key: string;
   preference_value: string;
+  canonical_key: string;
+  scope_kind: TeacherPreference["scope"]["kind"];
+  scope_subject: string | null;
+  scope_grade_level: string | null;
+  scope_course_run_ref: string | null;
+  scope_lesson_ref: string | null;
+  scope_task_ref: string | null;
+  scope_skill_ids: string[];
+  scope_fingerprint: string;
+  valid_from: Date | string;
+  valid_until: Date | string | null;
+  explicitness: TeacherPreference["explicitness"];
+  consent_basis: TeacherPreference["consentBasis"];
+  consent_version: string;
+  policy_version: string;
   source_candidate_ref: string;
   source_candidate_hash: string;
   preference_status: TeacherPreference["status"];
@@ -69,14 +87,22 @@ const candidateRevisionSelect = `
 
 const preferenceCurrentSelect = `
   SELECT preference_ref, tenant_ref, teacher_ref, preference_key,
-         preference_value, source_candidate_ref, source_candidate_hash,
+         preference_value, canonical_key, scope_kind, scope_subject,
+         scope_grade_level, scope_course_run_ref, scope_lesson_ref,
+         scope_task_ref, scope_skill_ids, scope_fingerprint, valid_from,
+         valid_until, explicitness, consent_basis, consent_version,
+         policy_version, source_candidate_ref, source_candidate_hash,
          preference_status, current_version, content_hash, confirmed_by_ref,
          confirmed_at, created_at, updated_at, revoked_at
     FROM personalization.teacher_preference`;
 
 const preferenceRevisionSelect = `
   SELECT preference_ref, tenant_ref, teacher_ref, preference_key,
-         preference_value, source_candidate_ref, source_candidate_hash,
+         preference_value, canonical_key, scope_kind, scope_subject,
+         scope_grade_level, scope_course_run_ref, scope_lesson_ref,
+         scope_task_ref, scope_skill_ids, scope_fingerprint, valid_from,
+         valid_until, explicitness, consent_basis, consent_version,
+         policy_version, source_candidate_ref, source_candidate_hash,
          preference_status, version, content_hash, confirmed_by_ref,
          confirmed_at, created_at, updated_at, revoked_at
     FROM personalization.teacher_preference_revision`;
@@ -206,22 +232,52 @@ export class PostgresMemoryCandidateRepository
       const updated = await this.executor.query(
         `UPDATE personalization.teacher_preference
             SET preference_value = $3,
-                preference_status = $4,
-                current_version = $5,
-                content_hash = $6,
-                updated_at = $7::timestamptz,
-                revoked_at = $8::timestamptz,
-                actor_ref = $9,
-                purpose = $10,
-                owner_module = $11,
-                idempotency_key = $12,
-                authorization_decision_ref = $13,
-                audit_ref = $14
+                canonical_key = $4,
+                scope_kind = $5,
+                scope_subject = $6,
+                scope_grade_level = $7,
+                scope_course_run_ref = $8,
+                scope_lesson_ref = $9,
+                scope_task_ref = $10,
+                scope_skill_ids = $11::jsonb,
+                scope_fingerprint = $12,
+                valid_from = $13::timestamptz,
+                valid_until = $14::timestamptz,
+                explicitness = $15,
+                consent_basis = $16,
+                consent_version = $17,
+                policy_version = $18,
+                preference_status = $19,
+                current_version = $20,
+                content_hash = $21,
+                updated_at = $22::timestamptz,
+                revoked_at = $23::timestamptz,
+                actor_ref = $24,
+                purpose = $25,
+                owner_module = $26,
+                idempotency_key = $27,
+                authorization_decision_ref = $28,
+                audit_ref = $29
           WHERE preference_ref = $1 AND current_version = $2`,
         [
           input.preference.preferenceRef,
           input.expectedPreviousVersion,
           input.preference.preferenceValue,
+          input.preference.canonicalKey,
+          input.preference.scope.kind,
+          input.preference.scope.subject,
+          input.preference.scope.gradeLevel,
+          input.preference.scope.courseRunRef,
+          input.preference.scope.lessonRef,
+          input.preference.scope.taskRef,
+          JSON.stringify(input.preference.scope.skillIds),
+          input.preference.scopeFingerprint,
+          input.preference.validFrom,
+          input.preference.validUntil,
+          input.preference.explicitness,
+          input.preference.consentBasis,
+          input.preference.consentVersion,
+          input.preference.policyVersion,
           input.preference.status,
           input.preference.version,
           input.preference.contentHash,
@@ -233,6 +289,20 @@ export class PostgresMemoryCandidateRepository
       if ((updated.rowCount ?? 0) !== 1) throw versionConflict();
     }
     await this.insertPreferenceRevision(input.preference, metadata);
+    await this.bumpMemoryEpoch(input.preference, metadata);
+  }
+
+  async getMemoryEpoch(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+  }): Promise<number> {
+    const result = await this.executor.query<{ memory_epoch: string | number }>(
+      `SELECT memory_epoch
+         FROM personalization.teacher_memory_state
+        WHERE tenant_ref = $1 AND teacher_ref = $2`,
+      [input.tenantRef, input.teacherRef]
+    );
+    return Number(result.rows[0]?.memory_epoch ?? 0);
   }
 
   async listPreferenceHistory(preferenceRef: string): Promise<readonly TeacherPreference[]> {
@@ -348,14 +418,20 @@ export class PostgresMemoryCandidateRepository
     await this.executor.query(
       `INSERT INTO personalization.teacher_preference (
          preference_ref, tenant_ref, teacher_ref, preference_key,
-         preference_value, source_candidate_ref, source_candidate_hash,
+         preference_value, canonical_key, scope_kind, scope_subject,
+         scope_grade_level, scope_course_run_ref, scope_lesson_ref,
+         scope_task_ref, scope_skill_ids, scope_fingerprint, valid_from,
+         valid_until, explicitness, consent_basis, consent_version,
+         policy_version, source_candidate_ref, source_candidate_hash,
          preference_status, current_version, content_hash, confirmed_by_ref,
          confirmed_at, created_at, updated_at, revoked_at, actor_ref, purpose,
          owner_module, idempotency_key, authorization_decision_ref, audit_ref
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12::timestamptz, $13::timestamptz, $14::timestamptz,
-         $15::timestamptz, $16, $17, $18, $19, $20, $21
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+         $13::jsonb, $14, $15::timestamptz, $16::timestamptz,
+         $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+         $27::timestamptz, $28::timestamptz, $29::timestamptz,
+         $30::timestamptz, $31, $32, $33, $34, $35, $36
        )`,
       [
         preference.preferenceRef,
@@ -363,6 +439,21 @@ export class PostgresMemoryCandidateRepository
         preference.owner.teacherRef,
         preference.preferenceKey,
         preference.preferenceValue,
+        preference.canonicalKey,
+        preference.scope.kind,
+        preference.scope.subject,
+        preference.scope.gradeLevel,
+        preference.scope.courseRunRef,
+        preference.scope.lessonRef,
+        preference.scope.taskRef,
+        JSON.stringify(preference.scope.skillIds),
+        preference.scopeFingerprint,
+        preference.validFrom,
+        preference.validUntil,
+        preference.explicitness,
+        preference.consentBasis,
+        preference.consentVersion,
+        preference.policyVersion,
         preference.sourceCandidateRef,
         preference.sourceCandidateHash,
         preference.status,
@@ -385,16 +476,22 @@ export class PostgresMemoryCandidateRepository
     await this.executor.query(
       `INSERT INTO personalization.teacher_preference_revision (
          preference_ref, version, tenant_ref, teacher_ref, preference_key,
-         preference_value, source_candidate_ref, source_candidate_hash,
+         preference_value, canonical_key, scope_kind, scope_subject,
+         scope_grade_level, scope_course_run_ref, scope_lesson_ref,
+         scope_task_ref, scope_skill_ids, scope_fingerprint, valid_from,
+         valid_until, explicitness, consent_basis, consent_version,
+         policy_version, source_candidate_ref, source_candidate_hash,
          preference_status, content_hash, confirmed_by_ref, confirmed_at,
          created_at, updated_at, revoked_at, actor_ref, purpose, owner_module,
          idempotency_key, authorization_decision_ref, audit_ref,
          revision_created_at
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-         $12::timestamptz, $13::timestamptz, $14::timestamptz,
-         $15::timestamptz, $16, $17, $18, $19, $20, $21,
-         $22::timestamptz
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+         $13, $14::jsonb, $15, $16::timestamptz, $17::timestamptz,
+         $18, $19, $20, $21, $22, $23, $24, $25, $26,
+         $27::timestamptz, $28::timestamptz, $29::timestamptz,
+         $30::timestamptz, $31, $32, $33, $34, $35, $36,
+         $37::timestamptz
        )`,
       [
         preference.preferenceRef,
@@ -403,6 +500,21 @@ export class PostgresMemoryCandidateRepository
         preference.owner.teacherRef,
         preference.preferenceKey,
         preference.preferenceValue,
+        preference.canonicalKey,
+        preference.scope.kind,
+        preference.scope.subject,
+        preference.scope.gradeLevel,
+        preference.scope.courseRunRef,
+        preference.scope.lessonRef,
+        preference.scope.taskRef,
+        JSON.stringify(preference.scope.skillIds),
+        preference.scopeFingerprint,
+        preference.validFrom,
+        preference.validUntil,
+        preference.explicitness,
+        preference.consentBasis,
+        preference.consentVersion,
+        preference.policyVersion,
         preference.sourceCandidateRef,
         preference.sourceCandidateHash,
         preference.status,
@@ -413,6 +525,55 @@ export class PostgresMemoryCandidateRepository
         preference.updatedAt,
         preference.revokedAt,
         ...metadataValues(metadata),
+        metadata.createdAt
+      ]
+    );
+  }
+
+  private async bumpMemoryEpoch(
+    preference: TeacherPreference,
+    metadata: FormalWriteMetadata
+  ): Promise<void> {
+    const contentHash = createHash("sha256").update(JSON.stringify({
+      tenantRef: preference.owner.tenantRef,
+      teacherRef: preference.owner.teacherRef,
+      preferenceRef: preference.preferenceRef,
+      preferenceVersion: preference.version,
+      policyVersion: "teacher-memory-epoch@1",
+      updatedAt: preference.updatedAt
+    })).digest("hex");
+    await this.executor.query(
+      `INSERT INTO personalization.teacher_memory_state (
+         tenant_ref, teacher_ref, memory_epoch, policy_version, updated_at,
+         actor_ref, purpose, owner_module, idempotency_key,
+         authorization_decision_ref, audit_ref, content_hash, created_at
+       ) VALUES (
+         $1, $2, 1, 'teacher-memory-epoch@1', $3::timestamptz,
+         $4, $5, $6, $7, $8, $9, $10, $11::timestamptz
+       )
+       ON CONFLICT (tenant_ref, teacher_ref) DO UPDATE
+         SET memory_epoch =
+               personalization.teacher_memory_state.memory_epoch + 1,
+             policy_version = EXCLUDED.policy_version,
+             updated_at = EXCLUDED.updated_at,
+             actor_ref = EXCLUDED.actor_ref,
+             purpose = EXCLUDED.purpose,
+             owner_module = EXCLUDED.owner_module,
+             idempotency_key = EXCLUDED.idempotency_key,
+             authorization_decision_ref = EXCLUDED.authorization_decision_ref,
+             audit_ref = EXCLUDED.audit_ref,
+             content_hash = EXCLUDED.content_hash`,
+      [
+        preference.owner.tenantRef,
+        preference.owner.teacherRef,
+        preference.updatedAt,
+        metadata.actorRef,
+        metadata.purpose,
+        metadata.owner,
+        metadata.idempotencyKey,
+        metadata.authorizationDecisionRef,
+        metadata.auditRef,
+        contentHash,
         metadata.createdAt
       ]
     );
@@ -451,6 +612,18 @@ function candidateFromRow(row: CandidateRow): MemoryCandidate {
 }
 
 function preferenceFromRow(row: PreferenceRow): TeacherPreference {
+  const scope = createMemoryScope({
+    kind: row.scope_kind,
+    subject: row.scope_subject,
+    gradeLevel: row.scope_grade_level,
+    courseRunRef: row.scope_course_run_ref,
+    lessonRef: row.scope_lesson_ref,
+    taskRef: row.scope_task_ref,
+    skillIds: row.scope_skill_ids
+  });
+  if (scope.fingerprint !== row.scope_fingerprint) {
+    throw new Error("TeacherPreference scope fingerprint mismatch.");
+  }
   return Object.freeze({
     preferenceRef: row.preference_ref,
     owner: Object.freeze({
@@ -459,6 +632,15 @@ function preferenceFromRow(row: PreferenceRow): TeacherPreference {
     }),
     preferenceKey: row.preference_key,
     preferenceValue: row.preference_value,
+    canonicalKey: row.canonical_key,
+    scope,
+    scopeFingerprint: row.scope_fingerprint,
+    validFrom: iso(row.valid_from),
+    validUntil: nullableIso(row.valid_until),
+    explicitness: row.explicitness,
+    consentBasis: row.consent_basis,
+    consentVersion: row.consent_version,
+    policyVersion: row.policy_version,
     sourceCandidateRef: row.source_candidate_ref,
     sourceCandidateHash: row.source_candidate_hash,
     status: row.preference_status,

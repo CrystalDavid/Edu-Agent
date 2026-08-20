@@ -4,13 +4,15 @@ import {
   lessonPreparationContextPolicyV2,
   lessonPreparationContextPolicyV3,
   lessonPreparationContextPolicyV4,
-  lessonPreparationContextPolicyV5
+  lessonPreparationContextPolicyV5,
+  lessonPreparationContextPolicyV6
 } from "./context-policy.js";
 import {
   lessonPreparationInputSchemaRef,
   lessonPreparationInputSchemaRefV2,
   lessonPreparationInputSchemaRefV3,
-  lessonPreparationInputSchemaRefV4
+  lessonPreparationInputSchemaRefV4,
+  lessonPreparationInputSchemaRefV5
 } from "./input-schema.js";
 import { lessonPreparationOutputSchemaRef } from "./output-schema.js";
 import {
@@ -168,6 +170,40 @@ export const lessonPreparationSkillManifestV5 = createSkillManifest({
   promptBundleVersion: conversationLessonPreparationPromptBundle.version,
   promptBundleContentHash: conversationLessonPreparationPromptBundle.contentHash,
   contextPolicy: lessonPreparationContextPolicyV5,
+  toolPolicy: {
+    mode: "disabled",
+    allowedTools: []
+  },
+  memoryPolicy: {
+    mode: "authorized_context_only"
+  },
+  budgetPolicy: {
+    source: "runtime_context_and_model_budget",
+    mayIncreaseRuntimeBudget: false
+  },
+  approvalPolicy: {
+    outputKind: "proposal",
+    humanApprovalRequired: true
+  },
+  evaluationPolicy: {
+    version: "lesson-preparation-evaluation@1",
+    dimensions: ["contract", "policy", "quality", "operation"],
+    qualityBlocksProposal: false
+  }
+});
+
+export const lessonPreparationSkillManifestV6 = createSkillManifest({
+  id: "lesson-preparation",
+  version: "6",
+  ref: "lesson-preparation@6",
+  status: "published",
+  purpose: "lesson_preparation",
+  inputSchemaRef: lessonPreparationInputSchemaRefV5,
+  outputSchemaRef: lessonPreparationOutputSchemaRef,
+  promptBundleRef: conversationLessonPreparationPromptBundle.promptBundleRef,
+  promptBundleVersion: conversationLessonPreparationPromptBundle.version,
+  promptBundleContentHash: conversationLessonPreparationPromptBundle.contentHash,
+  contextPolicy: lessonPreparationContextPolicyV6,
   toolPolicy: {
     mode: "disabled",
     allowedTools: []

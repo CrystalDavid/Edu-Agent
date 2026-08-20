@@ -1,5 +1,18 @@
 import { createHash } from "node:crypto";
 
+import type {
+  MemoryScope,
+  MemoryScopeDefinition,
+  TeacherPreferenceConsentBasis,
+  TeacherPreferenceExplicitness
+} from "@edu-agent/contracts";
+
+import {
+  createGlobalMemoryScope,
+  createMemoryScope,
+  normalizeCanonicalPreferenceKey
+} from "./memory-scope.js";
+
 export type MemoryCandidateType = "preference" | "episodic";
 export type MemoryCandidateStatus =
   | "draft"
@@ -36,6 +49,14 @@ export interface MemoryCandidateContent {
   readonly summary: string;
   readonly preferenceKey?: string;
   readonly preferenceValue?: string;
+  readonly canonicalKey?: string;
+  readonly proposedScope?: MemoryScope;
+  readonly validFrom?: string;
+  readonly validUntil?: string | null;
+  readonly consentProposal?: {
+    readonly basis: TeacherPreferenceConsentBasis;
+    readonly version: string;
+  };
 }
 
 export interface MemoryCandidate {
@@ -62,6 +83,15 @@ export interface TeacherPreference {
   readonly owner: MemoryOwner;
   readonly preferenceKey: string;
   readonly preferenceValue: string;
+  readonly canonicalKey: string;
+  readonly scope: MemoryScope;
+  readonly scopeFingerprint: string;
+  readonly validFrom: string;
+  readonly validUntil: string | null;
+  readonly explicitness: TeacherPreferenceExplicitness;
+  readonly consentBasis: TeacherPreferenceConsentBasis;
+  readonly consentVersion: string;
+  readonly policyVersion: string;
   readonly sourceCandidateRef: string;
   readonly sourceCandidateHash: string;
   readonly status: "active" | "revoked";
@@ -112,6 +142,37 @@ export function createMemoryCandidate(input: {
         : {}),
       ...(input.content.preferenceValue
         ? { preferenceValue: normalizeText(input.content.preferenceValue) }
+        : {}),
+      ...(input.type === "preference"
+        ? {
+            canonicalKey: normalizeCanonicalPreferenceKey(
+              input.content.canonicalKey ??
+                input.content.preferenceKey ??
+                ""
+            ),
+            proposedScope: createMemoryScope(
+              input.content.proposedScope ?? createGlobalMemoryScope()
+            ),
+            ...(input.content.validFrom
+              ? { validFrom: assertTimestamp(
+                  input.content.validFrom,
+                  "validFrom"
+                ) }
+              : {}),
+            validUntil: input.content.validUntil === undefined
+              ? null
+              : input.content.validUntil === null
+                ? null
+                : assertTimestamp(input.content.validUntil, "validUntil"),
+            consentProposal: {
+              basis:
+                input.content.consentProposal?.basis ??
+                "teacher_settings_confirmed",
+              version:
+                normalizeText(input.content.consentProposal?.version ??
+                  "consent:teacher-settings@1")
+            }
+          }
         : {})
     },
     sources: uniqueSources(input.sources),
@@ -268,6 +329,43 @@ export function updateTeacherPreference(input: {
   });
 }
 
+export function updateTeacherPreferenceScope(input: {
+  readonly preference: TeacherPreference;
+  readonly actorRef: string;
+  readonly expectedVersion: number;
+  readonly scope: MemoryScopeDefinition;
+  readonly validFrom?: string;
+  readonly validUntil?: string | null;
+  readonly updatedAt: string;
+}): TeacherPreference {
+  assertTeacherPreferenceIntegrity(input.preference);
+  assertPreferenceOwnerAndVersion(
+    input.preference,
+    input.actorRef,
+    input.expectedVersion
+  );
+  const scope = createMemoryScope(input.scope);
+  const validFrom = input.validFrom === undefined
+    ? input.preference.validFrom
+    : assertTimestamp(input.validFrom, "validFrom");
+  const validUntil = input.validUntil === undefined
+    ? input.preference.validUntil
+    : input.validUntil === null
+      ? null
+      : assertTimestamp(input.validUntil, "validUntil");
+  assertPreferenceValidity(validFrom, validUntil);
+  const { contentHash: _hash, ...content } = input.preference;
+  return sealPreference({
+    ...content,
+    scope,
+    scopeFingerprint: scope.fingerprint,
+    validFrom,
+    validUntil,
+    updatedAt: assertTimestamp(input.updatedAt, "updatedAt"),
+    version: input.preference.version + 1
+  });
+}
+
 export function assertCandidateIntegrity(candidate: MemoryCandidate): void {
   const { contentHash, ...content } = candidate;
   if (hashValue(content) !== contentHash) {
@@ -282,7 +380,10 @@ export function assertTeacherPreferenceIntegrity(
   preference: TeacherPreference
 ): void {
   const { contentHash, ...content } = preference;
-  if (hashValue(content) !== contentHash) {
+  if (
+    hashValue(content) !== contentHash &&
+    hashValue(legacyPreferenceContent(preference)) !== contentHash
+  ) {
     throw new MemoryCandidateDomainError(
       "TEACHER_PREFERENCE_HASH_MISMATCH",
       "TeacherPreference content hash does not match."
@@ -311,11 +412,31 @@ function createTeacherPreference(input: {
       "TeacherPreference requires a key and value."
     );
   }
+  const validFrom = input.candidate.content.validFrom ?? input.confirmedAt;
+  const validUntil = input.candidate.content.validUntil ?? null;
+  assertPreferenceValidity(validFrom, validUntil);
+  const scope =
+    input.candidate.content.proposedScope ?? createGlobalMemoryScope();
   return sealPreference({
     preferenceRef: input.preferenceRef,
     owner: input.candidate.owner,
     preferenceKey,
     preferenceValue,
+    canonicalKey: normalizeCanonicalPreferenceKey(
+      input.candidate.content.canonicalKey ?? preferenceKey
+    ),
+    scope,
+    scopeFingerprint: scope.fingerprint,
+    validFrom,
+    validUntil,
+    explicitness: "teacher_declared",
+    consentBasis:
+      input.candidate.content.consentProposal?.basis ??
+      "teacher_settings_confirmed",
+    consentVersion:
+      input.candidate.content.consentProposal?.version ??
+      "consent:teacher-settings@1",
+    policyVersion: "teacher-preference-scope@1",
     sourceCandidateRef: input.candidate.candidateRef,
     sourceCandidateHash: input.candidate.contentHash,
     status: "active",
@@ -388,6 +509,66 @@ function assertContent(
       "Episodic Candidate cannot contain preference fields."
     );
   }
+}
+
+function assertPreferenceOwnerAndVersion(
+  preference: TeacherPreference,
+  actorRef: string,
+  expectedVersion: number
+): void {
+  if (preference.owner.teacherRef !== actorRef) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_OWNER_REQUIRED",
+      "Only the owning teacher can update a TeacherPreference."
+    );
+  }
+  assertVersion(preference.version, expectedVersion);
+  if (preference.status !== "active") {
+    throw new MemoryCandidateDomainError(
+      "TEACHER_PREFERENCE_NOT_ACTIVE",
+      "Only an active TeacherPreference can be updated."
+    );
+  }
+}
+
+function assertPreferenceValidity(
+  validFrom: string,
+  validUntil: string | null
+): void {
+  if (validUntil !== null && Date.parse(validUntil) <= Date.parse(validFrom)) {
+    throw new MemoryCandidateDomainError(
+      "TEACHER_PREFERENCE_VALIDITY_INVALID",
+      "TeacherPreference validUntil must be after validFrom."
+    );
+  }
+}
+
+function assertTimestamp(value: string, field: string): string {
+  if (!Number.isFinite(Date.parse(value))) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_TIME_INVALID",
+      `TeacherPreference ${field} must be a valid timestamp.`
+    );
+  }
+  return new Date(value).toISOString();
+}
+
+function legacyPreferenceContent(preference: TeacherPreference): unknown {
+  return {
+    preferenceRef: preference.preferenceRef,
+    owner: preference.owner,
+    preferenceKey: preference.preferenceKey,
+    preferenceValue: preference.preferenceValue,
+    sourceCandidateRef: preference.sourceCandidateRef,
+    sourceCandidateHash: preference.sourceCandidateHash,
+    status: preference.status,
+    version: preference.version,
+    confirmedByRef: preference.confirmedByRef,
+    confirmedAt: preference.confirmedAt,
+    createdAt: preference.createdAt,
+    updatedAt: preference.updatedAt,
+    revokedAt: preference.revokedAt
+  };
 }
 
 function assertSources(sources: readonly MemorySourceReference[]): void {

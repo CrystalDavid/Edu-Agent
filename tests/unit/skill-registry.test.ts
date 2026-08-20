@@ -4,7 +4,8 @@ import {
   createBuiltInSkillRegistry,
   lessonPreparationSkillV1,
   lessonPreparationSkillV4,
-  lessonPreparationSkillV5
+  lessonPreparationSkillV5,
+  lessonPreparationSkillV6
 } from "../../apps/api/src/agent/skills/index.js";
 import {
   cloneSkillManifest,
@@ -35,16 +36,16 @@ describe("Phase 5 versioned Skill Registry", () => {
 
   it("keeps a new version alongside published versions instead of overwriting them", () => {
     const registry = createBuiltInSkillRegistry();
-    const version6 = Object.freeze({
+    const version7 = Object.freeze({
       ...lessonPreparationSkillV1,
       manifest: cloneSkillManifest({
         manifest: lessonPreparationSkillV1.manifest,
-        version: "6",
+        version: "7",
         status: "published"
       })
     });
 
-    registry.register(version6);
+    registry.register(version7);
 
     expect(registry.loadPublished("lesson-preparation@1"))
       .toBe(lessonPreparationSkillV1);
@@ -52,7 +53,9 @@ describe("Phase 5 versioned Skill Registry", () => {
       .toBe(lessonPreparationSkillV4);
     expect(registry.loadPublished("lesson-preparation@5"))
       .toBe(lessonPreparationSkillV5);
-    expect(registry.loadPublished("lesson-preparation@6")).toBe(version6);
+    expect(registry.loadPublished("lesson-preparation@6"))
+      .toBe(lessonPreparationSkillV6);
+    expect(registry.loadPublished("lesson-preparation@7")).toBe(version7);
     expect(registry.list().map((item) => item.skillRef)).toEqual([
       "classroom-reflection@1",
       "lesson-analysis@1",
@@ -62,6 +65,7 @@ describe("Phase 5 versioned Skill Registry", () => {
       "lesson-preparation@4",
       "lesson-preparation@5",
       "lesson-preparation@6",
+      "lesson-preparation@7",
       "material-generation@1",
       "next-lesson-adjustment@1",
       "reflection-analysis@1"
@@ -86,6 +90,11 @@ describe("Phase 5 versioned Skill Registry", () => {
       .toMatchObject({
         ref: "lesson-preparation@5",
         inputSchemaRef: "lesson-preparation-input@4"
+      });
+    expect(registry.loadPublished("lesson-preparation@6").manifest)
+      .toMatchObject({
+        ref: "lesson-preparation@6",
+        inputSchemaRef: "lesson-preparation-input@5"
       });
   });
 

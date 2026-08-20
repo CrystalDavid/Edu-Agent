@@ -72,6 +72,7 @@ import {
   CreateMemoryCandidateRequestSchema,
   ReviewMemoryCandidateRequestSchema,
   UpdateTeacherPreferenceRequestSchema,
+  UpdateTeacherPreferenceScopeRequestSchema,
   RevokeTeacherPreferenceRequestSchema,
   GenerateLessonBriefRequestSchema,
   DecideLessonBriefRequestSchema,
@@ -949,6 +950,7 @@ export function createApp(
           const result = await personalization.createCandidate({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
+            allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
             request: CreateMemoryCandidateRequestSchema.parse(request.body)
           });
           response.status(result.replayed ? 200 : 201).json(result);
@@ -972,6 +974,7 @@ export function createApp(
               actorRef: contexts.acting.actorRef,
               candidateRef: routeParameter(request.params["candidateRef"]),
               action,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               request: ReviewMemoryCandidateRequestSchema.parse(request.body)
             }));
           } catch (error) {
@@ -992,6 +995,27 @@ export function createApp(
             actorRef: contexts.acting.actorRef,
             preferenceRef: routeParameter(request.params["preferenceRef"]),
             request: UpdateTeacherPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.put(
+      apiRoutes.teacher.teacherPreferenceScopePattern,
+      markRoute("product.teacher.personalization.preference-scope-update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.updatePreferenceScope({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            preferenceRef: routeParameter(request.params["preferenceRef"]),
+            allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+            request: UpdateTeacherPreferenceScopeRequestSchema.parse(
+              request.body
+            )
           }));
         } catch (error) {
           next(error);

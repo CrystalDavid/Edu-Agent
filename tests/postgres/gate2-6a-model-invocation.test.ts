@@ -88,6 +88,37 @@ describe("Gate 2.6A durable ModelExecution", () => {
         idempotencyKey: `memory-observability:confirm:${randomUUID()}`
       })
       .expect(200);
+    const courseCandidate = await request(app)
+      .post(apiRoutes.teacher.memoryCandidates)
+      .set(demoHeaders)
+      .send({
+        summary: "合成教师确认当前课程教案应保持详细。",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "详细",
+        proposedScope: {
+          kind: "course_run",
+          subject: null,
+          gradeLevel: null,
+          courseRunRef: gate2DemoRefs.courseRunRef,
+          lessonRef: null,
+          taskRef: null,
+          skillIds: ["lesson-preparation"]
+        },
+        purpose: "personalization.candidate.create",
+        idempotencyKey: `memory-scope:create:${randomUUID()}`
+      })
+      .expect(201);
+    const coursePreference = await request(app)
+      .post(apiRoutes.teacher.memoryCandidateConfirm(
+        courseCandidate.body.candidate.candidateRef
+      ))
+      .set(demoHeaders)
+      .send({
+        expectedVersion: courseCandidate.body.candidate.version,
+        purpose: "personalization.candidate.confirm",
+        idempotencyKey: `memory-scope:confirm:${randomUUID()}`
+      })
+      .expect(200);
     const task = await createStartedTask(app);
     const createdConversation = await request(app)
       .post(apiRoutes.teacher.conversations)
@@ -278,7 +309,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       [afterFirst.body.conversationRef, secondQueued.body.execution.modelExecutionRef]
     );
     expect(persisted.rows[0]).toMatchObject({
-      skill_ref: "lesson-preparation@5",
+      skill_ref: "lesson-preparation@6",
       source_sequence: 3,
       active_snapshots: "1",
       all_snapshots: "4",
@@ -296,6 +327,17 @@ describe("Gate 2.6A durable ModelExecution", () => {
       conversationRef: afterFirst.body.conversationRef,
       turnRef: secondTurn.body.turn.turnRef,
       sourceTurnSequence: 3
+    });
+    expect(
+      persisted.rows[0]?.context_engineering["memoryContextPackManifest"]
+    ).toMatchObject({
+      manifestVersion: 2,
+      skillRef: "lesson-preparation@6",
+      querySkillId: "lesson-preparation",
+      queryUseCase: "lesson_preparation",
+      teacherMemoryEpoch: 2,
+      selectedCount: 1,
+      overriddenCount: 1
     });
     const secondProposalRef = recovered.body.workingMemory
       .latestAssistantResult.resultRefs.proposalRevisionRef as string;
@@ -318,13 +360,29 @@ describe("Gate 2.6A durable ModelExecution", () => {
       durablePreferences: [
         expect.objectContaining({
           preferenceRef:
-            confirmedPreference.body.preference.preferenceRef,
-          preferenceValue: "简洁",
+            coursePreference.body.preference.preferenceRef,
+          preferenceValue: "详细",
           currentStatus: "active",
           decision: "injected",
-          reasonCode: "active_confirmed_preference"
+          reasonCode: "active_confirmed_preference",
+          scopeKind: "course_run",
+          scopeDisplay: "当前课程"
+        }),
+        expect.objectContaining({
+          preferenceRef:
+            confirmedPreference.body.preference.preferenceRef,
+          preferenceValue: "简洁",
+          decision: "overridden",
+          reasonCode: "more_specific_scope",
+          scopeKind: "global"
         })
       ]
+    });
+    expect(proposal.body.memoryContext).toMatchObject({
+      manifestVersion: 2,
+      teacherMemoryEpoch: 2,
+      selectedCount: 1,
+      overriddenCount: 1
     });
     expect(proposal.body.memoryContext.packContentHash).toHaveLength(64);
     const runExplanation = await request(app)
@@ -347,11 +405,30 @@ describe("Gate 2.6A durable ModelExecution", () => {
           AND decision = 'injected'`,
       [
         proposal.body.agentRunRef,
-        confirmedPreference.body.preference.preferenceRef,
-        confirmedPreference.body.preference.version
+        coursePreference.body.preference.preferenceRef,
+        coursePreference.body.preference.version
       ]
     );
     expect(applicationCount.rows[0]?.count).toBe("1");
+    const overriddenApplication = await adminPool.query<{
+      count: string;
+      scope_hash: string;
+    }>(
+      `SELECT count(*)::text AS count, max(scope_hash) AS scope_hash
+         FROM personalization.memory_application
+        WHERE agent_run_ref = $1
+          AND preference_ref = $2
+          AND decision = 'overridden'
+          AND reason_code = 'more_specific_scope'`,
+      [
+        proposal.body.agentRunRef,
+        confirmedPreference.body.preference.preferenceRef
+      ]
+    );
+    expect(overriddenApplication.rows[0]).toMatchObject({
+      count: "1",
+      scope_hash: proposal.body.memoryContext.queryScopeHash
+    });
 
     const restartedObservabilityProduct = createProductContainer(
       postgresEnvironment
@@ -400,19 +477,19 @@ describe("Gate 2.6A durable ModelExecution", () => {
       [proposal.body.agentRunRef]
     );
     expect(outcomeCount.rows[0]).toMatchObject({
-      count: "1",
+      count: "2",
       status: "rejected"
     });
 
     await request(app)
       .post(
         apiRoutes.teacher.teacherPreferenceRevoke(
-          confirmedPreference.body.preference.preferenceRef
+          coursePreference.body.preference.preferenceRef
         )
       )
       .set(demoHeaders)
       .send({
-        expectedVersion: confirmedPreference.body.preference.version,
+        expectedVersion: coursePreference.body.preference.version,
         purpose: "personalization.preference.revoke",
         idempotencyKey: `memory-observability:revoke:${randomUUID()}`
       })
@@ -423,12 +500,25 @@ describe("Gate 2.6A durable ModelExecution", () => {
       .expect(200)
       .expect(({ body }) => {
         expect(body.memoryContext.durablePreferences[0]).toMatchObject({
-          preferenceValue: "简洁",
+          preferenceValue: "详细",
           currentStatus: "revoked",
           outcomeStatus: "rejected"
         });
         expect(body.memoryContext.outcomeStatus).toBe("rejected");
       });
+    await request(app)
+      .post(
+        apiRoutes.teacher.teacherPreferenceRevoke(
+          confirmedPreference.body.preference.preferenceRef
+        )
+      )
+      .set(demoHeaders)
+      .send({
+        expectedVersion: confirmedPreference.body.preference.version,
+        purpose: "personalization.preference.revoke",
+        idempotencyKey: `memory-observability:revoke-global:${randomUUID()}`
+      })
+      .expect(200);
     expect(
       await product.services.personalization.listConfirmedPreferences({
         tenantRef: gate2DemoRefs.tenantRef,

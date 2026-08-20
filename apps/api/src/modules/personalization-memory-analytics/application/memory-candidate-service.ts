@@ -6,6 +6,7 @@ import {
   rejectMemoryCandidate,
   revokeTeacherPreference,
   updateTeacherPreference,
+  updateTeacherPreferenceScope,
   type MemoryCandidate,
   type MemoryCandidateContent,
   type MemoryCandidateType,
@@ -13,6 +14,7 @@ import {
   type MemorySourceReference,
   type TeacherPreference
 } from "../domain/index.js";
+import type { MemoryScopeDefinition } from "@edu-agent/contracts";
 
 export interface MemoryRepository {
   getCandidate(candidateRef: string): Promise<MemoryCandidate | null>;
@@ -45,6 +47,10 @@ export interface PreferenceRepository {
     readonly teacherRef: string;
     readonly statuses?: readonly TeacherPreference["status"][];
   }): Promise<readonly TeacherPreference[]>;
+  getMemoryEpoch(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+  }): Promise<number>;
 }
 
 export interface MemoryConfirmationRepository {
@@ -239,6 +245,46 @@ export class MemoryCandidateService {
       actorRef: input.actorRef,
       expectedVersion: input.expectedVersion,
       preferenceValue: input.preferenceValue,
+      updatedAt: this.clock().toISOString()
+    });
+    await this.repository.savePreference({
+      preference: updated,
+      expectedPreviousVersion: current.version
+    });
+    return updated;
+  }
+
+  async updatePreferenceScope(input: {
+    readonly preferenceRef: string;
+    readonly actorRef: string;
+    readonly tenantRef: string;
+    readonly expectedVersion: number;
+    readonly scope: MemoryScopeDefinition;
+    readonly validFrom?: string;
+    readonly validUntil?: string | null;
+  }): Promise<TeacherPreference> {
+    const current = await this.repository.getPreference(input.preferenceRef);
+    if (
+      !current ||
+      current.owner.tenantRef !== input.tenantRef ||
+      current.owner.teacherRef !== input.actorRef
+    ) {
+      throw new MemoryCandidateApplicationError(
+        "TEACHER_PREFERENCE_NOT_FOUND",
+        "TeacherPreference was not found in the active tenant."
+      );
+    }
+    const updated = updateTeacherPreferenceScope({
+      preference: current,
+      actorRef: input.actorRef,
+      expectedVersion: input.expectedVersion,
+      scope: input.scope,
+      ...(input.validFrom !== undefined
+        ? { validFrom: input.validFrom }
+        : {}),
+      ...(input.validUntil !== undefined
+        ? { validUntil: input.validUntil }
+        : {}),
       updatedAt: this.clock().toISOString()
     });
     await this.repository.savePreference({

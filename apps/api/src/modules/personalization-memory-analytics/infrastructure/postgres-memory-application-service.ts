@@ -241,6 +241,15 @@ export class PostgresMemoryApplicationService
       preferenceVersion: resolved.revision.version,
       preferenceKey: resolved.revision.preferenceKey,
       preferenceValue: resolved.revision.preferenceValue,
+      canonicalKey: resolved.revision.canonicalKey,
+      scope: resolved.revision.scope,
+      scopeFingerprint: resolved.revision.scopeFingerprint,
+      validFrom: resolved.revision.validFrom,
+      validUntil: resolved.revision.validUntil,
+      explicitness: resolved.revision.explicitness,
+      consentBasis: resolved.revision.consentBasis,
+      consentVersion: resolved.revision.consentVersion,
+      policyVersion: resolved.revision.policyVersion,
       preferenceContentHash: resolved.revision.contentHash,
       sourceCandidateRef: resolved.revision.sourceCandidateRef,
       confirmedAt: resolved.revision.confirmedAt,
@@ -324,10 +333,16 @@ function assertSelection(input: MemoryApplicationSelection): void {
       "skill_not_allowed",
       "expired",
       "revoked",
-      "superseded"
+      "superseded",
+      "scope_mismatch",
+      "not_yet_valid"
     ].includes(input.reasonCode)) ||
     (input.decision === "overridden" &&
-      input.reasonCode === "current_instruction_override");
+      [
+        "current_instruction_override",
+        "more_specific_scope",
+        "more_specific_skill_scope"
+      ].includes(input.reasonCode));
   if (!validReason) {
     throw new Error("Memory application decision and reasonCode do not match.");
   }

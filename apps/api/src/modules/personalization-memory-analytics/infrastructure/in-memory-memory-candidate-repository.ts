@@ -11,6 +11,7 @@ export class InMemoryMemoryCandidateRepository
 {
   readonly #candidateHistory = new Map<string, MemoryCandidate[]>();
   readonly #preferenceHistory = new Map<string, TeacherPreference[]>();
+  readonly #memoryEpochs = new Map<string, number>();
 
   async getCandidate(candidateRef: string): Promise<MemoryCandidate | null> {
     return this.#candidateHistory.get(candidateRef)?.at(-1) ?? null;
@@ -56,6 +57,7 @@ export class InMemoryMemoryCandidateRepository
         input.preference.preferenceRef,
         preferenceHistory
       );
+      this.bumpEpoch(input.preference);
       return;
     }
     candidateHistory.push(input.candidate);
@@ -110,6 +112,7 @@ export class InMemoryMemoryCandidateRepository
     assertExpectedVersion(history.at(-1)?.version ?? null, input.expectedPreviousVersion);
     history.push(input.preference);
     this.#preferenceHistory.set(input.preference.preferenceRef, history);
+    this.bumpEpoch(input.preference);
   }
 
   async listPreferenceHistory(
@@ -137,6 +140,25 @@ export class InMemoryMemoryCandidateRepository
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     );
   }
+
+  async getMemoryEpoch(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+  }): Promise<number> {
+    return this.#memoryEpochs.get(ownerKey(input)) ?? 0;
+  }
+
+  private bumpEpoch(preference: TeacherPreference): void {
+    const key = ownerKey(preference.owner);
+    this.#memoryEpochs.set(key, (this.#memoryEpochs.get(key) ?? 0) + 1);
+  }
+}
+
+function ownerKey(input: {
+  readonly tenantRef: string;
+  readonly teacherRef: string;
+}): string {
+  return `${input.tenantRef}|${input.teacherRef}`;
 }
 
 function assertExpectedVersion(

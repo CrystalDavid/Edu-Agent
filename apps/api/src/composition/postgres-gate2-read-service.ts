@@ -844,6 +844,12 @@ export class PostgresGate2ReadService {
     );
     const durablePreferences: MemoryContextExplanation["durablePreferences"] = [];
     for (const decision of manifest.preferenceDecisions) {
+      if (
+        manifest.manifestVersion === 2 &&
+        hidesPreferenceValueInExplanation(decision.reasonCode)
+      ) {
+        continue;
+      }
       const revision = await this.memoryApplications.resolvePreferenceRevision({
         owner: {
           tenantRef: input.tenantRef,
@@ -875,7 +881,18 @@ export class PostgresGate2ReadService {
         decision: decision.decision,
         reasonCode: decision.reasonCode,
         outcomeStatus: outcome?.outcomeStatus ?? null,
-        targetFields: [...decision.targetFields]
+        targetFields: [...decision.targetFields],
+        ...(manifest.manifestVersion === 2 && "scopeKind" in decision
+          ? {
+              canonicalKey: revision.canonicalKey,
+              scopeKind: decision.scopeKind,
+              scopeFingerprint: decision.scopeFingerprint,
+              scopeDisplay: memoryScopeDisplay(decision.scopeKind),
+              matchSpecificity: decision.matchSpecificity,
+              matchedSkillConstraint:
+                decision.matchedSkillConstraint
+            }
+          : {})
       });
     }
     const included = (decision: string) =>
@@ -894,6 +911,18 @@ export class PostgresGate2ReadService {
       packContentHash: manifest.packContentHash,
       manifestVersion: manifest.manifestVersion,
       policyVersion: manifest.policyVersion,
+      ...(manifest.manifestVersion === 1
+        ? { legacyGlobalContext: true }
+        : {
+            retrievalPolicyVersion: manifest.retrievalPolicyVersion,
+            teacherMemoryEpoch: manifest.teacherMemoryEpoch,
+            queryScopeHash: manifest.queryScopeHash,
+            querySkillId: manifest.querySkillId,
+            queryUseCase: manifest.queryUseCase,
+            selectedCount: manifest.selectedCount,
+            overriddenCount: manifest.overriddenCount,
+            excludedCount: manifest.excludedCount
+          }),
       skillRef: manifest.skillRef,
       skillVersion: manifest.skillVersion,
       currentTurn:
@@ -919,8 +948,9 @@ export class PostgresGate2ReadService {
       ]
         .filter(
           (decision) =>
-            decision.decision === "excluded" ||
-            decision.decision === "overridden"
+            (decision.decision === "excluded" ||
+              decision.decision === "overridden") &&
+            !hidesPreferenceValueInExplanation(decision.reasonCode)
         )
         .map((decision) => ({
           sourceKind: decision.sourceKind,
@@ -1126,6 +1156,33 @@ function preferenceDecisionKey(
   decision: string
 ): string {
   return `${preferenceRef}|${preferenceVersion}|${decision}`;
+}
+
+function hidesPreferenceValueInExplanation(reasonCode: string): boolean {
+  return reasonCode === "scope_mismatch" ||
+    reasonCode === "not_yet_valid" ||
+    reasonCode === "expired" ||
+    reasonCode === "skill_not_allowed";
+}
+
+function memoryScopeDisplay(
+  kind: "global" | "subject" | "subject_grade" |
+    "course_run" | "lesson" | "task"
+): string {
+  switch (kind) {
+    case "global":
+      return "所有普通备课";
+    case "subject":
+      return "当前学科";
+    case "subject_grade":
+      return "当前学科与年级";
+    case "course_run":
+      return "当前课程";
+    case "lesson":
+      return "当前课时";
+    case "task":
+      return "当前任务";
+  }
 }
 
 function outcomeStatusFromDisposition(

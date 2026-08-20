@@ -59,6 +59,7 @@ export function MemoryUseDisclosure(props: {
       data-testid="memory-use-disclosure"
       data-pack-ref={memoryContext.packRef}
       data-pack-content-hash={memoryContext.packContentHash}
+      data-manifest-version={memoryContext.manifestVersion}
     >
       <details>
         <summary data-testid="memory-use-toggle">
@@ -184,6 +185,24 @@ export function MemoryUseDisclosure(props: {
                 <span>策略版本</span>
                 <strong>{memoryContext.policyVersion}</strong>
               </div>
+              {memoryContext.legacyGlobalContext ? (
+                <div>
+                  <span>上下文版本</span>
+                  <strong>旧版全局偏好上下文</strong>
+                </div>
+              ) : null}
+              {memoryContext.retrievalPolicyVersion ? (
+                <div>
+                  <span>检索策略</span>
+                  <strong>{memoryContext.retrievalPolicyVersion}</strong>
+                </div>
+              ) : null}
+              {memoryContext.teacherMemoryEpoch !== undefined ? (
+                <div>
+                  <span>教师记忆版本</span>
+                  <strong>{memoryContext.teacherMemoryEpoch}</strong>
+                </div>
+              ) : null}
               <div>
                 <span>方案处置</span>
                 <strong data-testid="memory-outcome-status">
@@ -265,6 +284,11 @@ function PreferenceItem(props: {
             本次运行当时参考，当前已撤销
           </small>
         ) : null}
+        {preference.scopeDisplay ? (
+          <small data-testid="memory-preference-scope">
+            作用范围：{preference.scopeDisplay}
+          </small>
+        ) : null}
         {props.excluded || props.detailed ? (
           <small>原因：{reasonLabel(preference.reasonCode)}</small>
         ) : null}
@@ -329,7 +353,11 @@ function reasonLabel(reasonCode: MemoryApplicationReasonCode): string {
     current_instruction_override: "被本轮明确要求覆盖",
     expired: "当时已过期",
     revoked: "当时已撤销",
-    superseded: "已被较新版本替代"
+    superseded: "已被较新版本替代",
+    scope_mismatch: "不适用于当前课程、课时或任务",
+    not_yet_valid: "尚未到生效时间",
+    more_specific_scope: "当前课程、课时或任务的偏好更具体",
+    more_specific_skill_scope: "当前 Skill 的偏好更具体"
   }[reasonCode];
 }
 

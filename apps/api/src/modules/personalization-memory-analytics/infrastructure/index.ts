@@ -10,3 +10,7 @@ export {
   readMemoryApplicationObservabilitySettings,
   type MemoryApplicationObservabilitySettings
 } from "./memory-application-observability-config.js";
+export {
+  readMemoryScopedPreferencesSettings,
+  type MemoryScopedPreferencesSettings
+} from "./memory-scoped-preferences-config.js";

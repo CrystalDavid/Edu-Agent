@@ -76,6 +76,16 @@ export const lessonPreparationContextPolicyV5: SkillContextPolicy =
     ]
   });
 
+export const lessonPreparationContextPolicyV6: SkillContextPolicy =
+  Object.freeze({
+    ...lessonPreparationContextPolicyV5,
+    version: "lesson-preparation-context-policy@6",
+    allowedFieldGroups: [
+      ...lessonPreparationContextPolicyV5.allowedFieldGroups,
+      "scoped_confirmed_teacher_preferences"
+    ]
+  });
+
 export function validateLessonPreparationContext(
   input: LessonPreparationSkillInput
 ): readonly string[] {

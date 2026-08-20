@@ -131,6 +131,12 @@ describe("Gate 2.5 recoverable lesson preparation", () => {
         className: "八年级 3 班",
         subject: "数学",
         academicTerm: "当前学期"
+      }),
+      expect.objectContaining({
+        courseRunRef: "course-run:grade8-math-class4-2026-fall",
+        className: "八年级 4 班",
+        subject: "数学",
+        academicTerm: "当前学期"
       })
     ]);
     await request(app)

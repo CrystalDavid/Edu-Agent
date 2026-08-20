@@ -1,12 +1,26 @@
 import type {
   MemoryApplicationOwner
 } from "./memory-application-recorder.js";
+import type {
+  MemoryScope,
+  TeacherPreferenceConsentBasis,
+  TeacherPreferenceExplicitness
+} from "@edu-agent/contracts";
 
 export interface TeacherPreferenceRevisionResolution {
   readonly preferenceRef: string;
   readonly preferenceVersion: number;
   readonly preferenceKey: string;
   readonly preferenceValue: string;
+  readonly canonicalKey: string;
+  readonly scope: MemoryScope;
+  readonly scopeFingerprint: string;
+  readonly validFrom: string;
+  readonly validUntil: string | null;
+  readonly explicitness: TeacherPreferenceExplicitness;
+  readonly consentBasis: TeacherPreferenceConsentBasis;
+  readonly consentVersion: string;
+  readonly policyVersion: string;
   readonly preferenceContentHash: string;
   readonly sourceCandidateRef: string;
   readonly confirmedAt: string;

@@ -15,6 +15,8 @@ export const lessonPreparationInputSchemaRefV3 =
   "lesson-preparation-input@3";
 export const lessonPreparationInputSchemaRefV4 =
   "lesson-preparation-input@4";
+export const lessonPreparationInputSchemaRefV5 =
+  "lesson-preparation-input@5";
 
 export const LessonPreparationSkillInputSchema = z.object({
   invocationRef: z.string().min(1),
@@ -163,6 +165,11 @@ export const LessonPreparationSkillInputSchemaV4 =
     conversationContext: ConversationWorkingContextSchema
   });
 
+// V5 intentionally keeps the model-visible shape unchanged. PR-2A performs
+// scoped selection in Runtime before this minimized input is assembled.
+export const LessonPreparationSkillInputSchemaV5 =
+  LessonPreparationSkillInputSchemaV4.extend({});
+
 export type ConfirmedTeacherPreference = z.infer<
   typeof ConfirmedTeacherPreferenceSchema
 >;
@@ -180,4 +187,7 @@ export type ConversationWorkingContext = z.infer<
 >;
 export type LessonPreparationSkillInputV4 = z.infer<
   typeof LessonPreparationSkillInputSchemaV4
+>;
+export type LessonPreparationSkillInputV5 = z.infer<
+  typeof LessonPreparationSkillInputSchemaV5
 >;

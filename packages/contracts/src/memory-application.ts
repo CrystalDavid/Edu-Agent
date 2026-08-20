@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MemoryScopeKindSchema } from "./memory-scope.js";
+
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const SourceContentHashSchema = z.string().min(16);
 
@@ -21,7 +23,11 @@ export const MemoryApplicationReasonCodeSchema = z.enum([
   "current_instruction_override",
   "expired",
   "revoked",
-  "superseded"
+  "superseded",
+  "scope_mismatch",
+  "not_yet_valid",
+  "more_specific_scope",
+  "more_specific_skill_scope"
 ]);
 
 export const MemoryContextSourceKindSchema = z.enum([
@@ -73,7 +79,15 @@ export const MemoryPreferenceDecisionEntrySchema = z
   })
   .strict();
 
-export const MemoryContextPackManifestSchema = z
+export const MemoryPreferenceDecisionEntryV2Schema =
+  MemoryPreferenceDecisionEntrySchema.extend({
+    scopeKind: MemoryScopeKindSchema,
+    scopeFingerprint: Sha256Schema,
+    matchSpecificity: z.number().int().nonnegative(),
+    matchedSkillConstraint: z.boolean()
+  }).strict();
+
+export const MemoryContextPackManifestV1Schema = z
   .object({
     packRef: z.string().min(1),
     packContentHash: Sha256Schema,
@@ -98,11 +112,57 @@ export const MemoryContextPackManifestSchema = z
   })
   .strict();
 
+export const MemoryContextPackManifestV2Schema = z
+  .object({
+    packRef: z.string().min(1),
+    packContentHash: Sha256Schema,
+    manifestVersion: z.literal(2),
+    owner: MemoryContextPackOwnerSchema,
+    useCase: z.string().min(1),
+    policyVersion: z.string().min(1),
+    retrievalPolicyVersion: z.string().min(1),
+    teacherMemoryEpoch: z.number().int().nonnegative(),
+    queryScopeHash: Sha256Schema,
+    querySkillId: z.string().min(1),
+    queryUseCase: z.string().min(1),
+    skillRef: z.string().min(1),
+    skillVersion: z.string().min(1),
+    skillContentHash: SourceContentHashSchema,
+    conversationRef: z.string().min(1),
+    currentTurnRef: z.string().min(1),
+    currentTurnSequence: z.number().int().positive(),
+    currentTurnContentHash: SourceContentHashSchema,
+    workingMemorySnapshotRef: z.string().min(1),
+    workingMemorySnapshotVersion: z.number().int().positive(),
+    workingMemorySnapshotContentHash: SourceContentHashSchema,
+    contextDecisions: z.array(MemoryContextDecisionEntrySchema),
+    preferenceDecisions: z.array(MemoryPreferenceDecisionEntryV2Schema),
+    selectedCount: z.number().int().nonnegative(),
+    overriddenCount: z.number().int().nonnegative(),
+    excludedCount: z.number().int().nonnegative(),
+    createdAt: z.string().datetime()
+  })
+  .strict();
+
+export const MemoryContextPackManifestSchema = z.discriminatedUnion(
+  "manifestVersion",
+  [MemoryContextPackManifestV1Schema, MemoryContextPackManifestV2Schema]
+);
+
 export const MemoryContextExplanationSchema = z.object({
   packRef: z.string().min(1),
   packContentHash: Sha256Schema,
-  manifestVersion: z.literal(1),
+  manifestVersion: z.union([z.literal(1), z.literal(2)]),
   policyVersion: z.string().min(1),
+  retrievalPolicyVersion: z.string().min(1).optional(),
+  teacherMemoryEpoch: z.number().int().nonnegative().optional(),
+  queryScopeHash: Sha256Schema.optional(),
+  querySkillId: z.string().min(1).optional(),
+  queryUseCase: z.string().min(1).optional(),
+  selectedCount: z.number().int().nonnegative().optional(),
+  overriddenCount: z.number().int().nonnegative().optional(),
+  excludedCount: z.number().int().nonnegative().optional(),
+  legacyGlobalContext: z.boolean().optional(),
   skillRef: z.string().min(1),
   skillVersion: z.string().min(1),
   currentTurn: z
@@ -131,7 +191,13 @@ export const MemoryContextExplanationSchema = z.object({
       decision: MemoryApplicationDecisionSchema,
       reasonCode: MemoryApplicationReasonCodeSchema,
       outcomeStatus: MemoryApplicationOutcomeStatusSchema.nullable(),
-      targetFields: z.array(z.string().min(1))
+      targetFields: z.array(z.string().min(1)),
+      canonicalKey: z.string().min(1).optional(),
+      scopeKind: MemoryScopeKindSchema.optional(),
+      scopeFingerprint: Sha256Schema.optional(),
+      scopeDisplay: z.string().min(1).optional(),
+      matchSpecificity: z.number().int().nonnegative().optional(),
+      matchedSkillConstraint: z.boolean().optional()
     })
   ),
   excluded: z.array(
@@ -164,6 +230,15 @@ export type MemoryContextDecisionEntry = z.infer<
 >;
 export type MemoryPreferenceDecisionEntry = z.infer<
   typeof MemoryPreferenceDecisionEntrySchema
+>;
+export type MemoryPreferenceDecisionEntryV2 = z.infer<
+  typeof MemoryPreferenceDecisionEntryV2Schema
+>;
+export type MemoryContextPackManifestV1 = z.infer<
+  typeof MemoryContextPackManifestV1Schema
+>;
+export type MemoryContextPackManifestV2 = z.infer<
+  typeof MemoryContextPackManifestV2Schema
 >;
 export type MemoryContextPackManifest = z.infer<
   typeof MemoryContextPackManifestSchema

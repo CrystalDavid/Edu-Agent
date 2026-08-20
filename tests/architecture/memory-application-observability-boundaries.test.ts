@@ -85,7 +85,8 @@ describe("PR-1 memory application observability boundaries", () => {
       .filter(
         (path) =>
           /[\\/]migrations[\\/].+\.sql$/u.test(path) &&
-          !path.endsWith("0003_memory_application_observability.sql")
+          !path.endsWith("0003_memory_application_observability.sql") &&
+          !path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
       )
       .sort();
     const actual = migrations.map((path) =>

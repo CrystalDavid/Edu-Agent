@@ -19,10 +19,10 @@
 | 学生 | PARTIAL | 查看当前 CourseRun 的匿名 enrollment、近期提交/确认 Evidence 和教师确认的 learner-scope classroom observation | Education PostgreSQL；`course-runs/:ref/enrollments`、`learners/:ref/evidence`、observations | Education；2.7、2.9 | 无正式学生身份、真实名单、长期画像或固定能力标签 |
 | 文件 | REAL | 上传、下载、搜索、分类、排序、详情、新版本、软删除/恢复、绑定 Lesson/Task/TeachingPlan；导出 approved TeachingPlan DOCX；材料草稿逐项预览、重生成、采用与下载 | Artifact PostgreSQL + Capability LocalObjectStore；File API、DOCX export、lesson material-bundle API | Artifact / Capability；2.5B、Phase 8A-3 | 本地对象存储；PPT 当前是内容大纲 Markdown，不生成 PPTX；无分享、协作、云同步或文件内容入模 |
 | Agent 一级页 | REAL（任务入口） | 读取服务器中的未完成备课任务，并从 Task、Todo、Reflection 等正式入口进入受限 Agent 流程 | 正式 deep link + lesson preparation Task API | Work / Runtime / Capability；2、2.5、2.8、2.9 | 不提供脱离 Task 的开放聊天、收藏或多 Agent 自动化平台 |
-| Agent / Copilot | REAL | 封存 TaskWorkingSet/授权上下文；在同一备课 Conversation 中持久化教师轮次和安全结果摘要；用可重建 WorkingMemory 理解“再短一点/第二种”等延续要求；在 Proposal 与 Runs 显示本次参考的当前要求、同任务上下文、已确认偏好及排除原因；刷新或服务重启后恢复；创建、取消、重试 ModelExecution；教师处置 Proposal | Work Conversation/Turn + Runtime WorkingMemorySnapshot/MemoryContextPackManifest + Personalization Preference application/outcome + Capability/Artifact PostgreSQL | 2.4、2.5、2.6A；记忆升级 M1 + M0-lite | “本次参考”只证明平台选入上下文，不证明模型完整采用；当前只覆盖 lesson preparation；不提供显式记住/忘记、自动习惯学习或新检索语义 |
+| Agent / Copilot | REAL | 封存 TaskWorkingSet/授权上下文；在同一备课 Conversation 中持久化教师轮次和安全结果摘要；用可重建 WorkingMemory 理解“再短一点/第二种”等延续要求；Lesson Preparation 按 global/CourseRun 等结构化 Scope 确定性解析同 key 偏好；Proposal 与 Runs 显示本次参考、作用范围和覆盖原因；刷新或服务重启后恢复 | Work Conversation/Turn + Runtime WorkingMemorySnapshot/MemoryContextPackManifest V1/V2 + Personalization scoped Preference/application/outcome + Capability/Artifact PostgreSQL | 2.4、2.5、2.6A；记忆升级 M1 + M0-lite + PR-2A | “本次参考”只证明平台选入上下文，不证明模型完整采用；不提供自然语言记住/忘记/仅本次、自动习惯学习或向量检索 |
 | Teaching Plan | REAL | 查看 current approved、active in-review、draft、superseded/history；处置 Proposal；单独批准；显式完成备课；导出 DOCX | Artifact/Work PostgreSQL；lesson teaching-plan reads、proposal disposition、approve、export | Artifact / Work；2.4、2.5、2.5B | `published` 未实现；approved Revision immutable；正式导出只允许 current approved |
 | Runs | REAL / READ_ONLY | 查看请求、安全上下文、ModelExecution、Usage、延迟、脱敏 provider request ID、Proposal、Audit 与 Outbox 状态 | Runtime/Capability/Governance/Work PostgreSQL；run/model detail API | 2.4、2.6A | 调试信息只读且不显示 Key、完整 Prompt/响应或隐藏推理 |
-| 设置 | REAL（当前范围） | 查看用户、学校、角色、CourseRun scope、活跃 Session；管理教师确认的 Agent 偏好；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance / Personalization PostgreSQL；auth/session/workspace、personalization、organization/admin、governance request API | Governance / Personalization；2.10A、Phase 7A | 无通知设置、邮件邀请、MFA、SCIM 或完整学校后台；偏好只影响建议表达，不成为教学事实 |
+| 设置 | REAL（当前范围） | 查看用户、学校、角色、CourseRun access、活跃 Session；管理教师确认的 Agent 偏好，并选择“所有普通备课”或授权 CourseRun；撤销 Session；提交数据治理请求；管理员管理最小成员权限 | Governance / Personalization PostgreSQL；auth/session/workspace、personalization、organization/admin、governance request API | Governance / Personalization；2.10A、Phase 7A、PR-2A | UI 暂不暴露 subject/lesson/task 高级 Scope；无通知设置、MFA、SCIM 或完整学校后台；Scope 不是授权 |
 | 管理员入口 | REAL（最小） | school admin 查看成员、安全事件，创建/激活/停用成员，分配 ordinary_teacher 和 CourseRun access | Governance PostgreSQL；`/api/v1/admin/*` | Governance；2.10A | 只在当前学校生效；不授予修改教学事实的超级权限；subject lead/homeroom 仅保留边界 |
 
 `DEAD = 0` 的 Gate 2.5C 固化证据见历史 [教师门户功能矩阵](history/gates/teacher-portal-function-matrix.md)。未实现入口必须禁用，不能显示成功写入提示。
@@ -47,9 +47,9 @@
 | 课后反思 | REAL | selected context → Agent draft → teacher confirm → `next-lesson-adjustment@1` 候选 → teacher decision → explicit follow-up | Reflection 不覆盖 TeachingPlan；确认 Reflection 或生成候选都不自动创建行动 |
 | 学校成员管理 | REAL（最小） | Organization、Membership、Role、CourseRun access、suspend/reactivate、安全 Audit | 无完整组织树、人事系统或跨学校管理员 |
 | 数据治理请求 | PARTIAL | 记录 export、de-identification/deletion 请求与状态基础 | 未实现导出/去标识执行 Worker、审批门户或 SLA |
-| 教师偏好与个性化 | REAL（最小） | 候选 draft、教师确认/修改/拒绝/撤销、不可变 revision、跨重启恢复；仅 active confirmed preference 进入 lesson preparation Context | 无学生画像、向量检索、自动人格分析或未确认 Memory 入模 |
+| 教师偏好与个性化 | REAL（最小） | 候选 draft、教师确认/修改/拒绝/撤销、不可变 revision、valid time、global/subject/subject-grade/CourseRun/lesson/task 领域 Scope、Skill constraint 与 teacherMemoryEpoch；Lesson Preparation 按 task > lesson > course_run > subject_grade > subject > global 和 Skill-specific 优先解析 | 设置页当前只暴露 global/CourseRun；其他 Skill 兼容路径只读有效 global、无 Skill 限制偏好；无自然语言 canonicalization、自动 Candidate、向量检索或未确认 Memory 入模 |
 | 备课会话工作记忆 | REAL（第一轮） | owner-scoped Conversation/不可变 Turn、最多六条近期教师要求、当前目标、指代、临时约束和最近安全结果引用；确定性构建并版本化；刷新/重启恢复；显式 close API、到期排除与新会话隔离 | 只用于同一备课 Task 的短期连续性；不自动形成长期习惯，不保存原始供应商响应、完整 Prompt 或隐藏推理；尚无关闭/遗忘 UI、语义向量检索或跨任务行为学习；正式 retention 期限待产品确认 |
-| 教师记忆应用观测 | REAL（M0-lite） | Runtime 封存 `MemoryContextPackManifest@1`；Personalization append-only 记录 durable Preference 的 selected/injected/excluded/overridden 与 Proposal outcome；Proposal/Runs 读取时按 owner 动态展示“本次参考”；Provider/Worker retry 幂等，写入失败时生成继续且标记 degraded | 不改变 Preference 排序、数量截断、Prompt 权重或输出语义；不复制 Turn、WorkingMemory、Preference value、完整 Prompt/响应/Evidence；生产默认关闭新数据收集，正式 retention 待产品确认 |
+| 教师记忆应用观测 | REAL（M0-lite + V2） | Runtime 保留历史 `MemoryContextPackManifest@1` 并为新 scoped Lesson Preparation 封存 `@2`（query Scope、Skill、epoch、revision/hash 与 selected/overridden/excluded）；Personalization append-only 记录 durable Preference application/outcome；Provider retry 复用已封存 pack | 不复制 Turn、WorkingMemory、Preference value、完整 Prompt/响应/Evidence；“参考”不等于模型遵循；生产观测和 scoped feature flag 均 fail closed；正式 retention 待产品确认 |
 | 考试 | DISABLED | 无伪造展示 | 正式领域、API、Persistence 均未开始 |
 | 多模态 | NOT_STARTED（产品） | Ark capability probe 可探测 image URL | 文件/图片未进入正式模型上下文；无 OCR |
 | 学生端 | NOT_STARTED | 无 | 当前只有教师查看匿名样例学习者 |
@@ -64,8 +64,10 @@
 
 Phase 7A 已将 Phase 6 的 MemoryCandidate/TeacherPreference 边界产品化：新增前向 Migration、PostgreSQL Adapter、服务端会话授权 API 和教师设置界面。Context manifest 摘要随 AgentRun 持久化，只使用当前 tenant/teacher 的 active confirmed preference；撤销即时生效，历史 revision 保留。
 
-记忆系统第一轮把“当前正在做什么”和“老师长期习惯”正式拆开：Work Schema 保存备课 Conversation/不可变 Turn，Runtime Schema 保存可由 Turn 重建的 WorkingMemorySnapshot，`lesson-preparation@5` 只读取当前 owner、Task 和会话中已经授权并封存的快照。教师当前一句话优先于历史，历史只帮助解析延续与指代；临时要求不会自动晋升为 TeacherPreference。第二轮仍需补显式记住/忘记、候选抽取与长期行为学习。
+记忆系统第一轮把“当前正在做什么”和“老师长期习惯”正式拆开：Work Schema 保存备课 Conversation/不可变 Turn，Runtime Schema 保存可由 Turn 重建的 WorkingMemorySnapshot。`lesson-preparation@6` 在保持当前请求最高优先级的同时，调用 scoped Preference resolver 并封存 Pack V2；`@1–@5` 继续用于历史恢复或 feature flag 兼容。临时要求不会自动晋升为 TeacherPreference。
 
 M0-lite 在不扩大 Context 的前提下补上应用观测：Runtime 保存确定性的 pack manifest，Personalization 只记录 durable Preference application/outcome，读取端在当前授权下解析教师可见摘要。界面固定说明“参考不等于模型一定采用”。该能力不是显式记住/忘记，也不会从行为自动形成习惯。
+
+PR-2A 增加的是结构化长期偏好作用范围，而不是自然语言记忆学习：同一 canonical key 可在 global 与不同 CourseRun 等 Scope 中同时 active，Resolver 使用确定性优先级选择最具体项，`teacherMemoryEpoch` 在确认、值/Scope/valid time 更新和撤销时递增。Scope 只描述适用性，每次运行和写入仍重新执行 Session、ActingContext、purpose、CourseRun/Task 与 field-mask 授权。自然语言“记住/忘掉/仅本次”、行为 Observation、Candidate 自动提炼、Episode/Habit、全文或向量检索仍未实现。
 
 相关文档：[完整版本历史](version-history.md) · [当前架构](architecture/README.md) · [部署就绪差距](operations/deployment-readiness-gaps.md)

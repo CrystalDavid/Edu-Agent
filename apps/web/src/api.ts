@@ -22,6 +22,7 @@ import {
   TeacherPersonalizationStateSchema,
   TeacherPreferenceMutationResultSchema,
   UpdateTeacherPreferenceRequestSchema,
+  UpdateTeacherPreferenceScopeRequestSchema,
   RevokeTeacherPreferenceRequestSchema,
   UpdateMemberCourseAccessRequestSchema,
   UpdateMemberRolesRequestSchema,
@@ -179,6 +180,7 @@ import {
   type ReviewMemoryCandidateRequest,
   type TeacherPersonalizationState,
   type UpdateTeacherPreferenceRequest,
+  type UpdateTeacherPreferenceScopeRequest,
   type RevokeTeacherPreferenceRequest,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
@@ -593,6 +595,19 @@ export function updateTeacherPreference(
   return request(
     "修改教师偏好",
     apiRoutes.teacher.teacherPreference(preferenceRef),
+    TeacherPreferenceMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function updateTeacherPreferenceScope(
+  preferenceRef: string,
+  input: UpdateTeacherPreferenceScopeRequest
+) {
+  UpdateTeacherPreferenceScopeRequestSchema.parse(input);
+  return request(
+    "修改教师偏好作用范围",
+    apiRoutes.teacher.teacherPreferenceScope(preferenceRef),
     TeacherPreferenceMutationResultSchema,
     { method: "PUT", body: JSON.stringify(input) }
   );
