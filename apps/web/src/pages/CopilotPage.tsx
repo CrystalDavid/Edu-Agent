@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  ConversationMemoryCommandView,
   ConversationTurnView,
   MemoryCandidateView,
   PedagogicalStrategy,
@@ -13,6 +14,7 @@ import type {
   SuggestionDispositionKind,
   SuggestionDispositionResult,
   TeacherPersonalizationState,
+  TeacherPreferenceView,
   TeacherWorkspace,
   TeachingPlan
 } from "@edu-agent/contracts";
@@ -20,6 +22,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Divider,
   Drawer,
   Input,
@@ -34,6 +37,7 @@ import {
 import {
   ApiError,
   cancelModelInvocation,
+  confirmExplicitForgetSelection,
   confirmMemoryCandidateReplacement,
   createTeacherConversation,
   createModelInvocation,
@@ -611,6 +615,49 @@ export function CopilotPage(props: {
     }
   }
 
+  async function resolveForgetSelection(
+    commandView: ConversationMemoryCommandView,
+    preferences: readonly TeacherPreferenceView[]
+  ) {
+    if (!conversation || preferences.length === 0) return;
+    setMemoryActionRef(commandView.commandTurnRef);
+    setError(null);
+    try {
+      const result = await confirmExplicitForgetSelection(
+        conversation.conversationRef,
+        commandView.commandTurnRef,
+        {
+          selectedPreferenceRefs: preferences.map(
+            (preference) => preference.preferenceRef
+          ),
+          expectedVersions: Object.fromEntries(
+            preferences.map((preference) => [
+              preference.preferenceRef,
+              preference.version
+            ])
+          ),
+          expectedConversationVersion: conversation.version,
+          purpose: "personalization.explicit-forget.confirm",
+          idempotencyKey: `ui:explicit-forget-confirm:${crypto.randomUUID()}`
+        }
+      );
+      setConversation(result.conversation);
+      setPersonalization(await loadTeacherPersonalization());
+    } catch (caught) {
+      setError(errorMessage(caught));
+      if (conversationRef) {
+        try {
+          setConversation(await loadTeacherConversation(conversationRef));
+          setPersonalization(await loadTeacherPersonalization());
+        } catch {
+          // Preserve the original owner-safe error.
+        }
+      }
+    } finally {
+      setMemoryActionRef(null);
+    }
+  }
+
   async function cancelExecution() {
     if (
       !modelExecution ||
@@ -905,9 +952,13 @@ export function CopilotPage(props: {
                 turn.contentKind === "command" ? (
                   <MemoryCommandReceiptDetails
                     turn={turn}
+                    commandView={conversation.memoryCommands.find(
+                      (entry) => entry.receiptTurnRef === turn.turnRef
+                    ) ?? null}
                     personalization={personalization}
                     busyCandidateRef={memoryActionRef}
                     onResolve={resolveMemoryConflict}
+                    onResolveForget={resolveForgetSelection}
                     onOpenSettings={() => {
                       window.sessionStorage.setItem(
                         "teacher-settings-section",
@@ -1458,14 +1509,20 @@ function shortEvidenceLabel(reference: string): string {
 
 function MemoryCommandReceiptDetails(props: {
   turn: ConversationTurnView;
+  commandView: ConversationMemoryCommandView | null;
   personalization: TeacherPersonalizationState | null;
   busyCandidateRef: string | null;
   onResolve: (
     candidate: MemoryCandidateView,
     action: "replace" | "keep"
   ) => Promise<void>;
+  onResolveForget: (
+    commandView: ConversationMemoryCommandView,
+    preferences: readonly TeacherPreferenceView[]
+  ) => Promise<void>;
   onOpenSettings: () => void;
 }) {
+  const [selectedForgetRefs, setSelectedForgetRefs] = useState<string[]>([]);
   const candidateRefs = props.turn.resultRefs.candidateRefs ?? [];
   const preferenceRefs = props.turn.resultRefs.preferenceRefs ?? [];
   const candidates = candidateRefs.flatMap((candidateRef) => {
@@ -1491,6 +1548,109 @@ function MemoryCommandReceiptDetails(props: {
     return preference ? [preference] : [];
   });
   const expectsDetails = candidateRefs.length > 0 || preferenceRefs.length > 0;
+
+  if (props.commandView?.kind === "forget") {
+    const linkedPreferences = preferenceRefs.flatMap((preferenceRef) => {
+      const preference = props.personalization?.preferences.find(
+        (entry) => entry.preferenceRef === preferenceRef
+      );
+      return preference ? [preference] : [];
+    });
+    const activeOptions = linkedPreferences.filter(
+      (preference) => preference.status === "active"
+    );
+    const selected = activeOptions.filter((preference) =>
+      selectedForgetRefs.includes(preference.preferenceRef)
+    );
+    return (
+      <div
+        className="memory-command-receipt"
+        data-testid="memory-command-receipt"
+        data-memory-command-kind="forget"
+        data-memory-command-status={props.commandView.status}
+      >
+        {expectsDetails && !props.personalization ? (
+          <Text type="secondary">正在恢复可撤销偏好…</Text>
+        ) : null}
+        {linkedPreferences.map((preference) => (
+          <div
+            key={preference.preferenceRef}
+            className="memory-command-item"
+            data-testid="forget-memory-option"
+          >
+            {props.commandView?.status === "selection_required" &&
+            preference.status === "active" ? (
+              <Checkbox
+                checked={selectedForgetRefs.includes(
+                  preference.preferenceRef
+                )}
+                onChange={(event) => {
+                  setSelectedForgetRefs((current) => event.target.checked
+                    ? [...new Set([...current, preference.preferenceRef])]
+                    : current.filter((reference) =>
+                        reference !== preference.preferenceRef
+                      ));
+                }}
+                data-testid={`forget-option-${preference.scope.kind}`}
+              >
+                {teacherPreferenceLabel(preference.preferenceKey)}：
+                {preference.preferenceValue}
+              </Checkbox>
+            ) : (
+              <Text strong>
+                {teacherPreferenceLabel(preference.preferenceKey)}：
+                {preference.preferenceValue}
+              </Text>
+            )}
+            <Text type="secondary">
+              作用范围：{memoryScopeDisplay(preference.scope)}
+            </Text>
+            {preference.status === "revoked" ? (
+              <Tag>当前状态已撤销</Tag>
+            ) : null}
+          </div>
+        ))}
+        {props.commandView.status === "selection_required" ? (
+          <Space wrap>
+            <Button
+              type="primary"
+              disabled={selected.length === 0}
+              loading={
+                props.busyCandidateRef === props.commandView.commandTurnRef
+              }
+              onClick={() => void props.onResolveForget(
+                props.commandView!,
+                selected
+              )}
+              data-testid="confirm-forget-selection"
+            >
+              忘掉所选
+            </Button>
+            <Button
+              disabled={
+                props.busyCandidateRef === props.commandView.commandTurnRef
+              }
+              onClick={() => setSelectedForgetRefs([])}
+              data-testid="cancel-forget-selection"
+            >
+              取消
+            </Button>
+          </Space>
+        ) : null}
+        {props.commandView.status === "revoked" ? (
+          <Paragraph type="secondary">
+            后续新备课不再参考已撤销偏好；历史运行仍保留当时记录。
+          </Paragraph>
+        ) : null}
+        {props.commandView.status === "resolved" ? (
+          <Tag color="success">这次选择已处理</Tag>
+        ) : null}
+        <Button type="link" onClick={props.onOpenSettings}>
+          查看助手偏好
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="memory-command-receipt" data-testid="memory-command-receipt">
