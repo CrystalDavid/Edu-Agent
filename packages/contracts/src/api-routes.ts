@@ -256,6 +256,13 @@ export const apiRoutes = {
       "/api/v1/teacher/conversations/:conversationRef/dispatch-turn",
     conversationDispatchTurn: (conversationRef: string): string =>
       `${teacherConversationRoute(conversationRef)}/dispatch-turn`,
+    conversationForgetConfirmPattern:
+      "/api/v1/teacher/conversations/:conversationRef/forget-commands/:commandTurnRef/confirm",
+    conversationForgetConfirm: (
+      conversationRef: string,
+      commandTurnRef: string
+    ): string =>
+      `${teacherConversationRoute(conversationRef)}/forget-commands/${encodeRouteSegment(commandTurnRef)}/confirm`,
     conversationClosePattern:
       "/api/v1/teacher/conversations/:conversationRef/close",
     conversationClose: (conversationRef: string): string =>

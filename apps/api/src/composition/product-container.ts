@@ -104,6 +104,10 @@ import {
   type MemoryExplicitRememberSettings
 } from "../modules/personalization-memory-analytics/infrastructure/memory-explicit-remember-config.js";
 import {
+  readMemoryExplicitForgetSettings,
+  type MemoryExplicitForgetSettings
+} from "../modules/personalization-memory-analytics/infrastructure/memory-explicit-forget-config.js";
+import {
   TeacherPreferenceScopeAuthorizationAdapter
 } from "./teacher-preference-scope-authorization-adapter.js";
 import {
@@ -123,6 +127,7 @@ export function createProductContainer(
     memoryApplicationObservabilitySettings?: MemoryApplicationObservabilitySettings;
     memoryScopedPreferencesSettings?: MemoryScopedPreferencesSettings;
     memoryExplicitRememberSettings?: MemoryExplicitRememberSettings;
+    memoryExplicitForgetSettings?: MemoryExplicitForgetSettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -146,13 +151,17 @@ export function createProductContainer(
   const explicitRememberSettings =
     options.memoryExplicitRememberSettings ??
     readMemoryExplicitRememberSettings();
+  const explicitForgetSettings =
+    options.memoryExplicitForgetSettings ??
+    readMemoryExplicitForgetSettings();
   const personalization = new PostgresPersonalizationService(
     appPool,
     undefined,
     undefined,
     new TeacherPreferenceScopeAuthorizationAdapter(lessonPreparation),
     scopedPreferencesSettings,
-    explicitRememberSettings
+    explicitRememberSettings,
+    explicitForgetSettings
   );
   const lessonBriefStore = new PostgresLessonBriefStore(appPool);
   const conversationRetentionSettings =
@@ -167,7 +176,8 @@ export function createProductContainer(
     {
       explicitRememberEnabled:
         explicitRememberSettings.enabled && scopedPreferencesSettings.enabled,
-      scopedPreferencesEnabled: scopedPreferencesSettings.enabled
+      scopedPreferencesEnabled: scopedPreferencesSettings.enabled,
+      explicitForgetEnabled: explicitForgetSettings.enabled
     }
   );
   const memoryApplications = new PostgresMemoryApplicationService(

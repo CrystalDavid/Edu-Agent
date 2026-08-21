@@ -67,6 +67,8 @@ import {
   DispatchTeacherConversationTurnResultSchema,
   ConfirmMemoryCandidateReplacementRequestSchema,
   ConfirmMemoryCandidateReplacementResultSchema,
+  ConfirmExplicitForgetSelectionRequestSchema,
+  ConfirmExplicitForgetSelectionResultSchema,
   ConversationThreadViewSchema,
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
@@ -217,6 +219,8 @@ import {
   type DispatchTeacherConversationTurnRequest,
   type DispatchTeacherConversationTurnResult,
   type ConfirmMemoryCandidateReplacementRequest,
+  type ConfirmExplicitForgetSelectionRequest,
+  type ConfirmExplicitForgetSelectionResult,
   type ConversationThreadView,
   type CreateReflectionDraftRequest,
   type CreateReflectionFollowUpRequest,
@@ -1103,6 +1107,26 @@ export function dispatchTeacherConversationTurn(
     "分发备课会话要求",
     apiRoutes.teacher.conversationDispatchTurn(conversationRef),
     DispatchTeacherConversationTurnResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function confirmExplicitForgetSelection(
+  conversationRef: string,
+  commandTurnRef: string,
+  input: ConfirmExplicitForgetSelectionRequest
+): Promise<ConfirmExplicitForgetSelectionResult> {
+  ConfirmExplicitForgetSelectionRequestSchema.parse(input);
+  return request(
+    "确认要忘掉的教师偏好",
+    apiRoutes.teacher.conversationForgetConfirm(
+      conversationRef,
+      commandTurnRef
+    ),
+    ConfirmExplicitForgetSelectionResultSchema,
     {
       method: "POST",
       body: JSON.stringify(input)

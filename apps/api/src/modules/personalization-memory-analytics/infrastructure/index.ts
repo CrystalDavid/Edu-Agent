@@ -18,3 +18,7 @@ export {
   readMemoryExplicitRememberSettings,
   type MemoryExplicitRememberSettings
 } from "./memory-explicit-remember-config.js";
+export {
+  readMemoryExplicitForgetSettings,
+  type MemoryExplicitForgetSettings
+} from "./memory-explicit-forget-config.js";

@@ -110,6 +110,8 @@ tests         -> contracts + sample-data + test-fixtures
 
 显式 remember 的共享 Contract 位于 `packages/contracts/src/memory-command.ts`；低风险 Catalog 与纯 Interpreter 分别位于 Personalization Domain 的 `teacher-preference-catalog.ts` 和 `explicit-teacher-memory-command.ts`；typed 写入 Port 位于 `application/explicit-teacher-memory-command-service.ts`；Work/Personalization 编排位于 `apps/api/src/composition/postgres-conversation-dispatch-service.ts`。Work `0013_explicit_memory_command_turn.sql` 只扩展 immutable Turn 的合法 command 组合与有界结果 refs，不创建第二个 Migration registry，也不让 Work 直接写 Personalization。
 
+显式 forget 继续使用 `memory-command.ts` 的兼容 union；纯 Interpreter、typed revoke Port 和服务端 flag 分别位于 `explicit-teacher-forget-command.ts`、`application/explicit-teacher-forget-command-service.ts` 与 `infrastructure/memory-explicit-forget-config.ts`。确认入口仍由 Conversation Composition 协调，只接受持久化 receipt refs 的子集。PR-2C1 不新增 Migration，现有 51 个文件保持不变。
+
 ## `scripts` 与稳定命令
 
 脚本实现按职责分为 `local/`、`testing/`、`quality/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](README.md) 说明。

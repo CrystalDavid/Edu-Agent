@@ -434,6 +434,61 @@ export class PostgresConversationService {
     return conversation;
   }
 
+  async requireForgetSelectionContext(input: {
+    tenantRef: string;
+    actorRef: string;
+    conversationRef: string;
+    commandTurnRef: string;
+    allowedCourseRunRefs: readonly string[];
+    expectedConversationVersion: number;
+  }): Promise<{
+    conversation: ConversationThreadView;
+    commandTurn: ConversationTurnView;
+    selectionReceiptTurn: ConversationTurnView;
+    resolvedReceiptTurn: ConversationTurnView | null;
+  }> {
+    const conversation = await this.requireDispatchContext(input);
+    const commandTurn = conversation.turns.find((turn) =>
+      turn.turnRef === input.commandTurnRef
+    );
+    const selectionReceiptTurn = conversation.turns.find((turn) =>
+      turn.actorKind === "assistant_surface" &&
+      turn.contentKind === "command" &&
+      turn.parentTurnRef === input.commandTurnRef &&
+      (turn.resultRefs.preferenceRefs?.length ?? 0) > 0
+    );
+    if (
+      !commandTurn ||
+      commandTurn.actorKind !== "teacher" ||
+      commandTurn.contentKind !== "command" ||
+      !commandTurn.teacherText ||
+      !selectionReceiptTurn ||
+      input.expectedConversationVersion !== selectionReceiptTurn.sequence + 1
+    ) {
+      throw new NotFoundError("The forget command selection was not found.");
+    }
+    const resolvedReceiptTurn = conversation.turns.find((turn) =>
+      turn.actorKind === "assistant_surface" &&
+      turn.contentKind === "command" &&
+      turn.parentTurnRef === selectionReceiptTurn.turnRef
+    ) ?? null;
+    if (
+      !resolvedReceiptTurn &&
+      conversation.version !== input.expectedConversationVersion
+    ) {
+      throw new DomainConflictError(
+        "CONVERSATION_FORGET_SELECTION_CONFLICT",
+        "The conversation changed before the forget selection was confirmed."
+      );
+    }
+    return {
+      conversation,
+      commandTurn,
+      selectionReceiptTurn,
+      resolvedReceiptTurn
+    };
+  }
+
   async appendTeacherCommandTurn(input: {
     tenantRef: string;
     actorRef: string;
@@ -671,6 +726,159 @@ export class PostgresConversationService {
             writeContext,
             "work",
             "conversation-assistant-command-receipt"
+          )
+        })
+      ];
+      const updated = await this.advanceThread(client, thread, turn, now);
+      const [turns, snapshot] = await Promise.all([
+        this.conversations.listTurns(client, thread.conversationRef),
+        this.workingMemory.getActive(client, {
+          tenantRef: thread.tenantRef,
+          teacherRef: thread.teacherRef,
+          conversationRef: thread.conversationRef,
+          asOf: now
+        })
+      ]);
+      const result = AppendAssistantCommandReceiptResultSchema.parse({
+        replayed: false,
+        conversation: this.view(updated, turns, snapshot),
+        turn,
+        workingMemory: snapshot
+      });
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async appendAssistantCommandFollowupReceipt(input: {
+    tenantRef: string;
+    actorRef: string;
+    conversationRef: string;
+    commandTurnRef: string;
+    selectionReceiptTurnRef: string;
+    expectedConversationVersion: number;
+    commandRef: string;
+    safeSummary: string;
+    preferenceRefs: readonly string[];
+    idempotencyKey: string;
+  }): Promise<AppendAssistantCommandReceiptResult> {
+    const now = this.clock().toISOString();
+    const purpose = "teacher-copilot.conversation.command-receipt";
+    const rootKey = [
+      input.tenantRef,
+      input.actorRef,
+      "conversation.append-command-followup-receipt",
+      input.idempotencyKey
+    ].join("|");
+    const writeContext = this.writeContext(
+      input.actorRef,
+      purpose,
+      input.idempotencyKey,
+      rootKey,
+      now
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: hash({
+          conversationRef: input.conversationRef,
+          commandTurnRef: input.commandTurnRef,
+          selectionReceiptTurnRef: input.selectionReceiptTurnRef,
+          expectedConversationVersion: input.expectedConversationVersion,
+          commandRef: input.commandRef,
+          safeSummary: input.safeSummary,
+          preferenceRefs: input.preferenceRefs
+        }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "conversation-command-followup-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return AppendAssistantCommandReceiptResultSchema.parse({
+          ...reservation.result,
+          replayed: true
+        });
+      }
+      const thread = await this.requireActiveThread(client, input);
+      const [commandTurn, selectionReceiptTurn] = await Promise.all([
+        this.conversations.getTurn(
+          client,
+          thread.conversationRef,
+          input.commandTurnRef
+        ),
+        this.conversations.getTurn(
+          client,
+          thread.conversationRef,
+          input.selectionReceiptTurnRef
+        )
+      ]);
+      if (
+        thread.version !== input.expectedConversationVersion ||
+        thread.lastTurnRef !== input.selectionReceiptTurnRef ||
+        !commandTurn ||
+        commandTurn.actorKind !== "teacher" ||
+        commandTurn.contentKind !== "command" ||
+        !selectionReceiptTurn ||
+        selectionReceiptTurn.actorKind !== "assistant_surface" ||
+        selectionReceiptTurn.contentKind !== "command" ||
+        selectionReceiptTurn.parentTurnRef !== commandTurn.turnRef
+      ) {
+        throw new DomainConflictError(
+          "CONVERSATION_COMMAND_RECEIPT_CONFLICT",
+          "The forget confirmation no longer matches the pending selection."
+        );
+      }
+      const turn = this.assistantCommandTurn({
+        conversationRef: thread.conversationRef,
+        sequence: thread.lastTurnSequence + 1,
+        parentTurnRef: selectionReceiptTurn.turnRef,
+        surfaceSummary: input.safeSummary,
+        candidateRefs: [],
+        preferenceRefs: input.preferenceRefs,
+        createdAt: now
+      });
+      const decision = this.decision({
+        decisionRef: writeContext.authorizationDecisionRef,
+        tenantRef: input.tenantRef,
+        actorRef: input.actorRef,
+        action: purpose,
+        resourceRef: thread.conversationRef,
+        purpose,
+        decidedAt: now
+      });
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "conversation-command-followup-authorization"
+          )
+        }),
+        await this.conversations.insertTurn(client, {
+          turn,
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "conversation-assistant-command-followup-receipt"
           )
         })
       ];

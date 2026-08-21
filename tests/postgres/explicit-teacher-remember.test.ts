@@ -641,8 +641,12 @@ describe("explicit teacher remember PostgreSQL", () => {
         "忘掉案例偏好"
       );
       expect(forgotten.body).toMatchObject({
-        kind: "unsupported_memory_command",
-        safeReasonCode: "forget_not_available"
+        kind: "memory_command",
+        receipt: {
+          status: "nothing_to_forget",
+          memoryEpochBefore: 0,
+          memoryEpochAfter: 0
+        }
       });
       const count = await adminPool.query<{ count: string }>(
         `SELECT count(*)::text AS count

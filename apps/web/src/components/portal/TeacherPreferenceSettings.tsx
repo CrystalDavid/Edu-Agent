@@ -34,7 +34,8 @@ export function TeacherPreferenceSettings(props: {
     candidates: [],
     preferences: [],
     scopedPreferencesEnabled: false,
-    explicitRememberEnabled: false
+    explicitRememberEnabled: false,
+    explicitForgetEnabled: false
   });
   const [courseRuns, setCourseRuns] = useState<readonly CourseRunView[]>([]);
   const [loading, setLoading] = useState(true);

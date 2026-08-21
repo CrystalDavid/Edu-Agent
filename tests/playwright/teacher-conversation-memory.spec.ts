@@ -2,8 +2,11 @@ import { mkdir } from "node:fs/promises";
 
 import {
   DispatchTeacherConversationTurnResultSchema,
+  TeacherPersonalizationStateSchema,
   apiRoutes,
-  type DispatchTeacherConversationTurnResult
+  type DispatchTeacherConversationTurnResult,
+  type ExplicitRememberReceipt,
+  type TeacherPersonalizationState
 } from "@edu-agent/contracts";
 import { gate2DemoRefs } from "@edu-agent/sample-data";
 import {
@@ -38,7 +41,7 @@ test.beforeEach(() => {
 });
 
 test.afterEach(async ({ request }) => {
-  await restartApi(request, "enabled", "enabled");
+  await restartApi(request, "enabled", "enabled", "enabled");
   for (const conversationRef of cleanupConversationRefs) {
     await closeConversationIfOpen(request, conversationRef);
   }
@@ -1164,6 +1167,431 @@ test("explicit remember keeps duplicate, conflict and CourseRun scope under teac
   );
 });
 
+test("explicit forget revokes one preference and preserves sealed run history across restart", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(240_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  let modelInvocationCreates = 0;
+  page.on("request", (webRequest) => {
+    if (
+      webRequest.method() === "POST" &&
+      new URL(webRequest.url()).pathname ===
+        apiRoutes.teacher.modelInvocations
+    ) {
+      modelInvocationCreates += 1;
+    }
+  });
+  const started = await startConversationWithMemoryCommand(
+    page,
+    task.taskRef,
+    "记住：以后案例尽量贴近日常生活"
+  );
+  cleanupConversationRefs.add(started.conversationRef);
+  const startedReceipt = rememberReceipt(started.command);
+  const rememberedItem = startedReceipt.items.find((item) =>
+    item.canonicalKey === "example_preference"
+  );
+  expect(rememberedItem?.preferenceRef).toBeTruthy();
+  const preferenceRef = rememberedItem!.preferenceRef!;
+
+  const historicalRun = await sendModelInstruction(
+    page,
+    "请生成一版贴近日常生活的斜率教案"
+  );
+  const historicalCompleted = await waitForExecution(
+    request,
+    historicalRun.modelExecutionRef
+  );
+  expect(historicalCompleted.proposalRevisionRef).toBeTruthy();
+  const historicalProposalRef = historicalCompleted.proposalRevisionRef!;
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(historicalProposalRef)}`
+    ),
+    { timeout: 20_000 }
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible();
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+  expect(modelInvocationCreates).toBe(1);
+
+  const forgotten = await sendMemoryCommand(
+    page,
+    "忘掉我之前关于案例类型的偏好。"
+  );
+  const forgottenReceipt = forgetReceipt(forgotten);
+  expect(forgotten.receipt).toMatchObject({
+    interpreterVersion: "explicit-forget-command-interpreter@1",
+    status: "revoked",
+    memoryEpochBefore: startedReceipt.memoryEpochAfter
+  });
+  expect(forgottenReceipt.memoryEpochAfter -
+    forgottenReceipt.memoryEpochBefore).toBe(1);
+  expect(modelInvocationCreates).toBe(1);
+  const forgetReceiptCard = page.locator(
+    '[data-testid="memory-command-receipt"][data-memory-command-kind="forget"]'
+  ).last();
+  await expect(forgetReceiptCard).toHaveAttribute(
+    "data-memory-command-status",
+    "revoked"
+  );
+  await expect(forgetReceiptCard).toContainText("案例偏好");
+  await expect(forgetReceiptCard).toContainText("当前状态已撤销");
+  await expect(forgetReceiptCard).toContainText("后续新备课不再参考");
+  await expect(page.getByText("生成中", { exact: true })).toHaveCount(0);
+
+  await page.reload();
+  await expect(forgetReceiptCard).toContainText("当前状态已撤销", {
+    timeout: 20_000
+  });
+  await restartApi(request, "enabled", "enabled", "enabled");
+  await page.reload();
+  await expect(forgetReceiptCard).toContainText("后续新备课不再参考", {
+    timeout: 20_000
+  });
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "助手偏好" }).click();
+  const settings = page.getByTestId("teacher-preference-settings");
+  await expect(settings).toContainText("已删除");
+  await expect(settings).toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(task.taskRef)}?conversation=${encodeURIComponent(started.conversationRef)}`
+  );
+  const laterRun = await sendModelInstruction(
+    page,
+    "请生成一版不依赖长期案例偏好的新教案"
+  );
+  const laterCompleted = await waitForExecution(
+    request,
+    laterRun.modelExecutionRef
+  );
+  expect(laterCompleted.proposalRevisionRef).toBeTruthy();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(laterCompleted.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible();
+  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+  expect(modelInvocationCreates).toBe(2);
+
+  await page.goto(
+    `/copilot/proposals/${encodeURIComponent(historicalProposalRef)}`
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible();
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "本次运行当时参考，当前已撤销"
+  );
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+  const state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((preference) =>
+    preference.preferenceRef === preferenceRef
+  )?.status).toBe("revoked");
+});
+
+test("explicit forget requires scope selection and atomically confirms an explicit batch", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(300_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  const started = await startConversationWithMemoryCommand(
+    page,
+    task.taskRef,
+    "记住：以后案例尽量贴近日常生活"
+  );
+  cleanupConversationRefs.add(started.conversationRef);
+  const globalRef = rememberReceipt(started.command)
+    .items[0]!.preferenceRef!;
+  const courseRemember = await sendMemoryCommand(
+    page,
+    "记住：这门课以后案例尽量贴近日常生活"
+  );
+  const courseRef = rememberReceipt(courseRemember)
+    .items[0]!.preferenceRef!;
+
+  const selection = await sendMemoryCommand(page, "忘掉案例偏好");
+  const selectionReceipt = forgetReceipt(selection);
+  expect(selectionReceipt).toMatchObject({
+    interpreterVersion: "explicit-forget-command-interpreter@1",
+    status: "selection_required"
+  });
+  const epochBeforeSelection = selectionReceipt.memoryEpochBefore;
+  expect(selectionReceipt.memoryEpochAfter).toBe(epochBeforeSelection);
+  const selectionCard = page.locator(
+    '[data-testid="memory-command-receipt"][data-memory-command-status="selection_required"]'
+  ).last();
+  await expect(selectionCard.getByTestId("forget-memory-option"))
+    .toHaveCount(2);
+  await expect(selectionCard).toContainText("所有普通备课");
+  await expect(selectionCard).toContainText("当前课程");
+  let state = await teacherPersonalizationState(request);
+  expect(activeExamplePreferenceRefs(state).sort())
+    .toEqual([courseRef, globalRef].sort());
+
+  await selectionCard.getByTestId("forget-option-course_run").check();
+  const confirmResponsePromise = page.waitForResponse(
+    isForgetConfirmation
+  );
+  await selectionCard.getByTestId("confirm-forget-selection").click();
+  const confirmResponse = await confirmResponsePromise;
+  expect(confirmResponse.status()).toBe(201);
+  const confirmBody = (await confirmResponse.json()) as {
+    replayed: boolean;
+    receipt: {
+      memoryEpochBefore: number;
+      memoryEpochAfter: number;
+      status: string;
+    };
+  };
+  expect(confirmBody).toMatchObject({
+    replayed: false,
+    receipt: { status: "revoked" }
+  });
+  expect(confirmBody.receipt.memoryEpochAfter -
+    confirmBody.receipt.memoryEpochBefore).toBe(1);
+  await expect(page.locator(
+    '[data-testid="memory-command-receipt"][data-memory-command-status="resolved"]'
+  ).last()).toContainText("这次选择已处理");
+  state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === courseRef
+  )?.status).toBe("revoked");
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === globalRef
+  )?.status).toBe("active");
+
+  const fallbackRun = await sendModelInstruction(
+    page,
+    "请为当前课程生成一版新教案"
+  );
+  await waitForExecution(request, fallbackRun.modelExecutionRef);
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "作用范围：所有普通备课"
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
+    gate2DemoRefs.courseRunRef
+  );
+
+  const secondaryTask = await createStartedTask(
+    request,
+    secondaryCourseDemoRefs.lessonRef
+  );
+  cleanupTaskRefs.add(secondaryTask.taskRef);
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(secondaryTask.taskRef)}`
+  );
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill("请为第二门合成课程生成教案");
+  const secondaryConversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const secondaryInvocationResponse = page.waitForResponse(
+    isModelInvocationCreate
+  );
+  await page.getByTestId("generate-copilot").click();
+  const [secondaryConversation, secondaryInvocation] = await Promise.all([
+    secondaryConversationResponse,
+    secondaryInvocationResponse
+  ]);
+  expect(secondaryConversation.status()).toBe(201);
+  const secondaryConversationRef = (
+    (await secondaryConversation.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  cleanupConversationRefs.add(secondaryConversationRef);
+  const secondaryExecutionRef = (
+    (await secondaryInvocation.json()) as {
+      execution: { modelExecutionRef: string };
+    }
+  ).execution.modelExecutionRef;
+  await waitForExecution(request, secondaryExecutionRef);
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "作用范围：所有普通备课"
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
+    courseRef
+  );
+
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(task.taskRef)}?conversation=${encodeURIComponent(started.conversationRef)}`
+  );
+  const replacementCourse = await sendMemoryCommand(
+    page,
+    "记住：这门课以后案例尽量贴近日常生活"
+  );
+  const replacementCourseRef =
+    rememberReceipt(replacementCourse).items[0]!.preferenceRef!;
+  const batchSelection = await sendMemoryCommand(
+    page,
+    "忘掉所有关于案例的偏好"
+  );
+  expect(forgetReceipt(batchSelection).status).toBe("selection_required");
+  const batchCard = page.locator(
+    '[data-testid="memory-command-receipt"][data-memory-command-status="selection_required"]'
+  ).last();
+  await expect(batchCard.getByTestId("forget-memory-option")).toHaveCount(2);
+  await batchCard.getByTestId("forget-option-global").check();
+  await batchCard.getByTestId("forget-option-course_run").check();
+  const batchResponsePromise = page.waitForResponse(isForgetConfirmation);
+  await batchCard.getByTestId("confirm-forget-selection").click();
+  const batchResponse = await batchResponsePromise;
+  expect(batchResponse.status()).toBe(201);
+  const batchBody = (await batchResponse.json()) as {
+    replayed: boolean;
+    receipt: {
+      status: string;
+      memoryEpochBefore: number;
+      memoryEpochAfter: number;
+    };
+  };
+  expect(batchBody.receipt.status).toBe("revoked");
+  expect(batchBody.receipt.memoryEpochAfter -
+    batchBody.receipt.memoryEpochBefore).toBe(2);
+  const replayData = batchResponse.request().postDataJSON();
+  const replay = await request.post(
+    apiRoutes.teacher.conversationForgetConfirm(
+      started.conversationRef,
+      batchSelection.teacherTurn.turnRef
+    ),
+    { headers, data: replayData }
+  );
+  expect(replay.status()).toBe(200);
+  expect((await replay.json()).replayed).toBe(true);
+  state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === globalRef
+  )?.status).toBe("revoked");
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === replacementCourseRef
+  )?.status).toBe("revoked");
+});
+
+test("explicit forget rejects false positives, foreign owners and a disabled conversation flag", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(240_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  const started = await startConversationWithMemoryCommand(
+    page,
+    task.taskRef,
+    "记住：以后案例尽量贴近日常生活"
+  );
+  cleanupConversationRefs.add(started.conversationRef);
+  const preferenceRef = rememberReceipt(started.command)
+    .items[0]!.preferenceRef!;
+
+  const temporary = await sendModelInstruction(
+    page,
+    "这次不要使用生活化案例"
+  );
+  const temporaryCompleted = await waitForExecution(
+    request,
+    temporary.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(temporaryCompleted.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  let state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === preferenceRef
+  )?.status).toBe("active");
+
+  const negativeRemember = await sendUnsupportedMemoryCommand(
+    page,
+    "不要记住这次的要求"
+  );
+  expect(negativeRemember.safeReasonCode).toBe("negative_remember_request");
+  const ordinary = await sendModelInstruction(
+    page,
+    "不要安排小组讨论"
+  );
+  const ordinaryCompleted = await waitForExecution(
+    request,
+    ordinary.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(ordinaryCompleted.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === preferenceRef
+  )?.status).toBe("active");
+
+  const foreign = await request.get(
+    apiRoutes.teacher.conversation(started.conversationRef),
+    { headers: {
+      "x-demo-tenant": "tenant:demo-school-b",
+      "x-demo-actor": "user:teacher-b-001"
+    } }
+  );
+  expect([403, 404]).toContain(foreign.status());
+  const foreignBody = await foreign.json();
+  expect(JSON.stringify(foreignBody)).not.toContain(preferenceRef);
+  expect(JSON.stringify(foreignBody)).not.toContain(
+    gate2DemoRefs.courseRunRef
+  );
+
+  await restartApi(request, "enabled", "enabled", "disabled");
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("generate-copilot")).toBeEnabled();
+  const disabledState = await teacherPersonalizationState(request);
+  expect(disabledState.explicitForgetEnabled).toBe(false);
+  const blocked = await sendUnsupportedMemoryCommand(
+    page,
+    "忘掉案例偏好"
+  );
+  expect(blocked).toMatchObject({
+    safeReasonCode: "explicit_forget_disabled"
+  });
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "对话式忘记当前未启用"
+  );
+  state = await teacherPersonalizationState(request);
+  expect(state.preferences.find((entry) =>
+    entry.preferenceRef === preferenceRef
+  )?.status).toBe("active");
+  await page.getByRole("button", { name: "查看助手偏好" }).last().click();
+  await expect(page).toHaveURL(/\/settings$/u);
+  await expect(page.getByTestId("teacher-preference-settings"))
+    .toContainText("案例偏好");
+});
+
 test("explicit remember rejects unsafe and unsupported commands and obeys its feature flag", async ({
   page,
   request
@@ -1200,16 +1628,18 @@ test("explicit remember rejects unsafe and unsupported commands and obeys its fe
     "未保存为长期偏好"
   );
 
-  const forget = await sendUnsupportedMemoryCommand(
+  const forget = await sendMemoryCommand(
     page,
     "忘掉案例偏好"
   );
   expect(forget).toMatchObject({
-    kind: "unsupported_memory_command",
-    safeReasonCode: "forget_not_available"
+    kind: "memory_command",
+    receipt: {
+      status: "nothing_to_forget"
+    }
   });
   await expect(page.getByTestId("copilot-conversation")).toContainText(
-    "对话式忘记将在下一阶段处理"
+    "没有找到当前可撤销的匹配偏好"
   );
 
   const mixedTemporary = await sendUnsupportedMemoryCommand(
@@ -1261,7 +1691,8 @@ test("explicit remember rejects unsafe and unsupported commands and obeys its fe
   }).preferences.filter((preference) => preference.status === "active"))
     .toHaveLength(0);
   await restartApi(request, "enabled", "disabled");
-  await page.reload();
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.getByTestId("generate-copilot")).toBeEnabled();
   const disabledState = await request.get(
     apiRoutes.teacher.personalizationState,
     { headers }
@@ -1289,6 +1720,103 @@ test("explicit remember rejects unsafe and unsupported commands and obeys its fe
   }).preferences.filter((preference) => preference.status === "active"))
     .toHaveLength(0);
 });
+
+async function startConversationWithMemoryCommand(
+  page: Page,
+  taskRef: string,
+  teacherText: string
+): Promise<{
+  conversationRef: string;
+  command: Extract<
+    DispatchTeacherConversationTurnResult,
+    { kind: "memory_command" }
+  >;
+}> {
+  await page.goto(`/agent/tasks/${encodeURIComponent(taskRef)}`);
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill(teacherText);
+  const conversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const commandResponse = page.waitForResponse(isConversationTurnDispatch);
+  await page.getByTestId("generate-copilot").click();
+  const [created, dispatched] = await Promise.all([
+    conversationResponse,
+    commandResponse
+  ]);
+  expect(created.status()).toBe(201);
+  expect(dispatched.status()).toBe(201);
+  const conversationRef = (
+    (await created.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  const command = DispatchTeacherConversationTurnResultSchema.parse(
+    await dispatched.json()
+  );
+  if (
+    command.kind !== "memory_command" ||
+    command.receipt.interpreterVersion !==
+      "explicit-memory-command-interpreter@1"
+  ) {
+    throw new Error("Expected an explicit remember command receipt.");
+  }
+  return { conversationRef, command };
+}
+
+function forgetReceipt(
+  result: Extract<
+    DispatchTeacherConversationTurnResult,
+    { kind: "memory_command" }
+  >
+) {
+  if (
+    result.receipt.interpreterVersion !==
+      "explicit-forget-command-interpreter@1"
+  ) {
+    throw new Error("Expected an explicit forget command receipt.");
+  }
+  return result.receipt;
+}
+
+function rememberReceipt(
+  result: Extract<
+    DispatchTeacherConversationTurnResult,
+    { kind: "memory_command" }
+  >
+): ExplicitRememberReceipt {
+  if (
+    result.receipt.interpreterVersion !==
+      "explicit-memory-command-interpreter@1"
+  ) {
+    throw new Error("Expected an explicit remember command receipt.");
+  }
+  return result.receipt;
+}
+
+async function teacherPersonalizationState(
+  request: APIRequestContext
+): Promise<TeacherPersonalizationState> {
+  const response = await request.get(
+    apiRoutes.teacher.personalizationState,
+    { headers }
+  );
+  expect(response.status()).toBe(200);
+  return TeacherPersonalizationStateSchema.parse(await response.json());
+}
+
+function activeExamplePreferenceRefs(
+  state: TeacherPersonalizationState
+): string[] {
+  return state.preferences
+    .filter((preference) =>
+      preference.status === "active" &&
+      preference.canonicalKey === "example_preference"
+    )
+    .map((preference) => preference.preferenceRef);
+}
 
 async function createAndConfirmPreferenceInSettings(
   page: Page,
@@ -1521,7 +2049,8 @@ async function cancelTaskIfOpen(
 async function restartApi(
   request: APIRequestContext,
   scopedPreferences?: "enabled" | "disabled",
-  explicitRemember?: "enabled" | "disabled"
+  explicitRemember?: "enabled" | "disabled",
+  explicitForget?: "enabled" | "disabled"
 ): Promise<void> {
   const controlPort = process.env.E2E_CONTROL_PORT;
   const runId = process.env.E2E_RUN_ID;
@@ -1536,6 +2065,9 @@ async function restartApi(
   if (explicitRemember) {
     url.searchParams.set("explicit-remember", explicitRemember);
   }
+  if (explicitForget) {
+    url.searchParams.set("explicit-forget", explicitForget);
+  }
   const response = await request.post(url.toString(), {
     headers: { "x-e2e-run-id": runId! }
   });
@@ -1543,7 +2075,8 @@ async function restartApi(
   expect(await response.json()).toMatchObject({
     restarted: true,
     scopedPreferences: scopedPreferences ?? "unchanged",
-    explicitRemember: explicitRemember ?? "unchanged"
+    explicitRemember: explicitRemember ?? "unchanged",
+    explicitForget: explicitForget ?? "unchanged"
   });
 }
 
@@ -1573,6 +2106,7 @@ async function sendMemoryCommand(
   await page.getByTestId("generate-copilot").click();
   const response = await responsePromise;
   expect(response.status()).toBe(201);
+  expect(response.request().postDataJSON()).toMatchObject({ teacherText });
   const result = DispatchTeacherConversationTurnResultSchema.parse(
     await response.json()
   );
@@ -1596,6 +2130,7 @@ async function sendUnsupportedMemoryCommand(
   await page.getByTestId("generate-copilot").click();
   const response = await responsePromise;
   expect(response.status()).toBe(201);
+  expect(response.request().postDataJSON()).toMatchObject({ teacherText });
   const result = DispatchTeacherConversationTurnResultSchema.parse(
     await response.json()
   );
@@ -1628,6 +2163,7 @@ async function sendModelInstruction(
     invocationResponse
   ]);
   expect(dispatchHttp.status()).toBe(201);
+  expect(dispatchHttp.request().postDataJSON()).toMatchObject({ teacherText });
   expect(invocationHttp.status()).toBe(202);
   const dispatch = DispatchTeacherConversationTurnResultSchema.parse(
     await dispatchHttp.json()
@@ -1652,6 +2188,17 @@ function isModelInvocationCreate(response: {
     response.request().method() === "POST" &&
     new URL(response.url()).pathname ===
       apiRoutes.teacher.modelInvocations
+  );
+}
+
+function isForgetConfirmation(response: {
+  request(): { method(): string };
+  url(): string;
+}) {
+  return (
+    response.request().method() === "POST" &&
+    /^\/api\/v1\/teacher\/conversations\/[^/]+\/forget-commands\/[^/]+\/confirm$/u
+      .test(new URL(response.url()).pathname)
   );
 }
 

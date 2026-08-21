@@ -20,6 +20,7 @@ import {
   CreateTeacherConversationRequestSchema,
   AppendTeacherConversationTurnRequestSchema,
   ConfirmMemoryCandidateReplacementRequestSchema,
+  ConfirmExplicitForgetSelectionRequestSchema,
   DispatchTeacherConversationTurnRequestSchema,
   CloseTeacherConversationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
@@ -2187,12 +2188,13 @@ export function createApp(
         try {
           const contexts = await withProductContext(request);
           response.json(
-            await conversations.get({
+            await conversationDispatch.loadConversation({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
               conversationRef: routeParameter(
                 request.params["conversationRef"]
-              )
+              ),
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? []
             })
           );
         } catch (error) {
@@ -2238,6 +2240,33 @@ export function createApp(
             ),
             allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
             request: DispatchTeacherConversationTurnRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationForgetConfirmPattern,
+      markRoute("product.teacher-conversations.confirm-forget"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          const result = await conversationDispatch.confirmForget({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            commandTurnRef: routeParameter(
+              request.params["commandTurnRef"]
+            ),
+            allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+            request: ConfirmExplicitForgetSelectionRequestSchema.parse(
               request.body
             )
           });

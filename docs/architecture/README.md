@@ -5,7 +5,7 @@
 
 本文描述当前可运行代码。早期 v0.3.x 文档仍是重要设计来源，但当其与代码不同，以这里列出的实现和自动化约束为准。
 
-教师短期会话记忆的所有权、Provider continuation、重建和保留决策见 [Conversation 与 Working Memory ADR](decisions/conversation-working-memory-ownership-and-retention.md)；本次参考清单、Preference 应用记录和失败语义见 [教师记忆应用观测 ADR](decisions/memory-application-observability.md)；Scope/epoch 见 [Scoped Preference ADR](decisions/scoped-teacher-preferences-and-memory-epoch.md)；对话中的受控显式记住、command Turn 与恢复语义见 [Explicit Remember ADR](decisions/explicit-teacher-remember-commands.md)。
+教师短期会话记忆的所有权、Provider continuation、重建和保留决策见 [Conversation 与 Working Memory ADR](decisions/conversation-working-memory-ownership-and-retention.md)；本次参考清单、Preference 应用记录和失败语义见 [教师记忆应用观测 ADR](decisions/memory-application-observability.md)；Scope/epoch 见 [Scoped Preference ADR](decisions/scoped-teacher-preferences-and-memory-epoch.md)；对话中的受控显式记住、command Turn 与恢复语义见 [Explicit Remember ADR](decisions/explicit-teacher-remember-commands.md)，显式撤销、选择确认和历史保留见 [Explicit Forget ADR](decisions/explicit-teacher-forget-commands.md)。
 
 ## 1. 运行形态
 
@@ -188,7 +188,7 @@ Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandida
 
 Scope 由 Personalization 拥有，但不是授权。写入 CourseRun/Lesson/Task Scope 时，Personalization 只能调用 typed `TeacherPreferenceScopeAuthorizationPort`，由 Composition Adapter 通过 owning Work/Education facade 校验 Session 已解析的 CourseRun access、Lesson 归属和 Task owner；不建立跨 Schema FK，也不让 Personalization 直接查询其他 Schema。解析时先按 owner、active、valid time、Scope、Skill 做硬过滤，再按 canonical key 选择 `task > lesson > course_run > subject_grade > subject > global`，同 Scope 下 `Skill-specific > unrestricted`，最后才使用 explicitness、version、updatedAt、preferenceRef 确定性打破平局。设置页创建 `teacher_declared + teacher_settings_confirmed`；PR-2B 的服务器 Catalog 还可创建 `teacher_declared + teacher_explicit_command`，但只支持 Lesson Preparation 的 global/当前 CourseRun，不进行开放式同义词或 LLM 冲突判断。
 
-新的 Web 发送路径调用 server-owned `dispatch-turn`。纯 `explicit-memory-command-interpreter@1` 先区分普通请求、remember、forget 请求、临时覆盖、不支持和拒绝；只有 `teacher-preference-catalog@1` 完整覆盖的低风险 remember 才通过 typed Personalization service 写 Candidate/Preference。新项在一个 Personalization 事务内直接确认；完全重复不增加 epoch，同 key/Scope 不同值只创建 draft Candidate，老师需显式替换或保留。Work 不直接写 Personalization，Personalization 也不写 Work/Runtime；命令、Personalization 和回执采用 at-least-once + stable idempotency 恢复。
+新的 Web 发送路径调用 server-owned `dispatch-turn`。纯 `explicit-memory-command-interpreter@1` 处理 remember；独立的 `explicit-forget-command-interpreter@1` 处理受控 Forget，二者都复用 `teacher-preference-catalog@1` 且不调用模型。低风险 remember 可写 Candidate/Preference；完全重复不增 epoch，同 key/Scope 不同值只创建 draft Candidate。Forget 的唯一 active match 可在一个 Personalization 事务中 revoke；未声明 Scope 且有多个匹配时，immutable receipt refs 封存选项，老师必须显式选择，确认后追加 follow-up receipt。Work 不直接写 Personalization，Personalization 也不写 Work/Runtime；命令、Personalization 和回执采用 at-least-once + stable idempotency 恢复。
 
 `teacherMemoryEpoch` 在确认、值更新、Scope/valid time 更新和撤销的同一事务中递增，普通读取不递增。它进入 Pack V2 hash，为未来 cache/continuation 失效提供平台版本；已封存 Run 保留运行时 epoch，不因后续修改而改写。旧 Skill 故意只通过兼容 Port 读取当前有效的 global、无 Skill 限制 Preference，防止 scoped row 无差别进入 Material Generation、Reflection 等尚未迁移的 Skill。
 
@@ -196,7 +196,7 @@ Runtime/Context orchestration 继续拥有 pack 真值。历史 `MemoryContextPa
 
 Composition 在 Provider 调用前通过 typed `MemoryApplicationRecorder` 把 durable Preference decision best-effort 写入 Personalization；V2 的 `scope_hash` 使用真实 query Scope hash，并记录 selected/injected/overridden/excluded。失败仅把 Runtime 观测状态标为 `degraded`，不改变 ModelExecution 或 Proposal。正式处置后，既有 `SuggestionDisposed` Outbox 以最小 payload、at-least-once 追加 outcome。RunExplanation 在 owner 授权下从 Work/Runtime 动态解析当前要求和同任务摘要，并从 Preference immutable revision 解析当时值；历史 V1 标记“旧版全局偏好上下文”，历史 V2 能显示当时作用范围和后来撤销状态，新 Run 不再选取已撤销项。Manifest/application 不保存 Turn 原文副本、Preference value 副本、完整 Prompt/Provider 响应、隐藏推理或 Evidence 正文。
 
-`MEMORY_SCOPED_PREFERENCES_ENABLED` 和 `MEMORY_EXPLICIT_REMEMBER_ENABLED` 均在 local/test 默认开启、production 未显式配置时关闭；Explicit Remember 依赖前者，不能降级为 unrestricted Preference。关闭不逆向 Migration、不删除 scoped row、历史 receipt 或 Run；前者只允许新增/修改 unrestricted global（`skillIds=[]`）Preference、隐藏 Scope 控件并让新 Lesson Preparation 使用 `@5`，后者只停止新的显式命令 Candidate/Preference 写入。普通 Conversation、WorkingMemory 和 M0-lite application/outcome 不受影响。
+`MEMORY_SCOPED_PREFERENCES_ENABLED`、`MEMORY_EXPLICIT_REMEMBER_ENABLED` 和 `MEMORY_EXPLICIT_FORGET_ENABLED` 均在 local/test 默认开启、production 未显式配置时关闭。Explicit Remember 依赖 scoped flag，不能降级为 unrestricted Preference；Explicit Forget 独立于两者，使暂停新增记忆时仍可撤销既有 Preference。关闭不逆向 Migration、不删除 scoped row、历史 receipt 或 Run；Forget flag 关闭只停止新的对话式撤销，设置页 revoke 继续有效。普通 Conversation、WorkingMemory 和 M0-lite application/outcome 不受影响。
 
 ## 10. Teaching Workspace 读取层与材料闭环
 
