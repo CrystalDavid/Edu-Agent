@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { TemporaryPreferenceOverrideSchema } from "./temporary-memory-override.js";
+
 export const ConversationPurposeFamilySchema = z.literal(
   "lesson_preparation"
 );
@@ -36,7 +38,7 @@ export const ConversationTurnViewSchema = z.object({
   createdAt: z.string().datetime()
 });
 
-export const WorkingMemoryViewSchema = z.object({
+const WorkingMemoryBaseShape = {
   snapshotRef: z.string().min(1),
   conversationRef: z.string().min(1),
   sourceTurnSequence: z.number().int().positive(),
@@ -62,7 +64,6 @@ export const WorkingMemoryViewSchema = z.object({
   ),
   pendingIntents: z.array(z.string().min(1).max(240)),
   selectedOptions: z.array(z.string().min(1).max(240)),
-  temporaryOverrides: z.array(z.string().min(1).max(240)),
   latestAssistantResult: z
     .object({
       turnRef: z.string().min(1),
@@ -71,10 +72,26 @@ export const WorkingMemoryViewSchema = z.object({
     })
     .nullable(),
   rollingSummary: z.string().min(1).max(4000),
-  builderVersion: z.literal("working-memory-builder@1"),
   contentHash: z.string().min(16),
   expiresAt: z.string().datetime()
+};
+
+export const WorkingMemoryViewV1Schema = z.object({
+  ...WorkingMemoryBaseShape,
+  temporaryOverrides: z.array(z.string().min(1).max(240)),
+  builderVersion: z.literal("working-memory-builder@1")
 });
+
+export const WorkingMemoryViewV2Schema = z.object({
+  ...WorkingMemoryBaseShape,
+  temporaryOverrides: z.array(TemporaryPreferenceOverrideSchema).max(10),
+  builderVersion: z.literal("working-memory-builder@2")
+});
+
+export const WorkingMemoryViewSchema = z.discriminatedUnion(
+  "builderVersion",
+  [WorkingMemoryViewV1Schema, WorkingMemoryViewV2Schema]
+);
 
 export const ConversationMemoryCommandViewSchema = z
   .object({
@@ -174,6 +191,12 @@ export type ConversationTurnView = z.infer<
 >;
 export type WorkingMemoryView = z.infer<
   typeof WorkingMemoryViewSchema
+>;
+export type WorkingMemoryViewV1 = z.infer<
+  typeof WorkingMemoryViewV1Schema
+>;
+export type WorkingMemoryViewV2 = z.infer<
+  typeof WorkingMemoryViewV2Schema
 >;
 export type ConversationMemoryCommandView = z.infer<
   typeof ConversationMemoryCommandViewSchema

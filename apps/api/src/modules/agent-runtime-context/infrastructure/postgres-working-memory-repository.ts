@@ -17,10 +17,9 @@ import {
 
 type RuntimeMetadata = FormalWriteMetadata & { owner: "runtime" };
 
-export interface PersistedWorkingMemorySnapshot
-  extends WorkingMemoryView {
+export type PersistedWorkingMemorySnapshot = WorkingMemoryView & {
   readonly version: number;
-}
+};
 
 export class PostgresWorkingMemoryRepository {
   async getActive(

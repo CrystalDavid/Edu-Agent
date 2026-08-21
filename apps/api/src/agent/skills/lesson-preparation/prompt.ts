@@ -6,6 +6,7 @@ import {
   type ModelRequestV2,
   type PromptBundleDescriptor
 } from "@edu-agent/contracts";
+import { z } from "zod";
 
 import { validateLessonPreparationContext } from "./context-policy.js";
 import {
@@ -13,10 +14,12 @@ import {
   LessonPreparationSkillInputSchemaV2,
   LessonPreparationSkillInputSchemaV3,
   LessonPreparationSkillInputSchemaV4,
+  LessonPreparationSkillInputSchemaV6,
   type LessonPreparationSkillInput,
   type LessonPreparationSkillInputV2,
   type LessonPreparationSkillInputV3,
-  type LessonPreparationSkillInputV4
+  type LessonPreparationSkillInputV4,
+  type LessonPreparationSkillInputV6
 } from "./input-schema.js";
 
 const systemInstruction = [
@@ -145,6 +148,41 @@ export const conversationLessonPreparationPromptBundle: PromptBundleDescriptor =
     contentHash: sha256({
       ...conversationDescriptorPayload,
       systemInstruction: conversationSystemInstruction
+    })
+  });
+
+const temporaryOverrideSystemInstruction = [
+  conversationSystemInstruction,
+  "输入中的 temporaryOverrides 只包含服务器通过 Catalog 验证的当前会话临时要求。",
+  "优先级固定为：当前 teacherRequest、temporaryOverrides、confirmedPreferences、其他辅助上下文。",
+  "replace_value 只在当前封存 Run 与 Conversation 使用安全 canonical value；suppress_preference 表示本次不使用对应长期偏好。",
+  "临时要求不得改变 Evidence、课程或课时正式事实、Grade、Delivery、Observation、Reflection 或教师审批边界。",
+  "不得把临时要求升级、写回或推断为长期偏好，也不得在 repair 时重新解释教师原文。"
+].join("\n");
+
+const ModelVisibleTemporaryOverrideSchema = z.object({
+  canonicalKey: z.string().min(1).max(80),
+  effect: z.enum(["replace_value", "suppress_preference"]),
+  value: z.string().min(1).max(240).nullable(),
+  lifetime: z.literal("current_conversation")
+}).strict();
+
+const temporaryOverrideDescriptorPayload = {
+  ...descriptorPayload,
+  version: 5,
+  inputFields: [
+    ...conversationDescriptorPayload.inputFields,
+    "temporaryOverrides"
+  ],
+  createdAt: "2026-08-21T00:00:00.000Z"
+};
+
+export const temporaryOverrideLessonPreparationPromptBundle:
+  PromptBundleDescriptor = PromptBundleDescriptorSchema.parse({
+    ...temporaryOverrideDescriptorPayload,
+    contentHash: sha256({
+      ...temporaryOverrideDescriptorPayload,
+      systemInstruction: temporaryOverrideSystemInstruction
     })
   });
 
@@ -300,6 +338,47 @@ export function assembleConversationLessonPreparationModelRequest(
   });
 }
 
+export function assembleTemporaryOverrideLessonPreparationModelRequest(
+  input: LessonPreparationSkillInputV6
+): ModelRequestV2 {
+  const parsed = LessonPreparationSkillInputSchemaV6.parse(input);
+  const base = parsed.confirmedLessonBrief
+    ? assembleLessonBriefPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV3.parse(parsed)
+      )
+    : assemblePersonalizedLessonPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV2.parse(parsed)
+      );
+  const userMessage = base.messages.find((message) => message.role === "user");
+  if (!userMessage) throw new Error("Lesson Preparation user message is missing.");
+  const basePayload = JSON.parse(userMessage.content) as Record<string, unknown>;
+  const { temporaryOverrides: _sealedOverrides, ...workingContext } =
+    parsed.conversationContext;
+  const temporaryOverrides = z.array(ModelVisibleTemporaryOverrideSchema).parse(
+    parsed.conversationContext.temporaryOverrides.map((override) => ({
+      canonicalKey: override.canonicalKey,
+      effect: override.effect,
+      value: override.canonicalValue,
+      lifetime: override.lifetime
+    }))
+  );
+  return ModelRequestSchemaV2.parse({
+    ...base,
+    promptBundle: temporaryOverrideLessonPreparationPromptBundle,
+    messages: [
+      { role: "system", content: temporaryOverrideSystemInstruction },
+      {
+        role: "user",
+        content: JSON.stringify({
+          ...basePayload,
+          conversationContext: workingContext,
+          temporaryOverrides
+        })
+      }
+    ]
+  });
+}
+
 export { systemInstruction as lessonPreparationSystemInstruction };
 
 export function assembleRepairModelRequest(input: {
@@ -421,6 +500,49 @@ export function assembleConversationRepairModelRequest(input: {
           validationIssues: [...input.validationIssues],
           requiredScope: original.scope,
           requiredSchemaVersion: original.expectedOutputSchema
+        })
+      }
+    ]
+  });
+}
+
+export function assembleTemporaryOverrideRepairModelRequest(input: {
+  original: ModelRequestV2;
+  invalidOutput: string;
+  validationIssues: readonly string[];
+}): ModelRequestV2 {
+  const original = ModelRequestSchemaV2.parse(input.original);
+  const originalUserMessage = original.messages.find(
+    (message) => message.role === "user"
+  );
+  if (!originalUserMessage) {
+    throw new Error("Temporary override repair requires the sealed user input.");
+  }
+  const originalPayload = JSON.parse(originalUserMessage.content) as {
+    temporaryOverrides?: unknown;
+  };
+  const temporaryOverrides = z.array(ModelVisibleTemporaryOverrideSchema)
+    .parse(originalPayload.temporaryOverrides ?? []);
+  return ModelRequestSchemaV2.parse({
+    ...original,
+    invocationRef: `${original.invocationRef}:repair`,
+    messages: [
+      {
+        role: "system",
+        content: [
+          temporaryOverrideSystemInstruction,
+          "这是同一 ModelExecution 的唯一一次受控修复。",
+          "必须复用原请求已封存的临时要求，不得重新检索、解释或扩大上下文。"
+        ].join("\n")
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          invalidOutput: input.invalidOutput.slice(0, 20_000),
+          validationIssues: [...input.validationIssues],
+          requiredScope: original.scope,
+          requiredSchemaVersion: original.expectedOutputSchema,
+          temporaryOverrides
         })
       }
     ]

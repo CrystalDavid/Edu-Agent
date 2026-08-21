@@ -3,12 +3,15 @@ import { createHash } from "node:crypto";
 import {
   MemoryContextPackManifestV1Schema,
   MemoryContextPackManifestV2Schema,
+  MemoryContextPackManifestV3Schema,
   type MemoryContextDecisionEntry,
   type MemoryContextPackManifestV1,
   type MemoryContextPackManifestV2,
+  type MemoryContextPackManifestV3,
   type MemoryContextPackOwner,
   type MemoryPreferenceDecisionEntry,
-  type MemoryPreferenceDecisionEntryV2
+  type MemoryPreferenceDecisionEntryV2,
+  type TemporaryOverrideDecisionEntry
 } from "@edu-agent/contracts";
 
 export const memoryContextPackManifestVersion = 1 as const;
@@ -169,6 +172,94 @@ export function buildMemoryContextPackManifestV2(
   };
   const packContentHash = hashCanonical(hashPayload);
   return MemoryContextPackManifestV2Schema.parse({
+    packRef: `memory-context-pack:${packContentHash}`,
+    packContentHash,
+    ...hashPayload,
+    createdAt: parsedInput.createdAt
+  });
+}
+
+export const memoryContextPackManifestVersionV3 = 3 as const;
+
+const MemoryContextPackBuildInputV3Schema =
+  MemoryContextPackManifestV3Schema.omit({
+    packRef: true,
+    packContentHash: true,
+    manifestVersion: true,
+    selectedCount: true,
+    overriddenCount: true,
+    excludedCount: true,
+    injectedOverrideCount: true,
+    suppressedPreferenceCount: true
+  });
+
+export interface MemoryContextPackBuildInputV3
+  extends MemoryContextPackBuildInputV2 {
+  readonly overridePolicyVersion:
+    "temporary-preference-override-policy@1";
+  readonly temporaryOverrideSetHash: string;
+  readonly temporaryOverrideDecisions:
+    readonly TemporaryOverrideDecisionEntry[];
+}
+
+export function buildMemoryContextPackManifestV3(
+  input: MemoryContextPackBuildInputV3
+): MemoryContextPackManifestV3 {
+  const parsedInput = MemoryContextPackBuildInputV3Schema.parse(input);
+  const contextDecisions = parsedInput.contextDecisions.map(copyDecision);
+  const preferenceDecisions = parsedInput.preferenceDecisions.map(copyDecision);
+  const temporaryOverrideDecisions =
+    parsedInput.temporaryOverrideDecisions.map(copyDecision);
+  const selectedCount = preferenceDecisions.filter((entry) =>
+    entry.decision === "selected" || entry.decision === "injected"
+  ).length;
+  const overriddenCount = preferenceDecisions.filter(
+    (entry) => entry.decision === "overridden"
+  ).length;
+  const excludedCount = preferenceDecisions.filter(
+    (entry) => entry.decision === "excluded"
+  ).length;
+  const injectedOverrideCount = temporaryOverrideDecisions.filter((entry) =>
+    entry.decision === "selected" || entry.decision === "injected"
+  ).length;
+  const suppressedPreferenceCount = temporaryOverrideDecisions.filter(
+    (entry) => entry.effect === "suppress_preference" &&
+      (entry.decision === "selected" || entry.decision === "injected")
+  ).length;
+  const hashPayload = {
+    manifestVersion: memoryContextPackManifestVersionV3,
+    owner: { ...parsedInput.owner },
+    useCase: parsedInput.useCase,
+    policyVersion: parsedInput.policyVersion,
+    retrievalPolicyVersion: parsedInput.retrievalPolicyVersion,
+    teacherMemoryEpoch: parsedInput.teacherMemoryEpoch,
+    queryScopeHash: parsedInput.queryScopeHash,
+    querySkillId: parsedInput.querySkillId,
+    queryUseCase: parsedInput.queryUseCase,
+    skillRef: parsedInput.skillRef,
+    skillVersion: parsedInput.skillVersion,
+    skillContentHash: parsedInput.skillContentHash,
+    conversationRef: parsedInput.conversationRef,
+    currentTurnRef: parsedInput.currentTurnRef,
+    currentTurnSequence: parsedInput.currentTurnSequence,
+    currentTurnContentHash: parsedInput.currentTurnContentHash,
+    workingMemorySnapshotRef: parsedInput.workingMemorySnapshotRef,
+    workingMemorySnapshotVersion: parsedInput.workingMemorySnapshotVersion,
+    workingMemorySnapshotContentHash:
+      parsedInput.workingMemorySnapshotContentHash,
+    contextDecisions,
+    preferenceDecisions,
+    selectedCount,
+    overriddenCount,
+    excludedCount,
+    overridePolicyVersion: parsedInput.overridePolicyVersion,
+    temporaryOverrideSetHash: parsedInput.temporaryOverrideSetHash,
+    temporaryOverrideDecisions,
+    injectedOverrideCount,
+    suppressedPreferenceCount
+  };
+  const packContentHash = hashCanonical(hashPayload);
+  return MemoryContextPackManifestV3Schema.parse({
     packRef: `memory-context-pack:${packContentHash}`,
     packContentHash,
     ...hashPayload,

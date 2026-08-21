@@ -845,7 +845,7 @@ export class PostgresGate2ReadService {
     const durablePreferences: MemoryContextExplanation["durablePreferences"] = [];
     for (const decision of manifest.preferenceDecisions) {
       if (
-        manifest.manifestVersion === 2 &&
+        manifest.manifestVersion !== 1 &&
         hidesPreferenceValueInExplanation(decision.reasonCode)
       ) {
         continue;
@@ -882,7 +882,7 @@ export class PostgresGate2ReadService {
         reasonCode: decision.reasonCode,
         outcomeStatus: outcome?.outcomeStatus ?? null,
         targetFields: [...decision.targetFields],
-        ...(manifest.manifestVersion === 2 && "scopeKind" in decision
+        ...(manifest.manifestVersion !== 1 && "scopeKind" in decision
           ? {
               canonicalKey: revision.canonicalKey,
               scopeKind: decision.scopeKind,
@@ -906,6 +906,45 @@ export class PostgresGate2ReadService {
       (decision) => decision.sourceKind === "working_memory"
     );
     const recordedOutcome = outcomes.at(-1)?.outcomeStatus ?? null;
+    const temporaryOverrides: MemoryContextExplanation["temporaryOverrides"] =
+      manifest.manifestVersion === 3
+        ? manifest.temporaryOverrideDecisions.map((decision) => {
+            const override = display.temporaryOverrides.find((entry) =>
+              entry.overrideRef === decision.overrideRef
+            );
+            if (
+              !override &&
+              display.currentTurn === null &&
+              display.workingMemory === null
+            ) {
+              return {
+                overrideRef: decision.overrideRef,
+                canonicalKey: decision.canonicalKey,
+                preferenceKey: decision.canonicalKey,
+                effect: decision.effect,
+                displayValue: "内容已按对话保留策略过期",
+                lifetime: decision.lifetime,
+                decision: decision.decision,
+                reasonCode: decision.reasonCode,
+                targetFields: [...decision.targetFields]
+              };
+            }
+            if (!override || override.canonicalKey !== decision.canonicalKey) {
+              throw new NotFoundError("The memory context is not available.");
+            }
+            return {
+              overrideRef: override.overrideRef,
+              canonicalKey: override.canonicalKey,
+              preferenceKey: override.preferenceKey,
+              effect: override.effect,
+              displayValue: override.displayValue,
+              lifetime: override.lifetime,
+              decision: decision.decision,
+              reasonCode: decision.reasonCode,
+              targetFields: [...decision.targetFields]
+            };
+          })
+        : [];
     return MemoryContextExplanationSchema.parse({
       packRef: manifest.packRef,
       packContentHash: manifest.packContentHash,
@@ -942,6 +981,7 @@ export class PostgresGate2ReadService {
             ]
           : [],
       durablePreferences,
+      temporaryOverrides,
       excluded: [
         ...manifest.contextDecisions,
         ...manifest.preferenceDecisions

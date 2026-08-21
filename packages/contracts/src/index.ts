@@ -16,5 +16,6 @@ export * from "./memory-command.js";
 export * from "./memory-scope.js";
 export * from "./personalization.js";
 export * from "./teaching-workspace.js";
+export * from "./temporary-memory-override.js";
 export * from "./records.js";
 export * from "./walking-skeleton.js";

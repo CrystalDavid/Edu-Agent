@@ -2,6 +2,7 @@ import {
   LessonBriefCandidateItemSchema,
   LessonBriefEvidenceSummarySchema,
   ModelRequestSchemaV2,
+  TemporaryPreferenceOverrideSchema,
   TeacherTaskRequestSchema,
   TeachingPlanSchema
 } from "@edu-agent/contracts";
@@ -17,6 +18,8 @@ export const lessonPreparationInputSchemaRefV4 =
   "lesson-preparation-input@4";
 export const lessonPreparationInputSchemaRefV5 =
   "lesson-preparation-input@5";
+export const lessonPreparationInputSchemaRefV6 =
+  "lesson-preparation-input@6";
 
 export const LessonPreparationSkillInputSchema = z.object({
   invocationRef: z.string().min(1),
@@ -170,6 +173,18 @@ export const LessonPreparationSkillInputSchemaV4 =
 export const LessonPreparationSkillInputSchemaV5 =
   LessonPreparationSkillInputSchemaV4.extend({});
 
+export const ConversationWorkingContextV2Schema =
+  ConversationWorkingContextSchema.omit({ temporaryOverrides: true }).extend({
+    temporaryOverrides: z.array(TemporaryPreferenceOverrideSchema).max(10)
+  });
+
+export const LessonPreparationSkillInputSchemaV6 =
+  LessonPreparationSkillInputSchemaV5.omit({
+    conversationContext: true
+  }).extend({
+    conversationContext: ConversationWorkingContextV2Schema
+  });
+
 export type ConfirmedTeacherPreference = z.infer<
   typeof ConfirmedTeacherPreferenceSchema
 >;
@@ -190,4 +205,10 @@ export type LessonPreparationSkillInputV4 = z.infer<
 >;
 export type LessonPreparationSkillInputV5 = z.infer<
   typeof LessonPreparationSkillInputSchemaV5
+>;
+export type ConversationWorkingContextV2 = z.infer<
+  typeof ConversationWorkingContextV2Schema
+>;
+export type LessonPreparationSkillInputV6 = z.infer<
+  typeof LessonPreparationSkillInputSchemaV6
 >;
