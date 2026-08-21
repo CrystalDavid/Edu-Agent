@@ -83,6 +83,39 @@ describe("conversation working memory", () => {
     expect(isContinuation("按刚才的第二种继续")).toBe(true);
     expect(isContinuation("重新设计一节完整的复习课")).toBe(false);
   });
+
+  it("does not let command turns or receipts replace teaching memory", () => {
+    const turns = [
+      teacherTurn(1, "请设计一节分数加法课"),
+      assistantTurn(2, "proposal:first"),
+      commandTurn(3, "记住：以后教案控制在一页"),
+      commandReceiptTurn(4, "已记住 1 条偏好。")
+    ];
+
+    const memory = buildWorkingMemory({
+      conversationRef: "conversation:one",
+      turns,
+      expiresAt,
+      snapshotRef: "working-memory:command-safe"
+    });
+
+    expect(memory.sourceTurnSequence).toBe(4);
+    expect(memory.activeGoal.text).toBe("请设计一节分数加法课");
+    expect(memory.recentTeacherRequests.map((item) => item.text))
+      .toEqual(["请设计一节分数加法课"]);
+    expect(memory.pendingIntents).toEqual(["请设计一节分数加法课"]);
+    expect(memory.latestAssistantResult?.turnRef).toBe("turn:2");
+    expect(memory.rollingSummary).not.toContain("记住");
+  });
+
+  it("refuses to invent an active teaching goal from a command-only thread", () => {
+    expect(() => buildWorkingMemory({
+      conversationRef: "conversation:command-only",
+      turns: [commandTurn(1, "记住：以后教案控制在一页")],
+      expiresAt,
+      snapshotRef: "working-memory:none"
+    })).toThrow(/authorized teacher turn/u);
+  });
 });
 
 function teacherTurn(
@@ -122,15 +155,46 @@ function assistantTurn(
   });
 }
 
+function commandTurn(sequence: number, text: string): ConversationTurnView {
+  return turn({
+    turnRef: `turn:${sequence}`,
+    sequence,
+    parentTurnRef: sequence === 1 ? null : `turn:${sequence - 1}`,
+    actorKind: "teacher",
+    contentKind: "command",
+    teacherText: text,
+    surfaceSummary: null,
+    resultRefs: {}
+  });
+}
+
+function commandReceiptTurn(
+  sequence: number,
+  summary: string
+): ConversationTurnView {
+  return turn({
+    turnRef: `turn:${sequence}`,
+    sequence,
+    parentTurnRef: `turn:${sequence - 1}`,
+    actorKind: "assistant_surface",
+    contentKind: "command",
+    teacherText: null,
+    surfaceSummary: summary,
+    resultRefs: {
+      memoryCommandRef: "memory-command:synthetic"
+    }
+  });
+}
+
 function turn(input: {
   turnRef: string;
   sequence: number;
   parentTurnRef: string | null;
   actorKind: "teacher" | "assistant_surface";
-  contentKind: "teacher_text" | "result_link";
+  contentKind: "teacher_text" | "command" | "result_link";
   teacherText: string | null;
   surfaceSummary: string | null;
-  resultRefs: Record<string, string>;
+  resultRefs: Record<string, string | string[]>;
 }): ConversationTurnView {
   const payload = {
     ...input,

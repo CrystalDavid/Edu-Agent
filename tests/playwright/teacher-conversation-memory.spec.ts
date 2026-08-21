@@ -1,6 +1,10 @@
 import { mkdir } from "node:fs/promises";
 
-import { apiRoutes } from "@edu-agent/contracts";
+import {
+  DispatchTeacherConversationTurnResultSchema,
+  apiRoutes,
+  type DispatchTeacherConversationTurnResult
+} from "@edu-agent/contracts";
 import { gate2DemoRefs } from "@edu-agent/sample-data";
 import {
   expect,
@@ -34,7 +38,7 @@ test.beforeEach(() => {
 });
 
 test.afterEach(async ({ request }) => {
-  await restartApi(request, "enabled");
+  await restartApi(request, "enabled", "enabled");
   for (const conversationRef of cleanupConversationRefs) {
     await closeConversationIfOpen(request, conversationRef);
   }
@@ -119,7 +123,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
         apiRoutes.teacher.conversations
   );
   const firstTurnResponse = page.waitForResponse(
-    isConversationTurnAppend
+    isConversationTurnDispatch
   );
   const firstInvocationResponse = page.waitForResponse(
     isModelInvocationCreate
@@ -191,7 +195,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   const secondRequest = "再短一点，保留独立检查。";
   await input.fill(secondRequest);
   const secondTurnResponse = page.waitForResponse(
-    isConversationTurnAppend
+    isConversationTurnDispatch
   );
   const secondInvocationResponse = page.waitForResponse(
     isModelInvocationCreate
@@ -724,6 +728,568 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   }
 });
 
+test("explicit remember persists canonical preferences across restart, run views and a new session", async ({
+  page,
+  request,
+  browser,
+  baseURL
+}) => {
+  test.setTimeout(240_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  let modelInvocationCreates = 0;
+  page.on("request", (webRequest) => {
+    if (
+      webRequest.method() === "POST" &&
+      new URL(webRequest.url()).pathname ===
+        apiRoutes.teacher.modelInvocations
+    ) {
+      modelInvocationCreates += 1;
+    }
+  });
+
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const input = page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  });
+  const rememberText =
+    "记住：以后教案控制在一页，案例尽量贴近日常生活。";
+  await input.fill(rememberText);
+  const conversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const commandResponse = page.waitForResponse(isConversationTurnDispatch);
+  await page.getByTestId("generate-copilot").click();
+  const [createdConversation, command] = await Promise.all([
+    conversationResponse,
+    commandResponse
+  ]);
+  expect(createdConversation.status()).toBe(201);
+  expect(command.status()).toBe(201);
+  const conversationRef = (
+    (await createdConversation.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  cleanupConversationRefs.add(conversationRef);
+  const commandBody = (await command.json()) as {
+    kind: string;
+    conversation: { version: number };
+    receipt: {
+      status: string;
+      memoryEpochBefore: number;
+      memoryEpochAfter: number;
+      items: Array<{
+        canonicalKey: string;
+        displayValue: string;
+        status: string;
+        scope: { kind: string; skillIds: string[] };
+      }>;
+    };
+  };
+  expect(commandBody).toMatchObject({
+    kind: "memory_command",
+    receipt: {
+      status: "applied"
+    }
+  });
+  expect(
+    commandBody.receipt.memoryEpochAfter -
+      commandBody.receipt.memoryEpochBefore
+  ).toBe(2);
+  expect(commandBody.receipt.items).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      canonicalKey: "lesson_plan_length",
+      displayValue: "一页以内",
+      status: "applied",
+      scope: expect.objectContaining({
+        kind: "global",
+        skillIds: ["lesson-preparation"]
+      })
+    }),
+    expect.objectContaining({
+      canonicalKey: "example_preference",
+      displayValue: "优先使用贴近日常生活的案例",
+      status: "applied",
+      scope: expect.objectContaining({
+        kind: "global",
+        skillIds: ["lesson-preparation"]
+      })
+    })
+  ]));
+  expect(modelInvocationCreates).toBe(0);
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "已记住 2 条偏好"
+  );
+  await expect(page.getByTestId("memory-command-item")).toHaveCount(2);
+  await expect(page.getByTestId("memory-command-receipt")).toContainText(
+    "教案长度：一页以内"
+  );
+  await expect(page.getByTestId("memory-command-receipt")).toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+  await expect(page.getByTestId("memory-command-receipt")).toContainText(
+    "作用范围：所有普通备课"
+  );
+  await expect(page.getByRole("button", { name: "调整作用范围" }))
+    .toBeVisible();
+
+  await page.reload();
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    rememberText,
+    { timeout: 20_000 }
+  );
+  await expect(page.getByTestId("memory-command-receipt")).toContainText(
+    "已记住"
+  );
+  await restartApi(request, "enabled", "enabled");
+  await page.reload();
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "已记住 2 条偏好",
+    { timeout: 20_000 }
+  );
+
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "助手偏好" }).click();
+  const settings = page.getByTestId("teacher-preference-settings");
+  const lengthPreference = settings
+    .locator('input[value="一页以内"]')
+    .locator("xpath=ancestor::article[contains(@class, 'settings-row')]");
+  const examplePreference = settings
+    .locator('input[value="优先使用贴近日常生活的案例"]')
+    .locator("xpath=ancestor::article[contains(@class, 'settings-row')]");
+  await expect(lengthPreference).toContainText("教案长度");
+  await expect(examplePreference).toContainText("案例偏好");
+  await expect(lengthPreference).toContainText("来源：对话中明确记住");
+  await expect(examplePreference).toContainText("来源：对话中明确记住");
+
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(task.taskRef)}?conversation=${encodeURIComponent(conversationRef)}`
+  );
+  const normalText = "请为当前课时生成一份新的教学方案。";
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill(normalText);
+  const normalDispatch = page.waitForResponse(isConversationTurnDispatch);
+  const invocationResponse = page.waitForResponse(isModelInvocationCreate);
+  await page.getByTestId("generate-copilot").click();
+  expect((await normalDispatch).status()).toBe(201);
+  const invocation = await invocationResponse;
+  expect(invocation.status()).toBe(202);
+  const execution = (await invocation.json()) as {
+    execution: {
+      modelExecutionRef: string;
+      agentRunRef: string;
+    };
+  };
+  const completed = await waitForExecution(
+    request,
+    execution.execution.modelExecutionRef
+  );
+  expect(completed.proposalRevisionRef).toBeTruthy();
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-manifest-version",
+    "2"
+  );
+  const packRef = await page.getByTestId("memory-use-disclosure")
+    .getAttribute("data-pack-ref");
+  const packHash = await page.getByTestId("memory-use-disclosure")
+    .getAttribute("data-pack-content-hash");
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "教案长度：一页以内"
+  );
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "案例偏好：优先使用贴近日常生活的案例"
+  );
+  await expect(page.getByTestId("memory-disclaimer")).toContainText(
+    "不代表模型一定完整采用"
+  );
+
+  await page.goto(`/runs/tasks/${encodeURIComponent(task.taskRef)}`);
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-pack-ref",
+    packRef!
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-pack-content-hash",
+    packHash!
+  );
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-run-metadata")).toContainText(
+    "教师记忆版本"
+  );
+  await expect(page.getByTestId("memory-run-metadata")).toContainText(
+    String(commandBody.receipt.memoryEpochAfter)
+  );
+
+  expect(baseURL).toBeTruthy();
+  const freshSession = await browser.newContext({ baseURL: baseURL! });
+  try {
+    const login = await freshSession.request.post(
+      "/api/v1/auth/local-login",
+      { data: { profile: "teacher", returnTo: "/overview" } }
+    );
+    expect(login.status()).toBe(201);
+    const freshTask = await createStartedTask(
+      freshSession.request,
+      secondaryCourseDemoRefs.lessonRef
+    );
+    cleanupTaskRefs.add(freshTask.taskRef);
+    const freshPage = await freshSession.newPage();
+    await freshPage.goto(
+      `/agent/tasks/${encodeURIComponent(freshTask.taskRef)}`
+    );
+    await freshPage.getByRole("textbox", {
+      name: "告诉 Agent 你想完成什么"
+    }).fill("请在新会话中生成一份教案。");
+    const freshConversationResponse = freshPage.waitForResponse((response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === apiRoutes.teacher.conversations
+    );
+    const freshInvocationResponse = freshPage.waitForResponse(
+      isModelInvocationCreate
+    );
+    await freshPage.getByTestId("generate-copilot").click();
+    const [freshConversation, freshInvocation] = await Promise.all([
+      freshConversationResponse,
+      freshInvocationResponse
+    ]);
+    const freshConversationRef = (
+      (await freshConversation.json()) as {
+        conversation: { conversationRef: string };
+      }
+    ).conversation.conversationRef;
+    cleanupConversationRefs.add(freshConversationRef);
+    const freshExecutionRef = (
+      (await freshInvocation.json()) as {
+        execution: { modelExecutionRef: string };
+      }
+    ).execution.modelExecutionRef;
+    await waitForExecution(freshSession.request, freshExecutionRef);
+    await expect(freshPage.getByTestId("memory-use-disclosure"))
+      .toBeVisible({ timeout: 20_000 });
+    await freshPage.getByTestId("memory-use-toggle").click();
+    await expect(freshPage.getByTestId("memory-preferences")).toContainText(
+      "教案长度：一页以内"
+    );
+    await expect(freshPage.getByTestId("memory-preferences")).toContainText(
+      "案例偏好：优先使用贴近日常生活的案例"
+    );
+  } finally {
+    await freshSession.close();
+  }
+});
+
+test("explicit remember keeps duplicate, conflict and CourseRun scope under teacher control", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(240_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  let modelInvocationCreates = 0;
+  page.on("request", (webRequest) => {
+    if (
+      webRequest.method() === "POST" &&
+      new URL(webRequest.url()).pathname ===
+        apiRoutes.teacher.modelInvocations
+    ) {
+      modelInvocationCreates += 1;
+    }
+  });
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const input = page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  });
+  await input.fill("以后教案尽量简洁");
+  const conversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const firstCommandResponse = page.waitForResponse(
+    isConversationTurnDispatch
+  );
+  await page.getByTestId("generate-copilot").click();
+  const [conversationCreated, firstCommand] = await Promise.all([
+    conversationResponse,
+    firstCommandResponse
+  ]);
+  const conversationRef = (
+    (await conversationCreated.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  cleanupConversationRefs.add(conversationRef);
+  expect((await firstCommand.json()).receipt.status).toBe("applied");
+  expect(modelInvocationCreates).toBe(0);
+
+  const duplicate = await sendMemoryCommand(
+    page,
+    "以后教案尽量简洁"
+  );
+  expect(duplicate.receipt.status).toBe("already_remembered");
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "没有重复保存"
+  );
+
+  const conflict = await sendMemoryCommand(
+    page,
+    "以后教案写详细一点"
+  );
+  expect(conflict.receipt.status).toBe("review_required");
+  await expect(page.getByTestId("memory-conflict-card")).toContainText(
+    "已保存的是“简洁”"
+  );
+  await page.getByTestId("keep-memory-preference").click();
+  await expect(page.getByText("已保留原偏好")).toBeVisible({
+    timeout: 20_000
+  });
+
+  const replacementConflict = await sendMemoryCommand(
+    page,
+    "以后教案写详细一点"
+  );
+  expect(replacementConflict.receipt.status).toBe("review_required");
+  await page.getByTestId("replace-memory-preference").click();
+  await expect(page.getByText("已替换并记住")).toBeVisible({
+    timeout: 20_000
+  });
+
+  const courseCommand = await sendMemoryCommand(
+    page,
+    "记住：这门课以后教案尽量简洁"
+  );
+  expect(courseCommand.receipt).toMatchObject({
+    status: "applied",
+    items: [expect.objectContaining({
+      displayValue: "简洁",
+      scope: expect.objectContaining({
+        kind: "course_run",
+        courseRunRef: gate2DemoRefs.courseRunRef
+      })
+    })]
+  });
+  await expect(page.getByTestId("memory-command-receipt").last())
+    .toContainText("作用范围：当前课程");
+  const courseDuplicate = await sendMemoryCommand(
+    page,
+    "记住：这门课以后教案尽量简洁"
+  );
+  expect(courseDuplicate.receipt.status).toBe("already_remembered");
+  expect(modelInvocationCreates).toBe(0);
+
+  const currentRunText = "请为当前课程生成一版新教案。";
+  await input.fill(currentRunText);
+  const currentInvocationResponse = page.waitForResponse(
+    isModelInvocationCreate
+  );
+  await page.getByTestId("generate-copilot").click();
+  const currentInvocation = await currentInvocationResponse;
+  const currentExecutionRef = (
+    (await currentInvocation.json()) as {
+      execution: { modelExecutionRef: string };
+    }
+  ).execution.modelExecutionRef;
+  await waitForExecution(request, currentExecutionRef);
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "教案详细程度：简洁"
+  );
+  await expect(page.getByTestId("memory-preferences")).toContainText(
+    "作用范围：当前课程"
+  );
+  await expect(page.getByTestId("memory-excluded")).toContainText(
+    "教案详细程度：详细"
+  );
+  await expect(page.getByTestId("memory-excluded")).toContainText(
+    "当前课程、课时或任务的偏好更具体"
+  );
+
+  const secondaryTask = await createStartedTask(
+    request,
+    secondaryCourseDemoRefs.lessonRef
+  );
+  cleanupTaskRefs.add(secondaryTask.taskRef);
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(secondaryTask.taskRef)}`
+  );
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill("请为另一门合成课程生成教案。");
+  const secondaryConversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const secondaryInvocationResponse = page.waitForResponse(
+    isModelInvocationCreate
+  );
+  await page.getByTestId("generate-copilot").click();
+  const [secondaryConversation, secondaryInvocation] = await Promise.all([
+    secondaryConversationResponse,
+    secondaryInvocationResponse
+  ]);
+  const secondaryConversationRef = (
+    (await secondaryConversation.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  cleanupConversationRefs.add(secondaryConversationRef);
+  const secondaryExecutionRef = (
+    (await secondaryInvocation.json()) as {
+      execution: { modelExecutionRef: string };
+    }
+  ).execution.modelExecutionRef;
+  await waitForExecution(request, secondaryExecutionRef);
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByTestId("memory-use-toggle").click();
+  const secondaryPreferences = page.getByTestId("memory-preferences");
+  await expect(secondaryPreferences).toContainText(
+    "教案详细程度：详细"
+  );
+  await expect(secondaryPreferences).not.toContainText(
+    "教案详细程度：简洁"
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
+    gate2DemoRefs.courseRunRef
+  );
+});
+
+test("explicit remember rejects unsafe and unsupported commands and obeys its feature flag", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(180_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const input = page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  });
+  await input.fill("记住某班学生能力差");
+  const conversationResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === apiRoutes.teacher.conversations
+  );
+  const unsafeResponse = page.waitForResponse(isConversationTurnDispatch);
+  await page.getByTestId("generate-copilot").click();
+  const [conversationCreated, unsafe] = await Promise.all([
+    conversationResponse,
+    unsafeResponse
+  ]);
+  const conversationRef = (
+    (await conversationCreated.json()) as {
+      conversation: { conversationRef: string };
+    }
+  ).conversation.conversationRef;
+  cleanupConversationRefs.add(conversationRef);
+  expect(await unsafe.json()).toMatchObject({
+    kind: "unsupported_memory_command",
+    safeReasonCode: "unsafe_memory_content"
+  });
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "未保存为长期偏好"
+  );
+
+  const forget = await sendUnsupportedMemoryCommand(
+    page,
+    "忘掉案例偏好"
+  );
+  expect(forget).toMatchObject({
+    kind: "unsupported_memory_command",
+    safeReasonCode: "forget_not_available"
+  });
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "对话式忘记将在下一阶段处理"
+  );
+
+  const mixedTemporary = await sendUnsupportedMemoryCommand(
+    page,
+    "记住这次公开课写详细一点"
+  );
+  expect(mixedTemporary).toMatchObject({
+    kind: "unsupported_memory_command",
+    safeReasonCode: "temporary_override_not_saved"
+  });
+
+  const temporaryInstruction = await sendModelInstruction(
+    page,
+    "这次公开课写详细一点"
+  );
+  expect(temporaryInstruction.dispatch.kind).toBe("model_instruction");
+  const temporaryCompleted = await waitForExecution(
+    request,
+    temporaryInstruction.modelExecutionRef
+  );
+  expect(temporaryCompleted.proposalRevisionRef).toBeTruthy();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(temporaryCompleted.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const falsePositive = await sendModelInstruction(page, "以后再说");
+  expect(falsePositive.dispatch.kind).toBe("model_instruction");
+  const falsePositiveCompleted = await waitForExecution(
+    request,
+    falsePositive.modelExecutionRef
+  );
+  expect(falsePositiveCompleted.proposalRevisionRef).toBeTruthy();
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(falsePositiveCompleted.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+
+  const beforeDisabled = await request.get(
+    apiRoutes.teacher.personalizationState,
+    { headers }
+  );
+  expect(beforeDisabled.status()).toBe(200);
+  expect(((await beforeDisabled.json()) as {
+    preferences: Array<{ status: string }>;
+  }).preferences.filter((preference) => preference.status === "active"))
+    .toHaveLength(0);
+  await restartApi(request, "enabled", "disabled");
+  await page.reload();
+  const disabledState = await request.get(
+    apiRoutes.teacher.personalizationState,
+    { headers }
+  );
+  expect(disabledState.status()).toBe(200);
+  expect((await disabledState.json()).explicitRememberEnabled).toBe(false);
+  const disabled = await sendUnsupportedMemoryCommand(
+    page,
+    "记住：教案控制在一页"
+  );
+  expect(disabled).toMatchObject({
+    kind: "unsupported_memory_command",
+    safeReasonCode: "explicit_remember_disabled"
+  });
+  await expect(page.getByTestId("copilot-conversation")).toContainText(
+    "长期偏好功能当前未启用，本次未保存"
+  );
+  const afterDisabled = await request.get(
+    apiRoutes.teacher.personalizationState,
+    { headers }
+  );
+  expect(afterDisabled.status()).toBe(200);
+  expect(((await afterDisabled.json()) as {
+    preferences: Array<{ status: string }>;
+  }).preferences.filter((preference) => preference.status === "active"))
+    .toHaveLength(0);
+});
+
 async function createAndConfirmPreferenceInSettings(
   page: Page,
   input: { value: string; scope: "global" | "course_run" }
@@ -798,6 +1364,10 @@ async function cleanupTestPersonalization(
   ) =>
     (preferenceKey === "lesson_plan_detail" &&
       ["简洁", "详细"].includes(preferenceValue ?? "")) ||
+    (preferenceKey === "lesson_plan_length" &&
+      preferenceValue === "一页以内") ||
+    (preferenceKey === "example_preference" &&
+      preferenceValue === "优先使用贴近日常生活的案例") ||
     preferenceKey === "flag_off_global";
 
   for (const candidate of state.candidates) {
@@ -950,7 +1520,8 @@ async function cancelTaskIfOpen(
 
 async function restartApi(
   request: APIRequestContext,
-  scopedPreferences?: "enabled" | "disabled"
+  scopedPreferences?: "enabled" | "disabled",
+  explicitRemember?: "enabled" | "disabled"
 ): Promise<void> {
   const controlPort = process.env.E2E_CONTROL_PORT;
   const runId = process.env.E2E_RUN_ID;
@@ -962,26 +1533,115 @@ async function restartApi(
   if (scopedPreferences) {
     url.searchParams.set("scoped-preferences", scopedPreferences);
   }
+  if (explicitRemember) {
+    url.searchParams.set("explicit-remember", explicitRemember);
+  }
   const response = await request.post(url.toString(), {
     headers: { "x-e2e-run-id": runId! }
   });
   expect(response.status()).toBe(200);
   expect(await response.json()).toMatchObject({
     restarted: true,
-    scopedPreferences: scopedPreferences ?? "unchanged"
+    scopedPreferences: scopedPreferences ?? "unchanged",
+    explicitRemember: explicitRemember ?? "unchanged"
   });
 }
 
-function isConversationTurnAppend(response: {
+function isConversationTurnDispatch(response: {
   request(): { method(): string };
   url(): string;
 }) {
   return (
     response.request().method() === "POST" &&
-    /^\/api\/v1\/teacher\/conversations\/[^/]+\/turns$/u.test(
+    /^\/api\/v1\/teacher\/conversations\/[^/]+\/dispatch-turn$/u.test(
       new URL(response.url()).pathname
     )
   );
+}
+
+async function sendMemoryCommand(
+  page: Page,
+  teacherText: string
+): Promise<Extract<
+  DispatchTeacherConversationTurnResult,
+  { kind: "memory_command" }
+>> {
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill(teacherText);
+  const responsePromise = page.waitForResponse(isConversationTurnDispatch);
+  await page.getByTestId("generate-copilot").click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  const result = DispatchTeacherConversationTurnResultSchema.parse(
+    await response.json()
+  );
+  if (result.kind !== "memory_command") {
+    throw new Error(`Expected memory_command, received ${result.kind}.`);
+  }
+  return result;
+}
+
+async function sendUnsupportedMemoryCommand(
+  page: Page,
+  teacherText: string
+): Promise<Extract<
+  DispatchTeacherConversationTurnResult,
+  { kind: "unsupported_memory_command" }
+>> {
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill(teacherText);
+  const responsePromise = page.waitForResponse(isConversationTurnDispatch);
+  await page.getByTestId("generate-copilot").click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  const result = DispatchTeacherConversationTurnResultSchema.parse(
+    await response.json()
+  );
+  if (result.kind !== "unsupported_memory_command") {
+    throw new Error(
+      `Expected unsupported_memory_command, received ${result.kind}.`
+    );
+  }
+  return result;
+}
+
+async function sendModelInstruction(
+  page: Page,
+  teacherText: string
+): Promise<{
+  dispatch: Extract<
+    DispatchTeacherConversationTurnResult,
+    { kind: "model_instruction" }
+  >;
+  modelExecutionRef: string;
+}> {
+  await page.getByRole("textbox", {
+    name: "告诉 Agent 你想完成什么"
+  }).fill(teacherText);
+  const dispatchResponse = page.waitForResponse(isConversationTurnDispatch);
+  const invocationResponse = page.waitForResponse(isModelInvocationCreate);
+  await page.getByTestId("generate-copilot").click();
+  const [dispatchHttp, invocationHttp] = await Promise.all([
+    dispatchResponse,
+    invocationResponse
+  ]);
+  expect(dispatchHttp.status()).toBe(201);
+  expect(invocationHttp.status()).toBe(202);
+  const dispatch = DispatchTeacherConversationTurnResultSchema.parse(
+    await dispatchHttp.json()
+  );
+  if (dispatch.kind !== "model_instruction") {
+    throw new Error(`Expected model_instruction, received ${dispatch.kind}.`);
+  }
+  const invocation = (await invocationHttp.json()) as {
+    execution: { modelExecutionRef: string };
+  };
+  return {
+    dispatch,
+    modelExecutionRef: invocation.execution.modelExecutionRef
+  };
 }
 
 function isModelInvocationCreate(response: {
