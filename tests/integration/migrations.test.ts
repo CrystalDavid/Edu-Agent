@@ -27,10 +27,95 @@ afterEach(async () => {
 });
 
 describe("PostgreSQL module migrations", () => {
-  it("registers exactly 50 forward-only migrations", () => {
-    expect(moduleMigrations).toHaveLength(50);
-    expect(moduleMigrations.at(-1)?.relativePath).toContain(
-      "0004_teacher_preference_scope_and_epoch.sql"
+  it("registers exactly 51 forward-only migrations", () => {
+    expect(moduleMigrations).toHaveLength(51);
+    expect(moduleMigrations).toContainEqual({
+      owner: "work",
+      relativePath:
+        "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0013_explicit_memory_command_turn.sql"
+    });
+  });
+
+  it("upgrades the 50-migration Conversation schema without changing historical Turns", async () => {
+    const database = new PGlite();
+    databases.push(database);
+    const commandMigration = moduleMigrations.find((migration) =>
+      migration.relativePath.endsWith(
+        "0013_explicit_memory_command_turn.sql"
+      )
+    );
+    expect(commandMigration).toBeTruthy();
+    for (const migration of moduleMigrations.filter(
+      (entry) => entry !== commandMigration
+    )) {
+      await database.exec(readFileSync(
+        resolve(import.meta.dirname, "../..", migration.relativePath),
+        "utf8"
+      ));
+    }
+    await insertSyntheticConversationFixture(database);
+
+    await database.exec(readFileSync(
+      resolve(
+        import.meta.dirname,
+        "../..",
+        commandMigration!.relativePath
+      ),
+      "utf8"
+    ));
+
+    const historical = await database.query<{
+      turn_ref: string;
+      actor_kind: string;
+      content_kind: string;
+    }>(
+      `SELECT turn_ref, actor_kind, content_kind
+         FROM work.conversation_turn
+        ORDER BY sequence`,
+      []
+    );
+    expect(historical.rows).toEqual([
+      {
+        turn_ref: "turn:migration:teacher",
+        actor_kind: "teacher",
+        content_kind: "teacher_text"
+      },
+      {
+        turn_ref: "turn:migration:result",
+        actor_kind: "assistant_surface",
+        content_kind: "result_link"
+      }
+    ]);
+    await database.query(
+      `INSERT INTO work.conversation_turn (
+         turn_ref, conversation_ref, sequence, parent_turn_ref,
+         actor_kind, content_kind, teacher_text, surface_summary,
+         content_hash, actor_ref, purpose, owner_module,
+         idempotency_key, authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         'turn:migration:command', 'conversation:migration', 3,
+         'turn:migration:result', 'teacher', 'command', '记住以后教案简洁',
+         NULL, $1, 'teacher:migration', 'synthetic.migration-command',
+         'work', 'idempotency:migration:command', 'decision:migration',
+         'audit:migration:command', '2026-08-21T08:02:00.000Z'
+       )`,
+      ["c".repeat(64)]
+    );
+    await database.query(
+      `INSERT INTO work.conversation_turn (
+         turn_ref, conversation_ref, sequence, parent_turn_ref,
+         actor_kind, content_kind, teacher_text, surface_summary,
+         content_hash, actor_ref, purpose, owner_module,
+         idempotency_key, authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         'turn:migration:receipt', 'conversation:migration', 4,
+         'turn:migration:command', 'assistant_surface', 'command', NULL,
+         '已记住：教案详细程度为简洁。', $1, 'teacher:migration',
+         'synthetic.migration-command', 'work',
+         'idempotency:migration:receipt', 'decision:migration',
+         'audit:migration:receipt', '2026-08-21T08:03:00.000Z'
+       )`,
+      ["d".repeat(64)]
     );
   });
 
@@ -400,4 +485,64 @@ function pgliteExecutor(database: PGlite): SqlExecutor {
       } as never;
     }
   };
+}
+
+async function insertSyntheticConversationFixture(
+  database: PGlite
+): Promise<void> {
+  await database.query(
+    `INSERT INTO work.task (
+       task_ref, title, status, actor_ref, purpose, owner_module,
+       idempotency_key, authorization_decision_ref, audit_ref, created_at
+     ) VALUES (
+       'task:migration', 'Synthetic migration task', 'active',
+       'teacher:migration', 'synthetic.migration-command', 'work',
+       'idempotency:migration:task', 'decision:migration',
+       'audit:migration:task', '2026-08-21T08:00:00.000Z'
+     )`,
+    []
+  );
+  await database.query(
+    `INSERT INTO work.conversation_thread (
+       conversation_ref, tenant_ref, teacher_ref, task_ref, purpose_family,
+       status, course_run_ref, lesson_ref, current_version,
+       last_turn_sequence, last_turn_ref, retention_until, policy_version,
+       content_hash, updated_at, actor_ref, purpose, owner_module,
+       idempotency_key, authorization_decision_ref, audit_ref, created_at
+     ) VALUES (
+       'conversation:migration', 'tenant:migration', 'teacher:migration',
+       'task:migration', 'lesson_preparation', 'active',
+       'course-run:migration', 'lesson:migration', 1, 0, NULL,
+       '2026-09-21T08:00:00.000Z', 'conversation-retention@1', $1,
+       '2026-08-21T08:00:00.000Z', 'teacher:migration',
+       'synthetic.migration-command', 'work',
+       'idempotency:migration:conversation', 'decision:migration',
+       'audit:migration:conversation', '2026-08-21T08:00:00.000Z'
+     )`,
+    ["a".repeat(64)]
+  );
+  await database.query(
+    `INSERT INTO work.conversation_turn (
+       turn_ref, conversation_ref, sequence, parent_turn_ref,
+       actor_kind, content_kind, teacher_text, surface_summary,
+       content_hash, actor_ref, purpose, owner_module,
+       idempotency_key, authorization_decision_ref, audit_ref, created_at
+     ) VALUES
+       (
+         'turn:migration:teacher', 'conversation:migration', 1, NULL,
+         'teacher', 'teacher_text', '生成一份合成教案', NULL, $1,
+         'teacher:migration', 'synthetic.migration-command', 'work',
+         'idempotency:migration:teacher', 'decision:migration',
+         'audit:migration:teacher', '2026-08-21T08:00:00.000Z'
+       ),
+       (
+         'turn:migration:result', 'conversation:migration', 2,
+         'turn:migration:teacher', 'assistant_surface', 'result_link', NULL,
+         '合成教案建议已生成。', $2, 'teacher:migration',
+         'synthetic.migration-command', 'work',
+         'idempotency:migration:result', 'decision:migration',
+         'audit:migration:result', '2026-08-21T08:01:00.000Z'
+       )`,
+    ["b".repeat(64), "c".repeat(64)]
+  );
 }

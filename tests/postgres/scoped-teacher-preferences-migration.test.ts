@@ -23,8 +23,18 @@ import {
 
 const adminPool = poolFor("admin");
 const workspaceRoot = resolve(import.meta.dirname, "../..");
-const scopeMigration = moduleMigrations.at(-1)!;
-const baselineMigrations = moduleMigrations.slice(0, -1);
+const scopeMigration = moduleMigrations.find((migration) =>
+  migration.relativePath.endsWith(
+    "0004_teacher_preference_scope_and_epoch.sql"
+  )
+)!;
+const baselineMigrations = moduleMigrations.filter(
+  (migration) =>
+    migration !== scopeMigration &&
+    !migration.relativePath.endsWith(
+      "0013_explicit_memory_command_turn.sql"
+    )
+);
 
 afterAll(async () => {
   await adminPool.end();
@@ -32,7 +42,7 @@ afterAll(async () => {
 
 describe("scoped TeacherPreference PostgreSQL migration", () => {
   it("upgrades a real 49-migration database to 50 without losing legacy semantics", async () => {
-    expect(moduleMigrations).toHaveLength(50);
+    expect(moduleMigrations).toHaveLength(51);
     expect(baselineMigrations).toHaveLength(49);
     expect(scopeMigration.relativePath).toMatch(
       /0004_teacher_preference_scope_and_epoch\.sql$/u

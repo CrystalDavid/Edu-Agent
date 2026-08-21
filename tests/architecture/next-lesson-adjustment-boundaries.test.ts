@@ -106,6 +106,7 @@ describe("Phase 8A-6 next Lesson optimization boundaries", () => {
       !path.endsWith("0010_calendar_event_categories.sql") &&
       !path.endsWith("0011_next_lesson_action_candidates.sql") &&
       !path.endsWith("0012_conversation_thread_turn.sql") &&
+      !path.endsWith("0013_explicit_memory_command_turn.sql") &&
       !path.endsWith("0007_working_memory_snapshot.sql") &&
       !path.endsWith("0003_memory_application_observability.sql") &&
       !path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
@@ -114,7 +115,7 @@ describe("Phase 8A-6 next Lesson optimization boundaries", () => {
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0011_next_lesson_action_candidates.sql"
     );
 
-    expect(migrations).toHaveLength(50);
+    expect(migrations).toHaveLength(51);
     expect(verified).toHaveLength(43);
     expect(migration).toContain(
       "CREATE TABLE IF NOT EXISTS work.next_lesson_action_candidate"

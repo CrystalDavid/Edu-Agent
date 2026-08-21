@@ -128,6 +128,7 @@ describe("Phase 5 Skill boundaries", () => {
     );
     const conversationMigrations = migrations.filter((path) =>
       path.endsWith("0012_conversation_thread_turn.sql") ||
+      path.endsWith("0013_explicit_memory_command_turn.sql") ||
       path.endsWith("0007_working_memory_snapshot.sql")
     );
     const observabilityMigration = migrations.filter((path) =>
@@ -136,11 +137,11 @@ describe("Phase 5 Skill boundaries", () => {
     const scopedPreferenceMigration = migrations.filter((path) =>
       path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
     );
-    expect(migrations).toHaveLength(50);
+    expect(migrations).toHaveLength(51);
     expect(phase7a).toHaveLength(1);
     expect(calendarCategoryMigration).toHaveLength(1);
     expect(nextLessonActionMigration).toHaveLength(1);
-    expect(conversationMigrations).toHaveLength(2);
+    expect(conversationMigrations).toHaveLength(3);
     expect(observabilityMigration).toHaveLength(1);
     expect(scopedPreferenceMigration).toHaveLength(1);
     expect(migrations.filter((path) =>
