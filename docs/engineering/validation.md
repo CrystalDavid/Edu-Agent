@@ -63,7 +63,7 @@ corepack pnpm test:postgres
 
 同时比较历史 Migration tree，确保只新增文件而未修改旧文件。
 
-PR-2B 的 Migration 专项验收固定验证 51 个 registry 项、50→51 真实 PostgreSQL 升级、旧 `conversation_turn_check` 的精确替换、全部合法/非法 actor-content 组合、Turn immutable trigger，以及 command/result refs 的数量和内容边界。PGlite 通过不能替代这组 PostgreSQL CHECK/trigger 证据。
+PR-2B 的 Migration 专项验收固定验证 51 个 registry 项、50→51 真实 PostgreSQL 升级、旧 `conversation_turn_check` 的精确替换、全部合法/非法 actor-content 组合、Turn immutable trigger，以及 command/result refs 的数量和内容边界。PR-2C1 不新增 Migration，Architecture 门禁固定校验全部 51 个文件的聚合 hash；真实 PostgreSQL 另外验证 unique/multi-scope/multi-target revoke、revision/epoch/Audit/idempotency、事务回滚、receipt recovery、历史 Run 与新 Pack 排除。PGlite 通过不能替代这些 PostgreSQL CHECK/trigger/transaction 证据。
 
 ## 测试隔离与清理
 
@@ -74,7 +74,7 @@ PR-2B 的 Migration 专项验收固定验证 51 个 registry 项、50→51 真�
 - Windows 检测到 `C:\Code\test` 时使用 `C:\Code\test\edu-agent\playwright`；其他环境使用系统临时目录，可由 `EDU_AGENT_TEST_OUTPUT_ROOT` 覆盖；
 - `.local-data/object-store` 是本机持久化数据，不能被测试清理器删除；
 - Fake Ark 只监听本地隔离端口，不可被误报为 live 验收；
-- 默认 Playwright E2E control endpoint 只在隔离测试 server 中支持重启 API，并可用 `explicit-remember=enabled|disabled|default` 验证服务端 flag；该 endpoint 不注册到产品 API；
+- 默认 Playwright E2E control endpoint 只在隔离测试 server 中支持重启 API，并可用 `explicit-remember=enabled|disabled|default` 和 `explicit-forget=enabled|disabled|default` 验证服务端 flag；该 endpoint 不注册到产品 API；
 - live tests 必须明确 opt-in，并对 Key、request ID 和内容脱敏。
 
 ## GitHub Actions PR 门禁
