@@ -24,6 +24,7 @@ import {
   LessonPreparationSkillInputSchemaV3,
   LessonPreparationSkillInputSchemaV4,
   LessonPreparationSkillInputSchemaV5,
+  LessonPreparationSkillInputSchemaV6,
   type LessonPreparationSkillInput
 } from "./input-schema.js";
 import {
@@ -32,7 +33,8 @@ import {
   lessonPreparationSkillManifestV3,
   lessonPreparationSkillManifestV4,
   lessonPreparationSkillManifestV5,
-  lessonPreparationSkillManifestV6
+  lessonPreparationSkillManifestV6,
+  lessonPreparationSkillManifestV7
 } from "./manifest.js";
 import {
   LessonPreparationSkillOutputSchema,
@@ -42,6 +44,8 @@ import {
   assembleLessonPreparationModelRequest,
   assembleConversationLessonPreparationModelRequest,
   assembleConversationRepairModelRequest,
+  assembleTemporaryOverrideLessonPreparationModelRequest,
+  assembleTemporaryOverrideRepairModelRequest,
   assembleLessonBriefPreparationModelRequest,
   assembleLessonBriefRepairModelRequest,
   assembleRepairModelRequest,
@@ -50,7 +54,8 @@ import {
   lessonPreparationPromptBundle,
   conversationLessonPreparationPromptBundle,
   lessonBriefPreparationPromptBundle,
-  personalizedLessonPreparationPromptBundle
+  personalizedLessonPreparationPromptBundle,
+  temporaryOverrideLessonPreparationPromptBundle
 } from "./prompt.js";
 import {
   buildPersonalizedLessonPreparationContext,
@@ -62,7 +67,9 @@ import {
 } from "./lesson-brief-context-builder.js";
 import {
   buildConversationPreparationContext,
-  type ConversationPreparationContextBuildResult
+  buildTemporaryOverridePreparationContext,
+  type ConversationPreparationContextBuildResult,
+  type TemporaryOverridePreparationContextBuildResult
 } from "./conversation-context-builder.js";
 import {
   validateModelOutput,
@@ -96,7 +103,8 @@ export interface LessonPreparationSkillVersion extends SkillVersionBase {
     | LessonPreparationContextBuildResult
     | PersonalizedLessonPreparationContextBuildResult
     | LessonBriefPreparationContextBuildResult
-    | ConversationPreparationContextBuildResult;
+    | ConversationPreparationContextBuildResult
+    | TemporaryOverridePreparationContextBuildResult;
 }
 
 export interface LessonPreparationContextBuildInput {
@@ -211,6 +219,26 @@ export const lessonPreparationSkillV6: LessonPreparationSkillVersion =
     evaluateOutput: evaluateLessonPreparationOutput
   });
 
+export const lessonPreparationSkillV7: LessonPreparationSkillVersion =
+  Object.freeze({
+    manifest: lessonPreparationSkillManifestV7,
+    inputSchema: LessonPreparationSkillInputSchemaV6,
+    outputSchema: LessonPreparationSkillOutputSchema,
+    promptBundle: temporaryOverrideLessonPreparationPromptBundle,
+    buildContext: (input: LessonPreparationContextBuildInput) =>
+      buildTemporaryOverridePreparationContext({
+        ...input,
+        confirmedPreferences: input.confirmedPreferences ?? []
+      }),
+    assembleRequest: (input: LessonPreparationSkillInput) =>
+      assembleTemporaryOverrideLessonPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV6.parse(input)
+      ),
+    assembleRepairRequest: assembleTemporaryOverrideRepairModelRequest,
+    validateOutput: validateModelOutput,
+    evaluateOutput: evaluateLessonPreparationOutput
+  });
+
 export type {
   LessonPreparationOperationMetrics,
   LessonPreparationSkillEvaluation,
@@ -232,7 +260,9 @@ export type {
 } from "./lesson-brief-context-builder.js";
 export type {
   ConversationPreparationContextBuildResult,
-  ConversationPreparationManifest
+  ConversationPreparationManifest,
+  TemporaryOverridePreparationContextBuildResult,
+  TemporaryOverrideConversationPreparationManifest
 } from "./conversation-context-builder.js";
 export type {
   PersonalizedLessonPreparationContextBuildResult,
@@ -251,7 +281,9 @@ export {
 } from "./lesson-brief-context-builder.js";
 export {
   buildConversationPreparationContext,
-  conversationPreparationContextBuilderVersion
+  conversationPreparationContextBuilderVersion,
+  buildTemporaryOverridePreparationContext,
+  temporaryOverridePreparationContextBuilderVersion
 } from "./conversation-context-builder.js";
 export {
   buildPersonalizedLessonPreparationContext,

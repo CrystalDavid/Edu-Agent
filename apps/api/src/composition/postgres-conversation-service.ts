@@ -20,11 +20,20 @@ import {
   type CreateTeacherConversationRequest,
   type CreateTeacherConversationResult,
   type FormalWriteReceipt,
-  type WorkingMemoryView
+  type TemporaryPreferenceOverrideInterpretation,
+  type WorkingMemoryView,
+  type WorkingMemoryViewV2
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
-import { buildWorkingMemory } from "../modules/agent-runtime-context/domain/working-memory.js";
+import type { TemporaryPreferenceCatalogPort } from "../modules/agent-runtime-context/application/temporary-preference-catalog-port.js";
+import {
+  interpretExplicitTemporaryPreferenceOverride
+} from "../modules/agent-runtime-context/domain/explicit-temporary-preference-override.js";
+import {
+  buildWorkingMemory,
+  buildWorkingMemoryV2
+} from "../modules/agent-runtime-context/domain/working-memory.js";
 import {
   PostgresWorkingMemoryRepository,
   type PersistedWorkingMemorySnapshot
@@ -64,6 +73,10 @@ export class PostgresConversationService {
   private readonly preparation: PostgresGate25WorkRepository;
   private readonly clock: Clock;
   private readonly retention: ConversationRetentionSettings;
+  private readonly temporaryOverrides: {
+    readonly enabled: boolean;
+    readonly catalog: TemporaryPreferenceCatalogPort;
+  } | null;
 
   constructor(
     private readonly pool: Pool,
@@ -74,6 +87,10 @@ export class PostgresConversationService {
       preparation?: PostgresGate25WorkRepository;
       clock?: Clock;
       retention?: ConversationRetentionSettings;
+      temporaryOverrides?: {
+        readonly enabled: boolean;
+        readonly catalog: TemporaryPreferenceCatalogPort;
+      };
     } = {}
   ) {
     this.governance =
@@ -89,6 +106,7 @@ export class PostgresConversationService {
       durationMilliseconds: 30 * 24 * 60 * 60 * 1000,
       policyVersion: "conversation-retention@1"
     };
+    this.temporaryOverrides = dependencies.temporaryOverrides ?? null;
   }
 
   async create(input: {
@@ -360,15 +378,42 @@ export class PostgresConversationService {
         turn,
         now
       );
-      const turns = await this.conversations.listTurns(
-        client,
-        thread.conversationRef
-      );
-      const snapshot = buildWorkingMemory({
-        conversationRef: thread.conversationRef,
-        turns,
-        expiresAt: thread.retentionUntil
+      const [turns, previousSnapshot] = await Promise.all([
+        this.conversations.listTurns(client, thread.conversationRef),
+        this.workingMemory.getActive(client, {
+          tenantRef: thread.tenantRef,
+          teacherRef: thread.teacherRef,
+          conversationRef: thread.conversationRef,
+          asOf: now
+        })
+      ]);
+      const interpretation = this.interpretTemporaryOverride({
+        thread,
+        turn,
+        previousSnapshot,
+        now
       });
+      const snapshot = this.temporaryOverrides?.enabled
+        ? buildWorkingMemoryV2({
+            conversationRef: thread.conversationRef,
+            taskRef: thread.taskRef,
+            courseRunRef: thread.courseRunRef,
+            lessonRef: thread.lessonRef,
+            owner: {
+              tenantRef: thread.tenantRef,
+              teacherRef: thread.teacherRef
+            },
+            turns,
+            expiresAt: thread.retentionUntil,
+            at: now,
+            previousWorkingMemory: previousSnapshot,
+            interpretation
+          })
+        : buildWorkingMemory({
+            conversationRef: thread.conversationRef,
+            turns,
+            expiresAt: thread.retentionUntil
+          });
       receipts.push(
         await this.workingMemory.replaceActive(client, {
           tenantRef: thread.tenantRef,
@@ -418,16 +463,26 @@ export class PostgresConversationService {
     ) {
       throw new NotFoundError("The conversation was not found.");
     }
-    const task = await this.preparation.getPreparationTask(
-      this.pool,
-      input.tenantRef,
-      conversation.taskRef,
-      input.actorRef
+    const [task, taskHistory] = await Promise.all([
+      this.preparation.getPreparationTask(
+        this.pool,
+        input.tenantRef,
+        conversation.taskRef,
+        input.actorRef
+      ),
+      this.preparation.listHistory(this.pool, conversation.taskRef)
+    ]);
+    const terminalAfterConversation = taskHistory.some((entry) =>
+      (entry.toStatus === "completed" || entry.toStatus === "cancelled") &&
+      Date.parse(entry.occurredAt) >= Date.parse(conversation.createdAt)
     );
     if (
       !task ||
       task.courseRunRef !== conversation.courseRunRef ||
-      task.lessonRef !== conversation.lessonRef
+      task.lessonRef !== conversation.lessonRef ||
+      task.status === "completed" ||
+      task.status === "cancelled" ||
+      terminalAfterConversation
     ) {
       throw new NotFoundError("The conversation was not found.");
     }
@@ -1099,6 +1154,14 @@ export class PostgresConversationService {
       conversationRef: thread.conversationRef,
       asOf: now
     });
+    const taskHistory = await this.preparation.listHistory(
+      executor,
+      input.taskRef
+    );
+    const terminalAfterConversation = taskHistory.some((entry) =>
+      (entry.toStatus === "completed" || entry.toStatus === "cancelled") &&
+      Date.parse(entry.occurredAt) >= Date.parse(thread.createdAt)
+    );
     if (
       thread.status !== "active" ||
       hasExpired(thread, now) ||
@@ -1111,7 +1174,8 @@ export class PostgresConversationService {
       turn.actorKind !== "teacher" ||
       turn.teacherText !== input.requestText.trim() ||
       !snapshot ||
-      snapshot.sourceTurnSequence !== turn.sequence
+      snapshot.sourceTurnSequence !== turn.sequence ||
+      terminalAfterConversation
     ) {
       throw new DomainConflictError(
         "CONVERSATION_CONTEXT_CONFLICT",
@@ -1174,6 +1238,14 @@ export class PostgresConversationService {
       readonly sourceRef: string;
       readonly displaySummary: string;
     } | null;
+    readonly temporaryOverrides: readonly {
+      readonly overrideRef: string;
+      readonly canonicalKey: string;
+      readonly preferenceKey: string;
+      readonly effect: "replace_value" | "suppress_preference";
+      readonly displayValue: string;
+      readonly lifetime: "current_conversation";
+    }[];
   }> {
     const asOf = this.clock().toISOString();
     const thread = await this.conversations.getThread(executor, {
@@ -1185,7 +1257,11 @@ export class PostgresConversationService {
       throw new NotFoundError("The memory context is not available.");
     }
     if (hasExpired(thread, asOf)) {
-      return { currentTurn: null, workingMemory: null };
+      return {
+        currentTurn: null,
+        workingMemory: null,
+        temporaryOverrides: []
+      };
     }
     const [turn, snapshot] = await Promise.all([
       this.conversations.getTurn(
@@ -1219,7 +1295,8 @@ export class PostgresConversationService {
       snapshot.selectedOptions.length > 0
         ? `本轮选择：${snapshot.selectedOptions.join("、")}`
         : null,
-      snapshot.temporaryOverrides.length > 0
+      snapshot.builderVersion === "working-memory-builder@1" &&
+        snapshot.temporaryOverrides.length > 0
         ? `临时要求：${snapshot.temporaryOverrides.join("、")}`
         : null,
       snapshot.latestAssistantResult
@@ -1235,7 +1312,18 @@ export class PostgresConversationService {
       workingMemory: {
         sourceRef: snapshot.snapshotRef,
         displaySummary: details.join("；")
-      }
+      },
+      temporaryOverrides: snapshot.builderVersion ===
+        "working-memory-builder@2"
+        ? snapshot.temporaryOverrides.map((override) => ({
+            overrideRef: override.overrideRef,
+            canonicalKey: override.canonicalKey,
+            preferenceKey: override.preferenceKey,
+            effect: override.effect,
+            displayValue: override.displayValue,
+            lifetime: override.lifetime
+          }))
+        : []
     };
   }
 
@@ -1270,11 +1358,19 @@ export class PostgresConversationService {
     if (thread.status !== "active" || hasExpired(thread, input.createdAt)) {
       return [];
     }
-    const existing = await this.conversations.findAssistantResult(
-      client,
-      thread.conversationRef,
-      input.proposalRevisionRef
-    );
+    const [existing, previousSnapshot] = await Promise.all([
+      this.conversations.findAssistantResult(
+        client,
+        thread.conversationRef,
+        input.proposalRevisionRef
+      ),
+      this.workingMemory.getActive(client, {
+        tenantRef: thread.tenantRef,
+        teacherRef: thread.teacherRef,
+        conversationRef: thread.conversationRef,
+        asOf: input.createdAt
+      })
+    ]);
     if (existing) return [];
     const turnPayload = {
       turnRef: `turn:${randomUUID()}`,
@@ -1313,11 +1409,27 @@ export class PostgresConversationService {
       client,
       thread.conversationRef
     );
-    const snapshot = buildWorkingMemory({
-      conversationRef: thread.conversationRef,
-      turns,
-      expiresAt: thread.retentionUntil
-    });
+    const snapshot = this.temporaryOverrides?.enabled
+      ? buildWorkingMemoryV2({
+          conversationRef: thread.conversationRef,
+          taskRef: thread.taskRef,
+          courseRunRef: thread.courseRunRef,
+          lessonRef: thread.lessonRef,
+          owner: {
+            tenantRef: thread.tenantRef,
+            teacherRef: thread.teacherRef
+          },
+          turns,
+          expiresAt: thread.retentionUntil,
+          at: input.createdAt,
+          previousWorkingMemory: previousSnapshot,
+          interpretation: null
+        })
+      : buildWorkingMemory({
+          conversationRef: thread.conversationRef,
+          turns,
+          expiresAt: thread.retentionUntil
+        });
     receipts.push(
       await this.workingMemory.replaceActive(client, {
         tenantRef: thread.tenantRef,
@@ -1421,6 +1533,45 @@ export class PostgresConversationService {
     return ConversationTurnViewSchema.parse({
       ...payload,
       contentHash: hash(payload)
+    });
+  }
+
+  private interpretTemporaryOverride(input: {
+    readonly thread: ConversationThreadRecord;
+    readonly turn: ConversationTurnView & { teacherText: string | null };
+    readonly previousSnapshot: PersistedWorkingMemorySnapshot | null;
+    readonly now: string;
+  }): TemporaryPreferenceOverrideInterpretation | null {
+    if (
+      !this.temporaryOverrides?.enabled ||
+      input.turn.actorKind !== "teacher" ||
+      input.turn.contentKind !== "teacher_text" ||
+      !input.turn.teacherText
+    ) {
+      return null;
+    }
+    return interpretExplicitTemporaryPreferenceOverride({
+      teacherText: input.turn.teacherText,
+      sourceTurnRef: input.turn.turnRef,
+      sourceTurnSequence: input.turn.sequence,
+      sourceTurnContentHash: input.turn.contentHash,
+      owner: {
+        tenantRef: input.thread.tenantRef,
+        teacherRef: input.thread.teacherRef
+      },
+      conversationRef: input.thread.conversationRef,
+      taskRef: input.thread.taskRef,
+      courseRunRef: input.thread.courseRunRef,
+      lessonRef: input.thread.lessonRef,
+      skillId: "lesson-preparation",
+      activeWorkingMemory:
+        input.previousSnapshot?.builderVersion === "working-memory-builder@2"
+          ? input.previousSnapshot as WorkingMemoryViewV2
+          : null,
+      catalog: this.temporaryOverrides.catalog,
+      enabled: true,
+      at: input.now,
+      expiresAt: input.thread.retentionUntil
     });
   }
 

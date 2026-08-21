@@ -6,6 +6,7 @@ import {
   WorkingMemoryViewSchema
 } from "./conversation.js";
 import { MemoryScopeSchema } from "./memory-scope.js";
+import { TemporaryOverrideReceiptSchema } from "./temporary-memory-override.js";
 import {
   MemoryCandidateViewSchema,
   TeacherPreferenceViewSchema
@@ -263,7 +264,8 @@ export const DispatchTeacherConversationTurnResultSchema =
             parentTurnRef: z.string().min(1).nullable(),
             conversationVersion: z.number().int().positive()
           })
-          .strict()
+          .strict(),
+        temporaryOverrideReceipt: TemporaryOverrideReceiptSchema.optional()
       })
       .strict(),
     z

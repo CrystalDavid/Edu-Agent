@@ -159,6 +159,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
 
 function formatTodayForTest(): string {
   return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "long",
     day: "numeric",
     weekday: "long"
@@ -871,15 +872,31 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.getByRole("button", { name: "返回备课任务" }).click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   await expect(page.getByTestId("completed-task-review-only")).toBeVisible();
-  await taskInput.fill(
-    "创建第二条建议，用于验证拒绝不会改变已批准计划。"
+  await expect(taskInput).toBeDisabled();
+  await expect(page.getByTestId("generate-copilot")).toBeDisabled();
+  await expect(page.getByTestId("accept-suggestion")).toHaveCount(0);
+  await expect(page.getByTestId("edit-suggestion")).toHaveCount(0);
+
+  const rejectionTask = await createStartedPreparationTask(
+    request,
+    "lesson:slope-and-graph-change"
+  );
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(rejectionTask.taskRef)}`
+  );
+  const rejectionRequest =
+    "创建第二条建议，用于验证拒绝不会改变已批准计划。";
+  await taskInput.fill(rejectionRequest);
+  const rejectionCreateResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(apiRoutes.teacher.modelInvocations) &&
+      response.request().method() === "POST"
   );
   await page.getByTestId("generate-copilot").click();
+  expect((await rejectionCreateResponse).status()).toBe(202);
   await expect(
     page.getByRole("heading", { name: "比较教学策略" })
   ).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("accept-suggestion")).toBeDisabled();
-  await expect(page.getByTestId("edit-suggestion")).toBeDisabled();
   await page.getByText("其他处理", { exact: true }).click();
   await expect(page.getByTestId("reject-suggestion")).toBeEnabled();
   await expect(page.getByTestId("reject-suggestion")).toBeVisible();
@@ -897,6 +914,25 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   expect(afterReject.currentApproved.revisionRef).toBe(
     afterApproval.currentApproved.revisionRef
   );
+  const rejectionTaskResponse = await request.get(
+    apiRoutes.teacher.preparationTask(rejectionTask.taskRef),
+    { headers }
+  );
+  expect(rejectionTaskResponse.status()).toBe(200);
+  const rejectionTaskState = await rejectionTaskResponse.json();
+  const cancelledRejectionTask = await request.post(
+    apiRoutes.teacher.preparationTaskCancel(rejectionTask.taskRef),
+    {
+      headers,
+      data: {
+        expectedVersion: rejectionTaskState.version,
+        purpose: "lesson-preparation.cancel",
+        idempotencyKey:
+          `playwright:gate25:cancel-rejection:${crypto.randomUUID()}`
+      }
+    }
+  );
+  expect(cancelledRejectionTask.status()).toBe(201);
 
   await page.goto(
     `/runs/tasks/${encodeURIComponent(startedTask.taskRef)}`

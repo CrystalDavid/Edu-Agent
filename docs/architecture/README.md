@@ -158,16 +158,19 @@ SubmissionAttempt 和已发布 Assignment 内容不原地覆盖；批改修订�
 
 ## 9. Skill-aware Context Engineering 与 Memory 边界
 
-开启 scoped Preference feature flag 时，新的 Conversation 模式 lesson preparation 运行绑定 `lesson-preparation@6`；关闭时回到 global-only `@5`。一次性兼容调用继续使用 `@3` 或 `@4`，所有 `@1–@5` 历史版本及 Pack V1 均按原版本解释和恢复。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，在 ModelProvider 调用前使用纯 Context Builder，并分别通过 owner-scoped Conversation/Working Memory Port 与 Personalization Context Port 读取短期任务状态和已确认长期偏好：
+同时开启 scoped Preference 与 temporary override feature flag 时，新的 Conversation 模式 lesson preparation 运行绑定 `lesson-preparation@7`、WorkingMemory V2 和 Pack V3；只关闭 temporary override 时保留 scoped `@6`/Pack V2，关闭 scoped Preference 时回到 global-only `@5`。一次性兼容调用继续使用 `@3` 或 `@4`，所有 `@1–@6` 历史版本与 WorkingMemory V1、Pack V1/V2 均按原版本解释和恢复。Worker 仍通过 owning Platform Facade/Repository 重建已授权资源，在 ModelProvider 调用前使用纯 Context Builder，并分别通过 owner-scoped Conversation/Working Memory Port 与 Personalization Context Port 读取短期任务状态和已确认长期偏好：
 
 ```mermaid
 flowchart LR
     WS["TaskWorkingSet"] --> AUTH["AuthorizedContextPlan"]
     AUTH --> SNAP["Authorized Platform snapshots"]
-    SNAP --> CB["lesson-preparation@6 Context Builder"]
+    SNAP --> CB["lesson-preparation@7 Context Builder"]
     TURN["Work Conversation + immutable teacher/command Turns"] --> DISPATCH["Server Conversation dispatch"]
-    DISPATCH --> WM["Runtime WorkingMemorySnapshot"]
+    DISPATCH --> WM["Runtime WorkingMemorySnapshot V1/V2"]
     DISPATCH --> REMEMBER["Typed explicit remember Port"]
+    DISPATCH --> TEMP["Pure temporary override interpreter"]
+    CATALOG["Typed Catalog Port"] --> TEMP
+    TEMP --> WM
     REMEMBER --> PREF
     WM --> CB
     PREF["Personalization scoped resolver"] --> CB
@@ -178,7 +181,7 @@ flowchart LR
 
 Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifest 和实际 snapshot refs，执行确定性排序/压缩，并记录 resource version/hash/provenance、排除原因、missing information 和分段 token 估算。授权、关键资源、Evidence 命中或预算检查失败时不调用模型；纯预算失败保持现有 `budget_exceeded` API 语义。安全 manifest/evaluation 摘要写入 AgentRun output，不保存完整 Prompt 或 Evidence。
 
-Conversation 是 Work-owned 平台真值，Turn 只保存教师文本或教师可见的安全结果摘要/有界结果 refs，禁止原地修改，也不保存供应商原始响应。普通 `teacher_text` 才进入 `working-memory-builder@1` 的 active goal 与近期请求；`teacher + command` 和 `assistant_surface + command` 只推进 Conversation/展示安全回执，不进入 Prompt，也不创建虚构教学目标。WorkingMemorySnapshot 是 Runtime-owned 派生状态：保留当前目标、最多六条近期教师要求、可解析指代、临时约束和最近结果引用；旧快照转为 superseded，封存执行在保留窗口内按 ref/hash 精确恢复，hash、owner、来源或期限不匹配即 fail closed。所有读取同时约束 tenant、teacher、conversation 和 Task；新会话不会继承旧会话工作记忆。当前请求优先级最高，临时约束不得自动晋升为长期 Preference。
+Conversation 是 Work-owned 平台真值，Turn 只保存教师文本或教师可见的安全结果摘要/有界结果 refs，禁止原地修改，也不保存供应商原始响应。普通 `teacher_text` 进入 active goal 与近期请求；`teacher + command` 和 `assistant_surface + command` 只推进 Conversation/展示安全回执，不进入 Prompt，也不创建虚构教学目标。WorkingMemorySnapshot 是 Runtime-owned 派生状态：V1 保持 `working-memory-builder@1` 的历史语义；V2 用 `working-memory-builder@2` 在原字段外保存最多 10 条受控、`eligibleForConsolidation=false`、current-conversation typed override。旧快照转为 superseded，封存执行在保留窗口内按 ref/hash 精确恢复，hash、owner、Conversation、Task、CourseRun、Lesson、Skill、来源或期限不匹配即 fail closed。所有读取同时约束 tenant、teacher、conversation 和 Task；新会话不会继承旧会话工作记忆。当前请求优先级最高，临时覆盖次之，长期 Preference 仅作辅助；临时状态不得自动晋升为长期 Preference。
 
 Conversation retention 由服务端配置，Turn 继承线程期限，WorkingMemorySnapshot 不得晚于来源 Turn 到期。显式 close 后禁止新 Turn 并 invalidates active snapshot；到期线程不再返回 Turn 内容，也不再进入模型 Context。当前 30 天只是待产品确认的运行默认值；学校级期限、物理清理/去标识和治理 SLA 尚未成为已实现产品政策。
 
@@ -188,15 +191,15 @@ Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandida
 
 Scope 由 Personalization 拥有，但不是授权。写入 CourseRun/Lesson/Task Scope 时，Personalization 只能调用 typed `TeacherPreferenceScopeAuthorizationPort`，由 Composition Adapter 通过 owning Work/Education facade 校验 Session 已解析的 CourseRun access、Lesson 归属和 Task owner；不建立跨 Schema FK，也不让 Personalization 直接查询其他 Schema。解析时先按 owner、active、valid time、Scope、Skill 做硬过滤，再按 canonical key 选择 `task > lesson > course_run > subject_grade > subject > global`，同 Scope 下 `Skill-specific > unrestricted`，最后才使用 explicitness、version、updatedAt、preferenceRef 确定性打破平局。设置页创建 `teacher_declared + teacher_settings_confirmed`；PR-2B 的服务器 Catalog 还可创建 `teacher_declared + teacher_explicit_command`，但只支持 Lesson Preparation 的 global/当前 CourseRun，不进行开放式同义词或 LLM 冲突判断。
 
-新的 Web 发送路径调用 server-owned `dispatch-turn`。纯 `explicit-memory-command-interpreter@1` 处理 remember；独立的 `explicit-forget-command-interpreter@1` 处理受控 Forget，二者都复用 `teacher-preference-catalog@1` 且不调用模型。低风险 remember 可写 Candidate/Preference；完全重复不增 epoch，同 key/Scope 不同值只创建 draft Candidate。Forget 的唯一 active match 可在一个 Personalization 事务中 revoke；未声明 Scope 且有多个匹配时，immutable receipt refs 封存选项，老师必须显式选择，确认后追加 follow-up receipt。Work 不直接写 Personalization，Personalization 也不写 Work/Runtime；命令、Personalization 和回执采用 at-least-once + stable idempotency 恢复。
+新的 Web 发送路径调用 server-owned `dispatch-turn`，路由顺序固定为 Remember → Forget → Temporary Override → ordinary instruction。纯 `explicit-memory-command-interpreter@1` 处理 remember；独立的 `explicit-forget-command-interpreter@1` 处理受控 Forget，二者都复用 `teacher-preference-catalog@1` 且不调用模型。低风险 remember 可写 Candidate/Preference；完全重复不增 epoch，同 key/Scope 不同值只创建 draft Candidate。Forget 的唯一 active match 可在一个 Personalization 事务中 revoke；未声明 Scope 且有多个匹配时，immutable receipt refs 封存选项，老师必须显式选择，确认后追加 follow-up receipt。纯 `temporary-preference-override-interpreter@1` 只通过 Composition 的 typed Catalog Port 读取同一 Catalog，将完整匹配的低风险临时子句 canonicalize 为 replace/suppress/clear；它不写 Candidate/Preference，剩余教学要求仍作为原始 teacher Turn 进入模型。Work 不直接写 Personalization，Personalization 也不写 Work/Runtime；命令、Personalization 和回执采用 at-least-once + stable idempotency 恢复。
 
-`teacherMemoryEpoch` 在确认、值更新、Scope/valid time 更新和撤销的同一事务中递增，普通读取不递增。它进入 Pack V2 hash，为未来 cache/continuation 失效提供平台版本；已封存 Run 保留运行时 epoch，不因后续修改而改写。旧 Skill 故意只通过兼容 Port 读取当前有效的 global、无 Skill 限制 Preference，防止 scoped row 无差别进入 Material Generation、Reflection 等尚未迁移的 Skill。
+`teacherMemoryEpoch` 在确认、值更新、Scope/valid time 更新和撤销的同一事务中递增，普通读取和 temporary override apply/suppress/clear 均不递增。它进入 Pack V2/V3 hash，为未来 cache/continuation 失效提供平台版本；已封存 Run 保留运行时 epoch，不因后续修改而改写。旧 Skill 故意只通过兼容 Port 读取当前有效的 global、无 Skill 限制 Preference，防止 scoped row 或临时覆盖无差别进入 Material Generation、Reflection 等尚未迁移的 Skill。
 
-Runtime/Context orchestration 继续拥有 pack 真值。历史 `MemoryContextPackManifest@1` 不改写；`@2` 在相同最小 refs/version/hash 清单上增加 query Scope hash、unversioned Skill ID、retrieval policy、teacherMemoryEpoch、Scope fingerprint/specificity/Skill match 和 selected/overridden/excluded 计数。`createdAt` 不参与 content hash；相同 owner、Conversation/Turn/Snapshot、Skill、query、epoch、Preference revision 和决策顺序得到相同 pack/hash。Provider retry 从 AgentRun output 读取已封存 manifest，只按 immutable revision 重建当时 injected values，不重新解析当前 Preference。
+Runtime/Context orchestration 继续拥有 pack 真值。历史 `MemoryContextPackManifest@1` 不改写；`@2` 在相同最小 refs/version/hash 清单上增加 query Scope hash、unversioned Skill ID、retrieval policy、teacherMemoryEpoch、Scope fingerprint/specificity/Skill match 和 selected/overridden/excluded 计数；`@3` 再封存 override policy、WorkingMemory V2 ref/version/hash、temporary override set hash、最小 decision entries 及 injected/suppressed 计数。`createdAt` 不参与 content hash；相同 owner、Conversation/Turn/Snapshot、Skill、query、epoch、Preference revision、override set 和决策顺序得到相同 pack/hash。Provider retry 从 AgentRun output 读取已封存 manifest与模型输入，只按 immutable revision 重建当时 durable values，不重新解析当前 Preference、Turn 或 WorkingMemory；repair 同样复用已验证的 sealed temporary input。
 
-Composition 在 Provider 调用前通过 typed `MemoryApplicationRecorder` 把 durable Preference decision best-effort 写入 Personalization；V2 的 `scope_hash` 使用真实 query Scope hash，并记录 selected/injected/overridden/excluded。失败仅把 Runtime 观测状态标为 `degraded`，不改变 ModelExecution 或 Proposal。正式处置后，既有 `SuggestionDisposed` Outbox 以最小 payload、at-least-once 追加 outcome。RunExplanation 在 owner 授权下从 Work/Runtime 动态解析当前要求和同任务摘要，并从 Preference immutable revision 解析当时值；历史 V1 标记“旧版全局偏好上下文”，历史 V2 能显示当时作用范围和后来撤销状态，新 Run 不再选取已撤销项。Manifest/application 不保存 Turn 原文副本、Preference value 副本、完整 Prompt/Provider 响应、隐藏推理或 Evidence 正文。
+Composition 在 Provider 调用前通过 typed `MemoryApplicationRecorder` 把 durable Preference decision best-effort 写入 Personalization；V2/V3 的 `scope_hash` 使用真实 query Scope hash，并记录 selected/injected/overridden/excluded。temporary override 自身不产生 durable application row；同 canonical key 的 durable Preference 会记录 `overridden/current_instruction_override`。观测失败仅把 Runtime 状态标为 `degraded`，不改变 ModelExecution 或 Proposal。正式处置后，既有 `SuggestionDisposed` Outbox 以最小 payload、at-least-once 追加 outcome。RunExplanation 在 owner 授权下从 Work/Runtime 动态解析当前要求、同任务摘要和 typed override，并从 Preference immutable revision 解析当时值；历史 V1 标记“旧版全局偏好上下文”，历史 V2 能显示当时作用范围，V3 继续显示当时 temporary decision。撤销、清除或 Conversation 到期不改写 sealed 历史 Run，新 Run 不再选取失效状态。Manifest/application 不保存 Turn 原文副本、Preference value 副本、完整 Prompt/Provider 响应、隐藏推理或 Evidence 正文。
 
-`MEMORY_SCOPED_PREFERENCES_ENABLED`、`MEMORY_EXPLICIT_REMEMBER_ENABLED` 和 `MEMORY_EXPLICIT_FORGET_ENABLED` 均在 local/test 默认开启、production 未显式配置时关闭。Explicit Remember 依赖 scoped flag，不能降级为 unrestricted Preference；Explicit Forget 独立于两者，使暂停新增记忆时仍可撤销既有 Preference。关闭不逆向 Migration、不删除 scoped row、历史 receipt 或 Run；Forget flag 关闭只停止新的对话式撤销，设置页 revoke 继续有效。普通 Conversation、WorkingMemory 和 M0-lite application/outcome 不受影响。
+`MEMORY_SCOPED_PREFERENCES_ENABLED`、`MEMORY_EXPLICIT_REMEMBER_ENABLED`、`MEMORY_EXPLICIT_FORGET_ENABLED` 和 `MEMORY_TEMPORARY_OVERRIDES_ENABLED` 均在 local/test 默认开启、production 未显式配置时关闭。Explicit Remember 依赖 scoped flag，不能降级为 unrestricted Preference；Explicit Forget 独立于两者，使暂停新增记忆时仍可撤销既有 Preference。temporary flag 关闭时，新消息继续作为 ordinary instruction，WorkingMemory 回到 V1、scoped Lesson Preparation 回到 `@6`/Pack V2，历史 V2/Pack V3 仍可读取。关闭不逆向 Migration、不删除 scoped row、temporary Snapshot、历史 receipt 或 Run；设置页 revoke 和既有 M0-lite application/outcome 不受影响。
 
 ## 10. Teaching Workspace 读取层与材料闭环
 
@@ -206,7 +209,7 @@ Lesson Workspace 不创建第二套 Lesson 状态。`LessonJourneyProjection`、
 flowchart LR
     LESSON["Lesson + Objective"] --> BRIEF["lesson-analysis@1<br/>Lesson Brief candidate"]
     BRIEF --> BCONFIRM["Teacher adopts selections"]
-    BCONFIRM --> PREP["lesson-preparation@6<br/>Scoped + conversation-aware TeachingPlan Proposal"]
+    BCONFIRM --> PREP["lesson-preparation@7<br/>Scoped + temporary-aware TeachingPlan Proposal"]
     PREP --> APPROVE["Teacher approves Revision"]
     APPROVE --> MATERIAL["material-generation@1<br/>Content Drafts"]
     MATERIAL --> ARTIFACT["Artifact Service<br/>FileAsset + immutable FileVersion"]

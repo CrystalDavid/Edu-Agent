@@ -113,6 +113,11 @@ import {
 import {
   PostgresConversationDispatchService
 } from "./postgres-conversation-dispatch-service.js";
+import {
+  readMemoryTemporaryOverridesSettings,
+  type MemoryTemporaryOverridesSettings
+} from "../modules/agent-runtime-context/infrastructure/memory-temporary-overrides-config.js";
+import { TemporaryPreferenceCatalogAdapter } from "./temporary-preference-catalog-adapter.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -128,6 +133,7 @@ export function createProductContainer(
     memoryScopedPreferencesSettings?: MemoryScopedPreferencesSettings;
     memoryExplicitRememberSettings?: MemoryExplicitRememberSettings;
     memoryExplicitForgetSettings?: MemoryExplicitForgetSettings;
+    memoryTemporaryOverridesSettings?: MemoryTemporaryOverridesSettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -154,6 +160,13 @@ export function createProductContainer(
   const explicitForgetSettings =
     options.memoryExplicitForgetSettings ??
     readMemoryExplicitForgetSettings();
+  const temporaryOverridesSettings =
+    options.memoryTemporaryOverridesSettings ??
+    readMemoryTemporaryOverridesSettings();
+  const temporaryOverridesEnabled =
+    temporaryOverridesSettings.enabled && scopedPreferencesSettings.enabled;
+  const temporaryPreferenceCatalog =
+    new TemporaryPreferenceCatalogAdapter();
   const personalization = new PostgresPersonalizationService(
     appPool,
     undefined,
@@ -168,7 +181,11 @@ export function createProductContainer(
     options.conversationRetentionSettings ??
     readConversationRetentionSettings();
   const conversations = new PostgresConversationService(appPool, {
-    retention: conversationRetentionSettings
+    retention: conversationRetentionSettings,
+    temporaryOverrides: {
+      enabled: temporaryOverridesEnabled,
+      catalog: temporaryPreferenceCatalog
+    }
   });
   const conversationDispatch = new PostgresConversationDispatchService(
     conversations,
@@ -177,8 +194,10 @@ export function createProductContainer(
       explicitRememberEnabled:
         explicitRememberSettings.enabled && scopedPreferencesSettings.enabled,
       scopedPreferencesEnabled: scopedPreferencesSettings.enabled,
-      explicitForgetEnabled: explicitForgetSettings.enabled
-    }
+      explicitForgetEnabled: explicitForgetSettings.enabled,
+      temporaryOverridesEnabled
+    },
+    temporaryPreferenceCatalog
   );
   const memoryApplications = new PostgresMemoryApplicationService(
     appPool,
@@ -195,6 +214,7 @@ export function createProductContainer(
       memoryApplications,
       memoryApplicationObservabilityEnabled: memoryApplications.enabled,
       scopedPreferencesEnabled: scopedPreferencesSettings.enabled,
+      temporaryOverridesEnabled,
       lessonBriefs: lessonBriefStore,
       conversations
     }

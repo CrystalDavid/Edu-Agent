@@ -80,9 +80,11 @@ MODEL_DEBUG_CONTENT=false
 
 `MEMORY_APPLICATION_RETENTION_DAYS` 控制新 application 的逻辑读取期限，当前运行默认值为 365 天；outcome 通过所属 application 继承读取边界。生产期限、学校级覆盖、审计最低期限、Legal Hold、redaction/tombstone 与获批清理 Worker 均为**待产品确认**。现有 application/outcome 是 append-only，不能用 UPDATE 或物理 DELETE 绕过审计。
 
-`MEMORY_SCOPED_PREFERENCES_ENABLED` 控制新建/修改 scoped 或 Skill-constrained TeacherPreference，以及新 Lesson Preparation 是否使用 `lesson-preparation@6` + Pack V2。local/test 未显式配置时默认启用；production 未显式配置时默认关闭。关闭后设置页隐藏 Scope 控件，新偏好只能写 unrestricted global（`skillIds=[]`），Lesson Preparation 回到 `@5` 的 global 兼容路径；已有 scoped row、历史 V2 Run 和 application/outcome 不删除、不逆向 Migration，Conversation/WorkingMemory 与 M0-lite 观测语义不变。该值是非敏感服务端 feature flag，浏览器返回的布尔值只用于显示，不能作为授权真值。
+`MEMORY_SCOPED_PREFERENCES_ENABLED` 控制新建/修改 scoped 或 Skill-constrained TeacherPreference，以及新 Lesson Preparation 是否至少使用 `lesson-preparation@6` + Pack V2（temporary override 同时开启时升级为 `@7` + Pack V3）。local/test 未显式配置时默认启用；production 未显式配置时默认关闭。关闭后设置页隐藏 Scope 控件，新偏好只能写 unrestricted global（`skillIds=[]`），Lesson Preparation 回到 `@5` 的 global 兼容路径；已有 scoped row、历史 V2/V3 Run 和 application/outcome 不删除、不逆向 Migration，Conversation/WorkingMemory 与 M0-lite 观测语义不变。该值是非敏感服务端 feature flag，浏览器返回的布尔值只用于显示，不能作为授权真值。
 
 `MEMORY_EXPLICIT_FORGET_ENABLED` 控制 Lesson Preparation Conversation 中新的显式 Forget 命令。local/test 未显式配置时默认启用；production 未显式配置时默认关闭。它独立于 scoped/remember flag：关闭只返回安全提示与“助手偏好”导航，设置页原有 revoke 仍可用；已撤销 Preference、历史 command receipt、Revision、Audit 和 Run 都不恢复或删除。该值同样是非敏感服务端真值，浏览器只能据返回状态显示交互。
+
+`MEMORY_TEMPORARY_OVERRIDES_ENABLED` 控制 Lesson Preparation Conversation 中受控“这次/本次”要求是否写入 WorkingMemory V2 并使用 `lesson-preparation@7` + Pack V3。local/test 未显式配置时默认启用；production 未显式配置时默认关闭。Pack V3 当前还要求 scoped flag 开启；任一前提关闭都不会建立 typed override。只关闭 temporary flag 时消息仍作为普通 teacher instruction 生成，scoped 路径回到 `@6` + Pack V2；长期 Preference、epoch、历史 V2 Snapshot/Pack V3 和 M0-lite 记录都不删除或改写。该值是非敏感服务端 feature flag，浏览器不能把自身状态当作真值。
 
 ## 本地身份与服务端会话
 

@@ -36,6 +36,7 @@ import {
   type ConfirmedTeacherPreferenceSnapshot,
   type PersonalizationContextProvider,
   type ResolvedConfirmedPreferences,
+  type TeacherMemoryEpochReader,
   type TeacherPreferenceScopeAuthorizationPort
 } from "../modules/personalization-memory-analytics/application/index.js";
 import {
@@ -88,6 +89,7 @@ type ForgetCommand = Extract<
 
 export class PostgresPersonalizationService
   implements PersonalizationContextProvider,
+    TeacherMemoryEpochReader,
     ExplicitTeacherMemoryCommandService,
     ExplicitTeacherForgetCommandService
 {
@@ -112,6 +114,20 @@ export class PostgresPersonalizationService
   get explicitRememberEnabled(): boolean {
     return this.explicitRememberSettings.enabled &&
       this.scopedSettings.enabled;
+  }
+
+  async getTeacherMemoryEpoch(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+  }): Promise<number> {
+    this.assertActor({
+      tenantRef: input.tenantRef,
+      actorRef: input.teacherRef
+    });
+    return new PostgresMemoryCandidateRepository(this.pool).getMemoryEpoch({
+      tenantRef: input.tenantRef,
+      teacherRef: input.teacherRef
+    });
   }
 
   get explicitForgetEnabled(): boolean {

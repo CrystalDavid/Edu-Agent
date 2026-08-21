@@ -112,6 +112,8 @@ tests         -> contracts + sample-data + test-fixtures
 
 显式 forget 继续使用 `memory-command.ts` 的兼容 union；纯 Interpreter、typed revoke Port 和服务端 flag 分别位于 `explicit-teacher-forget-command.ts`、`application/explicit-teacher-forget-command-service.ts` 与 `infrastructure/memory-explicit-forget-config.ts`。确认入口仍由 Conversation Composition 协调，只接受持久化 receipt refs 的子集。PR-2C1 不新增 Migration，现有 51 个文件保持不变。
 
+正式 temporary override 的共享 Contract 位于 `packages/contracts/src/temporary-memory-override.ts`；纯 Runtime Interpreter、typed Catalog Port、WorkingMemory V2 与 Pack V3 分别位于 `agent-runtime-context/domain/explicit-temporary-preference-override.ts`、`application/temporary-preference-catalog-port.ts`、`domain/working-memory.ts` 和 `domain/memory-context-pack.ts`。Composition Adapter 只读复用 Personalization Catalog；`lesson-preparation@7` 是唯一接入 Skill。PR-2C2 复用 Runtime 0007 的 JSONB，不新增 Migration，registry 保持 51。
+
 ## `scripts` 与稳定命令
 
 脚本实现按职责分为 `local/`、`testing/`、`quality/`、`postgres/` 和 `security/`；仓库级 verifier 位于 `scripts/` 根。公共入口只在根 `package.json` 注册，并由 [开发指南](README.md) 说明。

@@ -3,7 +3,8 @@ import type {
   MemoryApplicationOutcomeStatus,
   MemoryApplicationReasonCode,
   MemoryContextExplanation,
-  MemoryContextSourceKind
+  MemoryContextSourceKind,
+  TemporaryOverrideDecisionReasonCode
 } from "@edu-agent/contracts";
 import { Tag } from "antd";
 
@@ -34,6 +35,9 @@ export function MemoryUseDisclosure(props: {
   );
   const includedPreferences = memoryContext.durablePreferences.filter((entry) =>
     includedDecisions.has(entry.decision)
+  );
+  const includedTemporaryOverrides = memoryContext.temporaryOverrides.filter(
+    (entry) => includedDecisions.has(entry.decision)
   );
   const excludedPreferences = memoryContext.durablePreferences.filter(
     (entry) => !includedDecisions.has(entry.decision)
@@ -117,6 +121,41 @@ export function MemoryUseDisclosure(props: {
             </MemoryGroup>
           ) : null}
 
+          {includedTemporaryOverrides.length > 0 ? (
+            <MemoryGroup
+              title="仅本次要求"
+              testId="memory-temporary-overrides"
+            >
+              {includedTemporaryOverrides.map((override) => (
+                <article
+                  className="memory-use-item"
+                  data-testid="memory-temporary-override"
+                  key={`${override.overrideRef}:${override.decision}`}
+                >
+                  <div className="memory-use-item__content">
+                    <p>
+                      <strong>
+                        {teacherPreferenceLabel(override.preferenceKey)}
+                      </strong>
+                      <span>
+                        ：{override.effect === "suppress_preference"
+                          ? `仅本次不使用“${cleanDisplayText(override.displayValue)}”`
+                          : cleanDisplayText(override.displayValue)}
+                      </span>
+                    </p>
+                    <small>仅在当前备课对话有效，结束后恢复平时习惯</small>
+                    {variant === "detailed" ? (
+                      <small>原因：{reasonLabel(override.reasonCode)}</small>
+                    ) : null}
+                  </div>
+                  {variant === "detailed" ? (
+                    <DecisionTag decision={override.decision} />
+                  ) : null}
+                </article>
+              ))}
+            </MemoryGroup>
+          ) : null}
+
           {(
             excludedWorkingMemory.length > 0 ||
             excludedPreferences.length > 0 ||
@@ -158,6 +197,15 @@ export function MemoryUseDisclosure(props: {
                 />
               ))}
             </MemoryGroup>
+          ) : null}
+
+          {includedTemporaryOverrides.length > 0 ? (
+            <p
+              className="memory-use-disclosure__disclaimer"
+              data-testid="memory-temporary-disclaimer"
+            >
+              本次覆盖不会修改你的长期偏好。结束当前备课会话后，系统会恢复平时设置。
+            </p>
           ) : null}
 
           {variant === "detailed" ? (
@@ -330,6 +378,11 @@ function countReferencedSources(memoryContext: MemoryContextExplanation): number
       references.add(`teacher_preference:${entry.preferenceRef}`);
     }
   }
+  for (const entry of memoryContext.temporaryOverrides) {
+    if (includedDecisions.has(entry.decision)) {
+      references.add(`temporary_override:${entry.overrideRef}`);
+    }
+  }
   return references.size;
 }
 
@@ -337,11 +390,14 @@ function sourceKindLabel(sourceKind: MemoryContextSourceKind): string {
   return {
     current_instruction: "当前要求",
     working_memory: "同一任务上下文",
-    teacher_preference: "已确认偏好"
+    teacher_preference: "已确认偏好",
+    temporary_override: "仅本次要求"
   }[sourceKind];
 }
 
-function reasonLabel(reasonCode: MemoryApplicationReasonCode): string {
+function reasonLabel(
+  reasonCode: MemoryApplicationReasonCode | TemporaryOverrideDecisionReasonCode
+): string {
   return {
     current_instruction: "本轮明确要求",
     same_task_working_memory: "来自同一任务的短期上下文",
@@ -350,7 +406,9 @@ function reasonLabel(reasonCode: MemoryApplicationReasonCode): string {
     duplicate_key: "已有同类偏好被优先采用",
     token_budget: "超出本次上下文预算",
     skill_not_allowed: "当前任务不允许使用",
-    current_instruction_override: "被本轮明确要求覆盖",
+    current_instruction_override: "本次明确要求优先",
+    temporary_override: "当前会话的受控临时替换",
+    temporary_suppression: "当前会话明确暂不使用该偏好",
     expired: "当时已过期",
     revoked: "当时已撤销",
     superseded: "已被较新版本替代",

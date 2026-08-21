@@ -118,16 +118,15 @@ describe("PR-2C1 explicit teacher forget boundaries", () => {
     );
   });
 
-  it("preserves Pack V1/V2 and lesson-preparation@1-@6 without PR-2C2", () => {
+  it("preserves Pack V1/V2 and lesson-preparation@1-@6 after PR-2C2", () => {
     const packs = source("packages/contracts/src/memory-application.ts");
     const skills = source("apps/api/src/agent/skills/index.ts");
     expect(packs).toContain("MemoryContextPackManifestV1Schema");
     expect(packs).toContain("MemoryContextPackManifestV2Schema");
-    expect(packs).not.toContain("MemoryContextPackManifestV3Schema");
-    for (let version = 1; version <= 6; version += 1) {
+    expect(packs).toContain("MemoryContextPackManifestV3Schema");
+    for (let version = 1; version <= 7; version += 1) {
       expect(skills).toContain(`lessonPreparationSkillV${version}`);
     }
-    expect(skills).not.toContain("lessonPreparationSkillV7");
     const packages = [
       "package.json",
       "apps/api/package.json",

@@ -25,7 +25,8 @@ import {
   type ProviderCapabilities,
   type RetryModelInvocationRequest,
   type TeachingPlan,
-  type TeacherTaskRequest
+  type TeacherTaskRequest,
+  type TemporaryPreferenceOverride
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
@@ -36,6 +37,7 @@ import {
   legacyLessonPreparationSkillRef,
   lessonBriefPreparationSkillRef,
   lessonPreparationSkillRef,
+  temporaryOverrideLessonPreparationSkillRef,
   loadReflectionAnalysisSkill,
   loadHistoricalLessonPreparationSkill,
   loadLessonPreparationSkill,
@@ -48,6 +50,7 @@ import {
   type LessonBriefContextEvaluation,
   type LessonBriefPreparationManifest,
   type ConversationPreparationManifest,
+  type TemporaryOverrideConversationPreparationManifest,
   type PersonalizedLessonPreparationManifest,
   type PreferenceContextEvaluation,
   type LessonPreparationSkillVersion,
@@ -80,8 +83,10 @@ import type {
 } from "../modules/personalization-memory-analytics/application/teacher-preference-revision-reader.js";
 import {
   buildMemoryContextPackManifest,
-  buildMemoryContextPackManifestV2
+  buildMemoryContextPackManifestV2,
+  buildMemoryContextPackManifestV3
 } from "../modules/agent-runtime-context/domain/memory-context-pack.js";
+import { hashTemporaryOverrideSet } from "../modules/agent-runtime-context/domain/working-memory.js";
 import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
@@ -202,6 +207,7 @@ interface ModelInvocationDependencies {
   memoryApplications?: MemoryApplicationRecorder & TeacherPreferenceRevisionReader;
   memoryApplicationObservabilityEnabled?: boolean;
   scopedPreferencesEnabled?: boolean;
+  temporaryOverridesEnabled?: boolean;
   lessonBriefs?: ConfirmedLessonBriefContextProvider;
   conversations?: PostgresConversationService;
   gate2Runtime?: PostgresGate2RuntimeRepository;
@@ -225,7 +231,9 @@ type LessonPreparationContextEngineering = {
   readonly preferenceEvaluation?: PreferenceContextEvaluation;
   readonly lessonBriefManifest?: LessonBriefPreparationManifest;
   readonly lessonBriefEvaluation?: LessonBriefContextEvaluation;
-  readonly conversationManifest?: ConversationPreparationManifest;
+  readonly conversationManifest?:
+    | ConversationPreparationManifest
+    | TemporaryOverrideConversationPreparationManifest;
   readonly memoryContextPackManifest?: MemoryContextPackManifest;
   readonly memoryApplicationObservability?: {
     readonly status: "disabled" | "pending" | "recorded" | "degraded";
@@ -262,6 +270,7 @@ export class PostgresModelInvocationService
     | undefined;
   private readonly memoryApplicationObservabilityEnabled: boolean;
   private readonly scopedPreferencesEnabled: boolean;
+  private readonly temporaryOverridesEnabled: boolean;
   private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
   private readonly conversations: PostgresConversationService;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
@@ -326,6 +335,8 @@ export class PostgresModelInvocationService
       dependencies.memoryApplicationObservabilityEnabled ?? false;
     this.scopedPreferencesEnabled =
       dependencies.scopedPreferencesEnabled ?? false;
+    this.temporaryOverridesEnabled =
+      dependencies.temporaryOverridesEnabled ?? false;
     this.lessonBriefs =
       dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
     this.conversations =
@@ -827,7 +838,9 @@ export class PostgresModelInvocationService
         this.skills,
         input.request.requestVersion === 2
           ? this.scopedPreferencesEnabled
-            ? lessonPreparationSkillRef
+            ? this.temporaryOverridesEnabled
+              ? temporaryOverrideLessonPreparationSkillRef
+              : lessonPreparationSkillRef
             : conversationLessonPreparationSkillRef
           : lessonBriefRef
             ? lessonBriefPreparationSkillRef
@@ -2904,7 +2917,7 @@ export class PostgresModelInvocationService
           )
         : null;
     const resolvedPreferences =
-      skill.manifest.ref === lessonPreparationSkillRef &&
+      isScopedLessonPreparationSkill(skill.manifest.ref) &&
       !sealedMemoryContextPack
         ? await this.personalization.resolveConfirmedPreferences({
             tenantRef,
@@ -2919,7 +2932,7 @@ export class PostgresModelInvocationService
             at: this.clock().toISOString()
           })
         : null;
-    const confirmedPreferences =
+    const resolvedOrSealedPreferences =
       skill.manifest.memoryPolicy.mode === "authorized_context_only"
         ? sealedMemoryContextPack
           ? await this.loadSealedPreferenceSnapshots({
@@ -2934,6 +2947,32 @@ export class PostgresModelInvocationService
                 teacherRef: execution.actorRef
               })
         : [];
+    const activeTemporaryOverrides =
+      skill.manifest.ref === temporaryOverrideLessonPreparationSkillRef
+        ? temporaryOverridesFromWorkingMemory({
+            workingMemory: sealedWorkingMemory,
+            tenantRef,
+            teacherRef: execution.actorRef,
+            conversationRef: requiredSummaryString(
+              execution,
+              "conversationRef"
+            ),
+            taskRef: preparationTask.taskRef,
+            courseRunRef: preparationTask.courseRunRef,
+            lessonRef: preparationTask.lessonRef
+          })
+        : [];
+    const overriddenCanonicalKeys = new Set(
+      activeTemporaryOverrides.map((override) => override.canonicalKey)
+    );
+    const confirmedPreferences = skill.manifest.ref ===
+      temporaryOverrideLessonPreparationSkillRef
+      ? resolvedOrSealedPreferences.filter((preference) =>
+          !overriddenCanonicalKeys.has(
+            preference.canonicalKey ?? preference.preferenceKey
+          )
+        )
+      : resolvedOrSealedPreferences;
     const skillInput = skill.inputSchema.parse({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
@@ -3062,7 +3101,7 @@ export class PostgresModelInvocationService
       "conversationManifest" in contextBuild &&
       (this.memoryApplicationObservabilityEnabled ||
         sealedMemoryContextPack ||
-        skill.manifest.ref === lessonPreparationSkillRef)
+        isScopedLessonPreparationSkill(skill.manifest.ref))
         ? this.buildMemoryApplicationObservability({
             execution,
             tenantRef,
@@ -3158,7 +3197,7 @@ export class PostgresModelInvocationService
     >();
     for (const decision of input.manifest.preferenceDecisions) {
       if (
-        input.manifest.manifestVersion === 2 &&
+        input.manifest.manifestVersion !== 1 &&
         decision.decision !== "injected" &&
         decision.decision !== "selected"
       ) {
@@ -3225,7 +3264,9 @@ export class PostgresModelInvocationService
     readonly requestText: string;
     readonly workingMemory: PersistedWorkingMemorySnapshot;
     readonly personalizationManifest: PersonalizedLessonPreparationManifest;
-    readonly conversationManifest: ConversationPreparationManifest;
+    readonly conversationManifest:
+      | ConversationPreparationManifest
+      | TemporaryOverrideConversationPreparationManifest;
     readonly confirmedPreferences: readonly ConfirmedTeacherPreferenceSnapshot[];
     readonly resolvedPreferences: ResolvedConfirmedPreferences | null;
     readonly authorizationDecisionRef: string;
@@ -3294,7 +3335,95 @@ export class PostgresModelInvocationService
       ])
     );
     let manifest: MemoryContextPackManifest;
-    if (input.sealedManifest?.manifestVersion === 2) {
+    if (input.sealedManifest?.manifestVersion === 3) {
+      if (
+        input.sealedManifest.owner.tenantRef !== input.tenantRef ||
+        input.sealedManifest.owner.teacherRef !== input.execution.actorRef ||
+        input.sealedManifest.skillRef !== input.skill.manifest.ref ||
+        input.sealedManifest.skillContentHash !==
+          input.skill.manifest.contentHash ||
+        input.sealedManifest.currentTurnRef !== currentTurnRef ||
+        input.sealedManifest.currentTurnSequence !== currentTurnSequence ||
+        input.sealedManifest.currentTurnContentHash !==
+          currentTurnContentHash ||
+        input.sealedManifest.workingMemorySnapshotRef !==
+          input.workingMemory.snapshotRef ||
+        input.sealedManifest.workingMemorySnapshotVersion !==
+          workingMemoryVersion ||
+        input.sealedManifest.workingMemorySnapshotContentHash !==
+          input.workingMemory.contentHash ||
+        input.workingMemory.builderVersion !== "working-memory-builder@2" ||
+        input.sealedManifest.temporaryOverrideSetHash !==
+          hashTemporaryOverrideSet(input.workingMemory.temporaryOverrides)
+      ) {
+        throw new Error(
+          "The sealed MemoryContextPack V3 source binding does not match."
+        );
+      }
+      const sealedInjected = input.sealedManifest.preferenceDecisions
+        .filter((entry) => entry.decision === "injected")
+        .map((entry) => [
+          entry.sourceRef,
+          entry.sourceVersion,
+          entry.sourceContentHash
+        ].join("|"))
+        .sort();
+      const reconstructedInjected =
+        input.personalizationManifest.confirmedPreferences
+          .map((entry) => [
+            entry.preferenceRef,
+            entry.version,
+            entry.contentHash
+          ].join("|"))
+          .sort();
+      if (JSON.stringify(sealedInjected) !== JSON.stringify(reconstructedInjected)) {
+        throw new Error(
+          "The sealed temporary-override Preference input cannot be reconstructed."
+        );
+      }
+      const reconstructed = buildMemoryContextPackManifestV3({
+        owner: input.sealedManifest.owner,
+        useCase: input.sealedManifest.useCase,
+        policyVersion: input.sealedManifest.policyVersion,
+        retrievalPolicyVersion:
+          input.sealedManifest.retrievalPolicyVersion,
+        teacherMemoryEpoch: input.sealedManifest.teacherMemoryEpoch,
+        queryScopeHash: input.sealedManifest.queryScopeHash,
+        querySkillId: input.sealedManifest.querySkillId,
+        queryUseCase: input.sealedManifest.queryUseCase,
+        skillRef: input.sealedManifest.skillRef,
+        skillVersion: input.sealedManifest.skillVersion,
+        skillContentHash: input.sealedManifest.skillContentHash,
+        conversationRef: input.sealedManifest.conversationRef,
+        currentTurnRef: input.sealedManifest.currentTurnRef,
+        currentTurnSequence: input.sealedManifest.currentTurnSequence,
+        currentTurnContentHash: input.sealedManifest.currentTurnContentHash,
+        workingMemorySnapshotRef:
+          input.sealedManifest.workingMemorySnapshotRef,
+        workingMemorySnapshotVersion:
+          input.sealedManifest.workingMemorySnapshotVersion,
+        workingMemorySnapshotContentHash:
+          input.sealedManifest.workingMemorySnapshotContentHash,
+        contextDecisions: input.sealedManifest.contextDecisions,
+        preferenceDecisions: input.sealedManifest.preferenceDecisions,
+        overridePolicyVersion: input.sealedManifest.overridePolicyVersion,
+        temporaryOverrideSetHash:
+          input.sealedManifest.temporaryOverrideSetHash,
+        temporaryOverrideDecisions:
+          input.sealedManifest.temporaryOverrideDecisions,
+        createdAt: input.sealedManifest.createdAt
+      });
+      if (
+        reconstructed.packRef !== input.sealedManifest.packRef ||
+        reconstructed.packContentHash !==
+          input.sealedManifest.packContentHash
+      ) {
+        throw new Error(
+          "The sealed MemoryContextPack V3 failed deterministic integrity validation."
+        );
+      }
+      manifest = input.sealedManifest;
+    } else if (input.sealedManifest?.manifestVersion === 2) {
       if (
         input.sealedManifest.owner.tenantRef !== input.tenantRef ||
         input.sealedManifest.owner.teacherRef !== input.execution.actorRef ||
@@ -3374,6 +3503,198 @@ export class PostgresModelInvocationService
         );
       }
       manifest = input.sealedManifest;
+    } else if (
+      input.skill.manifest.ref === temporaryOverrideLessonPreparationSkillRef
+    ) {
+      if (!input.resolvedPreferences) {
+        throw new Error(
+          "lesson-preparation@7 requires a sealed scoped Preference resolution."
+        );
+      }
+      if (input.workingMemory.builderVersion !== "working-memory-builder@2") {
+        throw new Error(
+          "lesson-preparation@7 requires WorkingMemorySnapshot V2."
+        );
+      }
+      const selectedByRef = new Map(
+        input.resolvedPreferences.selected.map((preference) => [
+          preference.preferenceRef,
+          preference
+        ])
+      );
+      const activeOverrides = input.workingMemory.temporaryOverrides;
+      const temporaryKeys = new Set(
+        activeOverrides.map((override) => override.canonicalKey)
+      );
+      const injected = input.personalizationManifest.confirmedPreferences.map(
+        (entry) => {
+          const preference = selectedByRef.get(entry.preferenceRef);
+          if (!preference || temporaryKeys.has(preference.canonicalKey)) {
+            throw new Error(
+              "Temporary override post-processing and Prompt context disagree."
+            );
+          }
+          return {
+            sourceKind: "teacher_preference" as const,
+            sourceRef: entry.preferenceRef,
+            sourceVersion: entry.version,
+            sourceContentHash: entry.contentHash,
+            scopeKind: preference.scope.kind,
+            scopeFingerprint: preference.scopeFingerprint,
+            matchSpecificity: preference.matchSpecificity,
+            matchedSkillConstraint: preference.matchedSkillConstraint,
+            decision: "injected" as const,
+            reasonCode: "active_confirmed_preference" as const,
+            targetFields: ["prompt.context.confirmedPreferences"],
+            allowedEffects: ["prompt_context"],
+            estimatedTokens: entry.estimatedTokens
+          };
+        }
+      );
+      const contextExcluded =
+        input.personalizationManifest.excludedPreferences.map((entry) => {
+          const preference = selectedByRef.get(entry.preferenceRef);
+          if (!preference || entry.reason === "owner_mismatch") {
+            throw new Error(
+              "A scoped MemoryContextPack cannot contain a foreign Preference."
+            );
+          }
+          return {
+            sourceKind: "teacher_preference" as const,
+            sourceRef: preference.preferenceRef,
+            sourceVersion: preference.version,
+            sourceContentHash: preference.contentHash,
+            scopeKind: preference.scope.kind,
+            scopeFingerprint: preference.scopeFingerprint,
+            matchSpecificity: preference.matchSpecificity,
+            matchedSkillConstraint: preference.matchedSkillConstraint,
+            decision: "excluded" as const,
+            reasonCode: entry.reason,
+            targetFields: ["prompt.context.confirmedPreferences"],
+            allowedEffects: [] as string[],
+            estimatedTokens: estimateContextTokens({
+              preferenceRef: preference.preferenceRef,
+              preferenceKey: preference.preferenceKey,
+              preferenceValue: preference.preferenceValue,
+              version: preference.version,
+              contentHash: preference.contentHash,
+              sourceCandidateRef: preference.sourceCandidateRef
+            })
+          };
+        });
+      const overriddenByTemporary = input.resolvedPreferences.selected
+        .filter((preference) => temporaryKeys.has(preference.canonicalKey))
+        .map((preference) => ({
+          sourceKind: "teacher_preference" as const,
+          sourceRef: preference.preferenceRef,
+          sourceVersion: preference.version,
+          sourceContentHash: preference.contentHash,
+          scopeKind: preference.scope.kind,
+          scopeFingerprint: preference.scopeFingerprint,
+          matchSpecificity: preference.matchSpecificity,
+          matchedSkillConstraint: preference.matchedSkillConstraint,
+          decision: "overridden" as const,
+          reasonCode: "current_instruction_override" as const,
+          targetFields: ["prompt.context.confirmedPreferences"],
+          allowedEffects: [] as string[],
+          estimatedTokens: estimateContextTokens({
+            preferenceRef: preference.preferenceRef,
+            preferenceKey: preference.preferenceKey,
+            preferenceValue: preference.preferenceValue,
+            version: preference.version,
+            contentHash: preference.contentHash,
+            sourceCandidateRef: preference.sourceCandidateRef
+          })
+        }));
+      const resolverExcluded = input.resolvedPreferences.excluded.map(
+        (entry) => ({
+          sourceKind: "teacher_preference" as const,
+          sourceRef: entry.preferenceRef,
+          sourceVersion: entry.version,
+          sourceContentHash: entry.contentHash,
+          scopeKind: entry.scopeKind,
+          scopeFingerprint: entry.scopeFingerprint,
+          matchSpecificity: entry.matchSpecificity,
+          matchedSkillConstraint: entry.matchedSkillConstraint,
+          decision: entry.reasonCode === "more_specific_scope" ||
+            entry.reasonCode === "more_specific_skill_scope"
+            ? "overridden" as const
+            : "excluded" as const,
+          reasonCode: entry.reasonCode,
+          targetFields: ["prompt.context.confirmedPreferences"],
+          allowedEffects: [] as string[],
+          estimatedTokens: entry.preferenceKey && entry.preferenceValue
+            ? estimateContextTokens({
+                preferenceRef: entry.preferenceRef,
+                preferenceKey: entry.preferenceKey,
+                preferenceValue: entry.preferenceValue,
+                version: entry.version,
+                contentHash: entry.contentHash,
+                sourceCandidateRef: entry.preferenceRef
+              })
+            : 0
+        })
+      );
+      const temporaryOverrideDecisions = activeOverrides.map((override) => ({
+        sourceKind: "temporary_override" as const,
+        overrideRef: override.overrideRef,
+        sourceTurnRef: override.sourceTurnRef,
+        sourceTurnSequence: override.sourceTurnSequence,
+        sourceContentHash: override.sourceTurnContentHash,
+        overrideContentHash: override.contentHash,
+        canonicalKey: override.canonicalKey,
+        effect: override.effect,
+        lifetime: override.lifetime,
+        decision: "injected" as const,
+        reasonCode: override.effect === "replace_value"
+          ? "temporary_override" as const
+          : "temporary_suppression" as const,
+        targetFields: ["prompt.context.temporaryOverrides"],
+        allowedEffects: [override.effect],
+        estimatedTokens: estimateContextTokens({
+          canonicalKey: override.canonicalKey,
+          effect: override.effect,
+          canonicalValue: override.canonicalValue,
+          lifetime: override.lifetime
+        })
+      }));
+      manifest = buildMemoryContextPackManifestV3({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        useCase: "lesson_preparation",
+        policyVersion: "memory-context-pack-policy@3",
+        retrievalPolicyVersion: input.resolvedPreferences.policyVersion,
+        teacherMemoryEpoch: input.resolvedPreferences.memoryEpoch,
+        queryScopeHash: input.resolvedPreferences.queryScopeHash,
+        querySkillId: input.skill.manifest.id,
+        queryUseCase: "lesson_preparation",
+        skillRef: input.skill.manifest.ref,
+        skillVersion: input.skill.manifest.version,
+        skillContentHash: input.skill.manifest.contentHash,
+        conversationRef: requiredSummaryString(
+          input.execution,
+          "conversationRef"
+        ),
+        currentTurnRef,
+        currentTurnSequence,
+        currentTurnContentHash,
+        workingMemorySnapshotRef: input.workingMemory.snapshotRef,
+        workingMemorySnapshotVersion: workingMemoryVersion,
+        workingMemorySnapshotContentHash: input.workingMemory.contentHash,
+        contextDecisions,
+        preferenceDecisions: [
+          ...injected,
+          ...overriddenByTemporary,
+          ...contextExcluded,
+          ...resolverExcluded
+        ],
+        overridePolicyVersion: "temporary-preference-override-policy@1",
+        temporaryOverrideSetHash: hashTemporaryOverrideSet(activeOverrides),
+        temporaryOverrideDecisions,
+        createdAt: this.clock().toISOString()
+      });
     } else if (input.skill.manifest.ref === lessonPreparationSkillRef) {
       if (!input.resolvedPreferences) {
         throw new Error(
@@ -3579,7 +3900,7 @@ export class PostgresModelInvocationService
         );
       }
     }
-    const scopeHash = manifest.manifestVersion === 2
+    const scopeHash = manifest.manifestVersion !== 1
       ? manifest.queryScopeHash
       : hash([
           input.tenantRef,
@@ -5424,7 +5745,48 @@ function preferenceApplicationReasonCode(
 
 function isConversationLessonPreparationSkill(skillRef: string): boolean {
   return skillRef === conversationLessonPreparationSkillRef ||
-    skillRef === lessonPreparationSkillRef;
+    skillRef === lessonPreparationSkillRef ||
+    skillRef === temporaryOverrideLessonPreparationSkillRef;
+}
+
+function isScopedLessonPreparationSkill(skillRef: string): boolean {
+  return skillRef === lessonPreparationSkillRef ||
+    skillRef === temporaryOverrideLessonPreparationSkillRef;
+}
+
+function temporaryOverridesFromWorkingMemory(input: {
+  readonly workingMemory: PersistedWorkingMemorySnapshot | null;
+  readonly tenantRef: string;
+  readonly teacherRef: string;
+  readonly conversationRef: string;
+  readonly taskRef: string;
+  readonly courseRunRef: string;
+  readonly lessonRef: string;
+}): readonly TemporaryPreferenceOverride[] {
+  const workingMemory = input.workingMemory;
+  if (!workingMemory || workingMemory.builderVersion !== "working-memory-builder@2") {
+    throw new Error(
+      "lesson-preparation@7 requires a sealed WorkingMemorySnapshot V2."
+    );
+  }
+  for (const override of workingMemory.temporaryOverrides) {
+    if (
+      override.owner.tenantRef !== input.tenantRef ||
+      override.owner.teacherRef !== input.teacherRef ||
+      override.conversationRef !== input.conversationRef ||
+      override.taskRef !== input.taskRef ||
+      override.courseRunRef !== input.courseRunRef ||
+      override.lessonRef !== input.lessonRef ||
+      override.skillId !== "lesson-preparation" ||
+      override.eligibleForConsolidation !== false ||
+      Date.parse(override.expiresAt) > Date.parse(workingMemory.expiresAt)
+    ) {
+      throw new Error(
+        "The sealed temporary override is outside the authorized Conversation."
+      );
+    }
+  }
+  return Object.freeze([...workingMemory.temporaryOverrides]);
 }
 
 function activeModelId(

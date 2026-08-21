@@ -9,13 +9,22 @@ import {
   type ConversationMemoryCommandView,
   type ConversationThreadView,
   type DispatchTeacherConversationTurnRequest,
-  type DispatchTeacherConversationTurnResult
+  type DispatchTeacherConversationTurnResult,
+  type TemporaryOverrideReceipt,
+  type TemporaryPreferenceOverrideInterpretation,
+  type WorkingMemoryViewV2
 } from "@edu-agent/contracts";
 
 import type {
   ExplicitTeacherForgetCommandService,
-  ExplicitTeacherMemoryCommandService
+  ExplicitTeacherMemoryCommandService,
+  TeacherMemoryEpochReader
 } from "../modules/personalization-memory-analytics/application/index.js";
+import type { TemporaryPreferenceCatalogPort } from "../modules/agent-runtime-context/application/temporary-preference-catalog-port.js";
+import {
+  detectExplicitTemporaryOverrideIntent,
+  interpretExplicitTemporaryPreferenceOverride
+} from "../modules/agent-runtime-context/domain/explicit-temporary-preference-override.js";
 import {
   detectExplicitTeacherForgetIntent,
   detectTeacherMemoryCommandIntent,
@@ -32,12 +41,16 @@ export class PostgresConversationDispatchService {
   constructor(
     private readonly conversations: PostgresConversationService,
     private readonly personalization:
-      ExplicitTeacherMemoryCommandService & ExplicitTeacherForgetCommandService,
+      ExplicitTeacherMemoryCommandService &
+        ExplicitTeacherForgetCommandService &
+        TeacherMemoryEpochReader,
     private readonly flags: {
       readonly explicitRememberEnabled: boolean;
       readonly scopedPreferencesEnabled: boolean;
       readonly explicitForgetEnabled: boolean;
-    }
+      readonly temporaryOverridesEnabled: boolean;
+    },
+    private readonly temporaryCatalog: TemporaryPreferenceCatalogPort
   ) {}
 
   async loadConversation(input: {
@@ -78,7 +91,16 @@ export class PostgresConversationDispatchService {
     );
     const routesToForget = detectedForget.intent === "forget" ||
       detectedForget.intent === "rejected";
+    const detectedTemporary = this.flags.temporaryOverridesEnabled
+      ? detectExplicitTemporaryOverrideIntent(input.request.teacherText)
+      : { intent: "none" as const };
     if (detected.intent === "none" && !routesToForget) {
+      const memoryEpochBefore = detectedTemporary.intent !== "none"
+        ? await this.personalization.getTeacherMemoryEpoch({
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef
+          })
+        : null;
       const appended = await this.conversations.appendTeacherTurn({
         tenantRef: input.tenantRef,
         actorRef: input.actorRef,
@@ -95,6 +117,44 @@ export class PostgresConversationDispatchService {
           )
         }
       });
+      const temporaryInterpretation = detectedTemporary.intent !== "none"
+        ? interpretExplicitTemporaryPreferenceOverride({
+            teacherText: input.request.teacherText,
+            sourceTurnRef: appended.turn.turnRef,
+            sourceTurnSequence: appended.turn.sequence,
+            sourceTurnContentHash: appended.turn.contentHash,
+            owner: {
+              tenantRef: input.tenantRef,
+              teacherRef: input.actorRef
+            },
+            conversationRef: context.conversationRef,
+            taskRef: context.taskRef,
+            courseRunRef: context.courseRunRef,
+            lessonRef: context.lessonRef,
+            skillId: "lesson-preparation",
+            activeWorkingMemory:
+              context.workingMemory?.builderVersion ===
+                "working-memory-builder@2"
+                ? context.workingMemory as WorkingMemoryViewV2
+                : null,
+            catalog: this.temporaryCatalog,
+            enabled: this.flags.temporaryOverridesEnabled,
+            at: appended.turn.createdAt,
+            expiresAt: context.retentionUntil
+          })
+        : null;
+      const temporaryOverrideReceipt =
+        temporaryInterpretation && memoryEpochBefore !== null
+          ? temporaryReceipt({
+              interpretation: temporaryInterpretation,
+              previousWorkingMemory:
+                context.workingMemory?.builderVersion ===
+                  "working-memory-builder@2"
+                  ? context.workingMemory as WorkingMemoryViewV2
+                  : null,
+              memoryEpoch: memoryEpochBefore
+            })
+          : null;
       return DispatchTeacherConversationTurnResultSchema.parse({
         kind: "model_instruction",
         replayed: appended.replayed,
@@ -106,7 +166,10 @@ export class PostgresConversationDispatchService {
           turnRef: appended.turn.turnRef,
           parentTurnRef: appended.turn.parentTurnRef,
           conversationVersion: appended.conversation.version
-        }
+        },
+        ...(temporaryOverrideReceipt
+          ? { temporaryOverrideReceipt }
+          : {})
       });
     }
 
@@ -480,6 +543,61 @@ export class PostgresConversationDispatchService {
       memoryCommands: views
     });
   }
+}
+
+function temporaryReceipt(input: {
+  readonly interpretation: TemporaryPreferenceOverrideInterpretation;
+  readonly previousWorkingMemory: WorkingMemoryViewV2 | null;
+  readonly memoryEpoch: number;
+}): TemporaryOverrideReceipt {
+  const interpretation = input.interpretation;
+  if (interpretation.status === "apply") {
+    return {
+      status: "applied",
+      items: [...interpretation.overrideItems],
+      clearedCanonicalKeys: [],
+      lifetime: "current_conversation",
+      longTermPreferenceChanged: false,
+      teacherMemoryEpochBefore: input.memoryEpoch,
+      teacherMemoryEpochAfter: input.memoryEpoch,
+      safeMessage:
+        "已作为仅限当前备课对话的要求使用；不会修改你平时保存的偏好。"
+    };
+  }
+  if (interpretation.status === "clear") {
+    const previousKeys = input.previousWorkingMemory?.temporaryOverrides.map(
+      (override) => override.canonicalKey
+    ) ?? [];
+    const clearedCanonicalKeys = interpretation.clearAll
+      ? previousKeys
+      : interpretation.clearCanonicalKeys.filter((key) =>
+          previousKeys.includes(key)
+        );
+    return {
+      status: "cleared",
+      items: [],
+      clearedCanonicalKeys: [...new Set(clearedCanonicalKeys)].sort(),
+      lifetime: "current_conversation",
+      longTermPreferenceChanged: false,
+      teacherMemoryEpochBefore: input.memoryEpoch,
+      teacherMemoryEpochAfter: input.memoryEpoch,
+      safeMessage: clearedCanonicalKeys.length > 0
+        ? "已取消当前备课对话中的临时要求，恢复使用平时偏好。"
+        : "当前备课对话没有需要取消的临时要求；长期偏好未改变。"
+    };
+  }
+  return {
+    status: "not_applied",
+    items: [],
+    clearedCanonicalKeys: [],
+    lifetime: "current_conversation",
+    longTermPreferenceChanged: false,
+    teacherMemoryEpochBefore: input.memoryEpoch,
+    teacherMemoryEpochAfter: input.memoryEpoch,
+    safeMessage: interpretation.status === "rejected"
+      ? "这条内容不属于可安全结构化的仅本次偏好；仍按普通教学要求处理。"
+      : "这条要求未形成正式临时偏好；仍按普通教学要求处理。"
+  };
 }
 
 function unsupportedForgetReceipt(

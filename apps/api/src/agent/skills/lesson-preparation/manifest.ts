@@ -5,21 +5,24 @@ import {
   lessonPreparationContextPolicyV3,
   lessonPreparationContextPolicyV4,
   lessonPreparationContextPolicyV5,
-  lessonPreparationContextPolicyV6
+  lessonPreparationContextPolicyV6,
+  lessonPreparationContextPolicyV7
 } from "./context-policy.js";
 import {
   lessonPreparationInputSchemaRef,
   lessonPreparationInputSchemaRefV2,
   lessonPreparationInputSchemaRefV3,
   lessonPreparationInputSchemaRefV4,
-  lessonPreparationInputSchemaRefV5
+  lessonPreparationInputSchemaRefV5,
+  lessonPreparationInputSchemaRefV6
 } from "./input-schema.js";
 import { lessonPreparationOutputSchemaRef } from "./output-schema.js";
 import {
   lessonPreparationPromptBundle,
   lessonBriefPreparationPromptBundle,
   conversationLessonPreparationPromptBundle,
-  personalizedLessonPreparationPromptBundle
+  personalizedLessonPreparationPromptBundle,
+  temporaryOverrideLessonPreparationPromptBundle
 } from "./prompt.js";
 
 export const lessonPreparationSkillManifest = createSkillManifest({
@@ -204,6 +207,41 @@ export const lessonPreparationSkillManifestV6 = createSkillManifest({
   promptBundleVersion: conversationLessonPreparationPromptBundle.version,
   promptBundleContentHash: conversationLessonPreparationPromptBundle.contentHash,
   contextPolicy: lessonPreparationContextPolicyV6,
+  toolPolicy: {
+    mode: "disabled",
+    allowedTools: []
+  },
+  memoryPolicy: {
+    mode: "authorized_context_only"
+  },
+  budgetPolicy: {
+    source: "runtime_context_and_model_budget",
+    mayIncreaseRuntimeBudget: false
+  },
+  approvalPolicy: {
+    outputKind: "proposal",
+    humanApprovalRequired: true
+  },
+  evaluationPolicy: {
+    version: "lesson-preparation-evaluation@1",
+    dimensions: ["contract", "policy", "quality", "operation"],
+    qualityBlocksProposal: false
+  }
+});
+
+export const lessonPreparationSkillManifestV7 = createSkillManifest({
+  id: "lesson-preparation",
+  version: "7",
+  ref: "lesson-preparation@7",
+  status: "published",
+  purpose: "lesson_preparation",
+  inputSchemaRef: lessonPreparationInputSchemaRefV6,
+  outputSchemaRef: lessonPreparationOutputSchemaRef,
+  promptBundleRef: temporaryOverrideLessonPreparationPromptBundle.promptBundleRef,
+  promptBundleVersion: temporaryOverrideLessonPreparationPromptBundle.version,
+  promptBundleContentHash:
+    temporaryOverrideLessonPreparationPromptBundle.contentHash,
+  contextPolicy: lessonPreparationContextPolicyV7,
   toolPolicy: {
     mode: "disabled",
     allowedTools: []

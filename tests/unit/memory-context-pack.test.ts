@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildMemoryContextPackManifest,
   buildMemoryContextPackManifestV2,
+  buildMemoryContextPackManifestV3,
   type MemoryContextPackBuildInput,
-  type MemoryContextPackBuildInputV2
+  type MemoryContextPackBuildInputV2,
+  type MemoryContextPackBuildInputV3
 } from "../../apps/api/src/modules/agent-runtime-context/domain/memory-context-pack.js";
 import {
   MemoryContextPackManifestSchema,
@@ -231,6 +233,55 @@ describe("MemoryContextPackManifest@2", () => {
   });
 });
 
+describe("MemoryContextPackManifest@3", () => {
+  it("seals temporary decisions deterministically without raw text", () => {
+    const first = buildMemoryContextPackManifestV3(buildInputV3());
+    const retry = buildMemoryContextPackManifestV3({
+      ...buildInputV3(),
+      createdAt: "2026-08-19T08:12:00.000Z"
+    });
+    expect(first).toMatchObject({
+      manifestVersion: 3,
+      injectedOverrideCount: 1,
+      suppressedPreferenceCount: 0
+    });
+    expect(retry.packRef).toBe(first.packRef);
+    expect(retry.packContentHash).toBe(first.packContentHash);
+    const serialized = JSON.stringify(first);
+    expect(serialized).not.toContain("teacherText");
+    expect(serialized).not.toContain("preferenceValue");
+    expect(serialized).not.toContain("providerResponse");
+  });
+
+  it("changes hash with override set, effect, or teacher epoch", () => {
+    const baseline = buildMemoryContextPackManifestV3(buildInputV3());
+    const variants: MemoryContextPackBuildInputV3[] = [
+      { ...buildInputV3(), temporaryOverrideSetHash: "1".repeat(64) },
+      {
+        ...buildInputV3(),
+        temporaryOverrideDecisions: buildInputV3()
+          .temporaryOverrideDecisions.map((entry) => ({
+            ...entry,
+            effect: "suppress_preference" as const,
+            reasonCode: "temporary_suppression" as const
+          }))
+      },
+      { ...buildInputV3(), teacherMemoryEpoch: 9 }
+    ];
+    for (const variant of variants) {
+      expect(buildMemoryContextPackManifestV3(variant).packContentHash)
+        .not.toBe(baseline.packContentHash);
+    }
+  });
+
+  it("keeps V1 and V2 parseable without rewriting", () => {
+    const v1 = buildMemoryContextPackManifest(buildInput());
+    const v2 = buildMemoryContextPackManifestV2(buildInputV2());
+    expect(MemoryContextPackManifestSchema.parse(v1)).toEqual(v1);
+    expect(MemoryContextPackManifestSchema.parse(v2)).toEqual(v2);
+  });
+});
+
 function buildInputV2(): MemoryContextPackBuildInputV2 {
   const v1 = buildInput();
   return {
@@ -273,5 +324,32 @@ function buildInputV2(): MemoryContextPackBuildInputV2 {
       }
     ],
     createdAt: v1.createdAt
+  };
+}
+
+function buildInputV3(): MemoryContextPackBuildInputV3 {
+  return {
+    ...buildInputV2(),
+    policyVersion: "memory-context-pack-policy@3",
+    skillRef: "lesson-preparation@7",
+    skillVersion: "7",
+    overridePolicyVersion: "temporary-preference-override-policy@1",
+    temporaryOverrideSetHash: "0".repeat(64),
+    temporaryOverrideDecisions: [{
+      sourceKind: "temporary_override",
+      overrideRef: "temporary-override:synthetic",
+      sourceTurnRef: "turn:synthetic:2",
+      sourceTurnSequence: 2,
+      sourceContentHash: hashB,
+      overrideContentHash: "2".repeat(64),
+      canonicalKey: "lesson_plan_detail",
+      effect: "replace_value",
+      lifetime: "current_conversation",
+      decision: "injected",
+      reasonCode: "temporary_override",
+      targetFields: ["prompt.context.temporaryOverrides"],
+      allowedEffects: ["replace_value"],
+      estimatedTokens: 6
+    }]
   };
 }
