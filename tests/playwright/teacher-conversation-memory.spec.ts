@@ -387,9 +387,15 @@ test("scoped preferences and short-term memory stay explainable across courses, 
     "2"
   );
   await page.getByTestId("memory-use-toggle").click();
-  await expect(page.getByTestId("memory-preferences")).toContainText("简洁");
-  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
-    "详细"
+  const secondaryPreferences = page.getByTestId("memory-preferences");
+  await expect(secondaryPreferences).toContainText(
+    "教案详细程度：简洁"
+  );
+  await expect(secondaryPreferences).not.toContainText(
+    "教案详细程度：详细"
+  );
+  await expect(secondaryPreferences).not.toContainText(
+    "作用范围：当前课程"
   );
   await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
     gate2DemoRefs.courseRunRef
@@ -466,9 +472,15 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   await expect(page.getByTestId("memory-current-instruction")).toContainText(
     thirdRequest
   );
-  await expect(page.getByTestId("memory-preferences")).toContainText("简洁");
-  await expect(page.getByTestId("memory-use-disclosure")).not.toContainText(
-    "详细"
+  const postRevokePreferences = page.getByTestId("memory-preferences");
+  await expect(postRevokePreferences).toContainText(
+    "教案详细程度：简洁"
+  );
+  await expect(postRevokePreferences).not.toContainText(
+    "教案详细程度：详细"
+  );
+  await expect(postRevokePreferences).not.toContainText(
+    "作用范围：当前课程"
   );
 
   const revokeGlobal = await request.post(
