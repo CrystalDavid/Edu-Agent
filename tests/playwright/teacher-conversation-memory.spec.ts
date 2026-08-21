@@ -746,7 +746,7 @@ async function createAndConfirmPreferenceInSettings(
   await expect(candidate).not.toContainText("course-run:");
   await candidate.getByRole("button", { name: /确\s*认/u }).click();
   const activeRow = panel
-    .getByDisplayValue(input.value)
+    .locator(`input[value="${input.value}"]`)
     .locator("xpath=ancestor::article[contains(@class, 'settings-row')]");
   await expect(activeRow).toContainText(
     input.scope === "global" ? "所有普通备课" : "3 班",
