@@ -74,6 +74,31 @@ corepack pnpm test:postgres
 - Fake Ark 只监听本地隔离端口，不可被误报为 live 验收；
 - live tests 必须明确 opt-in，并对 Key、request ID 和内容脱敏。
 
+## GitHub Actions PR 门禁
+
+`.github/workflows/pr-validation.yml` 在 Pull Request 的创建、更新、
+重新打开和转为可审查时运行，也保留手工触发入口。Workflow 只有
+`contents: read` 权限，不使用 `pull_request_target`，不读取 repository
+Secret，也不运行 live Provider。
+
+| Job | 正式入口 | 运行边界 |
+|---|---|---|
+| `quality` | TypeScript、默认/Unit/Architecture/Static/Migration/Secret、Build/Bundle、文档/版本/仓库同步与 `git diff --check` | clean checkout；Node 24、pnpm 11.9.0、frozen lockfile |
+| `postgres-integration` | `corepack pnpm test:postgres` | 复用正式 Docker Compose wrapper；独立 project、端口和 Volume；真实 PostgreSQL Migration、trigger、index、transaction |
+| `playwright-e2e` | `corepack pnpm test:playwright` | Microsoft Edge、Mock Provider、synthetic fixtures、隔离 PostgreSQL 和 ObjectStore；不运行 live Ark |
+
+PostgreSQL 与 Playwright Job 必须通过仓库 wrapper 完成本次精确资源的
+清理断言，不能在 YAML 中另建一套数据库生命周期。Playwright 产物根由
+`EDU_AGENT_TEST_OUTPUT_ROOT` 指向 runner 临时目录；失败时只短期上传 HTML
+report、trace、截图、结果 metadata 和合成测试的安全 console log，不上传
+`.env.local`、Secret、`node_modules`、数据库 Volume、ObjectStore 全量内容或
+完整模型 Prompt/响应。
+
+三个 Job 任一失败，都不能把 PR 视为可合并；不得用 skip、retry、
+`continue-on-error` 或等价命令掩盖确定性失败。Draft 和 stacked PR 的
+依赖关系仍由对应 PR body 明确记录，CI 成功本身不改变 Draft 状态或合并
+顺序。
+
 ## 完成前人工核对
 
 - `git diff --name-status` 中没有历史 Migration；

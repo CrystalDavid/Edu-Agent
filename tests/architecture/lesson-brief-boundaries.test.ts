@@ -60,7 +60,7 @@ describe("Phase 8A-1 Lesson Brief boundaries", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
 
-    expect(migrations).toHaveLength(49);
+    expect(migrations).toHaveLength(50);
     for (const path of migrations) {
       expect(readFileSync(path, "utf8")).not.toMatch(
         /CREATE\s+TABLE[^;]*(?:lesson_brief|lesson_journey|teaching_workspace)/iu

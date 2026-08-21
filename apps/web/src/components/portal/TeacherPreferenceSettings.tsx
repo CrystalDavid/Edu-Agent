@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 
 import type {
+  CourseRunView,
+  MemoryScope,
+  MemoryScopeDefinition,
   MemoryCandidateView,
   TeacherPersonalizationState
 } from "@edu-agent/contracts";
@@ -8,10 +11,12 @@ import { Alert, Button, Empty, Input, Select, Space, Tag } from "antd";
 
 import {
   createMemoryCandidate,
+  loadCourseRuns,
   loadTeacherPersonalization,
   reviewMemoryCandidate,
   revokeTeacherPreference,
-  updateTeacherPreference
+  updateTeacherPreference,
+  updateTeacherPreferenceScope
 } from "../../api";
 import { teacherPreferenceLabel } from "../../presentation";
 
@@ -27,20 +32,30 @@ export function TeacherPreferenceSettings(props: {
 }) {
   const [state, setState] = useState<TeacherPersonalizationState>({
     candidates: [],
-    preferences: []
+    preferences: [],
+    scopedPreferencesEnabled: false
   });
+  const [courseRuns, setCourseRuns] = useState<readonly CourseRunView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draftKey, setDraftKey] = useState("lesson_plan_detail");
   const [draftValue, setDraftValue] = useState("");
   const [draftSummary, setDraftSummary] = useState("");
+  const [draftScope, setDraftScope] = useState("global");
   const [editing, setEditing] = useState<Record<string, string>>({});
+  const [scopeEditing, setScopeEditing] = useState<Record<string, string>>({});
 
   const refresh = async () => {
     setLoading(true);
     setError(null);
     try {
-      setState(await loadTeacherPersonalization());
+      const nextState = await loadTeacherPersonalization();
+      setState(nextState);
+      setCourseRuns(
+        nextState.scopedPreferencesEnabled
+          ? (await loadCourseRuns()).items
+          : []
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法读取教师偏好。");
     } finally {
@@ -85,6 +100,7 @@ export function TeacherPreferenceSettings(props: {
               <CandidateRow
                 key={candidate.candidateRef}
                 candidate={candidate}
+                courseRuns={courseRuns}
                 onConfirm={() => void execute(async () => {
                   await reviewMemoryCandidate(candidate.candidateRef, "confirm", {
                     expectedVersion: candidate.version,
@@ -115,10 +131,15 @@ export function TeacherPreferenceSettings(props: {
           <div className="settings-list">
             {activePreferences.map((preference) => {
               const value = editing[preference.preferenceRef] ?? preference.preferenceValue;
+              const scopeValue = scopeEditing[preference.preferenceRef] ??
+                scopeSelectionValue(preference.scope);
               return (
                 <article className="settings-row" key={preference.preferenceRef} data-testid={`preference-${preference.preferenceRef}`}>
                   <span>
                     <strong>{teacherPreferenceLabel(preference.preferenceKey)}</strong>
+                    <small data-testid="preference-scope-label">
+                      作用范围：{scopeDisplayLabel(preference.scope, courseRuns)}
+                    </small>
                   </span>
                   <Space wrap>
                     <Input
@@ -146,6 +167,42 @@ export function TeacherPreferenceSettings(props: {
                         props.onAction("偏好已更新。");
                       })}
                     >保存修改</Button>
+                    {state.scopedPreferencesEnabled &&
+                    isSettingsEditableScope(preference.scope) ? (
+                      <>
+                        <Select
+                          aria-label={`${teacherPreferenceLabel(preference.preferenceKey)}作用范围`}
+                          data-testid={`preference-scope-${preference.preferenceRef}`}
+                          value={scopeValue}
+                          onChange={(next) => setScopeEditing((current) => ({
+                            ...current,
+                            [preference.preferenceRef]: next
+                          }))}
+                          options={scopeOptions(courseRuns)}
+                          style={{ minWidth: 220 }}
+                        />
+                        <Button
+                          disabled={scopeValue === scopeSelectionValue(preference.scope)}
+                          onClick={() => void execute(async () => {
+                            await updateTeacherPreferenceScope(
+                              preference.preferenceRef,
+                              {
+                                scope: scopeFromSelection(scopeValue),
+                                expectedVersion: preference.version,
+                                purpose: "personalization.preference.update-scope",
+                                idempotencyKey: `ui-preference-scope-${crypto.randomUUID()}`
+                              }
+                            );
+                            setScopeEditing((current) => {
+                              const next = { ...current };
+                              delete next[preference.preferenceRef];
+                              return next;
+                            });
+                            props.onAction("偏好作用范围已更新。");
+                          })}
+                        >保存作用范围</Button>
+                      </>
+                    ) : null}
                     <Button
                       danger
                       data-testid={`revoke-preference-${preference.preferenceRef}`}
@@ -180,6 +237,15 @@ export function TeacherPreferenceSettings(props: {
           />
           <Input value={draftValue} onChange={(event) => setDraftValue(event.target.value)} placeholder="偏好内容，例如 简洁、突出课堂案例" />
           <Input.TextArea value={draftSummary} onChange={(event) => setDraftSummary(event.target.value)} placeholder="为什么记录这条偏好" autoSize={{ minRows: 2, maxRows: 4 }} />
+          {state.scopedPreferencesEnabled ? (
+            <Select
+              aria-label="偏好作用范围"
+              data-testid="preference-scope-selector"
+              value={draftScope}
+              onChange={setDraftScope}
+              options={scopeOptions(courseRuns)}
+            />
+          ) : null}
           <Button
             type="primary"
             data-testid="create-preference-candidate"
@@ -189,6 +255,9 @@ export function TeacherPreferenceSettings(props: {
                 summary: draftSummary.trim(),
                 preferenceKey: draftKey.trim(),
                 preferenceValue: draftValue.trim(),
+                ...(state.scopedPreferencesEnabled
+                  ? { proposedScope: scopeFromSelection(draftScope) }
+                  : {}),
                 purpose: "personalization.candidate.create",
                 idempotencyKey: `ui-preference-create-${crypto.randomUUID()}`
               });
@@ -216,6 +285,7 @@ export function TeacherPreferenceSettings(props: {
 
 function CandidateRow(props: {
   candidate: MemoryCandidateView;
+  courseRuns: readonly CourseRunView[];
   onConfirm: () => void;
   onReject: () => void;
 }) {
@@ -224,6 +294,12 @@ function CandidateRow(props: {
       <span>
         <strong>{teacherPreferenceLabel(props.candidate.preferenceKey ?? "preference")}</strong>
         <small>{props.candidate.preferenceValue} · {props.candidate.summary}</small>
+        <small data-testid="candidate-scope-label">
+          作用范围：{scopeDisplayLabel(
+            props.candidate.proposedScope ?? globalScope(),
+            props.courseRuns
+          )}
+        </small>
       </span>
       <Space>
         <Button type="primary" onClick={props.onConfirm}>确认</Button>
@@ -231,4 +307,74 @@ function CandidateRow(props: {
       </Space>
     </article>
   );
+}
+
+function scopeOptions(courseRuns: readonly CourseRunView[]) {
+  return [
+    { value: "global", label: "所有普通备课" },
+    ...courseRuns.map((courseRun) => ({
+      value: `course_run:${courseRun.courseRunRef}`,
+      label: `${courseRun.gradeLevel}${courseRun.subject} · ${courseRun.className}`
+    }))
+  ];
+}
+
+function scopeFromSelection(value: string) {
+  if (value === "global") return globalScope();
+  const courseRunRef = value.startsWith("course_run:")
+    ? value.slice("course_run:".length)
+    : "";
+  if (!courseRunRef) throw new Error("请选择当前有权访问的课程。");
+  return {
+    kind: "course_run" as const,
+    subject: null,
+    gradeLevel: null,
+    courseRunRef,
+    lessonRef: null,
+    taskRef: null,
+    skillIds: ["lesson-preparation"]
+  };
+}
+
+function globalScope() {
+  return {
+    kind: "global" as const,
+    subject: null,
+    gradeLevel: null,
+    courseRunRef: null,
+    lessonRef: null,
+    taskRef: null,
+    skillIds: [] as string[]
+  };
+}
+
+function scopeSelectionValue(scope: MemoryScope): string {
+  return scope.kind === "course_run" && scope.courseRunRef
+    ? `course_run:${scope.courseRunRef}`
+    : "global";
+}
+
+function isSettingsEditableScope(scope: MemoryScope): boolean {
+  return scope.kind === "global" || scope.kind === "course_run";
+}
+
+function scopeDisplayLabel(
+  scope: MemoryScope | MemoryScopeDefinition,
+  courseRuns: readonly CourseRunView[]
+): string {
+  if (scope.kind === "global") return "所有普通备课";
+  if (scope.kind === "course_run") {
+    const courseRun = courseRuns.find((entry) =>
+      entry.courseRunRef === scope.courseRunRef
+    );
+    return courseRun
+      ? `${courseRun.gradeLevel}${courseRun.subject} · ${courseRun.className}`
+      : "课程专用";
+  }
+  return {
+    subject: "指定学科",
+    subject_grade: "指定学科与年级",
+    lesson: "指定课时",
+    task: "指定任务"
+  }[scope.kind];
 }

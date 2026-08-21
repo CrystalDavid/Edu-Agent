@@ -31,6 +31,7 @@ import type { Pool } from "pg";
 
 import {
   createBuiltInSkillRegistry,
+  conversationLessonPreparationSkillRef,
   LessonPreparationContextBuildError,
   legacyLessonPreparationSkillRef,
   lessonBriefPreparationSkillRef,
@@ -64,7 +65,8 @@ import type {
 import type { ConfirmedLessonBriefContextProvider } from "../modules/agent-runtime-context/application/confirmed-lesson-brief-provider.js";
 import type {
   ConfirmedTeacherPreferenceSnapshot,
-  PersonalizationContextProvider
+  PersonalizationContextProvider,
+  ResolvedConfirmedPreferences
 } from "../modules/personalization-memory-analytics/application/personalization-context-provider.js";
 import {
   estimateContextTokens
@@ -77,7 +79,8 @@ import type {
   TeacherPreferenceRevisionReader
 } from "../modules/personalization-memory-analytics/application/teacher-preference-revision-reader.js";
 import {
-  buildMemoryContextPackManifest
+  buildMemoryContextPackManifest,
+  buildMemoryContextPackManifestV2
 } from "../modules/agent-runtime-context/domain/memory-context-pack.js";
 import {
   PostgresGate2RuntimeRepository
@@ -198,6 +201,7 @@ interface ModelInvocationDependencies {
   personalization?: PersonalizationContextProvider;
   memoryApplications?: MemoryApplicationRecorder & TeacherPreferenceRevisionReader;
   memoryApplicationObservabilityEnabled?: boolean;
+  scopedPreferencesEnabled?: boolean;
   lessonBriefs?: ConfirmedLessonBriefContextProvider;
   conversations?: PostgresConversationService;
   gate2Runtime?: PostgresGate2RuntimeRepository;
@@ -257,6 +261,7 @@ export class PostgresModelInvocationService
     | (MemoryApplicationRecorder & TeacherPreferenceRevisionReader)
     | undefined;
   private readonly memoryApplicationObservabilityEnabled: boolean;
+  private readonly scopedPreferencesEnabled: boolean;
   private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
   private readonly conversations: PostgresConversationService;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
@@ -305,11 +310,22 @@ export class PostgresModelInvocationService
     this.personalization = dependencies.personalization ?? {
       async listConfirmedPreferences() {
         return [];
+      },
+      async resolveConfirmedPreferences() {
+        return {
+          memoryEpoch: 0,
+          policyVersion: "teacher-preference-retrieval@2",
+          queryScopeHash: "0".repeat(64),
+          selected: [],
+          excluded: []
+        };
       }
     };
     this.memoryApplications = dependencies.memoryApplications;
     this.memoryApplicationObservabilityEnabled =
       dependencies.memoryApplicationObservabilityEnabled ?? false;
+    this.scopedPreferencesEnabled =
+      dependencies.scopedPreferencesEnabled ?? false;
     this.lessonBriefs =
       dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
     this.conversations =
@@ -810,7 +826,9 @@ export class PostgresModelInvocationService
       const lessonPreparationSkill = loadLessonPreparationSkill(
         this.skills,
         input.request.requestVersion === 2
-          ? lessonPreparationSkillRef
+          ? this.scopedPreferencesEnabled
+            ? lessonPreparationSkillRef
+            : conversationLessonPreparationSkillRef
           : lessonBriefRef
             ? lessonBriefPreparationSkillRef
             : legacyLessonPreparationSkillRef
@@ -2850,7 +2868,9 @@ export class PostgresModelInvocationService
         throw new Error("The adopted Lesson Brief hash no longer matches the bound ModelExecution.");
       }
     }
-    const sealedWorkingMemory = skill.manifest.ref === lessonPreparationSkillRef
+    const sealedWorkingMemory = isConversationLessonPreparationSkill(
+      skill.manifest.ref
+    )
       ? await this.conversations.loadSealedWorkingMemory(this.pool, {
           tenantRef,
           teacherRef: execution.actorRef,
@@ -2877,11 +2897,27 @@ export class PostgresModelInvocationService
         })
       : null;
     const sealedMemoryContextPack =
-      skill.manifest.ref === lessonPreparationSkillRef
+      isConversationLessonPreparationSkill(skill.manifest.ref)
         ? await this.gate2Runtime.getMemoryContextPackManifest(
             this.pool,
             execution.agentRunRef
           )
+        : null;
+    const resolvedPreferences =
+      skill.manifest.ref === lessonPreparationSkillRef &&
+      !sealedMemoryContextPack
+        ? await this.personalization.resolveConfirmedPreferences({
+            tenantRef,
+            teacherRef: execution.actorRef,
+            useCase: "lesson_preparation",
+            skillId: skill.manifest.id,
+            subject: courseRun.subject,
+            gradeLevel: courseRun.gradeLevel,
+            courseRunRef: courseRun.courseRunRef,
+            lessonRef: lesson.lessonRef,
+            taskRef: preparationTask.taskRef,
+            at: this.clock().toISOString()
+          })
         : null;
     const confirmedPreferences =
       skill.manifest.memoryPolicy.mode === "authorized_context_only"
@@ -2891,10 +2927,12 @@ export class PostgresModelInvocationService
               tenantRef,
               manifest: sealedMemoryContextPack
             })
-          : await this.personalization.listConfirmedPreferences({
-              tenantRef,
-              teacherRef: execution.actorRef
-            })
+          : resolvedPreferences
+            ? resolvedPreferences.selected
+            : await this.personalization.listConfirmedPreferences({
+                tenantRef,
+                teacherRef: execution.actorRef
+              })
         : [];
     const skillInput = skill.inputSchema.parse({
         invocationRef: execution.executionRef,
@@ -3022,7 +3060,9 @@ export class PostgresModelInvocationService
       sealedWorkingMemory &&
       "personalizationManifest" in contextBuild &&
       "conversationManifest" in contextBuild &&
-      (this.memoryApplicationObservabilityEnabled || sealedMemoryContextPack)
+      (this.memoryApplicationObservabilityEnabled ||
+        sealedMemoryContextPack ||
+        skill.manifest.ref === lessonPreparationSkillRef)
         ? this.buildMemoryApplicationObservability({
             execution,
             tenantRef,
@@ -3032,6 +3072,7 @@ export class PostgresModelInvocationService
             personalizationManifest: contextBuild.personalizationManifest,
             conversationManifest: contextBuild.conversationManifest,
             confirmedPreferences,
+            resolvedPreferences,
             authorizationDecisionRef:
               authorizedContextPlan.authorizationDecisionRef,
             sealedManifest: sealedMemoryContextPack
@@ -3116,6 +3157,13 @@ export class PostgresModelInvocationService
       MemoryContextPackManifest["preferenceDecisions"][number]
     >();
     for (const decision of input.manifest.preferenceDecisions) {
+      if (
+        input.manifest.manifestVersion === 2 &&
+        decision.decision !== "injected" &&
+        decision.decision !== "selected"
+      ) {
+        continue;
+      }
       const key = [
         decision.sourceRef,
         decision.sourceVersion,
@@ -3151,6 +3199,15 @@ export class PostgresModelInvocationService
         preferenceRef: revision.preferenceRef,
         preferenceKey: revision.preferenceKey,
         preferenceValue: revision.preferenceValue,
+        canonicalKey: revision.canonicalKey,
+        scope: revision.scope,
+        scopeFingerprint: revision.scopeFingerprint,
+        validFrom: revision.validFrom,
+        validUntil: revision.validUntil,
+        explicitness: revision.explicitness,
+        consentBasis: revision.consentBasis,
+        consentVersion: revision.consentVersion,
+        policyVersion: revision.policyVersion,
         version: revision.preferenceVersion,
         contentHash: revision.preferenceContentHash,
         sourceCandidateRef: revision.sourceCandidateRef,
@@ -3170,6 +3227,7 @@ export class PostgresModelInvocationService
     readonly personalizationManifest: PersonalizedLessonPreparationManifest;
     readonly conversationManifest: ConversationPreparationManifest;
     readonly confirmedPreferences: readonly ConfirmedTeacherPreferenceSnapshot[];
+    readonly resolvedPreferences: ResolvedConfirmedPreferences | null;
     readonly authorizationDecisionRef: string;
     readonly sealedManifest: MemoryContextPackManifest | null;
   }): {
@@ -3205,115 +3263,331 @@ export class PostgresModelInvocationService
         "The MemoryContextPack sources do not match the sealed conversation context."
       );
     }
+    const contextDecisions = [
+      {
+        sourceKind: "current_instruction" as const,
+        sourceRef: currentTurnRef,
+        sourceVersion: currentTurnSequence,
+        sourceContentHash: currentTurnContentHash,
+        decision: "injected" as const,
+        reasonCode: "current_instruction" as const,
+        targetFields: ["prompt.context.currentInstruction"],
+        allowedEffects: ["prompt_context"],
+        estimatedTokens: estimateContextTokens(input.requestText)
+      },
+      {
+        sourceKind: "working_memory" as const,
+        sourceRef: input.workingMemory.snapshotRef,
+        sourceVersion: workingMemoryVersion,
+        sourceContentHash: input.workingMemory.contentHash,
+        decision: "injected" as const,
+        reasonCode: "same_task_working_memory" as const,
+        targetFields: ["prompt.context.workingMemory"],
+        allowedEffects: ["prompt_context"],
+        estimatedTokens: input.conversationManifest.estimatedTokens
+      }
+    ];
     const preferenceByRef = new Map(
       input.confirmedPreferences.map((preference) => [
         preference.preferenceRef,
         preference
       ])
     );
-    const preferenceDecisions: MemoryContextPackManifest["preferenceDecisions"] = [
-      ...input.personalizationManifest.confirmedPreferences.map((entry) => ({
-        sourceKind: "teacher_preference" as const,
-        sourceRef: entry.preferenceRef,
-        sourceVersion: entry.version,
-        sourceContentHash: entry.contentHash,
-        decision: "injected" as const,
-        reasonCode: "active_confirmed_preference" as const,
-        targetFields: ["prompt.context.confirmedPreferences"],
-        allowedEffects: ["prompt_context"],
-        estimatedTokens: entry.estimatedTokens
-      })),
-      ...input.personalizationManifest.excludedPreferences.map((entry) => {
-        const preference = preferenceByRef.get(entry.preferenceRef);
-        if (!preference || entry.reason === "owner_mismatch") {
-          throw new Error(
-            "A successful MemoryContextPack cannot contain an unresolved or foreign Preference."
-          );
+    let manifest: MemoryContextPackManifest;
+    if (input.sealedManifest?.manifestVersion === 2) {
+      if (
+        input.sealedManifest.owner.tenantRef !== input.tenantRef ||
+        input.sealedManifest.owner.teacherRef !== input.execution.actorRef ||
+        input.sealedManifest.skillRef !== input.skill.manifest.ref ||
+        input.sealedManifest.skillContentHash !==
+          input.skill.manifest.contentHash ||
+        input.sealedManifest.currentTurnRef !== currentTurnRef ||
+        input.sealedManifest.currentTurnSequence !== currentTurnSequence ||
+        input.sealedManifest.currentTurnContentHash !==
+          currentTurnContentHash ||
+        input.sealedManifest.workingMemorySnapshotRef !==
+          input.workingMemory.snapshotRef ||
+        input.sealedManifest.workingMemorySnapshotVersion !==
+          workingMemoryVersion ||
+        input.sealedManifest.workingMemorySnapshotContentHash !==
+          input.workingMemory.contentHash
+      ) {
+        throw new Error(
+          "The sealed MemoryContextPack V2 source binding does not match."
+        );
+      }
+      const sealedInjected = input.sealedManifest.preferenceDecisions
+        .filter((entry) => entry.decision === "injected")
+        .map((entry) => [
+          entry.sourceRef,
+          entry.sourceVersion,
+          entry.sourceContentHash
+        ].join("|"))
+        .sort();
+      const reconstructedInjected =
+        input.personalizationManifest.confirmedPreferences
+          .map((entry) => [
+            entry.preferenceRef,
+            entry.version,
+            entry.contentHash
+          ].join("|"))
+          .sort();
+      if (JSON.stringify(sealedInjected) !== JSON.stringify(reconstructedInjected)) {
+        throw new Error(
+          "The sealed scoped TeacherPreference input cannot be reconstructed."
+        );
+      }
+      const reconstructed = buildMemoryContextPackManifestV2({
+        owner: input.sealedManifest.owner,
+        useCase: input.sealedManifest.useCase,
+        policyVersion: input.sealedManifest.policyVersion,
+        retrievalPolicyVersion:
+          input.sealedManifest.retrievalPolicyVersion,
+        teacherMemoryEpoch: input.sealedManifest.teacherMemoryEpoch,
+        queryScopeHash: input.sealedManifest.queryScopeHash,
+        querySkillId: input.sealedManifest.querySkillId,
+        queryUseCase: input.sealedManifest.queryUseCase,
+        skillRef: input.sealedManifest.skillRef,
+        skillVersion: input.sealedManifest.skillVersion,
+        skillContentHash: input.sealedManifest.skillContentHash,
+        conversationRef: input.sealedManifest.conversationRef,
+        currentTurnRef: input.sealedManifest.currentTurnRef,
+        currentTurnSequence: input.sealedManifest.currentTurnSequence,
+        currentTurnContentHash: input.sealedManifest.currentTurnContentHash,
+        workingMemorySnapshotRef:
+          input.sealedManifest.workingMemorySnapshotRef,
+        workingMemorySnapshotVersion:
+          input.sealedManifest.workingMemorySnapshotVersion,
+        workingMemorySnapshotContentHash:
+          input.sealedManifest.workingMemorySnapshotContentHash,
+        contextDecisions: input.sealedManifest.contextDecisions,
+        preferenceDecisions: input.sealedManifest.preferenceDecisions,
+        createdAt: input.sealedManifest.createdAt
+      });
+      if (
+        reconstructed.packRef !== input.sealedManifest.packRef ||
+        reconstructed.packContentHash !==
+          input.sealedManifest.packContentHash
+      ) {
+        throw new Error(
+          "The sealed MemoryContextPack V2 failed deterministic integrity validation."
+        );
+      }
+      manifest = input.sealedManifest;
+    } else if (input.skill.manifest.ref === lessonPreparationSkillRef) {
+      if (!input.resolvedPreferences) {
+        throw new Error(
+          "lesson-preparation@6 requires a sealed scoped Preference resolution."
+        );
+      }
+      const selectedByRef = new Map(
+        input.resolvedPreferences.selected.map((preference) => [
+          preference.preferenceRef,
+          preference
+        ])
+      );
+      const injected = input.personalizationManifest.confirmedPreferences.map(
+        (entry) => {
+          const preference = selectedByRef.get(entry.preferenceRef);
+          if (!preference) {
+            throw new Error(
+              "The scoped Preference resolver and Prompt context disagree."
+            );
+          }
+          return {
+            sourceKind: "teacher_preference" as const,
+            sourceRef: entry.preferenceRef,
+            sourceVersion: entry.version,
+            sourceContentHash: entry.contentHash,
+            scopeKind: preference.scope.kind,
+            scopeFingerprint: preference.scopeFingerprint,
+            matchSpecificity: preference.matchSpecificity,
+            matchedSkillConstraint: preference.matchedSkillConstraint,
+            decision: "injected" as const,
+            reasonCode: "active_confirmed_preference" as const,
+            targetFields: ["prompt.context.confirmedPreferences"],
+            allowedEffects: ["prompt_context"],
+            estimatedTokens: entry.estimatedTokens
+          };
         }
-        return {
+      );
+      const contextExcluded =
+        input.personalizationManifest.excludedPreferences.map((entry) => {
+          const preference = selectedByRef.get(entry.preferenceRef);
+          if (!preference || entry.reason === "owner_mismatch") {
+            throw new Error(
+              "A scoped MemoryContextPack cannot contain a foreign Preference."
+            );
+          }
+          return {
+            sourceKind: "teacher_preference" as const,
+            sourceRef: preference.preferenceRef,
+            sourceVersion: preference.version,
+            sourceContentHash: preference.contentHash,
+            scopeKind: preference.scope.kind,
+            scopeFingerprint: preference.scopeFingerprint,
+            matchSpecificity: preference.matchSpecificity,
+            matchedSkillConstraint: preference.matchedSkillConstraint,
+            decision: "excluded" as const,
+            reasonCode: entry.reason,
+            targetFields: ["prompt.context.confirmedPreferences"],
+            allowedEffects: [] as string[],
+            estimatedTokens: estimateContextTokens({
+              preferenceRef: preference.preferenceRef,
+              preferenceKey: preference.preferenceKey,
+              preferenceValue: preference.preferenceValue,
+              version: preference.version,
+              contentHash: preference.contentHash,
+              sourceCandidateRef: preference.sourceCandidateRef
+            })
+          };
+        });
+      const resolverExcluded = input.resolvedPreferences.excluded.map(
+        (entry) => ({
           sourceKind: "teacher_preference" as const,
-          sourceRef: preference.preferenceRef,
-          sourceVersion: preference.version,
-          sourceContentHash: preference.contentHash,
-          decision: "excluded" as const,
-          reasonCode: entry.reason,
+          sourceRef: entry.preferenceRef,
+          sourceVersion: entry.version,
+          sourceContentHash: entry.contentHash,
+          scopeKind: entry.scopeKind,
+          scopeFingerprint: entry.scopeFingerprint,
+          matchSpecificity: entry.matchSpecificity,
+          matchedSkillConstraint: entry.matchedSkillConstraint,
+          decision: entry.reasonCode === "more_specific_scope" ||
+            entry.reasonCode === "more_specific_skill_scope"
+            ? "overridden" as const
+            : "excluded" as const,
+          reasonCode: entry.reasonCode,
           targetFields: ["prompt.context.confirmedPreferences"],
           allowedEffects: [] as string[],
-          estimatedTokens: estimateContextTokens({
-            preferenceRef: preference.preferenceRef,
-            preferenceKey: preference.preferenceKey,
-            preferenceValue: preference.preferenceValue,
-            version: preference.version,
-            contentHash: preference.contentHash,
-            sourceCandidateRef: preference.sourceCandidateRef
-          })
-        };
-      })
-    ];
-    const manifest = buildMemoryContextPackManifest({
-      owner: {
-        tenantRef: input.tenantRef,
-        teacherRef: input.execution.actorRef
-      },
-      useCase: "lesson_preparation",
-      policyVersion: "memory-context-pack-policy@1",
-      skillRef: input.skill.manifest.ref,
-      skillVersion: input.skill.manifest.version,
-      skillContentHash: input.skill.manifest.contentHash,
-      conversationRef: requiredSummaryString(
-        input.execution,
-        "conversationRef"
-      ),
-      currentTurnRef,
-      currentTurnSequence,
-      currentTurnContentHash,
-      workingMemorySnapshotRef: input.workingMemory.snapshotRef,
-      workingMemorySnapshotVersion: workingMemoryVersion,
-      workingMemorySnapshotContentHash: input.workingMemory.contentHash,
-      contextDecisions: [
-        {
-          sourceKind: "current_instruction",
-          sourceRef: currentTurnRef,
-          sourceVersion: currentTurnSequence,
-          sourceContentHash: currentTurnContentHash,
-          decision: "injected",
-          reasonCode: "current_instruction",
-          targetFields: ["prompt.context.currentInstruction"],
-          allowedEffects: ["prompt_context"],
-          estimatedTokens: estimateContextTokens(input.requestText)
-        },
-        {
-          sourceKind: "working_memory",
-          sourceRef: input.workingMemory.snapshotRef,
-          sourceVersion: workingMemoryVersion,
-          sourceContentHash: input.workingMemory.contentHash,
-          decision: "injected",
-          reasonCode: "same_task_working_memory",
-          targetFields: ["prompt.context.workingMemory"],
-          allowedEffects: ["prompt_context"],
-          estimatedTokens: input.conversationManifest.estimatedTokens
-        }
-      ],
-      preferenceDecisions,
-      createdAt:
-        input.sealedManifest?.createdAt ?? this.clock().toISOString()
-    });
-    if (
-      input.sealedManifest &&
-      (manifest.packRef !== input.sealedManifest.packRef ||
-        manifest.packContentHash !== input.sealedManifest.packContentHash)
-    ) {
-      throw new Error(
-        "The sealed MemoryContextPack cannot be deterministically reconstructed."
+          estimatedTokens: entry.preferenceKey && entry.preferenceValue
+            ? estimateContextTokens({
+                preferenceRef: entry.preferenceRef,
+                preferenceKey: entry.preferenceKey,
+                preferenceValue: entry.preferenceValue,
+                version: entry.version,
+                contentHash: entry.contentHash,
+                sourceCandidateRef: entry.preferenceRef
+              })
+            : 0
+        })
       );
+      manifest = buildMemoryContextPackManifestV2({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        useCase: "lesson_preparation",
+        policyVersion: "memory-context-pack-policy@2",
+        retrievalPolicyVersion: input.resolvedPreferences.policyVersion,
+        teacherMemoryEpoch: input.resolvedPreferences.memoryEpoch,
+        queryScopeHash: input.resolvedPreferences.queryScopeHash,
+        querySkillId: input.skill.manifest.id,
+        queryUseCase: "lesson_preparation",
+        skillRef: input.skill.manifest.ref,
+        skillVersion: input.skill.manifest.version,
+        skillContentHash: input.skill.manifest.contentHash,
+        conversationRef: requiredSummaryString(
+          input.execution,
+          "conversationRef"
+        ),
+        currentTurnRef,
+        currentTurnSequence,
+        currentTurnContentHash,
+        workingMemorySnapshotRef: input.workingMemory.snapshotRef,
+        workingMemorySnapshotVersion: workingMemoryVersion,
+        workingMemorySnapshotContentHash: input.workingMemory.contentHash,
+        contextDecisions,
+        preferenceDecisions: [
+          ...injected,
+          ...contextExcluded,
+          ...resolverExcluded
+        ],
+        createdAt: this.clock().toISOString()
+      });
+    } else {
+      const preferenceDecisions = [
+        ...input.personalizationManifest.confirmedPreferences.map((entry) => ({
+          sourceKind: "teacher_preference" as const,
+          sourceRef: entry.preferenceRef,
+          sourceVersion: entry.version,
+          sourceContentHash: entry.contentHash,
+          decision: "injected" as const,
+          reasonCode: "active_confirmed_preference" as const,
+          targetFields: ["prompt.context.confirmedPreferences"],
+          allowedEffects: ["prompt_context"],
+          estimatedTokens: entry.estimatedTokens
+        })),
+        ...input.personalizationManifest.excludedPreferences.map((entry) => {
+          const preference = preferenceByRef.get(entry.preferenceRef);
+          if (!preference || entry.reason === "owner_mismatch") {
+            throw new Error(
+              "A successful MemoryContextPack cannot contain an unresolved or foreign Preference."
+            );
+          }
+          return {
+            sourceKind: "teacher_preference" as const,
+            sourceRef: preference.preferenceRef,
+            sourceVersion: preference.version,
+            sourceContentHash: preference.contentHash,
+            decision: "excluded" as const,
+            reasonCode: entry.reason,
+            targetFields: ["prompt.context.confirmedPreferences"],
+            allowedEffects: [] as string[],
+            estimatedTokens: estimateContextTokens({
+              preferenceRef: preference.preferenceRef,
+              preferenceKey: preference.preferenceKey,
+              preferenceValue: preference.preferenceValue,
+              version: preference.version,
+              contentHash: preference.contentHash,
+              sourceCandidateRef: preference.sourceCandidateRef
+            })
+          };
+        })
+      ];
+      manifest = buildMemoryContextPackManifest({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        useCase: "lesson_preparation",
+        policyVersion: "memory-context-pack-policy@1",
+        skillRef: input.skill.manifest.ref,
+        skillVersion: input.skill.manifest.version,
+        skillContentHash: input.skill.manifest.contentHash,
+        conversationRef: requiredSummaryString(
+          input.execution,
+          "conversationRef"
+        ),
+        currentTurnRef,
+        currentTurnSequence,
+        currentTurnContentHash,
+        workingMemorySnapshotRef: input.workingMemory.snapshotRef,
+        workingMemorySnapshotVersion: workingMemoryVersion,
+        workingMemorySnapshotContentHash: input.workingMemory.contentHash,
+        contextDecisions,
+        preferenceDecisions,
+        createdAt:
+          input.sealedManifest?.createdAt ?? this.clock().toISOString()
+      });
+      if (
+        input.sealedManifest &&
+        (manifest.packRef !== input.sealedManifest.packRef ||
+          manifest.packContentHash !== input.sealedManifest.packContentHash)
+      ) {
+        throw new Error(
+          "The sealed MemoryContextPack cannot be deterministically reconstructed."
+        );
+      }
     }
-    const scopeHash = hash([
-      input.tenantRef,
-      input.execution.actorRef,
-      manifest.conversationRef,
-      input.execution.taskRef,
-      manifest.skillRef
-    ]);
+    const scopeHash = manifest.manifestVersion === 2
+      ? manifest.queryScopeHash
+      : hash([
+          input.tenantRef,
+          input.execution.actorRef,
+          manifest.conversationRef,
+          input.execution.taskRef,
+          manifest.skillRef
+        ]);
     const selections = manifest.preferenceDecisions.map((decision) => {
       const reasonCode = preferenceApplicationReasonCode(decision.reasonCode);
       return {
@@ -5134,6 +5408,10 @@ function preferenceApplicationReasonCode(
     case "expired":
     case "revoked":
     case "superseded":
+    case "scope_mismatch":
+    case "not_yet_valid":
+    case "more_specific_scope":
+    case "more_specific_skill_scope":
       return reasonCode;
     case "current_instruction":
     case "same_task_working_memory":
@@ -5142,6 +5420,11 @@ function preferenceApplicationReasonCode(
         "MemoryContextPack contains an invalid TeacherPreference reason code."
       );
   }
+}
+
+function isConversationLessonPreparationSkill(skillRef: string): boolean {
+  return skillRef === conversationLessonPreparationSkillRef ||
+    skillRef === lessonPreparationSkillRef;
 }
 
 function activeModelId(

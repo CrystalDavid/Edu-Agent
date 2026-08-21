@@ -42,7 +42,8 @@ import {
 } from "../../apps/api/src/platform/postgres/write-context.js";
 import {
   gate25CurriculumFixture,
-  gate25DemoRefs
+  gate25DemoRefs,
+  secondaryCourseDemoRefs
 } from "./gate2-5-demo-fixture.js";
 import {
   gate27DemoRefs,
@@ -145,6 +146,7 @@ export class Gate2DemoSeedService {
       };
     }
     const gate25 = await this.seedGate25();
+    const secondaryCourse = await this.seedSecondaryCourseRun();
     const gate29Support = await this.seedGate29CurriculumSupport();
     const gate27 = options.includeGate27
       ? await this.seedGate27()
@@ -154,6 +156,7 @@ export class Gate2DemoSeedService {
       ...gate24,
       replayed:
         gate24.replayed && schoolB.replayed && gate25.replayed &&
+        secondaryCourse.replayed &&
         gate29Support.replayed && gate27.replayed && gate28.replayed
     };
   }
@@ -241,21 +244,30 @@ export class Gate2DemoSeedService {
           org: gate2DemoRefs.tenantRef,
           user: gate2DemoRefs.teacherRef,
           roles: ["ordinary_teacher"] as const,
-          courses: [gate2DemoRefs.courseRunRef]
+          courses: [
+            gate2DemoRefs.courseRunRef,
+            secondaryCourseDemoRefs.courseRunRef
+          ]
         },
         {
           ref: "membership:demo-school:admin-001",
           org: gate2DemoRefs.tenantRef,
           user: "user:school-admin-001",
           roles: ["school_admin", "ordinary_teacher"] as const,
-          courses: [gate2DemoRefs.courseRunRef]
+          courses: [
+            gate2DemoRefs.courseRunRef,
+            secondaryCourseDemoRefs.courseRunRef
+          ]
         },
         {
           ref: "membership:demo-school:multi-001",
           org: gate2DemoRefs.tenantRef,
           user: "user:multi-school-001",
           roles: ["ordinary_teacher"] as const,
-          courses: [gate2DemoRefs.courseRunRef]
+          courses: [
+            gate2DemoRefs.courseRunRef,
+            secondaryCourseDemoRefs.courseRunRef
+          ]
         },
         {
           ref: "membership:demo-school-b:multi-001",
@@ -574,6 +586,262 @@ export class Gate2DemoSeedService {
           enrolledAt: createdAt
         }],
         metadata: (suffix) => metadata("education", `enrollment-${suffix}`)
+      }));
+      const result = { replayed: false };
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: createdAt
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async seedSecondaryCourseRun(): Promise<{ replayed: boolean }> {
+    const rootIdempotencyKey =
+      "memory-m2a:secondary-authorized-course:v1";
+    const rootKey = [
+      gate2DemoRefs.tenantRef,
+      gate2DemoRefs.teacherRef,
+      "memory-m2a.secondary-course.seed",
+      rootIdempotencyKey
+    ].join("|");
+    const decisionRef =
+      "authorization-decision:memory-m2a-secondary-course";
+    const createdAt = "2026-09-18T08:06:00.000Z";
+    const writeContext: WriteContext = {
+      actorRef: gate2DemoRefs.teacherRef,
+      purpose: "memory-m2a.secondary-course.seed",
+      rootIdempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: "idempotency:memory-m2a-secondary-course",
+        rootKey,
+        requestFingerprint: hash({ fixture: "memory-m2a-secondary-course@1" }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "memory-m2a-secondary-course-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return { replayed: true };
+      }
+      const decision: AuthorizationDecision = {
+        decisionRef,
+        actorRef: gate2DemoRefs.teacherRef,
+        tenantRef: gate2DemoRefs.tenantRef,
+        purpose: writeContext.purpose,
+        action: "memory-m2a.secondary-course.seed",
+        resourceRef: secondaryCourseDemoRefs.courseRunRef,
+        requestedFieldMask: [],
+        effect: "allow",
+        reasonCodes: ["local-synthetic-memory-scope-fixture"],
+        policyVersion: "policy:memory-m2a-synthetic-seed@1",
+        decidedAt: createdAt
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "memory-m2a-secondary-course-authorization"
+          )
+        })
+      ];
+      const metadata = <TOwner extends "education" | "artifact">(
+        owner: TOwner,
+        suffix: string
+      ) => createWriteMetadata(
+        writeContext,
+        owner,
+        `memory-m2a-secondary-course-${suffix}`
+      );
+      const plan = {
+        ...baselineTeachingPlan,
+        objective: "学生能够解释第二个合成班级中的斜率与图像关系。",
+        evidenceRefs: [secondaryCourseDemoRefs.observationRef]
+      };
+      receipts.push(...await this.artifacts.insertTeachingPlanSeed(client, {
+        artifactRef: secondaryCourseDemoRefs.planArtifactRef,
+        revisionRef: secondaryCourseDemoRefs.planRevisionRef,
+        title: "八年级 4 班斜率与图像｜已批准合成教案",
+        content: plan,
+        metadata: metadata("artifact", "teaching-plan"),
+        outboxMetadata: metadata("artifact", "teaching-plan-outbox"),
+        outboxRef: "outbox:memory-m2a-secondary-course-plan"
+      }));
+      receipts.push(...await this.education.insertSyntheticSlice(client, {
+        courseRun: {
+          courseRunRef: secondaryCourseDemoRefs.courseRunRef,
+          tenantRef: gate2DemoRefs.tenantRef,
+          curriculumFrameworkRef: "curriculum:cn-junior-math:synthetic@1",
+          subject: "数学",
+          gradeLevel: "八年级",
+          className: "八年级 4 班（合成）",
+          academicTerm: "2026 秋季学期",
+          metadata: metadata("education", "course-run")
+        },
+        objective: {
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          courseRunRef: secondaryCourseDemoRefs.courseRunRef,
+          title: "解释斜率与图像方向、陡峭程度的关系",
+          description: "第二个已授权合成 CourseRun 的教学目标。",
+          knowledgeConceptRefs: ["knowledge-concept:linear-function-slope"],
+          competencyRefs: ["competency:mathematical-reasoning"],
+          metadata: metadata("education", "objective")
+        },
+        profile: {
+          profileRef: secondaryCourseDemoRefs.profileRef,
+          profileVersion: 1,
+          scopeRef: secondaryCourseDemoRefs.courseRunRef,
+          participationMode: "teacher-copilot-review",
+          supportLimit: 2,
+          answerReleaseBoundary: "teacher-approval-required",
+          policyVersionRef: "policy:teacher-copilot-synthetic@1",
+          promptVersionRef: "prompt-bundle:teacher-copilot-slope@1",
+          evidenceRuleVersionRef: "evidence-rule:slope-review@1",
+          profilePayload: { synthetic: true, class: "4" },
+          contentHash: hash({ synthetic: true, class: "4" }),
+          validFrom: createdAt,
+          metadata: metadata("education", "profile")
+        },
+        attempt: {
+          attemptRef: secondaryCourseDemoRefs.attemptRef,
+          courseRunRef: secondaryCourseDemoRefs.courseRunRef,
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          learnerRef: secondaryCourseDemoRefs.learnerRef,
+          submittedAt: createdAt,
+          responseSummary: {
+            learnerLabel: "合成学生 C4-01",
+            synthetic: true
+          },
+          metadata: metadata("education", "attempt")
+        },
+        observation: {
+          observationRef: secondaryCourseDemoRefs.observationRef,
+          attemptRef: secondaryCourseDemoRefs.attemptRef,
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          observerType: "synthetic-rule",
+          observationType: "concept-explanation",
+          observationValue: {
+            summary: "第二个合成班级的解释仍需教师复核",
+            synthetic: true
+          },
+          observedAt: createdAt,
+          sourceRef: secondaryCourseDemoRefs.attemptRef,
+          metadata: metadata("education", "observation")
+        },
+        claim: {
+          claimRef: secondaryCourseDemoRefs.claimRef,
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          claimType: "instructional-gap",
+          claimValue: {
+            summary: "第二个合成班级的解释证据缺口",
+            synthetic: true
+          },
+          confidence: 0.5,
+          validFrom: createdAt,
+          status: "candidate",
+          metadata: metadata("education", "claim")
+        },
+        claimObservation: {
+          claimRef: secondaryCourseDemoRefs.claimRef,
+          observationRef: secondaryCourseDemoRefs.observationRef,
+          relationType: "supports",
+          metadata: metadata("education", "claim-observation")
+        },
+        teachingPlanAlignment: {
+          alignmentRef: "teaching-plan-alignment:class4-baseline",
+          teachingPlanArtifactRef: secondaryCourseDemoRefs.planArtifactRef,
+          courseRunRef: secondaryCourseDemoRefs.courseRunRef,
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          validationStatus: "validated",
+          validationResult: { objectiveAligned: true, dataMode: "synthetic" },
+          metadata: metadata("education", "plan-alignment")
+        },
+        outbox: {
+          outboxRef: "outbox:memory-m2a-secondary-course-evidence",
+          eventName: "EvidenceClaimRecorded",
+          aggregateRef: secondaryCourseDemoRefs.claimRef,
+          payload: {
+            observationRef: secondaryCourseDemoRefs.observationRef,
+            synthetic: true
+          },
+          metadata: metadata("education", "evidence-outbox")
+        }
+      }));
+      receipts.push(...await this.gate25Education.insertCurriculumSeed(client, {
+        courseRunRef: secondaryCourseDemoRefs.courseRunRef,
+        courseRunPresentation: {
+          className: "八年级 4 班",
+          academicTerm: "当前学期"
+        },
+        unit: {
+          unitRef: secondaryCourseDemoRefs.unitRef,
+          sequence: 1,
+          title: "一次函数（第二合成班）",
+          description: "用于验证课程级教师偏好隔离的合成单元。",
+          status: "active",
+          metadata: metadata("education", "unit")
+        },
+        lessons: [{
+          lessonRef: secondaryCourseDemoRefs.lessonRef,
+          sequence: 1,
+          title: "斜率与图像变化（第二合成班）",
+          plannedAt: "2026-09-25T00:30:00.000Z",
+          durationMinutes: 45,
+          preparationState: "ready_for_use",
+          currentApprovedPlanRef: secondaryCourseDemoRefs.planRevisionRef,
+          metadata: metadata("education", "lesson")
+        }],
+        additionalObjective: {
+          objectiveRef: secondaryCourseDemoRefs.followUpObjectiveRef,
+          title: "在另一合成情境中应用一次函数",
+          description: "第二个合成 CourseRun 的后续目标。",
+          knowledgeConceptRefs: ["knowledge-concept:linear-function-model"],
+          competencyRefs: ["competency:mathematical-modelling"],
+          metadata: metadata("education", "follow-up-objective")
+        },
+        objectiveLinks: [{
+          lessonRef: secondaryCourseDemoRefs.lessonRef,
+          objectiveRef: secondaryCourseDemoRefs.objectiveRef,
+          metadata: metadata("education", "lesson-objective")
+        }],
+        evidenceLinks: [{
+          lessonRef: secondaryCourseDemoRefs.lessonRef,
+          evidenceRef: secondaryCourseDemoRefs.observationRef,
+          evidenceKind: "observation",
+          metadata: metadata("education", "lesson-evidence")
+        }],
+        currentPlanBinding: {
+          bindingRef: "lesson-plan-binding:class4-baseline",
+          lessonRef: secondaryCourseDemoRefs.lessonRef,
+          teachingPlanArtifactRef: secondaryCourseDemoRefs.planArtifactRef,
+          teachingPlanRevisionRef: secondaryCourseDemoRefs.planRevisionRef,
+          metadata: metadata("education", "lesson-plan-binding")
+        }
+      }));
+      receipts.push(...await this.artifacts.insertTeachingPlanSeedScope(client, {
+        artifactRef: secondaryCourseDemoRefs.planArtifactRef,
+        revisionRef: secondaryCourseDemoRefs.planRevisionRef,
+        lessonRef: secondaryCourseDemoRefs.lessonRef,
+        writeContext
       }));
       const result = { replayed: false };
       await this.governance.completeIdempotency(client, {

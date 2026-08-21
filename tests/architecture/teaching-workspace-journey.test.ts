@@ -44,7 +44,7 @@ describe("Phase 8A Teaching Workspace journey boundaries", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
 
-    expect(migrations).toHaveLength(49);
+    expect(migrations).toHaveLength(50);
     for (const path of migrations) {
       const sql = readFileSync(path, "utf8");
       expect(sql).not.toMatch(

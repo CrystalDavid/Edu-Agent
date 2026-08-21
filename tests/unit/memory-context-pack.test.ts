@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildMemoryContextPackManifest,
-  type MemoryContextPackBuildInput
+  buildMemoryContextPackManifestV2,
+  type MemoryContextPackBuildInput,
+  type MemoryContextPackBuildInputV2
 } from "../../apps/api/src/modules/agent-runtime-context/domain/memory-context-pack.js";
+import {
+  MemoryContextPackManifestSchema,
+  MemoryContextPackManifestV1Schema
+} from "@edu-agent/contracts";
 
 const hashA = "a".repeat(64);
 const hashB = "b".repeat(64);
@@ -155,3 +161,117 @@ describe("MemoryContextPackManifest@1", () => {
     ).toThrow();
   });
 });
+
+describe("MemoryContextPackManifest@2", () => {
+  it("keeps the hash stable across retry timestamps", () => {
+    const first = buildMemoryContextPackManifestV2(buildInputV2());
+    const retry = buildMemoryContextPackManifestV2({
+      ...buildInputV2(),
+      createdAt: "2026-08-19T08:05:00.000Z"
+    });
+    expect(retry.packContentHash).toBe(first.packContentHash);
+    expect(retry.packRef).toBe(first.packRef);
+    expect(first).toMatchObject({
+      manifestVersion: 2,
+      selectedCount: 1,
+      overriddenCount: 1,
+      excludedCount: 0
+    });
+  });
+
+  it("changes the hash when epoch, query scope, revision, or scope changes", () => {
+    const baseline = buildMemoryContextPackManifestV2(buildInputV2());
+    const variants: MemoryContextPackBuildInputV2[] = [
+      { ...buildInputV2(), teacherMemoryEpoch: 9 },
+      { ...buildInputV2(), queryScopeHash: "f".repeat(64) },
+      {
+        ...buildInputV2(),
+        preferenceDecisions: buildInputV2().preferenceDecisions.map(
+          (entry, index) => index === 0
+            ? { ...entry, sourceVersion: 4 }
+            : entry
+        )
+      },
+      {
+        ...buildInputV2(),
+        preferenceDecisions: buildInputV2().preferenceDecisions.map(
+          (entry, index) => index === 0
+            ? { ...entry, scopeFingerprint: "1".repeat(64) }
+            : entry
+        )
+      }
+    ];
+    for (const variant of variants) {
+      expect(buildMemoryContextPackManifestV2(variant).packContentHash)
+        .not.toBe(baseline.packContentHash);
+    }
+  });
+
+  it("contains only refs, hashes and scope decisions, never copied content", () => {
+    const serialized = JSON.stringify(
+      buildMemoryContextPackManifestV2(buildInputV2())
+    );
+    for (const forbidden of [
+      "teacherText",
+      "preferenceValue",
+      "rawPrompt",
+      "providerResponse",
+      "evidenceBody"
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+  });
+
+  it("keeps historical V1 manifests parseable without rewriting them", () => {
+    const v1 = buildMemoryContextPackManifest(buildInput());
+    expect(MemoryContextPackManifestV1Schema.parse(v1)).toEqual(v1);
+    expect(MemoryContextPackManifestSchema.parse(v1)).toMatchObject({
+      manifestVersion: 1
+    });
+  });
+});
+
+function buildInputV2(): MemoryContextPackBuildInputV2 {
+  const v1 = buildInput();
+  return {
+    owner: v1.owner,
+    useCase: v1.useCase,
+    policyVersion: "memory-context-pack-policy@2",
+    retrievalPolicyVersion: "teacher-preference-retrieval@2",
+    teacherMemoryEpoch: 8,
+    queryScopeHash: "9".repeat(64),
+    querySkillId: "lesson-preparation",
+    queryUseCase: "lesson_preparation",
+    skillRef: "lesson-preparation@6",
+    skillVersion: "6",
+    skillContentHash: v1.skillContentHash,
+    conversationRef: v1.conversationRef,
+    currentTurnRef: v1.currentTurnRef,
+    currentTurnSequence: v1.currentTurnSequence,
+    currentTurnContentHash: v1.currentTurnContentHash,
+    workingMemorySnapshotRef: v1.workingMemorySnapshotRef,
+    workingMemorySnapshotVersion: v1.workingMemorySnapshotVersion,
+    workingMemorySnapshotContentHash:
+      v1.workingMemorySnapshotContentHash,
+    contextDecisions: v1.contextDecisions,
+    preferenceDecisions: [
+      {
+        ...v1.preferenceDecisions[0]!,
+        scopeKind: "course_run",
+        scopeFingerprint: "7".repeat(64),
+        matchSpecificity: 3,
+        matchedSkillConstraint: true
+      },
+      {
+        ...v1.preferenceDecisions[1]!,
+        scopeKind: "global",
+        scopeFingerprint: "8".repeat(64),
+        matchSpecificity: 0,
+        matchedSkillConstraint: false,
+        decision: "overridden",
+        reasonCode: "more_specific_scope"
+      }
+    ],
+    createdAt: v1.createdAt
+  };
+}

@@ -8,10 +8,12 @@ import {
   TeacherPersonalizationStateSchema,
   TeacherPreferenceMutationResultSchema,
   TeacherPreferenceViewSchema,
+  UpdateTeacherPreferenceScopeRequestSchema,
   UpdateTeacherPreferenceRequestSchema,
   RevokeTeacherPreferenceRequestSchema,
   type AuthorizationDecision,
-  type FormalWriteReceipt
+  type FormalWriteReceipt,
+  type MemoryScope
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
@@ -19,16 +21,24 @@ import {
   MemoryCandidateApplicationError,
   MemoryCandidateService,
   type ConfirmedTeacherPreferenceSnapshot,
-  type PersonalizationContextProvider
+  type PersonalizationContextProvider,
+  type ResolvedConfirmedPreferences,
+  type TeacherPreferenceScopeAuthorizationPort
 } from "../modules/personalization-memory-analytics/application/index.js";
 import {
   MemoryCandidateDomainError,
+  MemoryScopeDomainError,
+  createMemoryScope,
   evaluateTeacherPreference,
+  normalizeCanonicalPreferenceKey,
+  resolveTeacherPreferences,
   type MemoryCandidate,
   type TeacherPreference
 } from "../modules/personalization-memory-analytics/domain/index.js";
 import {
-  PostgresMemoryCandidateRepository
+  PostgresMemoryCandidateRepository,
+  readMemoryScopedPreferencesSettings,
+  type MemoryScopedPreferencesSettings
 } from "../modules/personalization-memory-analytics/infrastructure/index.js";
 import {
   PostgresGovernanceRepository
@@ -57,8 +67,16 @@ export class PostgresPersonalizationService
   constructor(
     private readonly pool: Pool,
     private readonly governance = new PostgresGovernanceRepository(),
-    private readonly clock: () => Date = () => new Date()
+    private readonly clock: () => Date = () => new Date(),
+    private readonly scopeAuthorization:
+      TeacherPreferenceScopeAuthorizationPort = globalOnlyScopeAuthorization,
+    private readonly scopedSettings: MemoryScopedPreferencesSettings =
+      readMemoryScopedPreferencesSettings()
   ) {}
+
+  get scopedPreferencesEnabled(): boolean {
+    return this.scopedSettings.enabled;
+  }
 
   async getState(input: { tenantRef: string; actorRef: string }) {
     this.assertActor(input);
@@ -78,17 +96,59 @@ export class PostgresPersonalizationService
     ]);
     return TeacherPersonalizationStateSchema.parse({
       candidates: candidates.map(candidateView),
-      preferences: preferences.map(preferenceView)
+      preferences: preferences.map(preferenceView),
+      scopedPreferencesEnabled: this.scopedSettings.enabled
     });
   }
 
   async createCandidate(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs?: readonly string[];
     request: unknown;
   }) {
     this.assertActor(input);
     const request = CreateMemoryCandidateRequestSchema.parse(input.request);
+    const canonicalKey = normalizeCanonicalPreferenceKey(
+      request.preferenceKey
+    );
+    if (
+      request.canonicalKey !== undefined &&
+      normalizeCanonicalPreferenceKey(request.canonicalKey) !== canonicalKey
+    ) {
+      throw new DomainConflictError(
+        "MEMORY_CANONICALIZATION_NOT_SUPPORTED",
+        "本阶段不自动合并不同名称的偏好类型。"
+      );
+    }
+    if (
+      request.consentProposal !== undefined &&
+      request.consentProposal.basis !== "teacher_settings_confirmed"
+    ) {
+      throw new DomainConflictError(
+        "MEMORY_CONSENT_BASIS_NOT_SUPPORTED",
+        "本阶段只接受教师在设置页确认的偏好。"
+      );
+    }
+    const proposedScope = createMemoryScope(
+      request.proposedScope ?? {
+        kind: "global",
+        subject: null,
+        gradeLevel: null,
+        courseRunRef: null,
+        lessonRef: null,
+        taskRef: null,
+        skillIds: []
+      }
+    );
+    this.assertFeatureAllowsScope(proposedScope);
+    await this.scopeAuthorization.assertAuthorized({
+      tenantRef: input.tenantRef,
+      teacherRef: input.actorRef,
+      scope: proposedScope,
+      allowedCourseRunRefs: input.allowedCourseRunRefs ?? [],
+      purpose: request.purpose
+    });
     return this.executeCommand({
       tenantRef: input.tenantRef,
       actorRef: input.actorRef,
@@ -112,7 +172,17 @@ export class PostgresPersonalizationService
           content: {
             summary: request.summary,
             preferenceKey: request.preferenceKey,
-            preferenceValue: request.preferenceValue
+            preferenceValue: request.preferenceValue,
+            canonicalKey,
+            proposedScope,
+            ...(request.validFrom ? { validFrom: request.validFrom } : {}),
+            ...(request.validUntil !== undefined
+              ? { validUntil: request.validUntil }
+              : {}),
+            consentProposal: request.consentProposal ?? {
+              basis: "teacher_settings_confirmed",
+              version: "consent:teacher-settings@1"
+            }
           },
           sources: [
             {
@@ -163,6 +233,7 @@ export class PostgresPersonalizationService
     actorRef: string;
     candidateRef: string;
     action: "confirm" | "reject";
+    allowedCourseRunRefs?: readonly string[];
     request: unknown;
   }) {
     this.assertActor(input);
@@ -186,6 +257,35 @@ export class PostgresPersonalizationService
       requestedFieldMask: ["memoryCandidate.status", "teacherPreference"],
       operation: async ({ client, writeContext, receipts }) => {
         const service = this.commandService(client, writeContext);
+        if (input.action === "confirm") {
+          const candidate = await new PostgresMemoryCandidateRepository(
+            client
+          ).getCandidate(input.candidateRef);
+          if (
+            !candidate ||
+            candidate.owner.tenantRef !== input.tenantRef ||
+            candidate.owner.teacherRef !== input.actorRef
+          ) {
+            throw new NotFoundError("个性化记录不存在。");
+          }
+          const scope = candidate.content.proposedScope ?? createMemoryScope({
+            kind: "global",
+            subject: null,
+            gradeLevel: null,
+            courseRunRef: null,
+            lessonRef: null,
+            taskRef: null,
+            skillIds: []
+          });
+          this.assertFeatureAllowsScope(scope);
+          await this.scopeAuthorization.assertAuthorized({
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
+            scope,
+            allowedCourseRunRefs: input.allowedCourseRunRefs ?? [],
+            purpose: request.purpose
+          });
+        }
         const result = input.action === "confirm"
           ? await service.confirm({
               candidateRef: input.candidateRef,
@@ -248,6 +348,76 @@ export class PostgresPersonalizationService
     return this.preferenceCommand(input, request, "revoke");
   }
 
+  async updatePreferenceScope(input: {
+    tenantRef: string;
+    actorRef: string;
+    preferenceRef: string;
+    allowedCourseRunRefs?: readonly string[];
+    request: unknown;
+  }) {
+    this.assertActor(input);
+    const request = UpdateTeacherPreferenceScopeRequestSchema.parse(
+      input.request
+    );
+    const scope = createMemoryScope(request.scope);
+    this.assertFeatureAllowsScope(scope);
+    await this.scopeAuthorization.assertAuthorized({
+      tenantRef: input.tenantRef,
+      teacherRef: input.actorRef,
+      scope,
+      allowedCourseRunRefs: input.allowedCourseRunRefs ?? [],
+      purpose: request.purpose
+    });
+    return this.executeCommand({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      purpose: request.purpose,
+      idempotencyKey: request.idempotencyKey,
+      requestFingerprint: hash({
+        preferenceRef: input.preferenceRef,
+        ...request,
+        scope
+      }),
+      action: request.purpose,
+      resourceRef: input.preferenceRef,
+      requestedFieldMask: [
+        "teacherPreference.scope",
+        "teacherPreference.validTime"
+      ],
+      operation: async ({ client, writeContext, receipts }) => {
+        const preference = await this.commandService(
+          client,
+          writeContext
+        ).updatePreferenceScope({
+          preferenceRef: input.preferenceRef,
+          actorRef: input.actorRef,
+          tenantRef: input.tenantRef,
+          expectedVersion: request.expectedVersion,
+          scope,
+          ...(request.validFrom !== undefined
+            ? { validFrom: request.validFrom }
+            : {}),
+          ...(request.validUntil !== undefined
+            ? { validUntil: request.validUntil }
+            : {})
+        });
+        receipts.push(createReceipt({
+          writeRef: preference.preferenceRef,
+          recordType: "TeacherPreferenceScopeUpdated",
+          metadata: createWriteMetadata(
+            writeContext,
+            "personalization",
+            "teacher-preference-scope-audit"
+          )
+        }));
+        return TeacherPreferenceMutationResultSchema.parse({
+          replayed: false,
+          preference: preferenceView(preference)
+        });
+      }
+    }, TeacherPreferenceMutationResultSchema.parse);
+  }
+
   async listConfirmedPreferences(input: {
     readonly tenantRef: string;
     readonly teacherRef: string;
@@ -259,6 +429,7 @@ export class PostgresPersonalizationService
       teacherRef: input.teacherRef,
       statuses: ["active"]
     });
+    const now = this.clock().getTime();
     for (const preference of preferences) {
       const evaluation = evaluateTeacherPreference({
         preference,
@@ -272,19 +443,98 @@ export class PostgresPersonalizationService
       }
     }
     return Object.freeze(
-      preferences.map((preference) => Object.freeze({
-        tenantRef: preference.owner.tenantRef,
-        teacherRef: preference.owner.teacherRef,
-        preferenceRef: preference.preferenceRef,
-        preferenceKey: preference.preferenceKey,
-        preferenceValue: preference.preferenceValue,
-        version: preference.version,
-        contentHash: preference.contentHash,
-        sourceCandidateRef: preference.sourceCandidateRef,
-        confirmedAt: preference.confirmedAt,
-        updatedAt: preference.updatedAt
-      }))
+      preferences
+        .filter((preference) =>
+          preference.scope.kind === "global" &&
+          preference.scope.skillIds.length === 0 &&
+          Date.parse(preference.validFrom) <= now &&
+          (preference.validUntil === null ||
+            now < Date.parse(preference.validUntil))
+        )
+        .map(preferenceSnapshot)
     );
+  }
+
+  async resolveConfirmedPreferences(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly useCase: string;
+    readonly skillId: string;
+    readonly subject: string | null;
+    readonly gradeLevel: string | null;
+    readonly courseRunRef: string | null;
+    readonly lessonRef: string | null;
+    readonly taskRef: string | null;
+    readonly at: string;
+  }): Promise<ResolvedConfirmedPreferences> {
+    this.assertActor({
+      tenantRef: input.tenantRef,
+      actorRef: input.teacherRef
+    });
+    const repository = new PostgresMemoryCandidateRepository(this.pool);
+    const preferences = await repository.listPreferences({
+      tenantRef: input.tenantRef,
+      teacherRef: input.teacherRef,
+      statuses: ["active"]
+    });
+    const resolution = resolveTeacherPreferences({
+      owner: {
+        tenantRef: input.tenantRef,
+        teacherRef: input.teacherRef
+      },
+      preferences,
+      memoryEpoch: await repository.getMemoryEpoch({
+        tenantRef: input.tenantRef,
+        teacherRef: input.teacherRef
+      }),
+      useCase: input.useCase,
+      skillId: input.skillId,
+      query: {
+        subject: input.subject,
+        gradeLevel: input.gradeLevel,
+        courseRunRef: input.courseRunRef,
+        lessonRef: input.lessonRef,
+        taskRef: input.taskRef
+      },
+      at: input.at
+    });
+    return Object.freeze({
+      memoryEpoch: resolution.memoryEpoch,
+      policyVersion: resolution.policyVersion,
+      queryScopeHash: resolution.queryScopeHash,
+      selected: Object.freeze(resolution.selected.map((entry) => ({
+        ...preferenceSnapshot(entry.preference),
+        canonicalKey: entry.preference.canonicalKey,
+        scope: entry.preference.scope,
+        scopeFingerprint: entry.preference.scopeFingerprint,
+        validFrom: entry.preference.validFrom,
+        validUntil: entry.preference.validUntil,
+        explicitness: entry.preference.explicitness,
+        consentBasis: entry.preference.consentBasis,
+        consentVersion: entry.preference.consentVersion,
+        policyVersion: entry.preference.policyVersion,
+        matchSpecificity: entry.matchSpecificity,
+        matchedSkillConstraint: entry.matchedSkillConstraint
+      }))),
+      excluded: Object.freeze(resolution.excluded.map((entry) => ({
+        preferenceRef: entry.preferenceRef,
+        version: entry.version,
+        contentHash: entry.contentHash,
+        canonicalKey: entry.canonicalKey,
+        scopeFingerprint: entry.scopeFingerprint,
+        scopeKind: entry.scopeKind,
+        matchSpecificity: entry.matchSpecificity,
+        matchedSkillConstraint: entry.matchedSkillConstraint,
+        reasonCode: entry.reasonCode,
+        ...(entry.preference
+          ? {
+              preferenceKey: entry.preference.preferenceKey,
+              preferenceValue: entry.preference.preferenceValue,
+              scope: entry.preference.scope
+            }
+          : {})
+      })))
+    });
   }
 
   private async preferenceCommand(
@@ -451,6 +701,18 @@ export class PostgresPersonalizationService
       throw new AuthorizationDeniedError("当前会话无权访问教师个性化数据。");
     }
   }
+
+  private assertFeatureAllowsScope(scope: MemoryScope): void {
+    if (
+      !this.scopedSettings.enabled &&
+      (scope.kind !== "global" || scope.skillIds.length > 0)
+    ) {
+      throw new DomainConflictError(
+        "SCOPED_PREFERENCES_DISABLED",
+        "当前环境未启用分范围教师偏好。"
+      );
+    }
+  }
 }
 
 function candidateView(candidate: MemoryCandidate) {
@@ -460,6 +722,12 @@ function candidateView(candidate: MemoryCandidate) {
     summary: candidate.content.summary,
     preferenceKey: candidate.content.preferenceKey ?? null,
     preferenceValue: candidate.content.preferenceValue ?? null,
+    canonicalKey: candidate.content.canonicalKey ??
+      candidate.content.preferenceKey ?? null,
+    proposedScope: candidate.content.proposedScope ?? null,
+    validFrom: candidate.content.validFrom ?? null,
+    validUntil: candidate.content.validUntil ?? null,
+    consentProposal: candidate.content.consentProposal ?? null,
     sources: candidate.sources,
     confidence: candidate.confidence,
     proposedBy: candidate.proposedBy,
@@ -479,6 +747,15 @@ function preferenceView(preference: TeacherPreference) {
     preferenceRef: preference.preferenceRef,
     preferenceKey: preference.preferenceKey,
     preferenceValue: preference.preferenceValue,
+    canonicalKey: preference.canonicalKey,
+    scope: preference.scope,
+    scopeFingerprint: preference.scopeFingerprint,
+    validFrom: preference.validFrom,
+    validUntil: preference.validUntil,
+    explicitness: preference.explicitness,
+    consentBasis: preference.consentBasis,
+    consentVersion: preference.consentVersion,
+    policyVersion: preference.policyVersion,
     sourceCandidateRef: preference.sourceCandidateRef,
     status: preference.status,
     version: preference.version,
@@ -486,6 +763,32 @@ function preferenceView(preference: TeacherPreference) {
     updatedAt: preference.updatedAt,
     revokedAt: preference.revokedAt,
     contentHash: preference.contentHash
+  });
+}
+
+function preferenceSnapshot(
+  preference: TeacherPreference
+): ConfirmedTeacherPreferenceSnapshot {
+  return Object.freeze({
+    tenantRef: preference.owner.tenantRef,
+    teacherRef: preference.owner.teacherRef,
+    preferenceRef: preference.preferenceRef,
+    preferenceKey: preference.preferenceKey,
+    preferenceValue: preference.preferenceValue,
+    canonicalKey: preference.canonicalKey,
+    scope: preference.scope,
+    scopeFingerprint: preference.scopeFingerprint,
+    validFrom: preference.validFrom,
+    validUntil: preference.validUntil,
+    explicitness: preference.explicitness,
+    consentBasis: preference.consentBasis,
+    consentVersion: preference.consentVersion,
+    policyVersion: preference.policyVersion,
+    version: preference.version,
+    contentHash: preference.contentHash,
+    sourceCandidateRef: preference.sourceCandidateRef,
+    confirmedAt: preference.confirmedAt,
+    updatedAt: preference.updatedAt
   });
 }
 
@@ -500,6 +803,9 @@ function mapPersonalizationError(error: unknown): Error {
     return new DomainConflictError(error.code, error.message);
   }
   if (error instanceof MemoryCandidateDomainError) {
+    return new DomainConflictError(error.code, error.message);
+  }
+  if (error instanceof MemoryScopeDomainError) {
     return new DomainConflictError(error.code, error.message);
   }
   if (isPostgresUniqueViolation(error)) {
@@ -525,3 +831,13 @@ function isPostgresUniqueViolation(error: unknown): boolean {
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
+
+const globalOnlyScopeAuthorization: TeacherPreferenceScopeAuthorizationPort = {
+  async assertAuthorized(input) {
+    if (input.scope.kind !== "global") {
+      throw new AuthorizationDeniedError(
+        "Scoped TeacherPreference authorization is unavailable."
+      );
+    }
+  }
+};

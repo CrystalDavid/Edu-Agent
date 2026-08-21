@@ -6,6 +6,7 @@ import type {
   RecordedMemoryApplicationOutcome
 } from "../application/memory-application-recorder.js";
 import type { TeacherPreference } from "../domain/memory-candidate.js";
+import { createMemoryScope } from "../domain/memory-scope.js";
 import type { SqlExecutor } from "../../../platform/postgres/types.js";
 
 type ApplicationIdentityRow = {
@@ -72,6 +73,21 @@ type PreferenceRevisionRow = {
   teacher_ref: string;
   preference_key: string;
   preference_value: string;
+  canonical_key: string;
+  scope_kind: TeacherPreference["scope"]["kind"];
+  scope_subject: string | null;
+  scope_grade_level: string | null;
+  scope_course_run_ref: string | null;
+  scope_lesson_ref: string | null;
+  scope_task_ref: string | null;
+  scope_skill_ids: string[];
+  scope_fingerprint: string;
+  valid_from: Date | string;
+  valid_until: Date | string | null;
+  explicitness: TeacherPreference["explicitness"];
+  consent_basis: TeacherPreference["consentBasis"];
+  consent_version: string;
+  policy_version: string;
   source_candidate_ref: string;
   source_candidate_hash: string;
   preference_status: TeacherPreference["status"];
@@ -331,7 +347,15 @@ export class PostgresMemoryApplicationRepository {
     const result = await this.executor.query<PreferenceRevisionRow>(
       `SELECT revision.preference_ref, revision.tenant_ref,
               revision.teacher_ref, revision.preference_key,
-              revision.preference_value, revision.source_candidate_ref,
+              revision.preference_value, revision.canonical_key,
+              revision.scope_kind, revision.scope_subject,
+              revision.scope_grade_level, revision.scope_course_run_ref,
+              revision.scope_lesson_ref, revision.scope_task_ref,
+              revision.scope_skill_ids, revision.scope_fingerprint,
+              revision.valid_from, revision.valid_until,
+              revision.explicitness, revision.consent_basis,
+              revision.consent_version, revision.policy_version,
+              revision.source_candidate_ref,
               revision.source_candidate_hash, revision.preference_status,
               revision.version, revision.content_hash,
               revision.confirmed_by_ref, revision.confirmed_at,
@@ -425,6 +449,18 @@ function outcomeFromRow(row: OutcomeRow): RecordedMemoryApplicationOutcome {
 }
 
 function preferenceRevisionFromRow(row: PreferenceRevisionRow): TeacherPreference {
+  const scope = createMemoryScope({
+    kind: row.scope_kind,
+    subject: row.scope_subject,
+    gradeLevel: row.scope_grade_level,
+    courseRunRef: row.scope_course_run_ref,
+    lessonRef: row.scope_lesson_ref,
+    taskRef: row.scope_task_ref,
+    skillIds: row.scope_skill_ids
+  });
+  if (scope.fingerprint !== row.scope_fingerprint) {
+    throw new Error("TeacherPreference scope fingerprint mismatch.");
+  }
   return Object.freeze({
     preferenceRef: row.preference_ref,
     owner: Object.freeze({
@@ -433,6 +469,15 @@ function preferenceRevisionFromRow(row: PreferenceRevisionRow): TeacherPreferenc
     }),
     preferenceKey: row.preference_key,
     preferenceValue: row.preference_value,
+    canonicalKey: row.canonical_key,
+    scope,
+    scopeFingerprint: row.scope_fingerprint,
+    validFrom: iso(row.valid_from),
+    validUntil: nullableIso(row.valid_until),
+    explicitness: row.explicitness,
+    consentBasis: row.consent_basis,
+    consentVersion: row.consent_version,
+    policyVersion: row.policy_version,
     sourceCandidateRef: row.source_candidate_ref,
     sourceCandidateHash: row.source_candidate_hash,
     status: row.preference_status,

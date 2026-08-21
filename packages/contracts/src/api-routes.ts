@@ -129,6 +129,10 @@ export const apiRoutes = {
     teacherPreferencePattern:
       "/api/v1/teacher/personalization/preferences/:preferenceRef",
     teacherPreference: teacherPreferenceRoute,
+    teacherPreferenceScopePattern:
+      "/api/v1/teacher/personalization/preferences/:preferenceRef/scope",
+    teacherPreferenceScope: (preferenceRef: string): string =>
+      `${teacherPreferenceRoute(preferenceRef)}/scope`,
     teacherPreferenceRevokePattern:
       "/api/v1/teacher/personalization/preferences/:preferenceRef/revoke",
     teacherPreferenceRevoke: (preferenceRef: string): string =>

@@ -50,14 +50,18 @@ test("teacher confirms, edits, restores, and revokes a persistent preference", a
 
   await page.reload();
   await page.getByRole("button", { name: "助手偏好" }).click();
-  await expect(page.getByLabel("教案表达风格的值"))
+  const restoredPreferenceInput = page.getByLabel("教案表达风格的值");
+  await expect(restoredPreferenceInput)
     .toHaveValue("简洁并优先使用课堂案例");
   await page.screenshot({
     path: `${screenshotRoot}/preference-confirmed.png`,
     fullPage: true
   });
 
-  await page.getByRole("button", { name: /删除并撤销/u }).click();
+  await restoredPreferenceInput
+    .locator("xpath=ancestor::article[contains(@class, 'settings-row')]")
+    .getByRole("button", { name: /删除并撤销/u })
+    .click();
   await expect(page.getByLabel("教案表达风格的值")).toHaveCount(0);
   await expect(panel).toContainText("已删除");
   await expect(panel).toContainText("简洁并优先使用课堂案例");

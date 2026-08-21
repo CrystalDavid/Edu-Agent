@@ -94,6 +94,19 @@ async function assertPortAvailable(port, label) {
   });
 }
 
+async function waitForPortAvailable(port, label, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await assertPortAvailable(port, label);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error(`${label} port ${port} was not released before timeout.`);
+}
+
 async function waitForJson(url, validate, timeoutMs = 45_000) {
   const startedAt = Date.now();
   let lastStatus = "no response";
@@ -320,9 +333,10 @@ try {
     );
   }
 
+  let currentApiEnvironment = { ...applicationEnvironment };
   let apiProcess = startPackage(
     "@edu-agent/api",
-    applicationEnvironment,
+    currentApiEnvironment,
     "start:local"
   );
   await waitForJson(
@@ -336,9 +350,13 @@ try {
   let restartInProgress = false;
   controlServer = createHttpServer(async (request, response) => {
     response.setHeader("content-type", "application/json; charset=utf-8");
+    const controlUrl = new URL(
+      request.url ?? "/",
+      `http://127.0.0.1:${controlPort}`
+    );
     if (
       request.method !== "POST" ||
-      request.url !== "/__e2e/restart-api"
+      controlUrl.pathname !== "/__e2e/restart-api"
     ) {
       response.statusCode = 404;
       response.end(JSON.stringify({ code: "E2E_CONTROL_NOT_FOUND" }));
@@ -354,14 +372,35 @@ try {
       response.end(JSON.stringify({ code: "E2E_RESTART_IN_PROGRESS" }));
       return;
     }
+    const scopedPreferenceMode =
+      controlUrl.searchParams.get("scoped-preferences");
+    if (
+      scopedPreferenceMode !== null &&
+      !["enabled", "disabled", "default"].includes(scopedPreferenceMode)
+    ) {
+      response.statusCode = 400;
+      response.end(JSON.stringify({
+        code: "E2E_CONTROL_INVALID_SCOPED_PREFERENCE_MODE"
+      }));
+      return;
+    }
     restartInProgress = true;
     try {
+      const nextApiEnvironment = { ...currentApiEnvironment };
+      if (scopedPreferenceMode === "enabled") {
+        nextApiEnvironment.MEMORY_SCOPED_PREFERENCES_ENABLED = "true";
+      } else if (scopedPreferenceMode === "disabled") {
+        nextApiEnvironment.MEMORY_SCOPED_PREFERENCES_ENABLED = "false";
+      } else if (scopedPreferenceMode === "default") {
+        delete nextApiEnvironment.MEMORY_SCOPED_PREFERENCES_ENABLED;
+      }
       intentionalStops.add(apiProcess);
       stopProcessTree(apiProcess);
       await waitForProcessExit(apiProcess);
+      await waitForPortAvailable(apiPort, "API");
       apiProcess = startPackage(
         "@edu-agent/api",
-        applicationEnvironment,
+        nextApiEnvironment,
         "start:local"
       );
       await waitForJson(
@@ -372,8 +411,13 @@ try {
         `${apiOrigin}${apiRoutes.demo.bootstrap}`,
         (payload) => payload?.identity?.dataMode === "synthetic"
       );
+      currentApiEnvironment = nextApiEnvironment;
       response.statusCode = 200;
-      response.end(JSON.stringify({ restarted: true, runId }));
+      response.end(JSON.stringify({
+        restarted: true,
+        runId,
+        scopedPreferences: scopedPreferenceMode ?? "unchanged"
+      }));
     } catch (error) {
       response.statusCode = 500;
       response.end(

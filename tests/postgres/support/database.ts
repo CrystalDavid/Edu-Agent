@@ -30,6 +30,7 @@ export async function resetGate1BData(
     TRUNCATE TABLE
       personalization.memory_application_outcome,
       personalization.memory_application,
+      personalization.teacher_memory_state,
       personalization.teacher_preference_revision,
       personalization.teacher_preference,
       personalization.memory_candidate_revision,

@@ -38,7 +38,7 @@ Edu-Agent/
 | `src/index.ts` | API 进程入口、端口与启动失败处理 |
 | `src/app.ts` | Express application、middleware、auth 和 route 组合 |
 | `src/composition/` | Product Composition Root、Application Service、Worker 组装；不包含 Sample Seed |
-| `src/database/migrations.ts` | 43 个历史 Migration + Phase 7A 前向 Migration 的唯一 registry |
+| `src/database/migrations.ts` | 43 个 Verified 基线 + 7 个后续前向 Migration 的唯一 registry（当前 50 个） |
 | `src/platform/` | PostgreSQL、auth、errors、server 等平台 Adapter |
 | `src/modules/` | 七个状态所有者模块 |
 
@@ -106,7 +106,7 @@ tests         -> contracts + sample-data + test-fixtures
 - `infra/local/postgres/.env.local`：脚本生成的本地凭据，Git ignored；
 - `infra/postgres/migration-ownership.md`：Schema owner、app/worker role 和 Migration 规则。
 
-43 个历史 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。历史文件不可修改、合并、重排或重命名。
+43 个 Verified 基线 Migration 分布：runtime 6、artifact 9、capability 6、education 6、governance 6、personalization 1、work 9。其后只追加 7 个前向文件，当前 registry 为 50；既有文件不可修改、合并、重排或重命名。Scoped Preference 的共享 Contract 位于 `packages/contracts/src/memory-scope.ts`，Personalization Resolver/授权 Port 位于该模块的 `domain/` 与 `application/`，跨 Schema 校验 Adapter 位于 `apps/api/src/composition/teacher-preference-scope-authorization-adapter.ts`。
 
 ## `scripts` 与稳定命令
 

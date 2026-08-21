@@ -23,6 +23,7 @@ import {
   LessonPreparationSkillInputSchemaV2,
   LessonPreparationSkillInputSchemaV3,
   LessonPreparationSkillInputSchemaV4,
+  LessonPreparationSkillInputSchemaV5,
   type LessonPreparationSkillInput
 } from "./input-schema.js";
 import {
@@ -30,7 +31,8 @@ import {
   lessonPreparationSkillManifestV2,
   lessonPreparationSkillManifestV3,
   lessonPreparationSkillManifestV4,
-  lessonPreparationSkillManifestV5
+  lessonPreparationSkillManifestV5,
+  lessonPreparationSkillManifestV6
 } from "./manifest.js";
 import {
   LessonPreparationSkillOutputSchema,
@@ -183,6 +185,26 @@ export const lessonPreparationSkillV5: LessonPreparationSkillVersion =
     assembleRequest: (input: LessonPreparationSkillInput) =>
       assembleConversationLessonPreparationModelRequest(
         LessonPreparationSkillInputSchemaV4.parse(input)
+      ),
+    assembleRepairRequest: assembleConversationRepairModelRequest,
+    validateOutput: validateModelOutput,
+    evaluateOutput: evaluateLessonPreparationOutput
+  });
+
+export const lessonPreparationSkillV6: LessonPreparationSkillVersion =
+  Object.freeze({
+    manifest: lessonPreparationSkillManifestV6,
+    inputSchema: LessonPreparationSkillInputSchemaV5,
+    outputSchema: LessonPreparationSkillOutputSchema,
+    promptBundle: conversationLessonPreparationPromptBundle,
+    buildContext: (input: LessonPreparationContextBuildInput) =>
+      buildConversationPreparationContext({
+        ...input,
+        confirmedPreferences: input.confirmedPreferences ?? []
+      }),
+    assembleRequest: (input: LessonPreparationSkillInput) =>
+      assembleConversationLessonPreparationModelRequest(
+        LessonPreparationSkillInputSchemaV5.parse(input)
       ),
     assembleRepairRequest: assembleConversationRepairModelRequest,
     validateOutput: validateModelOutput,

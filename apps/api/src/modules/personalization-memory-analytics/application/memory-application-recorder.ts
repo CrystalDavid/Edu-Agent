@@ -17,7 +17,11 @@ export type MemoryApplicationReasonCode =
   | "current_instruction_override"
   | "expired"
   | "revoked"
-  | "superseded";
+  | "superseded"
+  | "scope_mismatch"
+  | "not_yet_valid"
+  | "more_specific_scope"
+  | "more_specific_skill_scope";
 
 export type PreferenceApplicationDecisionSource =
   | "selected_active_confirmed"

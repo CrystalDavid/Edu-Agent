@@ -23,7 +23,7 @@ corepack pnpm app:doctor
 | HTTP route / middleware | `apps/api/src/app.ts` | contracts、auth、route order、HTTP tests |
 | 服务组装 / Application Service | `apps/api/src/composition/` | owning module Port、transaction/outbox、PostgreSQL tests |
 | 模块状态 / Repository | `apps/api/src/modules/<module>/` | Schema ownership、Migration、architecture tests |
-| Migration | `<module>/infrastructure/migrations/` + `apps/api/src/database/migrations.ts` | 序号、owner、43 个 Verified 基线文件不变；当前另含 Phase 7A、日历分类、Phase 8A-6 行动候选、Conversation/WorkingMemory 与教师记忆应用观测前向文件，共 49 个 |
+| Migration | `<module>/infrastructure/migrations/` + `apps/api/src/database/migrations.ts` | 序号、owner、43 个 Verified 基线文件不变；当前另含 Phase 7A、日历分类、Phase 8A-6 行动候选、Conversation/WorkingMemory、教师记忆应用观测与 scoped Preference 前向文件，共 50 个 |
 | Web 页面 / 路由 | `apps/web/src/App.tsx`、`route.ts`、`pages/` | lazy import、AppRoute、Playwright |
 | Web API client | `apps/web/src/api.ts` | shared transport/error/session、contract、build |
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |
@@ -71,6 +71,15 @@ corepack pnpm app:doctor
 | `corepack pnpm verify:version-history` | Commit/Tag/Gate 文档证据 |
 | `corepack pnpm verify:markdown-links` | Markdown 本地链接 |
 | `corepack pnpm verify:repo-sync` | Git 跟踪、忽略、禁止目录、upstream/HEAD |
+
+Pull Request 的最小 GitHub Actions 门禁位于
+`.github/workflows/pr-validation.yml`：`quality` 对应非 Docker 的完整质量
+命令，`postgres-integration` 调用正式 `test:postgres` wrapper，
+`playwright-e2e` 在 Microsoft Edge 下调用正式 `test:playwright` wrapper。
+两个集成 Job 都使用一次性隔离资源；浏览器失败产物只写入 runner 临时
+目录并短期上传。CI 固定使用 Node 24、pnpm 11.9.0、frozen lockfile 和
+Mock Provider，不读取本地环境文件或运行 live Provider。任一 Job 失败都
+不是可合并状态，具体边界见[验证指南](validation.md)。
 
 ### 真实模型
 

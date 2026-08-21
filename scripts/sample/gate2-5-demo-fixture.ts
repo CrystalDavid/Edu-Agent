@@ -13,6 +13,21 @@ export const gate25DemoRefs = {
     "task:lesson-preparation:linear-function-application"
 } as const;
 
+export const secondaryCourseDemoRefs = {
+  courseRunRef: "course-run:grade8-math-class4-2026-fall",
+  objectiveRef: "learning-objective:class4-slope-and-graph",
+  followUpObjectiveRef: "learning-objective:class4-linear-application",
+  profileRef: "learning-interaction-profile:class4-slope",
+  attemptRef: "attempt:class4-slope:synthetic-001",
+  learnerRef: "learner:class4:synthetic-001",
+  observationRef: "evidence-observation:class4-slope:synthetic-001",
+  claimRef: "evidence-claim:class4-slope:synthetic-001",
+  planArtifactRef: "artifact:teaching-plan:class4-slope",
+  planRevisionRef: "artifact-revision:teaching-plan:class4-baseline",
+  unitRef: "curriculum-unit:class4-linear-functions",
+  lessonRef: "lesson:class4-slope-and-graph"
+} as const;
+
 export const gate25CurriculumFixture = {
   unit: {
     unitRef: gate25DemoRefs.unitRef,

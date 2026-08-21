@@ -1,16 +1,19 @@
 import { createHash } from "node:crypto";
 
 import {
-  MemoryContextPackManifestSchema,
+  MemoryContextPackManifestV1Schema,
+  MemoryContextPackManifestV2Schema,
   type MemoryContextDecisionEntry,
-  type MemoryContextPackManifest,
+  type MemoryContextPackManifestV1,
+  type MemoryContextPackManifestV2,
   type MemoryContextPackOwner,
-  type MemoryPreferenceDecisionEntry
+  type MemoryPreferenceDecisionEntry,
+  type MemoryPreferenceDecisionEntryV2
 } from "@edu-agent/contracts";
 
 export const memoryContextPackManifestVersion = 1 as const;
 
-const MemoryContextPackBuildInputSchema = MemoryContextPackManifestSchema.omit({
+const MemoryContextPackBuildInputSchema = MemoryContextPackManifestV1Schema.omit({
   packRef: true,
   packContentHash: true,
   manifestVersion: true,
@@ -38,7 +41,7 @@ export interface MemoryContextPackBuildInput {
 
 export function buildMemoryContextPackManifest(
   input: MemoryContextPackBuildInput
-): MemoryContextPackManifest {
+): MemoryContextPackManifestV1 {
   const parsedInput = MemoryContextPackBuildInputSchema.parse(input);
   const contextDecisions = parsedInput.contextDecisions.map((entry) => ({
     ...entry,
@@ -76,12 +79,112 @@ export function buildMemoryContextPackManifest(
   };
   const packContentHash = hashCanonical(hashPayload);
 
-  return MemoryContextPackManifestSchema.parse({
+  return MemoryContextPackManifestV1Schema.parse({
     packRef: `memory-context-pack:${packContentHash}`,
     packContentHash,
     ...hashPayload,
     createdAt: parsedInput.createdAt
   });
+}
+
+export const memoryContextPackManifestVersionV2 = 2 as const;
+
+const MemoryContextPackBuildInputV2Schema =
+  MemoryContextPackManifestV2Schema.omit({
+    packRef: true,
+    packContentHash: true,
+    manifestVersion: true,
+    selectedCount: true,
+    overriddenCount: true,
+    excludedCount: true
+  });
+
+export interface MemoryContextPackBuildInputV2 {
+  readonly owner: MemoryContextPackOwner;
+  readonly useCase: string;
+  readonly policyVersion: string;
+  readonly retrievalPolicyVersion: string;
+  readonly teacherMemoryEpoch: number;
+  readonly queryScopeHash: string;
+  readonly querySkillId: string;
+  readonly queryUseCase: string;
+  readonly skillRef: string;
+  readonly skillVersion: string;
+  readonly skillContentHash: string;
+  readonly conversationRef: string;
+  readonly currentTurnRef: string;
+  readonly currentTurnSequence: number;
+  readonly currentTurnContentHash: string;
+  readonly workingMemorySnapshotRef: string;
+  readonly workingMemorySnapshotVersion: number;
+  readonly workingMemorySnapshotContentHash: string;
+  readonly contextDecisions: readonly MemoryContextDecisionEntry[];
+  readonly preferenceDecisions: readonly MemoryPreferenceDecisionEntryV2[];
+  readonly createdAt: string;
+}
+
+export function buildMemoryContextPackManifestV2(
+  input: MemoryContextPackBuildInputV2
+): MemoryContextPackManifestV2 {
+  const parsedInput = MemoryContextPackBuildInputV2Schema.parse(input);
+  const contextDecisions = parsedInput.contextDecisions.map(copyDecision);
+  const preferenceDecisions = parsedInput.preferenceDecisions.map(
+    copyDecision
+  );
+  const selectedCount = preferenceDecisions.filter((entry) =>
+    entry.decision === "selected" || entry.decision === "injected"
+  ).length;
+  const overriddenCount = preferenceDecisions.filter(
+    (entry) => entry.decision === "overridden"
+  ).length;
+  const excludedCount = preferenceDecisions.filter(
+    (entry) => entry.decision === "excluded"
+  ).length;
+  const hashPayload = {
+    manifestVersion: memoryContextPackManifestVersionV2,
+    owner: { ...parsedInput.owner },
+    useCase: parsedInput.useCase,
+    policyVersion: parsedInput.policyVersion,
+    retrievalPolicyVersion: parsedInput.retrievalPolicyVersion,
+    teacherMemoryEpoch: parsedInput.teacherMemoryEpoch,
+    queryScopeHash: parsedInput.queryScopeHash,
+    querySkillId: parsedInput.querySkillId,
+    queryUseCase: parsedInput.queryUseCase,
+    skillRef: parsedInput.skillRef,
+    skillVersion: parsedInput.skillVersion,
+    skillContentHash: parsedInput.skillContentHash,
+    conversationRef: parsedInput.conversationRef,
+    currentTurnRef: parsedInput.currentTurnRef,
+    currentTurnSequence: parsedInput.currentTurnSequence,
+    currentTurnContentHash: parsedInput.currentTurnContentHash,
+    workingMemorySnapshotRef: parsedInput.workingMemorySnapshotRef,
+    workingMemorySnapshotVersion: parsedInput.workingMemorySnapshotVersion,
+    workingMemorySnapshotContentHash:
+      parsedInput.workingMemorySnapshotContentHash,
+    contextDecisions,
+    preferenceDecisions,
+    selectedCount,
+    overriddenCount,
+    excludedCount
+  };
+  const packContentHash = hashCanonical(hashPayload);
+  return MemoryContextPackManifestV2Schema.parse({
+    packRef: `memory-context-pack:${packContentHash}`,
+    packContentHash,
+    ...hashPayload,
+    createdAt: parsedInput.createdAt
+  });
+}
+
+function copyDecision<T extends {
+  readonly targetFields: readonly string[];
+  readonly allowedEffects: readonly string[];
+}>(entry: T): T {
+  return {
+    ...entry,
+    targetFields: [...entry.targetFields],
+    allowedEffects: [...entry.allowedEffects]
+  };
 }
 
 function hashCanonical(value: unknown): string {
