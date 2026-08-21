@@ -59,7 +59,7 @@ describe("explicit teacher forget PostgreSQL", () => {
       teacherText: "请生成一版贴近日常生活的斜率教案"
     });
     expect(historical.proposal.memoryContext).toMatchObject({
-      manifestVersion: 2,
+      manifestVersion: 3,
       durablePreferences: [
         expect.objectContaining({
           preferenceRef,

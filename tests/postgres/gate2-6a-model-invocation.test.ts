@@ -169,7 +169,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
     expect(firstQueued.body.execution).toMatchObject({
       conversationRef: firstTurn.body.conversation.conversationRef,
       turnRef: firstTurn.body.turn.turnRef,
-      promptBundleVersion: 4
+      promptBundleVersion: 5
     });
     await product.workers.copilotOutbox.processAvailable(100);
 
@@ -262,9 +262,10 @@ describe("Gate 2.6A durable ModelExecution", () => {
       },
       pendingIntents: [secondText]
     });
-    expect(
-      recovered.body.workingMemory.temporaryOverrides.join(" ")
-    ).toContain("短一点");
+    expect(recovered.body.workingMemory).toMatchObject({
+      builderVersion: "working-memory-builder@2",
+      temporaryOverrides: []
+    });
     expect(
       recovered.body.workingMemory.latestAssistantResult.resultRefs
         .proposalRevisionRef
@@ -309,7 +310,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       [afterFirst.body.conversationRef, secondQueued.body.execution.modelExecutionRef]
     );
     expect(persisted.rows[0]).toMatchObject({
-      skill_ref: "lesson-preparation@6",
+      skill_ref: "lesson-preparation@7",
       source_sequence: 3,
       active_snapshots: "1",
       all_snapshots: "4",
@@ -323,7 +324,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
     expect(
       persisted.rows[0]?.context_engineering["conversationManifest"]
     ).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       conversationRef: afterFirst.body.conversationRef,
       turnRef: secondTurn.body.turn.turnRef,
       sourceTurnSequence: 3
@@ -331,8 +332,8 @@ describe("Gate 2.6A durable ModelExecution", () => {
     expect(
       persisted.rows[0]?.context_engineering["memoryContextPackManifest"]
     ).toMatchObject({
-      manifestVersion: 2,
-      skillRef: "lesson-preparation@6",
+      manifestVersion: 3,
+      skillRef: "lesson-preparation@7",
       querySkillId: "lesson-preparation",
       queryUseCase: "lesson_preparation",
       teacherMemoryEpoch: 2,
@@ -379,7 +380,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       ]
     });
     expect(proposal.body.memoryContext).toMatchObject({
-      manifestVersion: 2,
+      manifestVersion: 3,
       teacherMemoryEpoch: 2,
       selectedCount: 1,
       overriddenCount: 1

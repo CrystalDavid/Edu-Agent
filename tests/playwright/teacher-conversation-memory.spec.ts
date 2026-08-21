@@ -41,7 +41,7 @@ test.beforeEach(() => {
 });
 
 test.afterEach(async ({ request }) => {
-  await restartApi(request, "enabled", "enabled", "enabled");
+  await restartApi(request, "enabled", "enabled", "enabled", "enabled");
   for (const conversationRef of cleanupConversationRefs) {
     await closeConversationIfOpen(request, conversationRef);
   }
@@ -235,16 +235,18 @@ test("scoped preferences and short-term memory stay explainable across courses, 
       return (await response.json()) as {
         turns: unknown[];
         workingMemory: {
+          builderVersion: string;
           activeGoal: { text: string };
-          temporaryOverrides: string[];
+          temporaryOverrides: unknown[];
         } | null;
       };
     })
     .toMatchObject({
       turns: [{}, {}, {}, {}],
       workingMemory: {
+        builderVersion: "working-memory-builder@2",
         activeGoal: { text: firstRequest },
-        temporaryOverrides: ["短一点"]
+        temporaryOverrides: []
       }
     });
   await expect(page.getByTestId("copilot-conversation")).toContainText(
@@ -265,7 +267,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   );
   expect(secondPackRef).toBeTruthy();
   expect(secondPackHash).toMatch(/^[a-f0-9]{64}$/u);
-  await expect(disclosure).toHaveAttribute("data-manifest-version", "2");
+  await expect(disclosure).toHaveAttribute("data-manifest-version", "3");
   await page.getByTestId("memory-use-toggle").click();
   await expect(page.getByTestId("memory-current-instruction")).toContainText(
     secondRequest
@@ -343,7 +345,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   );
   await page.getByTestId("memory-use-toggle").click();
   await expect(page.getByTestId("memory-run-metadata")).toContainText(
-    "lesson-preparation@6"
+    "lesson-preparation@7"
   );
 
   const secondaryTask = await createStartedTask(
@@ -391,7 +393,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   });
   await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
     "data-manifest-version",
-    "2"
+    "3"
   );
   await page.getByTestId("memory-use-toggle").click();
   const secondaryPreferences = page.getByTestId("memory-preferences");
@@ -896,7 +898,7 @@ test("explicit remember persists canonical preferences across restart, run views
   });
   await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
     "data-manifest-version",
-    "2"
+    "3"
   );
   const packRef = await page.getByTestId("memory-use-disclosure")
     .getAttribute("data-pack-ref");
@@ -1721,6 +1723,485 @@ test("explicit remember rejects unsafe and unsupported commands and obeys its fe
     .toHaveLength(0);
 });
 
+test("temporary detail override survives refresh and restart, then clears without changing durable memory", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(300_000);
+  await createAndConfirmPreferenceInSettings(page, {
+    keyLabel: "教案详细程度",
+    value: "简洁",
+    scope: "global"
+  });
+  const beforeState = await teacherPersonalizationState(request);
+  const durablePreference = beforeState.preferences.find((preference) =>
+    preference.status === "active" &&
+    preference.canonicalKey === "lesson_plan_detail" &&
+    preference.preferenceValue === "简洁"
+  );
+  expect(durablePreference).toBeTruthy();
+  const durableCountsBefore = {
+    candidates: beforeState.candidates.length,
+    preferences: beforeState.preferences.length
+  };
+
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const baselineRun = await sendModelInstruction(
+    page,
+    "请先生成一版用于验证长期偏好的合成教案。"
+  );
+  cleanupConversationRefs.add(
+    baselineRun.dispatch.conversation.conversationRef
+  );
+  const baselineExecution = await waitForExecution(
+    request,
+    baselineRun.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(baselineExecution.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const baselineContext = await proposalMemoryContext(
+    request,
+    baselineExecution.proposalRevisionRef!
+  );
+  expect(baselineContext).toMatchObject({
+    manifestVersion: 3,
+    temporaryOverrides: [],
+    durablePreferences: [
+      expect.objectContaining({
+        preferenceRef: durablePreference!.preferenceRef,
+        preferenceValue: "简洁",
+        decision: "injected"
+      })
+    ]
+  });
+
+  const temporaryText =
+    "这次是公开课，教案写详细一点，但别改我平时的习惯。";
+  const temporaryRun = await sendModelInstruction(page, temporaryText);
+  expect(temporaryRun.dispatch.temporaryOverrideReceipt).toMatchObject({
+    status: "applied",
+    longTermPreferenceChanged: false,
+    items: [expect.objectContaining({
+      canonicalKey: "lesson_plan_detail",
+      effect: "replace_value",
+      canonicalValue: "详细",
+      lifetime: "current_conversation",
+      eligibleForConsolidation: false
+    })]
+  });
+  expect(
+    temporaryRun.dispatch.temporaryOverrideReceipt!.teacherMemoryEpochAfter
+  ).toBe(
+    temporaryRun.dispatch.temporaryOverrideReceipt!.teacherMemoryEpochBefore
+  );
+  const temporaryExecution = await waitForExecution(
+    request,
+    temporaryRun.modelExecutionRef
+  );
+  const temporaryProposalRef = temporaryExecution.proposalRevisionRef!;
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(temporaryProposalRef)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const temporaryContext = await proposalMemoryContext(
+    request,
+    temporaryProposalRef
+  );
+  expect(temporaryContext.teacherMemoryEpoch).toBe(
+    baselineContext.teacherMemoryEpoch
+  );
+  expect(temporaryContext).toMatchObject({
+    manifestVersion: 3,
+    temporaryOverrides: [expect.objectContaining({
+      canonicalKey: "lesson_plan_detail",
+      effect: "replace_value",
+      displayValue: "详细",
+      decision: "injected"
+    })],
+    durablePreferences: [expect.objectContaining({
+      preferenceRef: durablePreference!.preferenceRef,
+      preferenceValue: "简洁",
+      decision: "overridden",
+      reasonCode: "current_instruction_override"
+    })]
+  });
+  await expect(page.getByTestId("temporary-override-receipt"))
+    .toContainText("不会修改你平时保存的偏好");
+  await expect(page.getByTestId("active-temporary-overrides"))
+    .toContainText("教案详细程度：详细");
+  const temporaryDisclosure = page.getByTestId("memory-use-disclosure");
+  await expect(temporaryDisclosure).toHaveAttribute(
+    "data-manifest-version",
+    "3"
+  );
+  const temporaryPackRef = await temporaryDisclosure.getAttribute(
+    "data-pack-ref"
+  );
+  const temporaryPackHash = await temporaryDisclosure.getAttribute(
+    "data-pack-content-hash"
+  );
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-temporary-overrides"))
+    .toContainText("教案详细程度：详细");
+  await expect(page.getByTestId("memory-excluded"))
+    .toContainText("教案详细程度：简洁");
+  await expect(page.getByTestId("memory-excluded"))
+    .toContainText("本次明确要求优先");
+  await expect(page.getByTestId("memory-temporary-disclaimer"))
+    .toContainText("本次覆盖不会修改你的长期偏好");
+
+  await page.goto(`/runs/tasks/${encodeURIComponent(task.taskRef)}`);
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-pack-ref",
+    temporaryPackRef!
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-pack-content-hash",
+    temporaryPackHash!
+  );
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-run-metadata"))
+    .toContainText("lesson-preparation@7");
+
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(task.taskRef)}?conversation=${encodeURIComponent(temporaryRun.dispatch.conversation.conversationRef)}`
+  );
+  await page.reload();
+  await expect(page.getByTestId("active-temporary-overrides"))
+    .toContainText("教案详细程度：详细");
+  await restartApi(request);
+  await page.reload();
+  await expect(page.getByTestId("active-temporary-overrides"))
+    .toContainText("教案详细程度：详细");
+
+  const continuationRun = await sendModelInstruction(
+    page,
+    "再加一个互动活动。"
+  );
+  expect(continuationRun.dispatch.temporaryOverrideReceipt).toBeUndefined();
+  expect(continuationRun.dispatch.workingMemory).toMatchObject({
+    builderVersion: "working-memory-builder@2",
+    temporaryOverrides: [expect.objectContaining({
+      canonicalKey: "lesson_plan_detail",
+      canonicalValue: "详细"
+    })]
+  });
+  const continuationExecution = await waitForExecution(
+    request,
+    continuationRun.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(continuationExecution.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const continuationContext = await proposalMemoryContext(
+    request,
+    continuationExecution.proposalRevisionRef!
+  );
+  expect(continuationContext.temporaryOverrides).toEqual([
+    expect.objectContaining({ canonicalKey: "lesson_plan_detail" })
+  ]);
+
+  const clearRun = await sendModelInstruction(page, "恢复平时的习惯。");
+  expect(clearRun.dispatch.temporaryOverrideReceipt).toMatchObject({
+    status: "cleared",
+    longTermPreferenceChanged: false,
+    clearedCanonicalKeys: ["lesson_plan_detail"]
+  });
+  expect(clearRun.dispatch.workingMemory).toMatchObject({
+    builderVersion: "working-memory-builder@2",
+    temporaryOverrides: []
+  });
+  await expect(page.getByTestId("active-temporary-overrides")).toHaveCount(0);
+  const clearExecution = await waitForExecution(
+    request,
+    clearRun.modelExecutionRef
+  );
+  const clearContext = await proposalMemoryContext(
+    request,
+    clearExecution.proposalRevisionRef!
+  );
+  expect(clearContext.teacherMemoryEpoch).toBe(
+    baselineContext.teacherMemoryEpoch
+  );
+  expect(clearContext).toMatchObject({
+    manifestVersion: 3,
+    temporaryOverrides: [],
+    durablePreferences: [expect.objectContaining({
+      preferenceRef: durablePreference!.preferenceRef,
+      preferenceValue: "简洁",
+      decision: "injected"
+    })]
+  });
+
+  await page.goto(
+    `/copilot/proposals/${encodeURIComponent(temporaryProposalRef)}`
+  );
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-temporary-overrides"))
+    .toContainText("教案详细程度：详细");
+
+  const finalState = await teacherPersonalizationState(request);
+  expect({
+    candidates: finalState.candidates.length,
+    preferences: finalState.preferences.length
+  }).toEqual(durableCountsBefore);
+  expect(finalState.preferences.find((preference) =>
+    preference.preferenceRef === durablePreference!.preferenceRef
+  )).toMatchObject({
+    status: "active",
+    version: durablePreference!.version,
+    preferenceValue: "简洁"
+  });
+
+  await closeConversationIfOpen(
+    request,
+    temporaryRun.dispatch.conversation.conversationRef
+  );
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const freshRun = await sendModelInstruction(
+    page,
+    "请在新的备课对话中继续生成。"
+  );
+  const freshConversationRef = freshRun.dispatch.conversation.conversationRef;
+  cleanupConversationRefs.add(freshConversationRef);
+  expect(freshConversationRef).not.toBe(
+    temporaryRun.dispatch.conversation.conversationRef
+  );
+  expect(freshRun.dispatch.workingMemory).toMatchObject({
+    builderVersion: "working-memory-builder@2",
+    temporaryOverrides: []
+  });
+  const freshExecution = await waitForExecution(
+    request,
+    freshRun.modelExecutionRef
+  );
+  const freshContext = await proposalMemoryContext(
+    request,
+    freshExecution.proposalRevisionRef!
+  );
+  expect(freshContext.temporaryOverrides).toEqual([]);
+  expect(freshContext.durablePreferences).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      preferenceRef: durablePreference!.preferenceRef,
+      preferenceValue: "简洁",
+      decision: "injected"
+    })
+  ]));
+
+  const foreign = await request.get(
+    apiRoutes.teacher.conversation(freshConversationRef),
+    {
+      headers: {
+        "x-demo-tenant": "tenant:demo-school-b",
+        "x-demo-actor": "user:teacher-b-001"
+      }
+    }
+  );
+  expect([403, 404]).toContain(foreign.status());
+  expect(JSON.stringify(await foreign.json())).not.toContain("详细");
+});
+
+test("temporary suppression, no-durable overrides and flag fallback remain explicit", async ({
+  page,
+  request
+}) => {
+  test.setTimeout(300_000);
+  const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
+  const remembered = await startConversationWithMemoryCommand(
+    page,
+    task.taskRef,
+    "记住：以后案例尽量贴近日常生活"
+  );
+  cleanupConversationRefs.add(remembered.conversationRef);
+  const remember = rememberReceipt(remembered.command);
+  const preferenceRef = remember.items[0]!.preferenceRef!;
+  const stableEpoch = remember.memoryEpochAfter;
+
+  const suppressRun = await sendModelInstruction(
+    page,
+    "这次不要使用生活化案例。"
+  );
+  expect(suppressRun.dispatch.temporaryOverrideReceipt).toMatchObject({
+    status: "applied",
+    longTermPreferenceChanged: false,
+    teacherMemoryEpochBefore: stableEpoch,
+    teacherMemoryEpochAfter: stableEpoch,
+    items: [expect.objectContaining({
+      canonicalKey: "example_preference",
+      effect: "suppress_preference",
+      canonicalValue: null
+    })]
+  });
+  const suppressExecution = await waitForExecution(
+    request,
+    suppressRun.modelExecutionRef
+  );
+  const suppressContext = await proposalMemoryContext(
+    request,
+    suppressExecution.proposalRevisionRef!
+  );
+  expect(suppressContext).toMatchObject({
+    manifestVersion: 3,
+    teacherMemoryEpoch: stableEpoch,
+    temporaryOverrides: [expect.objectContaining({
+      canonicalKey: "example_preference",
+      effect: "suppress_preference",
+      decision: "injected"
+    })],
+    durablePreferences: [expect.objectContaining({
+      preferenceRef,
+      decision: "overridden",
+      reasonCode: "current_instruction_override"
+    })]
+  });
+  await expect(page.getByTestId("active-temporary-overrides"))
+    .toContainText("仅本次不使用");
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-temporary-overrides"))
+    .toContainText("优先使用贴近日常生活的案例");
+  const stateAfterSuppress = await teacherPersonalizationState(request);
+  expect(stateAfterSuppress.preferences.find((preference) =>
+    preference.preferenceRef === preferenceRef
+  )?.status).toBe("active");
+
+  await closeConversationIfOpen(request, remembered.conversationRef);
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const restoredRun = await sendModelInstruction(
+    page,
+    "请在新会话中生成一版教案。"
+  );
+  const restoredConversationRef =
+    restoredRun.dispatch.conversation.conversationRef;
+  cleanupConversationRefs.add(restoredConversationRef);
+  const restoredExecution = await waitForExecution(
+    request,
+    restoredRun.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(restoredExecution.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const restoredContext = await proposalMemoryContext(
+    request,
+    restoredExecution.proposalRevisionRef!
+  );
+  expect(restoredContext.temporaryOverrides).toEqual([]);
+  expect(restoredContext.durablePreferences).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      preferenceRef,
+      preferenceValue: "优先使用贴近日常生活的案例",
+      decision: "injected"
+    })
+  ]));
+
+  const noDurableRun = await sendModelInstruction(
+    page,
+    "本次建议写详细一些。"
+  );
+  expect(noDurableRun.dispatch.temporaryOverrideReceipt).toMatchObject({
+    status: "applied",
+    items: [expect.objectContaining({
+      canonicalKey: "response_length",
+      effect: "replace_value",
+      canonicalValue: "详细"
+    })]
+  });
+  const noDurableExecution = await waitForExecution(
+    request,
+    noDurableRun.modelExecutionRef
+  );
+  await expect(page).toHaveURL(
+    new RegExp(
+      `/copilot/proposals/${encodeURIComponent(noDurableExecution.proposalRevisionRef!)}`
+    ),
+    { timeout: 20_000 }
+  );
+  const noDurableContext = await proposalMemoryContext(
+    request,
+    noDurableExecution.proposalRevisionRef!
+  );
+  expect(noDurableContext.temporaryOverrides).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      canonicalKey: "response_length",
+      displayValue: "详细"
+    })
+  ]));
+  expect(noDurableContext.durablePreferences.some((preference: {
+    canonicalKey?: string;
+  }) => preference.canonicalKey === "response_length")).toBe(false);
+
+  const ordinaryRun = await sendModelInstruction(
+    page,
+    "不要安排小组讨论。"
+  );
+  expect(ordinaryRun.dispatch.temporaryOverrideReceipt).toBeUndefined();
+  expect(ordinaryRun.dispatch.workingMemory).toMatchObject({
+    builderVersion: "working-memory-builder@2",
+    temporaryOverrides: [expect.objectContaining({
+      canonicalKey: "response_length"
+    })]
+  });
+  await waitForExecution(request, ordinaryRun.modelExecutionRef);
+
+  const foreign = await request.get(
+    apiRoutes.teacher.conversation(restoredConversationRef),
+    {
+      headers: {
+        "x-demo-tenant": "tenant:demo-school-b",
+        "x-demo-actor": "user:teacher-b-001"
+      }
+    }
+  );
+  expect([403, 404]).toContain(foreign.status());
+  expect(JSON.stringify(await foreign.json())).not.toContain("response_length");
+
+  await closeConversationIfOpen(request, restoredConversationRef);
+  await restartApi(request, "enabled", "enabled", "enabled", "disabled");
+  await page.goto(`/agent/tasks/${encodeURIComponent(task.taskRef)}`);
+  const disabledRun = await sendModelInstruction(
+    page,
+    "这次教案写详细一点。"
+  );
+  const disabledConversationRef =
+    disabledRun.dispatch.conversation.conversationRef;
+  cleanupConversationRefs.add(disabledConversationRef);
+  expect(disabledRun.dispatch.temporaryOverrideReceipt).toBeUndefined();
+  expect(disabledRun.dispatch.workingMemory).toMatchObject({
+    builderVersion: "working-memory-builder@1"
+  });
+  const disabledExecution = await waitForExecution(
+    request,
+    disabledRun.modelExecutionRef
+  );
+  const disabledContext = await proposalMemoryContext(
+    request,
+    disabledExecution.proposalRevisionRef!
+  );
+  expect(disabledContext).toMatchObject({
+    manifestVersion: 2,
+    temporaryOverrides: []
+  });
+  await expect(page.getByTestId("active-temporary-overrides")).toHaveCount(0);
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-manifest-version",
+    "2"
+  );
+});
+
 async function startConversationWithMemoryCommand(
   page: Page,
   taskRef: string,
@@ -1820,7 +2301,11 @@ function activeExamplePreferenceRefs(
 
 async function createAndConfirmPreferenceInSettings(
   page: Page,
-  input: { value: string; scope: "global" | "course_run" }
+  input: {
+    keyLabel?: "教案详细程度" | "案例偏好";
+    value: string;
+    scope: "global" | "course_run";
+  }
 ): Promise<void> {
   await page.goto("/settings");
   await page.getByRole("button", { name: "助手偏好" }).click();
@@ -1829,7 +2314,7 @@ async function createAndConfirmPreferenceInSettings(
   await panel.getByLabel("偏好类型").click();
   await page
     .locator(".ant-select-dropdown:visible .ant-select-item-option")
-    .filter({ hasText: "教案详细程度" })
+    .filter({ hasText: input.keyLabel ?? "教案详细程度" })
     .click();
   await panel
     .getByPlaceholder("偏好内容，例如 简洁、突出课堂案例")
@@ -2050,7 +2535,8 @@ async function restartApi(
   request: APIRequestContext,
   scopedPreferences?: "enabled" | "disabled",
   explicitRemember?: "enabled" | "disabled",
-  explicitForget?: "enabled" | "disabled"
+  explicitForget?: "enabled" | "disabled",
+  temporaryOverrides?: "enabled" | "disabled"
 ): Promise<void> {
   const controlPort = process.env.E2E_CONTROL_PORT;
   const runId = process.env.E2E_RUN_ID;
@@ -2068,6 +2554,9 @@ async function restartApi(
   if (explicitForget) {
     url.searchParams.set("explicit-forget", explicitForget);
   }
+  if (temporaryOverrides) {
+    url.searchParams.set("temporary-overrides", temporaryOverrides);
+  }
   const response = await request.post(url.toString(), {
     headers: { "x-e2e-run-id": runId! }
   });
@@ -2076,7 +2565,8 @@ async function restartApi(
     restarted: true,
     scopedPreferences: scopedPreferences ?? "unchanged",
     explicitRemember: explicitRemember ?? "unchanged",
-    explicitForget: explicitForget ?? "unchanged"
+    explicitForget: explicitForget ?? "unchanged",
+    temporaryOverrides: temporaryOverrides ?? "unchanged"
   });
 }
 
@@ -2229,4 +2719,29 @@ async function waitForExecution(
     status: string;
     proposalRevisionRef: string | null;
   };
+}
+
+async function proposalMemoryContext(
+  request: APIRequestContext,
+  proposalRevisionRef: string
+): Promise<{
+  manifestVersion: number;
+  teacherMemoryEpoch?: number;
+  temporaryOverrides: Array<Record<string, unknown>>;
+  durablePreferences: Array<Record<string, unknown>>;
+}> {
+  const response = await request.get(
+    apiRoutes.demo.proposalDetail(proposalRevisionRef),
+    { headers }
+  );
+  expect(response.status()).toBe(200);
+  const body = (await response.json()) as {
+    memoryContext: {
+      manifestVersion: number;
+      teacherMemoryEpoch?: number;
+      temporaryOverrides: Array<Record<string, unknown>>;
+      durablePreferences: Array<Record<string, unknown>>;
+    };
+  };
+  return body.memoryContext;
 }

@@ -378,6 +378,8 @@ try {
       controlUrl.searchParams.get("explicit-remember");
     const explicitForgetMode =
       controlUrl.searchParams.get("explicit-forget");
+    const temporaryOverridesMode =
+      controlUrl.searchParams.get("temporary-overrides");
     if (
       scopedPreferenceMode !== null &&
       !["enabled", "disabled", "default"].includes(scopedPreferenceMode)
@@ -408,6 +410,16 @@ try {
       }));
       return;
     }
+    if (
+      temporaryOverridesMode !== null &&
+      !["enabled", "disabled", "default"].includes(temporaryOverridesMode)
+    ) {
+      response.statusCode = 400;
+      response.end(JSON.stringify({
+        code: "E2E_CONTROL_INVALID_TEMPORARY_OVERRIDES_MODE"
+      }));
+      return;
+    }
     restartInProgress = true;
     try {
       const nextApiEnvironment = { ...currentApiEnvironment };
@@ -431,6 +443,13 @@ try {
         nextApiEnvironment.MEMORY_EXPLICIT_FORGET_ENABLED = "false";
       } else if (explicitForgetMode === "default") {
         delete nextApiEnvironment.MEMORY_EXPLICIT_FORGET_ENABLED;
+      }
+      if (temporaryOverridesMode === "enabled") {
+        nextApiEnvironment.MEMORY_TEMPORARY_OVERRIDES_ENABLED = "true";
+      } else if (temporaryOverridesMode === "disabled") {
+        nextApiEnvironment.MEMORY_TEMPORARY_OVERRIDES_ENABLED = "false";
+      } else if (temporaryOverridesMode === "default") {
+        delete nextApiEnvironment.MEMORY_TEMPORARY_OVERRIDES_ENABLED;
       }
       intentionalStops.add(apiProcess);
       stopProcessTree(apiProcess);
@@ -456,7 +475,8 @@ try {
         runId,
         scopedPreferences: scopedPreferenceMode ?? "unchanged",
         explicitRemember: explicitRememberMode ?? "unchanged",
-        explicitForget: explicitForgetMode ?? "unchanged"
+        explicitForget: explicitForgetMode ?? "unchanged",
+        temporaryOverrides: temporaryOverridesMode ?? "unchanged"
       }));
     } catch (error) {
       response.statusCode = 500;
