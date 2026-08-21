@@ -1003,6 +1003,8 @@ test("Gate 2.5 completes a recoverable Lesson → Task → Proposal → approved
   await page.goto("/teaching");
   await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
+  await page.getByRole("tab", { name: "课前备课" }).click();
+  await expect(page.getByTestId("lesson-stage-prepare")).toBeVisible();
   await expect(page.getByTestId("lesson-detail")).toContainText(
     "备课包还差 4 项材料"
   );

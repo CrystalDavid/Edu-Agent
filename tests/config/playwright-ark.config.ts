@@ -32,6 +32,7 @@ export default defineConfig({
   use: {
     baseURL: webOrigin,
     storageState: playwrightArtifactPath("shared", ".auth", "teacher.json"),
+    timezoneId: "Asia/Shanghai",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",

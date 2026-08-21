@@ -271,8 +271,17 @@ async function restartApi(request: APIRequestContext) {
 }
 
 function localDate(date: Date): string {
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function escapeRegex(value: string): string {

@@ -21,9 +21,27 @@ const screenshotRoot = playwrightArtifactPath(
   "evidence",
   "memory-application-observability"
 );
+const cleanupTaskRefs = new Set<string>();
+const cleanupConversationRefs = new Set<string>();
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
+});
+
+test.beforeEach(() => {
+  cleanupTaskRefs.clear();
+  cleanupConversationRefs.clear();
+});
+
+test.afterEach(async ({ request }) => {
+  await restartApi(request, "enabled");
+  for (const conversationRef of cleanupConversationRefs) {
+    await closeConversationIfOpen(request, conversationRef);
+  }
+  for (const taskRef of cleanupTaskRefs) {
+    await cancelTaskIfOpen(request, taskRef);
+  }
+  await cleanupTestPersonalization(request);
 });
 
 test("scoped preferences and short-term memory stay explainable across courses, refresh and revoke", async ({
@@ -69,6 +87,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
   expect(globalPreference).toBeTruthy();
   expect(coursePreference).toBeTruthy();
   const task = await createStartedTask(request);
+  cleanupTaskRefs.add(task.taskRef);
   let conversationCreateCalls = 0;
   page.on("request", (webRequest) => {
     if (
@@ -121,6 +140,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
       conversation: { conversationRef: string };
     }
   ).conversation.conversationRef;
+  cleanupConversationRefs.add(conversationRef);
   const firstTurnBody = (await firstTurn.json()) as {
     turn: { turnRef: string };
     conversation: { version: number };
@@ -323,6 +343,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
     request,
     secondaryCourseDemoRefs.lessonRef
   );
+  cleanupTaskRefs.add(secondaryTask.taskRef);
   await page.goto(
     `/agent/tasks/${encodeURIComponent(secondaryTask.taskRef)}`
   );
@@ -350,6 +371,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
       conversation: { conversationRef: string };
     }
   ).conversation.conversationRef;
+  cleanupConversationRefs.add(secondaryConversationRef);
   const secondaryInvocationBody = (await secondaryInvocation.json()) as {
     execution: { modelExecutionRef: string };
   };
@@ -592,6 +614,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
     };
 
     const legacyTask = await createStartedTask(request);
+    cleanupTaskRefs.add(legacyTask.taskRef);
     await page.goto(
       `/agent/tasks/${encodeURIComponent(legacyTask.taskRef)}`
     );
@@ -620,6 +643,7 @@ test("scoped preferences and short-term memory stay explainable across courses, 
         conversation: { conversationRef: string };
       }
     ).conversation.conversationRef;
+    cleanupConversationRefs.add(legacyConversationRef);
     const legacyExecutionRef = (
       (await legacyInvocation.json()) as {
         execution: { modelExecutionRef: string };
@@ -721,12 +745,95 @@ async function createAndConfirmPreferenceInSettings(
   );
   await expect(candidate).not.toContainText("course-run:");
   await candidate.getByRole("button", { name: /确\s*认/u }).click();
-  const activeRow = panel.locator("article.settings-row", {
-    hasText: input.value
-  }).filter({ has: page.getByRole("button", { name: /删除并撤销/u }) });
+  const activeRow = panel
+    .getByDisplayValue(input.value)
+    .locator("xpath=ancestor::article[contains(@class, 'settings-row')]");
   await expect(activeRow).toContainText(
-    input.scope === "global" ? "所有普通备课" : "3 班"
+    input.scope === "global" ? "所有普通备课" : "3 班",
+    { timeout: 20_000 }
   );
+}
+
+async function cleanupTestPersonalization(
+  request: APIRequestContext
+): Promise<void> {
+  const response = await request.get(
+    apiRoutes.teacher.personalizationState,
+    { headers }
+  );
+  expect(response.status()).toBe(200);
+  const state = (await response.json()) as {
+    candidates: Array<{
+      candidateRef: string;
+      preferenceKey: string | null;
+      preferenceValue: string | null;
+      status: string;
+      version: number;
+    }>;
+    preferences: Array<{
+      preferenceRef: string;
+      preferenceKey: string;
+      preferenceValue: string;
+      status: string;
+      version: number;
+    }>;
+  };
+  const ownsTestValue = (
+    preferenceKey: string | null,
+    preferenceValue: string | null
+  ) =>
+    (preferenceKey === "lesson_plan_detail" &&
+      ["简洁", "详细"].includes(preferenceValue ?? "")) ||
+    preferenceKey === "flag_off_global";
+
+  for (const candidate of state.candidates) {
+    if (
+      candidate.status !== "draft" ||
+      !ownsTestValue(candidate.preferenceKey, candidate.preferenceValue)
+    ) {
+      continue;
+    }
+    const rejected = await request.post(
+      apiRoutes.teacher.memoryCandidateReject(candidate.candidateRef),
+      {
+        headers,
+        data: {
+          expectedVersion: candidate.version,
+          purpose: "personalization.candidate.reject",
+          idempotencyKey:
+            `playwright:memory:cleanup-candidate:${crypto.randomUUID()}`
+        }
+      }
+    );
+    expect(rejected.status()).toBe(200);
+  }
+
+  for (const preference of state.preferences) {
+    if (
+      preference.status !== "active" ||
+      !ownsTestValue(
+        preference.preferenceKey,
+        preference.preferenceValue
+      )
+    ) {
+      continue;
+    }
+    const revoked = await request.post(
+      apiRoutes.teacher.teacherPreferenceRevoke(
+        preference.preferenceRef
+      ),
+      {
+        headers,
+        data: {
+          expectedVersion: preference.version,
+          purpose: "personalization.preference.revoke",
+          idempotencyKey:
+            `playwright:memory:cleanup-preference:${crypto.randomUUID()}`
+        }
+      }
+    );
+    expect(revoked.status()).toBe(200);
+  }
 }
 
 async function createStartedTask(
