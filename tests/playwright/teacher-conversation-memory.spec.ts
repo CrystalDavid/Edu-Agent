@@ -422,9 +422,11 @@ test("scoped preferences and short-term memory stay explainable across courses, 
     timeout: 20_000
   });
   await page.getByTestId("memory-use-toggle").click();
-  await expect(page.getByTestId("memory-preference")).toContainText(
-    "本次运行当时参考，当前已撤销"
-  );
+  await expect(
+    page
+      .getByTestId("memory-preferences")
+      .getByTestId("memory-preference")
+  ).toContainText("本次运行当时参考，当前已撤销");
   await page.screenshot({
     path: `${screenshotRoot}/runs-revoked-preference.png`,
     fullPage: true
