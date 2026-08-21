@@ -46,6 +46,14 @@ let failure;
 
 try {
   runCompose(environment, "up", "-d", "--wait");
+  runCompose(
+    environment,
+    "exec",
+    "-T",
+    "postgres",
+    "postgres",
+    "--version"
+  );
   runPnpm(
     [
       "exec",

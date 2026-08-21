@@ -43,6 +43,8 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@11.9.0 --activate
+          node --version
+          corepack pnpm --version
           corepack pnpm install --frozen-lockfile
 
       - name: Prepare repository-sync references
@@ -99,6 +101,8 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@11.9.0 --activate
+          node --version
+          corepack pnpm --version
           corepack pnpm install --frozen-lockfile
 
       - name: Verify Docker availability
@@ -137,10 +141,15 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@11.9.0 --activate
+          node --version
+          corepack pnpm --version
           corepack pnpm install --frozen-lockfile
 
       - name: Install Microsoft Edge for Playwright
-        run: corepack pnpm exec playwright install --with-deps msedge
+        run: |
+          corepack pnpm exec playwright --version
+          corepack pnpm exec playwright install --with-deps msedge
+          microsoft-edge --version
 
       - name: Run isolated Playwright gate
         shell: bash

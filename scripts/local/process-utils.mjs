@@ -61,6 +61,7 @@ export function spawnPnpm(args, environment) {
   return spawn(invocation.executable, invocation.args, {
     cwd: process.cwd(),
     env: childEnvironment(environment),
+    detached: process.platform !== "win32",
     stdio: "inherit",
     windowsHide: true
   });
@@ -82,5 +83,10 @@ export function stopProcessTree(child) {
     );
     return;
   }
-  child.kill("SIGTERM");
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch (error) {
+    if (error?.code === "ESRCH") return;
+    throw error;
+  }
 }

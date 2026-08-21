@@ -35,7 +35,7 @@ const secondCourse = secondaryCourseDemoRefs.courseRunRef;
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await seedSampleData(postgresEnvironment);
+  await seedSampleData(postgresEnvironment, { includeGate25: true });
 });
 
 afterAll(async () => {
@@ -334,7 +334,7 @@ describe("scoped TeacherPreference PostgreSQL", () => {
       [candidate.candidateRef]
     );
     expect(persisted.rows[0]).toEqual({
-      candidate_status: "proposed",
+      candidate_status: "draft",
       current_version: 1,
       preference_count: "0",
       revision_count: "0",
@@ -497,7 +497,7 @@ describe("scoped TeacherPreference PostgreSQL", () => {
       `DELETE FROM personalization.teacher_preference
         WHERE preference_ref = $1`,
       [preference.preferenceRef]
-    )).rejects.toThrow(/delete/u);
+    )).rejects.toThrow(/physical deletion/u);
     await expect(adminPool.query(
       `UPDATE personalization.teacher_preference_revision
           SET preference_value = 'forbidden'

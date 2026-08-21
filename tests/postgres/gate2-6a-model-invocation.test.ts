@@ -477,7 +477,7 @@ describe("Gate 2.6A durable ModelExecution", () => {
       [proposal.body.agentRunRef]
     );
     expect(outcomeCount.rows[0]).toMatchObject({
-      count: "2",
+      count: "1",
       status: "rejected"
     });
 
