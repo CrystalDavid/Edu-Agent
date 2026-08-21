@@ -27,6 +27,7 @@ corepack pnpm app:doctor
 | Web 页面 / 路由 | `apps/web/src/App.tsx`、`route.ts`、`pages/` | lazy import、AppRoute、Playwright |
 | Web API client | `apps/web/src/api.ts` | shared transport/error/session、contract、build |
 | DTO / Zod / route builder | `packages/contracts/src/` | Web/API/tests 的兼容性 |
+| 临时偏好覆盖 | `packages/contracts/src/temporary-memory-override.ts`、Runtime `domain/` 与 `application/`、Composition dispatch/model service | owner/Conversation binding、WorkingMemory V1/V2、Pack V1/V2/V3、sealed retry、不得写 Personalization |
 | 匿名示例数据 | `packages/sample-data` 与 `scripts/sample` | 不含断言/真实学校数据；不得进入产品 Composition Root |
 | 测试构造器 | `packages/test-fixtures`、`tests/fixtures`、`tests/support` | 产品不得依赖 |
 | 专用测试配置 | `tests/config` | 根目录只保留工具自动发现的默认配置 |
@@ -106,6 +107,8 @@ Playwright 的报告、结果、Trace、Video 和截图使用 `tests/config/test
 5. Web 只消费类型化 API，不直接表达数据库/模型内部状态；
 6. 增加 unit/architecture/PostgreSQL/Playwright 中最接近风险的回归；
 7. 更新当前权威文档和 `CHANGELOG.md` / `version-history.md`（仅完成 Gate 时）。
+
+PR-2C2 不是 Verified Gate，因此保留既有 `version-history.md` 与 Tag；其版本兼容由 Skill Registry、WorkingMemory/Pack union 和 Architecture 测试验证，Migration registry 仍为 51。
 
 ## 已知维护热点
 
