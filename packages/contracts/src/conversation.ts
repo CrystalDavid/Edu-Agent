@@ -76,6 +76,24 @@ export const WorkingMemoryViewSchema = z.object({
   expiresAt: z.string().datetime()
 });
 
+export const ConversationMemoryCommandViewSchema = z
+  .object({
+    commandTurnRef: z.string().min(1),
+    receiptTurnRef: z.string().min(1),
+    kind: z.literal("forget"),
+    status: z.enum([
+      "selection_required",
+      "revoked",
+      "resolved",
+      "informational"
+    ]),
+    preferenceRefs: z
+      .array(z.string().trim().min(1).max(240))
+      .max(10),
+    resolvedByReceiptTurnRef: z.string().min(1).nullable()
+  })
+  .strict();
+
 export const ConversationThreadViewSchema = z.object({
   conversationRef: z.string().min(1),
   taskRef: z.string().min(1),
@@ -91,7 +109,8 @@ export const ConversationThreadViewSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   turns: z.array(ConversationTurnViewSchema),
-  workingMemory: WorkingMemoryViewSchema.nullable()
+  workingMemory: WorkingMemoryViewSchema.nullable(),
+  memoryCommands: z.array(ConversationMemoryCommandViewSchema).default([])
 });
 
 export const CreateTeacherConversationRequestSchema = z.object({
@@ -155,6 +174,9 @@ export type ConversationTurnView = z.infer<
 >;
 export type WorkingMemoryView = z.infer<
   typeof WorkingMemoryViewSchema
+>;
+export type ConversationMemoryCommandView = z.infer<
+  typeof ConversationMemoryCommandViewSchema
 >;
 export type ConversationThreadView = z.infer<
   typeof ConversationThreadViewSchema

@@ -332,6 +332,39 @@ export class PostgresMemoryCandidateRepository
     return Object.freeze(result.rows.map(preferenceFromRow));
   }
 
+  async listPreferencesForUpdate(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly statuses?: readonly TeacherPreference["status"][];
+  }): Promise<readonly TeacherPreference[]> {
+    const result = await this.executor.query<PreferenceRow>(
+      `${preferenceCurrentSelect}
+        WHERE tenant_ref = $1 AND teacher_ref = $2
+          AND ($3::text[] IS NULL OR preference_status = ANY($3::text[]))
+        ORDER BY preference_ref
+        FOR UPDATE`,
+      [input.tenantRef, input.teacherRef, input.statuses ?? null]
+    );
+    return Object.freeze(result.rows.map(preferenceFromRow));
+  }
+
+  async getPreferencesByRefsForUpdate(input: {
+    readonly tenantRef: string;
+    readonly teacherRef: string;
+    readonly preferenceRefs: readonly string[];
+  }): Promise<readonly TeacherPreference[]> {
+    if (input.preferenceRefs.length === 0) return Object.freeze([]);
+    const result = await this.executor.query<PreferenceRow>(
+      `${preferenceCurrentSelect}
+        WHERE tenant_ref = $1 AND teacher_ref = $2
+          AND preference_ref = ANY($3::text[])
+        ORDER BY preference_ref
+        FOR UPDATE`,
+      [input.tenantRef, input.teacherRef, input.preferenceRefs]
+    );
+    return Object.freeze(result.rows.map(preferenceFromRow));
+  }
+
   private async insertCandidate(
     candidate: MemoryCandidate,
     metadata: FormalWriteMetadata

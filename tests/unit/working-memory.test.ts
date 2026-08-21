@@ -89,7 +89,9 @@ describe("conversation working memory", () => {
       teacherTurn(1, "请设计一节分数加法课"),
       assistantTurn(2, "proposal:first"),
       commandTurn(3, "记住：以后教案控制在一页"),
-      commandReceiptTurn(4, "已记住 1 条偏好。")
+      commandReceiptTurn(4, "已记住 1 条偏好。"),
+      commandTurn(5, "忘掉案例偏好"),
+      commandReceiptTurn(6, "已忘掉 1 条偏好。")
     ];
 
     const memory = buildWorkingMemory({
@@ -99,13 +101,14 @@ describe("conversation working memory", () => {
       snapshotRef: "working-memory:command-safe"
     });
 
-    expect(memory.sourceTurnSequence).toBe(4);
+    expect(memory.sourceTurnSequence).toBe(6);
     expect(memory.activeGoal.text).toBe("请设计一节分数加法课");
     expect(memory.recentTeacherRequests.map((item) => item.text))
       .toEqual(["请设计一节分数加法课"]);
     expect(memory.pendingIntents).toEqual(["请设计一节分数加法课"]);
     expect(memory.latestAssistantResult?.turnRef).toBe("turn:2");
     expect(memory.rollingSummary).not.toContain("记住");
+    expect(memory.rollingSummary).not.toContain("忘掉");
   });
 
   it("refuses to invent an active teaching goal from a command-only thread", () => {
@@ -114,6 +117,13 @@ describe("conversation working memory", () => {
       turns: [commandTurn(1, "记住：以后教案控制在一页")],
       expiresAt,
       snapshotRef: "working-memory:none"
+    })).toThrow(/authorized teacher turn/u);
+
+    expect(() => buildWorkingMemory({
+      conversationRef: "conversation:forget-only",
+      turns: [commandTurn(1, "忘掉案例偏好")],
+      expiresAt,
+      snapshotRef: "working-memory:forget-none"
     })).toThrow(/authorized teacher turn/u);
   });
 });
