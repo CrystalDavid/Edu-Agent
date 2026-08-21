@@ -1,0 +1,166 @@
+name: PR validation
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out the pull request branch
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Activate pnpm 11.9.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+          corepack pnpm install --frozen-lockfile
+
+      - name: Prepare repository-sync references
+        shell: bash
+        env:
+          VALIDATION_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "$VALIDATION_BRANCH"
+          git branch --set-upstream-to="origin/$VALIDATION_BRANCH" "$VALIDATION_BRANCH"
+          if [[ "$VALIDATION_BRANCH" != "main" ]]; then
+            git branch --force main origin/main
+          fi
+
+      - name: Run repository quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack pnpm typecheck
+          corepack pnpm test
+          corepack pnpm test:unit
+          corepack pnpm test:architecture
+          corepack pnpm test:static
+          corepack pnpm test:migrations
+          corepack pnpm test:secrets
+          corepack pnpm build
+          corepack pnpm analyze:bundle
+          corepack pnpm verify:version-history
+          corepack pnpm verify:markdown-links
+          corepack pnpm verify:repo-sync
+          git diff --check
+
+  postgres-integration:
+    name: postgres-integration
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out the pull request branch
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Activate pnpm 11.9.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+          corepack pnpm install --frozen-lockfile
+
+      - name: Verify Docker availability
+        run: |
+          docker version
+          docker compose version
+
+      - name: Run isolated PostgreSQL integration gate
+        run: corepack pnpm test:postgres
+
+  playwright-e2e:
+    name: playwright-e2e
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EDU_AGENT_TEST_OUTPUT_ROOT: ${{ runner.temp }}/edu-agent/test-output
+      ENABLE_LIVE_MODEL_TESTS: "false"
+      MODEL_PROVIDER_MODE: mock
+      MODEL_DEBUG_CONTENT: "false"
+    steps:
+      - name: Check out the pull request branch
+        # actions/checkout v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Activate pnpm 11.9.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.9.0 --activate
+          corepack pnpm install --frozen-lockfile
+
+      - name: Install Microsoft Edge for Playwright
+        run: corepack pnpm exec playwright install --with-deps msedge
+
+      - name: Run isolated Playwright gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EDU_AGENT_TEST_OUTPUT_ROOT/ci"
+          corepack pnpm test:playwright 2>&1 | tee \
+            "$EDU_AGENT_TEST_OUTPUT_ROOT/ci/playwright-console.log"
+
+      - name: Upload safe Playwright failure artifacts
+        if: ${{ failure() }}
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: playwright-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/edu-agent/test-output/playwright/default/report
+            ${{ runner.temp }}/edu-agent/test-output/playwright/default/results
+            ${{ runner.temp }}/edu-agent/test-output/playwright/evidence
+            ${{ runner.temp }}/edu-agent/test-output/ci/playwright-console.log
+          if-no-files-found: warn
+          retention-days: 3

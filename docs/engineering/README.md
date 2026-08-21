@@ -72,6 +72,15 @@ corepack pnpm app:doctor
 | `corepack pnpm verify:markdown-links` | Markdown 本地链接 |
 | `corepack pnpm verify:repo-sync` | Git 跟踪、忽略、禁止目录、upstream/HEAD |
 
+Pull Request 的最小 GitHub Actions 门禁位于
+`.github/workflows/pr-validation.yml`：`quality` 对应非 Docker 的完整质量
+命令，`postgres-integration` 调用正式 `test:postgres` wrapper，
+`playwright-e2e` 在 Microsoft Edge 下调用正式 `test:playwright` wrapper。
+两个集成 Job 都使用一次性隔离资源；浏览器失败产物只写入 runner 临时
+目录并短期上传。CI 固定使用 Node 24、pnpm 11.9.0、frozen lockfile 和
+Mock Provider，不读取本地环境文件或运行 live Provider。任一 Job 失败都
+不是可合并状态，具体边界见[验证指南](validation.md)。
+
 ### 真实模型
 
 `model:probe:live` 和 `test:model:live` 只在用户明确配置 `.env.local`、同意真实调用和成本后运行。严格模式不能把 skipped、Mock 或 Fake Ark 当作 live 成功。

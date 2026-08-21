@@ -1405,11 +1405,47 @@ describe("Gate 2.6A durable ModelExecution", () => {
         includeGate25: true
       });
       const arkApp = createApp({ product: arkProduct });
+      const retryCandidate = await request(arkApp)
+        .post(apiRoutes.teacher.memoryCandidates)
+        .set(demoHeaders)
+        .send({
+          summary: "合成教师确认重试仍应使用已封存的简洁偏好。",
+          preferenceKey: "provider_retry_preference",
+          preferenceValue: "简洁",
+          purpose: "personalization.candidate.create",
+          idempotencyKey: `gate26:retry-preference:create:${randomUUID()}`
+        })
+        .expect(201);
+      const retryPreference = await request(arkApp)
+        .post(apiRoutes.teacher.memoryCandidateConfirm(
+          retryCandidate.body.candidate.candidateRef
+        ))
+        .set(demoHeaders)
+        .send({
+          expectedVersion: retryCandidate.body.candidate.version,
+          purpose: "personalization.candidate.confirm",
+          idempotencyKey: `gate26:retry-preference:confirm:${randomUUID()}`
+        })
+        .expect(200);
       const task = await createStartedTask(arkApp);
+      const retryText = "请生成简洁方案，并保留独立检查。";
+      const conversation = await createConversationTurn(
+        arkApp,
+        task,
+        retryText
+      );
       const queued = await request(arkApp)
         .post(apiRoutes.teacher.modelInvocations)
         .set(demoHeaders)
-        .send(invocationCommand(task))
+        .send({
+          ...invocationCommand(task),
+          requestText: retryText,
+          requestVersion: 2,
+          conversationRef: conversation.conversation.conversationRef,
+          turnRef: conversation.turn.turnRef,
+          parentTurnRef: conversation.turn.parentTurnRef,
+          conversationVersion: conversation.conversation.version
+        })
         .expect(202);
       await arkProduct.workers.copilotOutbox.processAvailable(
         25
@@ -1430,6 +1466,53 @@ describe("Gate 2.6A durable ModelExecution", () => {
             proposalRevisionRef: null
           });
         });
+
+      const sealedBeforeRetry = await adminPool.query<{
+        pack_ref: string;
+        pack_hash: string;
+        memory_epoch: string;
+        application_count: string;
+      }>(
+        `SELECT
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'packRef' AS pack_ref,
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'packContentHash' AS pack_hash,
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'teacherMemoryEpoch' AS memory_epoch,
+           (SELECT count(*)::text
+              FROM personalization.memory_application
+             WHERE agent_run_ref = run.agent_run_ref
+               AND preference_ref = $2) AS application_count
+           FROM runtime.agent_run AS run
+          WHERE run.agent_run_ref = $1`,
+        [
+          queued.body.execution.agentRunRef,
+          retryPreference.body.preference.preferenceRef
+        ]
+      );
+      expect(sealedBeforeRetry.rows[0]).toMatchObject({
+        memory_epoch: "1",
+        application_count: "1"
+      });
+      expect(sealedBeforeRetry.rows[0]?.pack_ref).toMatch(
+        /^memory-context-pack:/u
+      );
+      expect(sealedBeforeRetry.rows[0]?.pack_hash).toMatch(
+        /^[a-f0-9]{64}$/u
+      );
+
+      await request(arkApp)
+        .post(apiRoutes.teacher.teacherPreferenceRevoke(
+          retryPreference.body.preference.preferenceRef
+        ))
+        .set(demoHeaders)
+        .send({
+          expectedVersion: retryPreference.body.preference.version,
+          purpose: "personalization.preference.revoke",
+          idempotencyKey: `gate26:retry-preference:revoke:${randomUUID()}`
+        })
+        .expect(200);
 
       fake.setScenario("repair-fail");
       const retryRequest = {
@@ -1462,6 +1545,47 @@ describe("Gate 2.6A durable ModelExecution", () => {
         .expect(({ body }) => {
           expect(body.status).toBe("succeeded");
         });
+      const sealedAfterRetry = await adminPool.query<{
+        pack_ref: string;
+        pack_hash: string;
+        memory_epoch: string;
+        application_count: string;
+      }>(
+        `SELECT
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'packRef' AS pack_ref,
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'packContentHash' AS pack_hash,
+           run.output->'contextEngineering'->'memoryContextPackManifest'
+             ->>'teacherMemoryEpoch' AS memory_epoch,
+           (SELECT count(*)::text
+              FROM personalization.memory_application
+             WHERE agent_run_ref = run.agent_run_ref
+               AND preference_ref = $2) AS application_count
+           FROM runtime.agent_run AS run
+          WHERE run.agent_run_ref = $1`,
+        [
+          retry.body.execution.agentRunRef,
+          retryPreference.body.preference.preferenceRef
+        ]
+      );
+      expect(sealedAfterRetry.rows[0]).toEqual(
+        sealedBeforeRetry.rows[0]
+      );
+      await expect(
+        arkProduct.services.personalization.resolveConfirmedPreferences({
+          tenantRef: gate2DemoRefs.tenantRef,
+          teacherRef: gate2DemoRefs.teacherRef,
+          useCase: "lesson_preparation",
+          skillId: "lesson-preparation",
+          subject: "数学",
+          gradeLevel: "八年级",
+          courseRunRef: task.courseRunRef,
+          lessonRef: task.lessonRef,
+          taskRef: task.taskRef,
+          at: "2026-09-20T00:00:00.000Z"
+        })
+      ).resolves.toMatchObject({ selected: [] });
       await request(arkApp)
         .post(
           apiRoutes.teacher.modelInvocationRetry(

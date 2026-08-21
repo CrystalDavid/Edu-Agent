@@ -179,6 +179,172 @@ describe("scoped TeacherPreference PostgreSQL", () => {
     expect(revisions.rows.map((entry) => entry.version)).toEqual([1, 2, 3, 4]);
   });
 
+  it("does not advance memoryEpoch for reads or idempotent confirmation replay", async () => {
+    const candidate = await createCandidate({
+      key: "idempotent_epoch",
+      value: "稳定"
+    });
+    const idempotencyKey = `scope-confirm-replay:${randomUUID()}`;
+    const command = {
+      expectedVersion: candidate.version,
+      purpose: "personalization.candidate.confirm",
+      idempotencyKey
+    };
+    const confirmed = await request(app)
+      .post(apiRoutes.teacher.memoryCandidateConfirm(candidate.candidateRef))
+      .set(headers)
+      .send(command)
+      .expect(200);
+    expect(await memoryEpoch()).toBe(1);
+
+    await request(app)
+      .get(apiRoutes.teacher.personalizationState)
+      .set(headers)
+      .expect(200);
+    await product.services.personalization.resolveConfirmedPreferences(
+      query(mainCourse)
+    );
+    expect(await memoryEpoch()).toBe(1);
+
+    await request(app)
+      .post(apiRoutes.teacher.memoryCandidateConfirm(candidate.candidateRef))
+      .set(headers)
+      .send(command)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.replayed).toBe(true);
+        expect(body.preference.preferenceRef).toBe(
+          confirmed.body.preference.preferenceRef
+        );
+      });
+    expect(await memoryEpoch()).toBe(1);
+
+    const formalWrites = await adminPool.query<{
+      authorization_count: string;
+      audit_count: string;
+      idempotency_count: string;
+      preference_count: string;
+      revision_count: string;
+    }>(
+      `SELECT
+         (SELECT count(*)::text
+            FROM governance.authorization_decision
+           WHERE action = 'personalization.candidate.confirm'
+             AND resource_ref = $1) AS authorization_count,
+         (SELECT count(*)::text
+            FROM governance.audit_record
+           WHERE record_type = 'MemoryCandidateConfirmed'
+             AND write_ref = $1) AS audit_count,
+         (SELECT count(*)::text
+            FROM governance.idempotency_record
+           WHERE purpose = 'personalization.candidate.confirm'
+             AND status = 'completed') AS idempotency_count,
+         (SELECT count(*)::text
+            FROM personalization.teacher_preference
+           WHERE source_candidate_ref = $1) AS preference_count,
+         (SELECT count(*)::text
+            FROM personalization.teacher_preference_revision
+           WHERE source_candidate_ref = $1) AS revision_count`,
+      [candidate.candidateRef]
+    );
+    expect(formalWrites.rows[0]).toEqual({
+      authorization_count: "1",
+      audit_count: "1",
+      idempotency_count: "1",
+      preference_count: "1",
+      revision_count: "1"
+    });
+  });
+
+  it("rolls back Preference, epoch and formal write records in one failed transaction", async () => {
+    const candidate = await createCandidate({
+      key: "transactional_epoch",
+      value: "必须原子提交"
+    });
+    await adminPool.query(`
+      CREATE OR REPLACE FUNCTION personalization.reject_synthetic_epoch_write()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $function$
+      BEGIN
+        RAISE EXCEPTION 'synthetic teacher memory epoch failure';
+      END;
+      $function$;
+      CREATE TRIGGER reject_synthetic_epoch_write
+      BEFORE INSERT OR UPDATE ON personalization.teacher_memory_state
+      FOR EACH ROW
+      EXECUTE FUNCTION personalization.reject_synthetic_epoch_write()
+    `);
+    try {
+      await request(app)
+        .post(apiRoutes.teacher.memoryCandidateConfirm(candidate.candidateRef))
+        .set(headers)
+        .send({
+          expectedVersion: candidate.version,
+          purpose: "personalization.candidate.confirm",
+          idempotencyKey: `scope-confirm-rollback:${randomUUID()}`
+        })
+        .expect(500);
+    } finally {
+      await adminPool.query(`
+        DROP TRIGGER IF EXISTS reject_synthetic_epoch_write
+          ON personalization.teacher_memory_state;
+        DROP FUNCTION IF EXISTS personalization.reject_synthetic_epoch_write()
+      `);
+    }
+
+    const persisted = await adminPool.query<{
+      candidate_status: string;
+      current_version: number;
+      preference_count: string;
+      revision_count: string;
+      epoch_count: string;
+      authorization_count: string;
+      audit_count: string;
+      idempotency_count: string;
+    }>(
+      `SELECT candidate.candidate_status, candidate.current_version,
+              (SELECT count(*)::text
+                 FROM personalization.teacher_preference
+                WHERE source_candidate_ref = candidate.candidate_ref)
+                AS preference_count,
+              (SELECT count(*)::text
+                 FROM personalization.teacher_preference_revision
+                WHERE source_candidate_ref = candidate.candidate_ref)
+                AS revision_count,
+              (SELECT count(*)::text
+                 FROM personalization.teacher_memory_state
+                WHERE tenant_ref = candidate.tenant_ref
+                  AND teacher_ref = candidate.teacher_ref) AS epoch_count,
+              (SELECT count(*)::text
+                 FROM governance.authorization_decision
+                WHERE action = 'personalization.candidate.confirm'
+                  AND resource_ref = candidate.candidate_ref)
+                AS authorization_count,
+              (SELECT count(*)::text
+                 FROM governance.audit_record
+                WHERE record_type = 'MemoryCandidateConfirmed'
+                  AND write_ref = candidate.candidate_ref) AS audit_count,
+              (SELECT count(*)::text
+                 FROM governance.idempotency_record
+                WHERE purpose = 'personalization.candidate.confirm')
+                AS idempotency_count
+         FROM personalization.memory_candidate AS candidate
+        WHERE candidate.candidate_ref = $1`,
+      [candidate.candidateRef]
+    );
+    expect(persisted.rows[0]).toEqual({
+      candidate_status: "proposed",
+      current_version: 1,
+      preference_count: "0",
+      revision_count: "0",
+      epoch_count: "0",
+      authorization_count: "0",
+      audit_count: "0",
+      idempotency_count: "0"
+    });
+  });
+
   it("filters valid time and fails closed for unauthorized or foreign refs", async () => {
     const future = await confirmPreference({
       key: "future_preference",
@@ -240,6 +406,50 @@ describe("scoped TeacherPreference PostgreSQL", () => {
         expect([403, 404]).toContain(response.status);
       });
 
+    const ownedTask = await createOwnedTask();
+    await request(app)
+      .put(apiRoutes.teacher.teacherPreferenceScope(future.preferenceRef))
+      .set(headers)
+      .send({
+        scope: {
+          kind: "task",
+          subject: null,
+          gradeLevel: null,
+          courseRunRef: secondCourse,
+          lessonRef: secondaryCourseDemoRefs.lessonRef,
+          taskRef: ownedTask.taskRef,
+          skillIds: ["lesson-preparation"]
+        },
+        expectedVersion: future.version,
+        purpose: "personalization.preference.update-scope",
+        idempotencyKey: `scope-owned-task-mismatch:${randomUUID()}`
+      })
+      .expect((response) => {
+        expect([403, 404]).toContain(response.status);
+      });
+
+    for (const foreignOrMissingRef of [
+      "course-run:school-b-grade8-math-2026-fall",
+      "course-run:missing-synthetic"
+    ]) {
+      const response = await request(app)
+        .post(apiRoutes.teacher.memoryCandidates)
+        .set(headers)
+        .send({
+          summary: "不得泄漏未授权课程是否存在。",
+          preferenceKey: "authorization_non_disclosure",
+          preferenceValue: "拒绝",
+          proposedScope: courseScope(foreignOrMissingRef),
+          purpose: "personalization.candidate.create",
+          idempotencyKey: `scope-nondisclosure:${randomUUID()}`
+        });
+      expect([403, 404]).toContain(response.status);
+      expect(JSON.stringify(response.body)).not.toContain(
+        foreignOrMissingRef
+      );
+      expect(JSON.stringify(response.body)).not.toMatch(/school-b/iu);
+    }
+
     await request(app)
       .put(apiRoutes.teacher.teacherPreferenceScope(future.preferenceRef))
       .set(headers)
@@ -291,6 +501,11 @@ describe("scoped TeacherPreference PostgreSQL", () => {
     await expect(adminPool.query(
       `UPDATE personalization.teacher_preference_revision
           SET preference_value = 'forbidden'
+        WHERE preference_ref = $1`,
+      [preference.preferenceRef]
+    )).rejects.toThrow(/immutable/u);
+    await expect(adminPool.query(
+      `DELETE FROM personalization.teacher_preference_revision
         WHERE preference_ref = $1`,
       [preference.preferenceRef]
     )).rejects.toThrow(/immutable/u);
@@ -459,4 +674,21 @@ async function memoryEpoch(): Promise<number> {
     [owner.tenantRef, owner.teacherRef]
   );
   return Number(result.rows[0]?.memory_epoch ?? 0);
+}
+
+async function createOwnedTask(): Promise<{ taskRef: string }> {
+  const response = await request(app)
+    .post(apiRoutes.teacher.preparationTasks)
+    .set(headers)
+    .send({
+      lessonRef: "lesson:slope-and-graph-change",
+      dueAt: null,
+      priority: "normal",
+      purpose: "lesson-preparation.create",
+      idempotencyKey: `scope-owned-task:${randomUUID()}`
+    })
+    .expect(201);
+  return {
+    taskRef: response.body.task.taskRef as string
+  };
 }
