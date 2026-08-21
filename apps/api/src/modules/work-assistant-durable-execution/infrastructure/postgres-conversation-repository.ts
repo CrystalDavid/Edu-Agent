@@ -156,13 +156,14 @@ export class PostgresConversationRepository {
          turn_ref, conversation_ref, sequence, parent_turn_ref,
          actor_kind, content_kind, teacher_text, surface_summary,
          task_run_ref, agent_run_ref, model_execution_ref,
-         proposal_revision_ref, content_hash,
+         proposal_revision_ref, memory_candidate_refs,
+         teacher_preference_refs, content_hash,
          actor_ref, purpose, owner_module, idempotency_key,
          authorization_decision_ref, audit_ref, created_at
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8,
-         $9, $10, $11, $12, $13,
-         $14, $15, $16, $17, $18, $19, $20::timestamptz
+         $9, $10, $11, $12, $13::text[], $14::text[], $15,
+         $16, $17, $18, $19, $20, $21, $22::timestamptz
        )`,
       [
         turn.turnRef,
@@ -177,6 +178,8 @@ export class PostgresConversationRepository {
         turn.agentRunRef,
         turn.resultRefs.modelExecutionRef ?? null,
         turn.resultRefs.proposalRevisionRef ?? null,
+        turn.resultRefs.candidateRefs ?? [],
+        turn.resultRefs.preferenceRefs ?? [],
         turn.contentHash,
         ...formalMetadataValues(input.metadata)
       ]
@@ -289,7 +292,7 @@ const threadSelect = `SELECT conversation_ref, tenant_ref, teacher_ref,
 const turnSelect = `SELECT turn_ref, conversation_ref, sequence,
   parent_turn_ref, actor_kind, content_kind, teacher_text, surface_summary,
   task_run_ref, agent_run_ref, model_execution_ref, proposal_revision_ref,
-  content_hash, created_at
+  memory_candidate_refs, teacher_preference_refs, content_hash, created_at
   FROM work.conversation_turn`;
 
 interface ConversationThreadRow {
@@ -325,6 +328,8 @@ interface ConversationTurnRow {
   agent_run_ref: string | null;
   model_execution_ref: string | null;
   proposal_revision_ref: string | null;
+  memory_candidate_refs: string[];
+  teacher_preference_refs: string[];
   content_hash: string;
   created_at: Date;
 }
@@ -369,6 +374,12 @@ function mapTurn(row: ConversationTurnRow): ConversationTurnView {
         : {}),
       ...(row.proposal_revision_ref
         ? { proposalRevisionRef: row.proposal_revision_ref }
+        : {}),
+      ...(row.memory_candidate_refs.length > 0
+        ? { candidateRefs: row.memory_candidate_refs }
+        : {}),
+      ...(row.teacher_preference_refs.length > 0
+        ? { preferenceRefs: row.teacher_preference_refs }
         : {})
     },
     contentHash: row.content_hash,

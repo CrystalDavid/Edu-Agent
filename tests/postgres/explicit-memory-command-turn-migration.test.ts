@@ -79,13 +79,26 @@ describe("explicit memory command Turn PostgreSQL migration", () => {
       expect(newConstraint).toContain(
         "content_kind = ANY (ARRAY['safe_surface_summary'::text, 'result_link'::text])"
       );
+      const resultRefsConstraint = await constraintDefinition(
+        upgradePool,
+        "conversation_turn_memory_result_refs_check"
+      );
+      expect(resultRefsConstraint).toContain(
+        "cardinality(memory_candidate_refs)"
+      );
+      expect(resultRefsConstraint).toContain(
+        "content_kind = ANY (ARRAY['command'::text, 'result_link'::text])"
+      );
 
       const historical = await upgradePool.query<{
         turn_ref: string;
         actor_kind: string;
         content_kind: string;
+        memory_candidate_refs: string[];
+        teacher_preference_refs: string[];
       }>(
-        `SELECT turn_ref, actor_kind, content_kind
+        `SELECT turn_ref, actor_kind, content_kind,
+                memory_candidate_refs, teacher_preference_refs
            FROM work.conversation_turn
           ORDER BY sequence`,
         []
@@ -94,12 +107,16 @@ describe("explicit memory command Turn PostgreSQL migration", () => {
         {
           turn_ref: "turn:upgrade:teacher",
           actor_kind: "teacher",
-          content_kind: "teacher_text"
+          content_kind: "teacher_text",
+          memory_candidate_refs: [],
+          teacher_preference_refs: []
         },
         {
           turn_ref: "turn:upgrade:result",
           actor_kind: "assistant_surface",
-          content_kind: "result_link"
+          content_kind: "result_link",
+          memory_candidate_refs: [],
+          teacher_preference_refs: []
         }
       ]);
 
@@ -127,6 +144,67 @@ describe("explicit memory command Turn PostgreSQL migration", () => {
           surfaceSummary: value[3]
         });
       }
+      await insertTurn(upgradePool, {
+        suffix: "command-result-refs",
+        sequence: 15,
+        actorKind: "assistant_surface",
+        contentKind: "command",
+        teacherText: null,
+        surfaceSummary: "已记住两条合成偏好",
+        memoryCandidateRefs: ["memory-candidate:one", "memory-candidate:two"],
+        teacherPreferenceRefs: ["teacher-preference:one"]
+      });
+      const persistedRefs = await upgradePool.query<{
+        memory_candidate_refs: string[];
+        teacher_preference_refs: string[];
+      }>(
+        `SELECT memory_candidate_refs, teacher_preference_refs
+           FROM work.conversation_turn
+          WHERE turn_ref = 'turn:upgrade:command-result-refs'`
+      );
+      expect(persistedRefs.rows[0]).toEqual({
+        memory_candidate_refs: [
+          "memory-candidate:one",
+          "memory-candidate:two"
+        ],
+        teacher_preference_refs: ["teacher-preference:one"]
+      });
+      await expect(insertTurn(upgradePool, {
+        suffix: "refs-on-teacher-text",
+        sequence: 16,
+        actorKind: "teacher",
+        contentKind: "teacher_text",
+        teacherText: "普通教师要求",
+        surfaceSummary: null,
+        memoryCandidateRefs: ["memory-candidate:not-allowed"]
+      })).rejects.toMatchObject({
+        constraint: "conversation_turn_memory_result_refs_check"
+      });
+      await expect(insertTurn(upgradePool, {
+        suffix: "empty-result-ref",
+        sequence: 17,
+        actorKind: "assistant_surface",
+        contentKind: "command",
+        teacherText: null,
+        surfaceSummary: "非法空引用",
+        memoryCandidateRefs: [""]
+      })).rejects.toMatchObject({
+        constraint: "conversation_turn_memory_result_refs_check"
+      });
+      await expect(insertTurn(upgradePool, {
+        suffix: "too-many-result-refs",
+        sequence: 18,
+        actorKind: "assistant_surface",
+        contentKind: "command",
+        teacherText: null,
+        surfaceSummary: "非法过量引用",
+        memoryCandidateRefs: Array.from(
+          { length: 11 },
+          (_, index) => `memory-candidate:${index}`
+        )
+      })).rejects.toMatchObject({
+        constraint: "conversation_turn_memory_result_refs_check"
+      });
 
       const rejected = [
         ["assistant_surface", "teacher_text", null, "非法摘要"],
@@ -209,10 +287,14 @@ describe("explicit memory command Turn PostgreSQL migration", () => {
             AND column_name IN (
               'memory_candidate_refs',
               'teacher_preference_refs'
-            )`,
+            )
+          ORDER BY column_name`,
         []
       );
-      expect(resultReferenceColumns.rows).toEqual([]);
+      expect(resultReferenceColumns.rows).toEqual([
+        { column_name: "memory_candidate_refs" },
+        { column_name: "teacher_preference_refs" }
+      ]);
     } finally {
       await upgradePool.end();
       await adminPool.query(`DROP DATABASE ${databaseName} WITH (FORCE)`);
@@ -354,18 +436,51 @@ async function insertTurn(
       | "result_link";
     teacherText: string | null;
     surfaceSummary: string | null;
+    memoryCandidateRefs?: string[];
+    teacherPreferenceRefs?: string[];
   }
 ): Promise<void> {
+  if (
+    input.memoryCandidateRefs === undefined &&
+    input.teacherPreferenceRefs === undefined
+  ) {
+    await pool.query(
+      `INSERT INTO work.conversation_turn (
+         turn_ref, conversation_ref, sequence, parent_turn_ref,
+         actor_kind, content_kind, teacher_text, surface_summary,
+         content_hash, actor_ref, purpose, owner_module,
+         idempotency_key, authorization_decision_ref, audit_ref, created_at
+       ) VALUES (
+         $1, $2, $3, NULL, $4, $5, $6, $7, $8,
+         'teacher:upgrade', 'synthetic.migration-command', 'work', $9,
+         'decision:upgrade', $10, '2026-08-21T08:05:00.000Z'
+       )`,
+      [
+        `turn:upgrade:${input.suffix}`,
+        input.conversationRef ?? "conversation:upgrade",
+        input.sequence,
+        input.actorKind,
+        input.contentKind,
+        input.teacherText,
+        input.surfaceSummary,
+        createHash("sha256").update(input.suffix).digest("hex"),
+        `idempotency:upgrade:${input.suffix}`,
+        `audit:upgrade:${input.suffix}`
+      ]
+    );
+    return;
+  }
   await pool.query(
     `INSERT INTO work.conversation_turn (
        turn_ref, conversation_ref, sequence, parent_turn_ref,
        actor_kind, content_kind, teacher_text, surface_summary,
-       content_hash, actor_ref, purpose, owner_module,
+       memory_candidate_refs, teacher_preference_refs, content_hash,
+       actor_ref, purpose, owner_module,
        idempotency_key, authorization_decision_ref, audit_ref, created_at
      ) VALUES (
-       $1, $2, $3, NULL, $4, $5, $6, $7, $8,
-       'teacher:upgrade', 'synthetic.migration-command', 'work', $9,
-       'decision:upgrade', $10, '2026-08-21T08:05:00.000Z'
+       $1, $2, $3, NULL, $4, $5, $6, $7, $8::text[], $9::text[], $10,
+       'teacher:upgrade', 'synthetic.migration-command', 'work', $11,
+       'decision:upgrade', $12, '2026-08-21T08:05:00.000Z'
      )`,
     [
       `turn:upgrade:${input.suffix}`,
@@ -375,6 +490,8 @@ async function insertTurn(
       input.contentKind,
       input.teacherText,
       input.surfaceSummary,
+      input.memoryCandidateRefs ?? [],
+      input.teacherPreferenceRefs ?? [],
       createHash("sha256").update(input.suffix).digest("hex"),
       `idempotency:upgrade:${input.suffix}`,
       `audit:upgrade:${input.suffix}`

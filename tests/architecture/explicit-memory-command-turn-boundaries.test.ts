@@ -58,8 +58,13 @@ describe("PR-2B explicit memory command Turn migration boundaries", () => {
     expect(migration).not.toMatch(/(?:DELETE|UPDATE)\s+work\.conversation_turn/iu);
     expect(migration).not.toContain("personalization.");
     expect(migration).not.toContain("FOREIGN KEY");
-    expect(migration).not.toContain("memory_candidate_refs");
-    expect(migration).not.toContain("teacher_preference_refs");
+    expect(migration).toContain("memory_candidate_refs text[]");
+    expect(migration).toContain("teacher_preference_refs text[]");
+    expect(migration).toContain(
+      "conversation_turn_memory_result_refs_check"
+    );
+    expect(migration).toContain("cardinality(memory_candidate_refs)");
+    expect(migration).toContain("cardinality(teacher_preference_refs)");
   });
 
   it("does not introduce runtime DDL or cross-schema Work writes", () => {
