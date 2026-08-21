@@ -63,6 +63,10 @@ import {
   CreateTeacherConversationResultSchema,
   AppendTeacherConversationTurnRequestSchema,
   AppendTeacherConversationTurnResultSchema,
+  DispatchTeacherConversationTurnRequestSchema,
+  DispatchTeacherConversationTurnResultSchema,
+  ConfirmMemoryCandidateReplacementRequestSchema,
+  ConfirmMemoryCandidateReplacementResultSchema,
   ConversationThreadViewSchema,
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
@@ -210,6 +214,9 @@ import {
   type CreateTeacherConversationResult,
   type AppendTeacherConversationTurnRequest,
   type AppendTeacherConversationTurnResult,
+  type DispatchTeacherConversationTurnRequest,
+  type DispatchTeacherConversationTurnResult,
+  type ConfirmMemoryCandidateReplacementRequest,
   type ConversationThreadView,
   type CreateReflectionDraftRequest,
   type CreateReflectionFollowUpRequest,
@@ -583,6 +590,19 @@ export function reviewMemoryCandidate(
       ? apiRoutes.teacher.memoryCandidateConfirm(candidateRef)
       : apiRoutes.teacher.memoryCandidateReject(candidateRef),
     MemoryCandidateMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function confirmMemoryCandidateReplacement(
+  candidateRef: string,
+  input: ConfirmMemoryCandidateReplacementRequest
+) {
+  ConfirmMemoryCandidateReplacementRequestSchema.parse(input);
+  return request(
+    "替换已保存偏好",
+    apiRoutes.teacher.memoryCandidateConfirmReplacement(candidateRef),
+    ConfirmMemoryCandidateReplacementResultSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
 }
@@ -1067,6 +1087,22 @@ export function appendTeacherConversationTurn(
     "追加备课会话要求",
     apiRoutes.teacher.conversationTurns(conversationRef),
     AppendTeacherConversationTurnResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function dispatchTeacherConversationTurn(
+  conversationRef: string,
+  input: DispatchTeacherConversationTurnRequest
+): Promise<DispatchTeacherConversationTurnResult> {
+  DispatchTeacherConversationTurnRequestSchema.parse(input);
+  return request(
+    "分发备课会话要求",
+    apiRoutes.teacher.conversationDispatchTurn(conversationRef),
+    DispatchTeacherConversationTurnResultSchema,
     {
       method: "POST",
       body: JSON.stringify(input)

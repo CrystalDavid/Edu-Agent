@@ -8,7 +8,7 @@ Edu-Agent 是一个面向学校的教育 Agent 平台。当前仓库已经形成
 - 数据环境：产品代码不内置展示数据；本机首次体验可显式载入独立的匿名示例数据
 - 当前工程阶段：Phase 8 Teaching Workspace；云部署与小范围试点在工作流验收后进入
 
-详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A、日历分类、Phase 8A-6 下一课行动候选、第一轮会话/工作记忆、教师记忆应用观测和 scoped TeacherPreference 共追加 7 个前向 Migration，当前合计 50 个。
+详细 Commit、PR、Tag 和 43 个 Verified 基线 Migration 的时间线见 [版本历史](docs/version-history.md)；Phase 7A、日历分类、Phase 8A-6 下一课行动候选、第一轮会话/工作记忆、教师记忆应用观测、scoped TeacherPreference 和显式命令 Turn 共追加 8 个前向 Migration，当前合计 51 个。
 
 ## 项目定位
 
@@ -41,8 +41,8 @@ Edu-Agent 的目标不是让模型代替教师作决定，而是把 Agent 放进
 | 课堂实施与观察 | REAL | LessonDelivery、ClassroomObservation、修订/取代历史 | 无实时课堂、音视频或自动观察 |
 | 课后反思 | REAL | Agent Reflection draft、教师确认的 Reflection、版本化下一课行动候选与显式 follow-up | 反思不能倒推伪造课堂事实；确认 Reflection 不会自动创建行动 |
 | 学校管理员 | REAL（最小） | 成员查看/创建/激活/停用、普通教师角色与 CourseRun access | 无邮件邀请、MFA、SCIM 或完整后台 |
-| 教师偏好与个性化 | REAL（最小） | 查看 MemoryCandidate，确认、修改、拒绝或撤销 TeacherPreference；可设为所有普通备课或指定授权 CourseRun；同 canonical key 按确定性作用域优先级覆盖；跨重启恢复 | scoped resolver 目前只正式接入 Lesson Preparation；其他 Skill 只读有效 global、无 Skill 限制偏好；无自然语言记住/忘记、向量检索或自动人格分析 |
-| 备课会话记忆 | REAL（第一轮） | 同一备课 Task 内保存 Conversation/Turn，用可重建 WorkingMemory 理解延续要求，刷新与服务重启恢复，支持 close/到期排除和新会话隔离 | 不是跨任务长期习惯；正式保留期待产品确认；无自动人格学习或向量检索 |
+| 教师偏好与个性化 | REAL（最小） | 查看 MemoryCandidate，确认、修改、拒绝或撤销 TeacherPreference；可设为所有普通备课或指定授权 CourseRun；同 canonical key 按确定性作用域优先级覆盖；Lesson Preparation 对话可用受控 Catalog 明确“记住”低风险偏好，并跨 Session 恢复 | scoped resolver 和显式命令目前只正式接入 Lesson Preparation；其他 Skill 只读有效 global、无 Skill 限制偏好；不支持对话式忘记、正式“仅本次”、自由文本记忆、向量检索或自动人格分析 |
+| 备课会话记忆 | REAL（第一轮 + 显式命令） | 同一备课 Task 内保存 Conversation/Turn，用可重建 WorkingMemory 理解延续要求；显式 memory command/安全回执作为独立 immutable Turn 恢复，且不污染教学 active goal；支持刷新、服务重启、close/到期排除和新会话隔离 | 普通话语不会自动形成长期习惯；正式保留期待产品确认；无自动人格学习或向量检索 |
 | 教师记忆应用观测 | REAL（M0-lite + scoped 扩展） | Proposal 与 Runs 显示“本次参考”的当前要求、同任务上下文、作用范围、已确认偏好和被更具体 Scope 覆盖的偏好；历史 V1 与新 V2 pack/hash 均可恢复 | “选入输入”不代表模型一定遵循；不提供自然语言记住/忘记/仅本次或自动习惯学习 |
 | 考试 | DISABLED | 一级入口明确标记暂未开放 | 无正式考试、提交、批改和持久化 |
 | 教学助手 | REAL（任务入口） | 一级页读取服务器中的备课任务；备课 Copilot 支持 owner-scoped 连续会话；Task/Reflection 入口使用重新授权和封存上下文 | 无脱离正式 Task 的开放聊天、多 Agent 或自动化平台 |
@@ -136,7 +136,7 @@ flowchart TB
 | Workspace | Node.js 24（本轮验证 24.14.0）、Corepack、pnpm 11.9.0、TypeScript 7 |
 | Web | React 19、Vite 8、Ant Design 6、原生 history router |
 | API | Express 5、Zod 4、OpenAI-compatible client、openid-client |
-| 数据 | PostgreSQL 18、Drizzle ORM、50 个只向前 Migration（43 个 Verified 基线 + 7 个后续前向 Migration） |
+| 数据 | PostgreSQL 18、Drizzle ORM、51 个只向前 Migration（43 个 Verified 基线 + 8 个后续前向 Migration） |
 | 文件 | LocalObjectStore、`docx`、JSZip |
 | 测试 | Vitest 4、PGlite、Supertest、Node test runner、Playwright 1.62 |
 | 本地环境 | Docker Desktop / Docker Compose |
@@ -226,7 +226,7 @@ corepack pnpm app:down
 - 多模态和 OCR 尚未产品化，文件内容不会自动进入模型；
 - 真实模型当前只支持一个 Volcengine Ark/豆包 Provider；
 - 文件保存在本地 ObjectStore，无云存储、分享和协作；
-- personalization 已有候选/教师确认、global/CourseRun Scope、valid time 和 epoch 基础；只在 Lesson Preparation 正式启用 scoped resolver，且不维护永久 learner 能力画像；
+- personalization 已有候选/教师确认、global/CourseRun Scope、valid time、epoch 和受控显式 remember 基础；只在 Lesson Preparation 正式启用 scoped resolver/命令 Catalog，且不维护永久 learner 能力画像；
 - 没有生产监控、备份恢复、远程 E2E、容量基线和发布/回滚 Runbook。
 
 ## 下一步计划

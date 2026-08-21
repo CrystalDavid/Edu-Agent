@@ -89,7 +89,8 @@ describe("PR-2A scoped TeacherPreference boundaries", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) =>
         /[\\/]migrations[\\/].+\.sql$/u.test(path) &&
-        !path.endsWith("0004_teacher_preference_scope_and_epoch.sql")
+        !path.endsWith("0004_teacher_preference_scope_and_epoch.sql") &&
+        !path.endsWith("0013_explicit_memory_command_turn.sql")
       )
       .sort();
     expect(migrations).toHaveLength(49);

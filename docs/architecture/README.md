@@ -5,7 +5,7 @@
 
 本文描述当前可运行代码。早期 v0.3.x 文档仍是重要设计来源，但当其与代码不同，以这里列出的实现和自动化约束为准。
 
-教师短期会话记忆的所有权、Provider continuation、重建和保留决策见 [Conversation 与 Working Memory ADR](decisions/conversation-working-memory-ownership-and-retention.md)；本次参考清单、Preference 应用记录和失败语义见 [教师记忆应用观测 ADR](decisions/memory-application-observability.md)。
+教师短期会话记忆的所有权、Provider continuation、重建和保留决策见 [Conversation 与 Working Memory ADR](decisions/conversation-working-memory-ownership-and-retention.md)；本次参考清单、Preference 应用记录和失败语义见 [教师记忆应用观测 ADR](decisions/memory-application-observability.md)；Scope/epoch 见 [Scoped Preference ADR](decisions/scoped-teacher-preferences-and-memory-epoch.md)；对话中的受控显式记住、command Turn 与恢复语义见 [Explicit Remember ADR](decisions/explicit-teacher-remember-commands.md)。
 
 ## 1. 运行形态
 
@@ -16,7 +16,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 - `packages/contracts`：路由构造器、DTO 和 Zod Schema；
 - `packages/sample-data`：显式 Seed 和测试共用的稳定匿名 refs/data；产品 API/Web 不依赖该 package；
 - `packages/test-fixtures`：只供 Gate 1A/1B 等自动化测试的构造器，产品应用不依赖；
-- PostgreSQL 18：七个 Schema、50 个只向前 Migration；
+- PostgreSQL 18：七个 Schema、51 个只向前 Migration；
 - 本地运行 Adapter：Docker PostgreSQL、LocalObjectStore、LocalIdentityProvider、MockModelProvider；
 - 可选生产集成 Adapter：OIDC Identity Provider、Volcengine Ark Chat Completions。
 
@@ -27,7 +27,7 @@ Edu-Agent 是 Node.js / TypeScript 的 pnpm workspace 模块化单体：
 | 模块目录 | Schema | 当前状态所有权与职责 |
 |---|---|---|
 | `identity-governance-audit` | `governance` | User、ExternalIdentity、Organization、Membership、Role/Course access、Session、OIDC state、AuthorizationDecision、Audit、安全事件、数据治理请求 |
-| `work-assistant-durable-execution` | `work` | Task/TaskRun、lesson preparation、TaskWorkingSet、Conversation/不可变 Turn、Todo、Calendar、work projection、提醒偏好、版本化下一课行动候选、Outbox/消费效果、follow-up 工作关系 |
+| `work-assistant-durable-execution` | `work` | Task/TaskRun、lesson preparation、TaskWorkingSet、Conversation/不可变普通与 command Turn、安全命令回执 refs、Todo、Calendar、work projection、提醒偏好、版本化下一课行动候选、Outbox/消费效果、follow-up 工作关系 |
 | `agent-runtime-context` | `runtime` | AgentRun、Resolved Contract、AuthorizedContextPlan、ContextManifest、可重建 WorkingMemorySnapshot、运行解释边界 |
 | `capability-integration` | `capability` | ModelProvider、ModelExecution、PromptBundle、Budget/Data Manifest、Provider capability、ObjectStore Port 和外部能力执行 |
 | `artifact-collaboration` | `artifact` | Proposal/Disposition、TeachingPlan/Revision、LessonReflection/Revision、FileAsset/FileVersion/Binding、正式教学成果 |
@@ -165,7 +165,10 @@ flowchart LR
     WS["TaskWorkingSet"] --> AUTH["AuthorizedContextPlan"]
     AUTH --> SNAP["Authorized Platform snapshots"]
     SNAP --> CB["lesson-preparation@6 Context Builder"]
-    TURN["Work Conversation + immutable Turns"] --> WM["Runtime WorkingMemorySnapshot"]
+    TURN["Work Conversation + immutable teacher/command Turns"] --> DISPATCH["Server Conversation dispatch"]
+    DISPATCH --> WM["Runtime WorkingMemorySnapshot"]
+    DISPATCH --> REMEMBER["Typed explicit remember Port"]
+    REMEMBER --> PREF
     WM --> CB
     PREF["Personalization scoped resolver"] --> CB
     AUTHZ["Typed Scope authorization Port"] --> PREF
@@ -175,15 +178,17 @@ flowchart LR
 
 Builder 比较 teacher selection、AuthorizedContextPlan、sealed ContextManifest 和实际 snapshot refs，执行确定性排序/压缩，并记录 resource version/hash/provenance、排除原因、missing information 和分段 token 估算。授权、关键资源、Evidence 命中或预算检查失败时不调用模型；纯预算失败保持现有 `budget_exceeded` API 语义。安全 manifest/evaluation 摘要写入 AgentRun output，不保存完整 Prompt 或 Evidence。
 
-Conversation 是 Work-owned 平台真值，Turn 只保存教师文本或教师可见的安全结果摘要/结果引用，禁止原地修改，也不保存供应商原始响应。WorkingMemorySnapshot 是 Runtime-owned 派生状态：每次 Turn 后按 `working-memory-builder@1` 从当前会话确定性重建，保留当前目标、最多六条近期教师要求、可解析指代、临时约束和最近结果引用；旧快照转为 superseded，封存执行在保留窗口内按 ref/hash 精确恢复，hash、owner、来源或期限不匹配即 fail closed。所有读取同时约束 tenant、teacher、conversation 和 Task；新会话不会继承旧会话工作记忆。当前请求优先级最高，临时约束不得自动晋升为长期 Preference。
+Conversation 是 Work-owned 平台真值，Turn 只保存教师文本或教师可见的安全结果摘要/有界结果 refs，禁止原地修改，也不保存供应商原始响应。普通 `teacher_text` 才进入 `working-memory-builder@1` 的 active goal 与近期请求；`teacher + command` 和 `assistant_surface + command` 只推进 Conversation/展示安全回执，不进入 Prompt，也不创建虚构教学目标。WorkingMemorySnapshot 是 Runtime-owned 派生状态：保留当前目标、最多六条近期教师要求、可解析指代、临时约束和最近结果引用；旧快照转为 superseded，封存执行在保留窗口内按 ref/hash 精确恢复，hash、owner、来源或期限不匹配即 fail closed。所有读取同时约束 tenant、teacher、conversation 和 Task；新会话不会继承旧会话工作记忆。当前请求优先级最高，临时约束不得自动晋升为长期 Preference。
 
 Conversation retention 由服务端配置，Turn 继承线程期限，WorkingMemorySnapshot 不得晚于来源 Turn 到期。显式 close 后禁止新 Turn 并 invalidates active snapshot；到期线程不再返回 Turn 内容，也不再进入模型 Context。当前 30 天只是待产品确认的运行默认值；学校级期限、物理清理/去标识和治理 SLA 尚未成为已实现产品政策。
 
 历史 SkillVersion 保留在 Registry；新版本不覆盖已发布版本。
 
-Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision；第 45 个扩展日历事件类别；第 46 个在 Work Schema 中持久化 `NextLessonActionCandidate`；第 47、48 个分别新增 Work Conversation/Turn 与 Runtime WorkingMemorySnapshot；第 49 个新增 durable Preference 的 append-only application/outcome；第 50 个只向前扩展 TeacherPreference/Revision 的 canonical key、Scope、valid time、consent/policy，并新增 owner-scoped `teacher_memory_state`。既有 49 个 Migration 不修改。
+Personalization Schema 通过第 44 个前向 Migration 持久化 `MemoryCandidate`、`TeacherPreference` 及各自不可变 revision；第 45 个扩展日历事件类别；第 46 个在 Work Schema 中持久化 `NextLessonActionCandidate`；第 47、48 个分别新增 Work Conversation/Turn 与 Runtime WorkingMemorySnapshot；第 49 个新增 durable Preference 的 append-only application/outcome；第 50 个只向前扩展 TeacherPreference/Revision 的 canonical key、Scope、valid time、consent/policy，并新增 owner-scoped `teacher_memory_state`；第 51 个 Work-owned 前向 Migration 以正式 CHECK 支持 teacher/assistant command Turn，并增加最多各 10 个 Candidate/Preference 恢复 ref。既有 50 个 Migration 不修改，0012 不回写。
 
-Scope 由 Personalization 拥有，但不是授权。写入 CourseRun/Lesson/Task Scope 时，Personalization 只能调用 typed `TeacherPreferenceScopeAuthorizationPort`，由 Composition Adapter 通过 owning Work/Education facade 校验 Session 已解析的 CourseRun access、Lesson 归属和 Task owner；不建立跨 Schema FK，也不让 Personalization 直接查询其他 Schema。解析时先按 owner、active、valid time、Scope、Skill 做硬过滤，再按 canonical key 选择 `task > lesson > course_run > subject_grade > subject > global`，同 Scope 下 `Skill-specific > unrestricted`，最后才使用 explicitness、version、updatedAt、preferenceRef 确定性打破平局。当前只创建 `teacher_declared` + `teacher_settings_confirmed`，不做同义词合并或自然语言冲突判断。
+Scope 由 Personalization 拥有，但不是授权。写入 CourseRun/Lesson/Task Scope 时，Personalization 只能调用 typed `TeacherPreferenceScopeAuthorizationPort`，由 Composition Adapter 通过 owning Work/Education facade 校验 Session 已解析的 CourseRun access、Lesson 归属和 Task owner；不建立跨 Schema FK，也不让 Personalization 直接查询其他 Schema。解析时先按 owner、active、valid time、Scope、Skill 做硬过滤，再按 canonical key 选择 `task > lesson > course_run > subject_grade > subject > global`，同 Scope 下 `Skill-specific > unrestricted`，最后才使用 explicitness、version、updatedAt、preferenceRef 确定性打破平局。设置页创建 `teacher_declared + teacher_settings_confirmed`；PR-2B 的服务器 Catalog 还可创建 `teacher_declared + teacher_explicit_command`，但只支持 Lesson Preparation 的 global/当前 CourseRun，不进行开放式同义词或 LLM 冲突判断。
+
+新的 Web 发送路径调用 server-owned `dispatch-turn`。纯 `explicit-memory-command-interpreter@1` 先区分普通请求、remember、forget 请求、临时覆盖、不支持和拒绝；只有 `teacher-preference-catalog@1` 完整覆盖的低风险 remember 才通过 typed Personalization service 写 Candidate/Preference。新项在一个 Personalization 事务内直接确认；完全重复不增加 epoch，同 key/Scope 不同值只创建 draft Candidate，老师需显式替换或保留。Work 不直接写 Personalization，Personalization 也不写 Work/Runtime；命令、Personalization 和回执采用 at-least-once + stable idempotency 恢复。
 
 `teacherMemoryEpoch` 在确认、值更新、Scope/valid time 更新和撤销的同一事务中递增，普通读取不递增。它进入 Pack V2 hash，为未来 cache/continuation 失效提供平台版本；已封存 Run 保留运行时 epoch，不因后续修改而改写。旧 Skill 故意只通过兼容 Port 读取当前有效的 global、无 Skill 限制 Preference，防止 scoped row 无差别进入 Material Generation、Reflection 等尚未迁移的 Skill。
 
@@ -191,7 +196,7 @@ Runtime/Context orchestration 继续拥有 pack 真值。历史 `MemoryContextPa
 
 Composition 在 Provider 调用前通过 typed `MemoryApplicationRecorder` 把 durable Preference decision best-effort 写入 Personalization；V2 的 `scope_hash` 使用真实 query Scope hash，并记录 selected/injected/overridden/excluded。失败仅把 Runtime 观测状态标为 `degraded`，不改变 ModelExecution 或 Proposal。正式处置后，既有 `SuggestionDisposed` Outbox 以最小 payload、at-least-once 追加 outcome。RunExplanation 在 owner 授权下从 Work/Runtime 动态解析当前要求和同任务摘要，并从 Preference immutable revision 解析当时值；历史 V1 标记“旧版全局偏好上下文”，历史 V2 能显示当时作用范围和后来撤销状态，新 Run 不再选取已撤销项。Manifest/application 不保存 Turn 原文副本、Preference value 副本、完整 Prompt/Provider 响应、隐藏推理或 Evidence 正文。
 
-`MEMORY_SCOPED_PREFERENCES_ENABLED` 在 local/test 默认开启、production 未显式配置时关闭。关闭不逆向 Migration、不删除 scoped row 或历史 Run；只允许新增/修改 unrestricted global（`skillIds=[]`）Preference、隐藏设置控件，并让新 Lesson Preparation 使用 `@5` global 兼容路径。该回滚不影响 Conversation、WorkingMemory 或 M0-lite application/outcome。
+`MEMORY_SCOPED_PREFERENCES_ENABLED` 和 `MEMORY_EXPLICIT_REMEMBER_ENABLED` 均在 local/test 默认开启、production 未显式配置时关闭；Explicit Remember 依赖前者，不能降级为 unrestricted Preference。关闭不逆向 Migration、不删除 scoped row、历史 receipt 或 Run；前者只允许新增/修改 unrestricted global（`skillIds=[]`）Preference、隐藏 Scope 控件并让新 Lesson Preparation 使用 `@5`，后者只停止新的显式命令 Candidate/Preference 写入。普通 Conversation、WorkingMemory 和 M0-lite application/outcome 不受影响。
 
 ## 10. Teaching Workspace 读取层与材料闭环
 

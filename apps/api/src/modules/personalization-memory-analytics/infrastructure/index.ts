@@ -14,3 +14,7 @@ export {
   readMemoryScopedPreferencesSettings,
   type MemoryScopedPreferencesSettings
 } from "./memory-scoped-preferences-config.js";
+export {
+  readMemoryExplicitRememberSettings,
+  type MemoryExplicitRememberSettings
+} from "./memory-explicit-remember-config.js";

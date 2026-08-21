@@ -8,7 +8,7 @@
 ## 近期：完成 Teaching Workspace 端到端产品验收
 
 - 验收 Lesson Journey、Lesson Brief、备课 Proposal、Material Bundle、课堂快速反馈、Reflection 与下一课优化的同页工作流；
-- 确认 50 个只向前 Migration、开发数据库和 LocalObjectStore 均未被改变；
+- 确认 51 个只向前 Migration、开发数据库和 LocalObjectStore 均未被改变；
 - 验证 confirmed Reflection → 版本化行动候选 → 教师接受 → 下一课 Preparation Task 的完整重启恢复链路；
 - 教材/课程标准/考点 Knowledge Layer 在独立阶段设计，不在缺少来源时伪造权威结论。
 
@@ -20,13 +20,13 @@ M1 技术基线已经交付同一备课 Task/Conversation 的短期连续性。�
 
 - **M0-lite（当前代码已具备，未标记 Verified Gate）：**只读 `MemoryContextPackManifest@1`、“本次参考”解释、durable Preference application/outcome 与 degraded 观测；不改变检索、Prompt 或模型语义；
 - **M2A（当前代码已具备，未标记 Verified Gate）：**Lesson Preparation 的结构化 scoped TeacherPreference、valid time、Skill constraint、teacherMemoryEpoch、确定性覆盖和 `MemoryContextPackManifest@2`；设置页只暴露 global/CourseRun；
-- **M2B（未实现）：**自然语言“记住”的受控 canonicalization、consent 与教师确认链路；
+- **M2B（当前代码已具备，未标记 Verified Gate）：**Lesson Preparation 对话中的明确“记住”、受控低风险 Catalog/确定性 canonicalization、`teacher_explicit_command` consent、重复去重，以及同 key/Scope 冲突的教师替换/保留；不从普通话语自动推断长期偏好；
 - **M2C（未实现）：**自然语言“忘掉 / 仅本次”、正式临时 override 与清晰撤销语义；
 - **M3（未实现）：**编辑、采用、拒绝和局部重生成等最小化 Observation，先 shadow 评测，再形成待教师确认的 Candidate；
 - **M4（未实现）：**scope 覆盖/冲突、经确认的 Episode/Procedural Habit；结构化过滤和全文检索优先；
 - **M5（未实现）：**效果治理、导出/遗忘、redaction/tombstone 与批准的 retention 清理；只有评测证明结构化与全文检索不足时，才评估脱敏摘要的语义向量检索。
 
-Candidate 在教师确认前不得进入正式 Context；M2B、M2C 与 M3–M5 不得被当前 M1/M0-lite/M2A 表、界面文案或文档描述成已实现。
+Candidate 在教师确认前不得进入正式 Context；M2B 只对明确命令的完整低风险 Catalog 项走 direct confirmation，冲突 Candidate 仍须教师显式处置。M2C 与 M3–M5 不得被当前 M1/M0-lite/M2A/M2B 表、界面文案或文档描述成已实现。
 
 ## 后续生产阶段：Gate 2.10B 云部署与小范围试点
 

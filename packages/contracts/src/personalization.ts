@@ -57,6 +57,11 @@ export const MemoryCandidateViewSchema = z.object({
   validFrom: z.string().datetime().nullable().default(null),
   validUntil: z.string().datetime().nullable().default(null),
   consentProposal: TeacherPreferenceConsentProposalSchema.nullable().default(null),
+  sourceCommandRef: z.string().min(1).nullable().default(null),
+  conflictPreferenceRef: z.string().min(1).nullable().default(null),
+  conflictPreferenceVersion: z.number().int().positive().nullable().default(null),
+  reviewReason: z.string().min(1).max(120).nullable().default(null),
+  parsingRuleId: z.string().min(1).max(120).nullable().default(null),
   sources: z.array(MemoryCandidateSourceSchema).min(1),
   confidence: z.number().min(0).max(1),
   proposedBy: z.enum(["teacher", "agent"]),
@@ -105,7 +110,8 @@ export const TeacherPreferenceViewSchema = z.object({
 export const TeacherPersonalizationStateSchema = z.object({
   candidates: z.array(MemoryCandidateViewSchema),
   preferences: z.array(TeacherPreferenceViewSchema),
-  scopedPreferencesEnabled: z.boolean().default(false)
+  scopedPreferencesEnabled: z.boolean().default(false),
+  explicitRememberEnabled: z.boolean().default(false)
 });
 
 export const CreateMemoryCandidateRequestSchema = z.object({

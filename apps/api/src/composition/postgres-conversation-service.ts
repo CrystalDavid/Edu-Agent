@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  AppendAssistantCommandReceiptResultSchema,
+  AppendTeacherCommandTurnResultSchema,
   AppendTeacherConversationTurnResultSchema,
   CloseTeacherConversationResultSchema,
   ConversationThreadViewSchema,
@@ -8,6 +10,8 @@ import {
   CreateTeacherConversationResultSchema,
   type AppendTeacherConversationTurnRequest,
   type AppendTeacherConversationTurnResult,
+  type AppendTeacherCommandTurnResult,
+  type AppendAssistantCommandReceiptResult,
   type AuthorizationDecision,
   type CloseTeacherConversationRequest,
   type CloseTeacherConversationResult,
@@ -380,6 +384,307 @@ export class PostgresConversationService {
         })
       );
       const result = AppendTeacherConversationTurnResultSchema.parse({
+        replayed: false,
+        conversation: this.view(updated, turns, snapshot),
+        turn,
+        workingMemory: snapshot
+      });
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async requireDispatchContext(input: {
+    tenantRef: string;
+    actorRef: string;
+    conversationRef: string;
+    allowedCourseRunRefs: readonly string[];
+  }): Promise<ConversationThreadView> {
+    const conversation = await this.get(input);
+    if (
+      conversation.status !== "active" ||
+      !input.allowedCourseRunRefs.includes(conversation.courseRunRef)
+    ) {
+      throw new NotFoundError("The conversation was not found.");
+    }
+    const task = await this.preparation.getPreparationTask(
+      this.pool,
+      input.tenantRef,
+      conversation.taskRef,
+      input.actorRef
+    );
+    if (
+      !task ||
+      task.courseRunRef !== conversation.courseRunRef ||
+      task.lessonRef !== conversation.lessonRef
+    ) {
+      throw new NotFoundError("The conversation was not found.");
+    }
+    return conversation;
+  }
+
+  async appendTeacherCommandTurn(input: {
+    tenantRef: string;
+    actorRef: string;
+    conversationRef: string;
+    teacherText: string;
+    parentTurnRef: string | null;
+    expectedConversationVersion: number;
+    idempotencyKey: string;
+  }): Promise<AppendTeacherCommandTurnResult> {
+    const now = this.clock().toISOString();
+    const purpose = "teacher-copilot.conversation.dispatch-turn";
+    const rootKey = [
+      input.tenantRef,
+      input.actorRef,
+      "conversation.append-teacher-command",
+      input.idempotencyKey
+    ].join("|");
+    const writeContext = this.writeContext(
+      input.actorRef,
+      purpose,
+      input.idempotencyKey,
+      rootKey,
+      now
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: hash({
+          conversationRef: input.conversationRef,
+          teacherText: input.teacherText,
+          parentTurnRef: input.parentTurnRef,
+          expectedConversationVersion: input.expectedConversationVersion
+        }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "conversation-command-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return AppendTeacherCommandTurnResultSchema.parse({
+          ...reservation.result,
+          replayed: true
+        });
+      }
+      const thread = await this.requireActiveThread(client, input);
+      if (thread.version !== input.expectedConversationVersion) {
+        throw new DomainConflictError(
+          "CONVERSATION_VERSION_CONFLICT",
+          "The conversation changed before this command was appended."
+        );
+      }
+      if (thread.lastTurnRef !== input.parentTurnRef) {
+        throw new DomainConflictError(
+          "CONVERSATION_PARENT_CONFLICT",
+          "The command parent is not the latest visible conversation turn."
+        );
+      }
+      const turn = this.teacherTurn({
+        conversationRef: thread.conversationRef,
+        sequence: thread.lastTurnSequence + 1,
+        parentTurnRef: thread.lastTurnRef,
+        teacherText: input.teacherText,
+        contentKind: "command",
+        createdAt: now
+      });
+      const decision = this.decision({
+        decisionRef: writeContext.authorizationDecisionRef,
+        tenantRef: input.tenantRef,
+        actorRef: input.actorRef,
+        action: "teacher-copilot.conversation.dispatch-memory-command",
+        resourceRef: thread.conversationRef,
+        purpose,
+        decidedAt: now
+      });
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "conversation-command-authorization"
+          )
+        }),
+        await this.conversations.insertTurn(client, {
+          turn,
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "conversation-teacher-command"
+          )
+        })
+      ];
+      const updated = await this.advanceThread(client, thread, turn, now);
+      const [turns, snapshot] = await Promise.all([
+        this.conversations.listTurns(client, thread.conversationRef),
+        this.workingMemory.getActive(client, {
+          tenantRef: thread.tenantRef,
+          teacherRef: thread.teacherRef,
+          conversationRef: thread.conversationRef,
+          asOf: now
+        })
+      ]);
+      const result = AppendTeacherCommandTurnResultSchema.parse({
+        replayed: false,
+        conversation: this.view(updated, turns, snapshot),
+        turn,
+        workingMemory: snapshot
+      });
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async appendAssistantCommandReceipt(input: {
+    tenantRef: string;
+    actorRef: string;
+    conversationRef: string;
+    commandTurnRef: string;
+    expectedConversationVersion: number;
+    commandRef: string;
+    safeSummary: string;
+    candidateRefs: readonly string[];
+    preferenceRefs: readonly string[];
+    idempotencyKey: string;
+  }): Promise<AppendAssistantCommandReceiptResult> {
+    const now = this.clock().toISOString();
+    const purpose = "teacher-copilot.conversation.command-receipt";
+    const rootKey = [
+      input.tenantRef,
+      input.actorRef,
+      "conversation.append-command-receipt",
+      input.idempotencyKey
+    ].join("|");
+    const writeContext = this.writeContext(
+      input.actorRef,
+      purpose,
+      input.idempotencyKey,
+      rootKey,
+      now
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: hash({
+          conversationRef: input.conversationRef,
+          commandTurnRef: input.commandTurnRef,
+          expectedConversationVersion: input.expectedConversationVersion,
+          commandRef: input.commandRef,
+          safeSummary: input.safeSummary,
+          candidateRefs: input.candidateRefs,
+          preferenceRefs: input.preferenceRefs
+        }),
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "conversation-command-receipt-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return AppendAssistantCommandReceiptResultSchema.parse({
+          ...reservation.result,
+          replayed: true
+        });
+      }
+      const thread = await this.requireActiveThread(client, input);
+      const commandTurn = await this.conversations.getTurn(
+        client,
+        thread.conversationRef,
+        input.commandTurnRef
+      );
+      if (
+        thread.version !== input.expectedConversationVersion ||
+        thread.lastTurnRef !== input.commandTurnRef ||
+        !commandTurn ||
+        commandTurn.actorKind !== "teacher" ||
+        commandTurn.contentKind !== "command"
+      ) {
+        throw new DomainConflictError(
+          "CONVERSATION_COMMAND_RECEIPT_CONFLICT",
+          "The command receipt no longer matches the latest teacher command."
+        );
+      }
+      const turn = this.assistantCommandTurn({
+        conversationRef: thread.conversationRef,
+        sequence: thread.lastTurnSequence + 1,
+        parentTurnRef: commandTurn.turnRef,
+        surfaceSummary: input.safeSummary,
+        candidateRefs: input.candidateRefs,
+        preferenceRefs: input.preferenceRefs,
+        createdAt: now
+      });
+      const decision = this.decision({
+        decisionRef: writeContext.authorizationDecisionRef,
+        tenantRef: input.tenantRef,
+        actorRef: input.actorRef,
+        action: purpose,
+        resourceRef: thread.conversationRef,
+        purpose,
+        decidedAt: now
+      });
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "conversation-command-receipt-authorization"
+          )
+        }),
+        await this.conversations.insertTurn(client, {
+          turn,
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "conversation-assistant-command-receipt"
+          )
+        })
+      ];
+      const updated = await this.advanceThread(client, thread, turn, now);
+      const [turns, snapshot] = await Promise.all([
+        this.conversations.listTurns(client, thread.conversationRef),
+        this.workingMemory.getActive(client, {
+          tenantRef: thread.tenantRef,
+          teacherRef: thread.teacherRef,
+          conversationRef: thread.conversationRef,
+          asOf: now
+        })
+      ]);
+      const result = AppendAssistantCommandReceiptResultSchema.parse({
         replayed: false,
         conversation: this.view(updated, turns, snapshot),
         turn,
@@ -888,6 +1193,7 @@ export class PostgresConversationService {
     sequence: number;
     parentTurnRef: string | null;
     teacherText: string;
+    contentKind?: "teacher_text" | "command";
     createdAt: string;
   }): ConversationTurnView {
     const payload = {
@@ -896,12 +1202,44 @@ export class PostgresConversationService {
       sequence: input.sequence,
       parentTurnRef: input.parentTurnRef,
       actorKind: "teacher" as const,
-      contentKind: "teacher_text" as const,
+      contentKind: input.contentKind ?? "teacher_text",
       teacherText: input.teacherText.trim(),
       surfaceSummary: null,
       taskRunRef: null,
       agentRunRef: null,
       resultRefs: {},
+      createdAt: input.createdAt
+    };
+    return ConversationTurnViewSchema.parse({
+      ...payload,
+      contentHash: hash(payload)
+    });
+  }
+
+  private assistantCommandTurn(input: {
+    conversationRef: string;
+    sequence: number;
+    parentTurnRef: string;
+    surfaceSummary: string;
+    candidateRefs: readonly string[];
+    preferenceRefs: readonly string[];
+    createdAt: string;
+  }): ConversationTurnView {
+    const payload = {
+      turnRef: `turn:${randomUUID()}`,
+      conversationRef: input.conversationRef,
+      sequence: input.sequence,
+      parentTurnRef: input.parentTurnRef,
+      actorKind: "assistant_surface" as const,
+      contentKind: "command" as const,
+      teacherText: null,
+      surfaceSummary: input.surfaceSummary.trim(),
+      taskRunRef: null,
+      agentRunRef: null,
+      resultRefs: {
+        candidateRefs: uniqueRefs(input.candidateRefs),
+        preferenceRefs: uniqueRefs(input.preferenceRefs)
+      },
       createdAt: input.createdAt
     };
     return ConversationTurnViewSchema.parse({
@@ -987,6 +1325,11 @@ function hash(value: unknown): string {
   return createHash("sha256")
     .update(JSON.stringify(value))
     .digest("hex");
+}
+
+function uniqueRefs(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
+    .slice(0, 10);
 }
 
 function hasExpired(

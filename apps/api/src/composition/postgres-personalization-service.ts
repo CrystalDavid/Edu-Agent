@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import {
+  ApplyExplicitRememberResultSchema,
+  ConfirmMemoryCandidateReplacementRequestSchema,
+  ConfirmMemoryCandidateReplacementResultSchema,
   CreateMemoryCandidateRequestSchema,
+  ExplicitTeacherMemoryCommandInterpretationSchema,
   MemoryCandidateMutationResultSchema,
   MemoryCandidateViewSchema,
   ReviewMemoryCandidateRequestSchema,
@@ -12,14 +16,17 @@ import {
   UpdateTeacherPreferenceRequestSchema,
   RevokeTeacherPreferenceRequestSchema,
   type AuthorizationDecision,
+  type ExplicitRememberCommandItem,
   type FormalWriteReceipt,
-  type MemoryScope
+  type MemoryScope,
+  type ExplicitTeacherMemoryCommandInterpretation
 } from "@edu-agent/contracts";
 import type { Pool } from "pg";
 
 import {
   MemoryCandidateApplicationError,
   MemoryCandidateService,
+  type ExplicitTeacherMemoryCommandService,
   type ConfirmedTeacherPreferenceSnapshot,
   type PersonalizationContextProvider,
   type ResolvedConfirmedPreferences,
@@ -32,12 +39,15 @@ import {
   evaluateTeacherPreference,
   normalizeCanonicalPreferenceKey,
   resolveTeacherPreferences,
+  teacherPreferenceCatalogLabel,
   type MemoryCandidate,
   type TeacherPreference
 } from "../modules/personalization-memory-analytics/domain/index.js";
 import {
   PostgresMemoryCandidateRepository,
+  readMemoryExplicitRememberSettings,
   readMemoryScopedPreferencesSettings,
+  type MemoryExplicitRememberSettings,
   type MemoryScopedPreferencesSettings
 } from "../modules/personalization-memory-analytics/infrastructure/index.js";
 import {
@@ -62,7 +72,7 @@ type CommandContext = {
 };
 
 export class PostgresPersonalizationService
-  implements PersonalizationContextProvider
+  implements PersonalizationContextProvider, ExplicitTeacherMemoryCommandService
 {
   constructor(
     private readonly pool: Pool,
@@ -71,11 +81,18 @@ export class PostgresPersonalizationService
     private readonly scopeAuthorization:
       TeacherPreferenceScopeAuthorizationPort = globalOnlyScopeAuthorization,
     private readonly scopedSettings: MemoryScopedPreferencesSettings =
-      readMemoryScopedPreferencesSettings()
+      readMemoryScopedPreferencesSettings(),
+    private readonly explicitRememberSettings: MemoryExplicitRememberSettings =
+      readMemoryExplicitRememberSettings()
   ) {}
 
   get scopedPreferencesEnabled(): boolean {
     return this.scopedSettings.enabled;
+  }
+
+  get explicitRememberEnabled(): boolean {
+    return this.explicitRememberSettings.enabled &&
+      this.scopedSettings.enabled;
   }
 
   async getState(input: { tenantRef: string; actorRef: string }) {
@@ -97,7 +114,8 @@ export class PostgresPersonalizationService
     return TeacherPersonalizationStateSchema.parse({
       candidates: candidates.map(candidateView),
       preferences: preferences.map(preferenceView),
-      scopedPreferencesEnabled: this.scopedSettings.enabled
+      scopedPreferencesEnabled: this.scopedSettings.enabled,
+      explicitRememberEnabled: this.explicitRememberEnabled
     });
   }
 
@@ -268,6 +286,12 @@ export class PostgresPersonalizationService
           ) {
             throw new NotFoundError("个性化记录不存在。");
           }
+          if (candidate.content.conflictPreferenceRef) {
+            throw new DomainConflictError(
+              "MEMORY_REPLACEMENT_CONFIRMATION_REQUIRED",
+              "该偏好与现有记录冲突，请明确选择替换或保留原偏好。"
+            );
+          }
           const scope = candidate.content.proposedScope ?? createMemoryScope({
             kind: "global",
             subject: null,
@@ -416,6 +440,328 @@ export class PostgresPersonalizationService
         });
       }
     }, TeacherPreferenceMutationResultSchema.parse);
+  }
+
+  async applyExplicitRemember(input: {
+    readonly tenantRef: string;
+    readonly actorRef: string;
+    readonly allowedCourseRunRefs: readonly string[];
+    readonly command: Extract<
+      ExplicitTeacherMemoryCommandInterpretation,
+      { readonly intent: "remember" }
+    >;
+    readonly purpose: "personalization.explicit-remember.apply";
+    readonly idempotencyKey: string;
+  }) {
+    this.assertActor(input);
+    const command = ExplicitTeacherMemoryCommandInterpretationSchema.parse(
+      input.command
+    );
+    if (
+      command.intent !== "remember" ||
+      !command.fullCoverage ||
+      command.residualText !== "" ||
+      command.items.length === 0 ||
+      command.items.some((item) =>
+        item.riskLevel !== "low" || !item.directActivationEligible
+      )
+    ) {
+      throw new DomainConflictError(
+        "EXPLICIT_REMEMBER_NOT_ELIGIBLE",
+        "该命令未满足安全的长期偏好直接启用条件。"
+      );
+    }
+    if (!this.explicitRememberEnabled) {
+      throw new DomainConflictError(
+        "EXPLICIT_REMEMBER_DISABLED",
+        "长期偏好功能当前未启用，本次未保存。"
+      );
+    }
+    for (const scope of uniqueScopes(command.items.map((item) => item.proposedScope))) {
+      await this.scopeAuthorization.assertAuthorized({
+        tenantRef: input.tenantRef,
+        teacherRef: input.actorRef,
+        scope,
+        allowedCourseRunRefs: input.allowedCourseRunRefs,
+        purpose: input.purpose
+      });
+    }
+    return this.executeCommand({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      purpose: input.purpose,
+      idempotencyKey: input.idempotencyKey,
+      requestFingerprint: hash({
+        sourceTurnRef: command.sourceTurnRef,
+        sourceTurnContentHash: command.sourceTurnContentHash,
+        commandContentHash: command.commandContentHash,
+        items: command.items
+      }),
+      action: input.purpose,
+      resourceRef: command.sourceTurnRef,
+      requestedFieldMask: [
+        "memoryCandidate.safeCanonicalPreference",
+        "teacherPreference.value",
+        "teacherPreference.scope"
+      ],
+      operation: async ({ client, writeContext, receipts }) => {
+        const repository = new PostgresMemoryCandidateRepository(
+          client,
+          (suffix) => createWriteMetadata(
+            writeContext,
+            "personalization",
+            suffix
+          )
+        );
+        const memoryEpochBefore = await repository.getMemoryEpoch({
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        });
+        const active = await repository.listPreferences({
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef,
+          statuses: ["active"]
+        });
+        const itemResults: ExplicitRememberCommandItem[] = [];
+        for (const item of command.items) {
+          const current = active.find((preference) =>
+            preference.canonicalKey === item.canonicalKey &&
+            preference.scopeFingerprint === item.proposedScope.fingerprint
+          );
+          const currentValid = current !== undefined &&
+            Date.parse(current.validFrom) <= Date.parse(writeContext.createdAt) &&
+            (current.validUntil === null ||
+              Date.parse(writeContext.createdAt) < Date.parse(current.validUntil));
+          if (current && currentValid &&
+              current.preferenceValue === item.canonicalValue) {
+            itemResults.push(receiptItem({
+              item,
+              status: "already_remembered",
+              candidateRef: null,
+              preference: current,
+              conflict: null,
+              safeReasonCode: "exact_active_preference_exists"
+            }));
+            continue;
+          }
+
+          const candidateRef = `memory-candidate:${randomUUID()}`;
+          const itemService = new MemoryCandidateService(
+            new PostgresMemoryCandidateRepository(
+              client,
+              (suffix) => createWriteMetadata(
+                writeContext,
+                "personalization",
+                `explicit-memory-item:${candidateRef}:${suffix}`
+              )
+            ),
+            () => new Date(writeContext.createdAt)
+          );
+          const candidate = await itemService.create({
+            candidateRef,
+            owner: {
+              tenantRef: input.tenantRef,
+              teacherRef: input.actorRef
+            },
+            type: "preference",
+            content: {
+              summary: safeCandidateSummary(
+                item.canonicalKey,
+                item.safeDisplayValue
+              ),
+              preferenceKey: item.preferenceKey,
+              preferenceValue: item.canonicalValue,
+              canonicalKey: item.canonicalKey,
+              proposedScope: item.proposedScope,
+              validFrom: writeContext.createdAt,
+              validUntil: null,
+              consentProposal: {
+                basis: "teacher_explicit_command",
+                version: "consent:explicit-remember@1"
+              },
+              sourceCommandRef: command.sourceTurnRef,
+              parsingRuleId: item.parsingRuleId,
+              ...(current
+                ? {
+                    conflictPreferenceRef: current.preferenceRef,
+                    conflictPreferenceVersion: current.version,
+                    reviewReason: "existing_preference_conflict"
+                  }
+                : {})
+            },
+            sources: [{
+              sourceRef: command.sourceTurnRef,
+              sourceType: "teacher_request",
+              version: String(command.sourceTurnSequence),
+              contentHash: command.sourceTurnContentHash,
+              provenance:
+                "work.conversation_turn.teacher_explicit_memory_command"
+            }],
+            confidence: 1,
+            proposedBy: "teacher",
+            createdByRef: input.actorRef,
+            expiresAt: new Date(
+              Date.parse(writeContext.createdAt) + 90 * 24 * 60 * 60 * 1_000
+            ).toISOString()
+          });
+          receipts.push(createReceipt({
+            writeRef: candidate.candidateRef,
+            recordType: "ExplicitMemoryCandidateCreated",
+            metadata: createWriteMetadata(
+              writeContext,
+              "personalization",
+              `explicit-memory-candidate:${candidate.candidateRef}`
+            )
+          }));
+          if (current) {
+            itemResults.push(receiptItem({
+              item,
+              status: "review_required",
+              candidateRef: candidate.candidateRef,
+              preference: null,
+              conflict: current,
+              safeReasonCode: currentValid
+                ? "active_preference_conflict"
+                : "inactive_validity_preference_conflict"
+            }));
+            continue;
+          }
+          const confirmed = await itemService.confirm({
+            candidateRef: candidate.candidateRef,
+            actorRef: input.actorRef,
+            tenantRef: input.tenantRef,
+            expectedVersion: candidate.version,
+            preferenceRef: `teacher-preference:${randomUUID()}`
+          });
+          if (!confirmed.preference) {
+            throw new Error("Explicit preference confirmation produced no preference.");
+          }
+          receipts.push(createReceipt({
+            writeRef: confirmed.preference.preferenceRef,
+            recordType: "ExplicitTeacherPreferenceActivated",
+            metadata: createWriteMetadata(
+              writeContext,
+              "personalization",
+              `explicit-preference:${confirmed.preference.preferenceRef}`
+            )
+          }));
+          itemResults.push(receiptItem({
+            item,
+            status: "applied",
+            candidateRef: confirmed.candidate.candidateRef,
+            preference: confirmed.preference,
+            conflict: null,
+            safeReasonCode: "explicit_teacher_command_applied"
+          }));
+        }
+        const memoryEpochAfter = await repository.getMemoryEpoch({
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        });
+        const status = aggregateReceiptStatus(itemResults);
+        const receipt = {
+          commandRef: `memory-command:${command.commandContentHash.slice(0, 32)}`,
+          interpreterVersion: command.interpreterVersion,
+          sourceTurnRef: command.sourceTurnRef,
+          sourceTurnContentHash: command.sourceTurnContentHash,
+          status,
+          safeReasonCode: receiptReasonCode(status),
+          safeMessage: receiptMessage(status, itemResults.length),
+          items: itemResults,
+          memoryEpochBefore,
+          memoryEpochAfter,
+          createdAt: writeContext.createdAt
+        };
+        receipts.push(createReceipt({
+          writeRef: receipt.commandRef,
+          recordType: "ExplicitTeacherMemoryCommandEvaluated",
+          metadata: createWriteMetadata(
+            writeContext,
+            "personalization",
+            "explicit-memory-command-audit"
+          )
+        }));
+        return ApplyExplicitRememberResultSchema.parse({
+          replayed: false,
+          receipt
+        });
+      }
+    }, ApplyExplicitRememberResultSchema.parse);
+  }
+
+  async confirmCandidateReplacement(input: {
+    tenantRef: string;
+    actorRef: string;
+    candidateRef: string;
+    allowedCourseRunRefs: readonly string[];
+    request: unknown;
+  }) {
+    this.assertActor(input);
+    const request = ConfirmMemoryCandidateReplacementRequestSchema.parse(
+      input.request
+    );
+    return this.executeCommand({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      purpose: request.purpose,
+      idempotencyKey: request.idempotencyKey,
+      requestFingerprint: hash({
+        candidateRef: input.candidateRef,
+        ...request
+      }),
+      action: request.purpose,
+      resourceRef: input.candidateRef,
+      requestedFieldMask: [
+        "memoryCandidate.status",
+        "teacherPreference.value",
+        "teacherPreference.sourceCandidate"
+      ],
+      operation: async ({ client, writeContext, receipts }) => {
+        const repository = new PostgresMemoryCandidateRepository(client);
+        const candidate = await repository.getCandidate(input.candidateRef);
+        if (
+          !candidate ||
+          candidate.owner.tenantRef !== input.tenantRef ||
+          candidate.owner.teacherRef !== input.actorRef ||
+          !candidate.content.conflictPreferenceRef ||
+          !candidate.content.proposedScope
+        ) {
+          throw new NotFoundError("个性化记录不存在。");
+        }
+        await this.scopeAuthorization.assertAuthorized({
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef,
+          scope: candidate.content.proposedScope,
+          allowedCourseRunRefs: input.allowedCourseRunRefs,
+          purpose: request.purpose
+        });
+        const result = await this.commandService(
+          client,
+          writeContext
+        ).confirmReplacement({
+          candidateRef: candidate.candidateRef,
+          preferenceRef: candidate.content.conflictPreferenceRef,
+          actorRef: input.actorRef,
+          tenantRef: input.tenantRef,
+          expectedCandidateVersion: request.expectedCandidateVersion,
+          expectedPreferenceVersion: request.expectedPreferenceVersion
+        });
+        receipts.push(createReceipt({
+          writeRef: result.preference.preferenceRef,
+          recordType: "ExplicitTeacherPreferenceReplaced",
+          metadata: createWriteMetadata(
+            writeContext,
+            "personalization",
+            "explicit-memory-replacement-audit"
+          )
+        }));
+        return ConfirmMemoryCandidateReplacementResultSchema.parse({
+          replayed: false,
+          candidate: candidateView(result.candidate),
+          preference: preferenceView(result.preference)
+        });
+      }
+    }, ConfirmMemoryCandidateReplacementResultSchema.parse);
   }
 
   async listConfirmedPreferences(input: {
@@ -728,6 +1074,12 @@ function candidateView(candidate: MemoryCandidate) {
     validFrom: candidate.content.validFrom ?? null,
     validUntil: candidate.content.validUntil ?? null,
     consentProposal: candidate.content.consentProposal ?? null,
+    sourceCommandRef: candidate.content.sourceCommandRef ?? null,
+    conflictPreferenceRef: candidate.content.conflictPreferenceRef ?? null,
+    conflictPreferenceVersion:
+      candidate.content.conflictPreferenceVersion ?? null,
+    reviewReason: candidate.content.reviewReason ?? null,
+    parsingRuleId: candidate.content.parsingRuleId ?? null,
     sources: candidate.sources,
     confidence: candidate.confidence,
     proposedBy: candidate.proposedBy,
@@ -830,6 +1182,88 @@ function isPostgresUniqueViolation(error: unknown): boolean {
 
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function uniqueScopes(scopes: readonly MemoryScope[]): readonly MemoryScope[] {
+  return [...new Map(scopes.map((scope) => [scope.fingerprint, scope])).values()];
+}
+
+function safeCandidateSummary(
+  canonicalKey: string,
+  displayValue: string
+): string {
+  return `${teacherPreferenceCatalogLabel(canonicalKey)}：${displayValue}`;
+}
+
+function receiptItem(input: {
+  item: {
+    canonicalKey: string;
+    preferenceKey: string;
+    safeDisplayValue: string;
+    proposedScope: MemoryScope;
+    parsingRuleId: string;
+  };
+  status: ExplicitRememberCommandItem["status"];
+  candidateRef: string | null;
+  preference: TeacherPreference | null;
+  conflict: TeacherPreference | null;
+  safeReasonCode: string;
+}): ExplicitRememberCommandItem {
+  return Object.freeze({
+    canonicalKey: input.item.canonicalKey,
+    preferenceKey: input.item.preferenceKey,
+    displayValue: input.item.safeDisplayValue,
+    previousDisplayValue: input.conflict?.preferenceValue ?? null,
+    scope: input.item.proposedScope,
+    parsingRuleId: input.item.parsingRuleId,
+    status: input.status,
+    candidateRef: input.candidateRef,
+    preferenceRef: input.preference?.preferenceRef ?? null,
+    preferenceVersion: input.preference?.version ?? null,
+    conflictPreferenceRef: input.conflict?.preferenceRef ?? null,
+    conflictPreferenceVersion: input.conflict?.version ?? null,
+    safeReasonCode: input.safeReasonCode
+  });
+}
+
+function aggregateReceiptStatus(
+  items: readonly ExplicitRememberCommandItem[]
+): "applied" | "already_remembered" | "review_required" | "mixed" {
+  const statuses = new Set(items.map((item) => item.status));
+  if (statuses.size !== 1) return "mixed";
+  const status = items[0]?.status;
+  if (status === "applied" || status === "already_remembered" ||
+      status === "review_required") {
+    return status;
+  }
+  return "mixed";
+}
+
+function receiptReasonCode(
+  status: "applied" | "already_remembered" | "review_required" | "mixed"
+): string {
+  return {
+    applied: "explicit_preferences_applied",
+    already_remembered: "explicit_preferences_already_remembered",
+    review_required: "explicit_preference_conflict_review_required",
+    mixed: "explicit_preferences_mixed_result"
+  }[status];
+}
+
+function receiptMessage(
+  status: "applied" | "already_remembered" | "review_required" | "mixed",
+  count: number
+): string {
+  if (status === "applied") {
+    return `已记住 ${count} 条偏好。这些偏好会从下一次备课生成开始生效。`;
+  }
+  if (status === "already_remembered") {
+    return "这些偏好已经记住了，没有重复保存。";
+  }
+  if (status === "review_required") {
+    return "这次偏好与已保存偏好冲突，请明确选择替换原偏好或保留原偏好。";
+  }
+  return "偏好命令已处理；部分记录已经存在或需要你确认。";
 }
 
 const globalOnlyScopeAuthorization: TeacherPreferenceScopeAuthorizationPort = {

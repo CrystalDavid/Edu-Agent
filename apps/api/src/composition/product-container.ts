@@ -100,8 +100,15 @@ import {
   type MemoryScopedPreferencesSettings
 } from "../modules/personalization-memory-analytics/infrastructure/memory-scoped-preferences-config.js";
 import {
+  readMemoryExplicitRememberSettings,
+  type MemoryExplicitRememberSettings
+} from "../modules/personalization-memory-analytics/infrastructure/memory-explicit-remember-config.js";
+import {
   TeacherPreferenceScopeAuthorizationAdapter
 } from "./teacher-preference-scope-authorization-adapter.js";
+import {
+  PostgresConversationDispatchService
+} from "./postgres-conversation-dispatch-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -115,6 +122,7 @@ export function createProductContainer(
     conversationRetentionSettings?: ConversationRetentionSettings;
     memoryApplicationObservabilitySettings?: MemoryApplicationObservabilitySettings;
     memoryScopedPreferencesSettings?: MemoryScopedPreferencesSettings;
+    memoryExplicitRememberSettings?: MemoryExplicitRememberSettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -135,12 +143,16 @@ export function createProductContainer(
   const scopedPreferencesSettings =
     options.memoryScopedPreferencesSettings ??
     readMemoryScopedPreferencesSettings();
+  const explicitRememberSettings =
+    options.memoryExplicitRememberSettings ??
+    readMemoryExplicitRememberSettings();
   const personalization = new PostgresPersonalizationService(
     appPool,
     undefined,
     undefined,
     new TeacherPreferenceScopeAuthorizationAdapter(lessonPreparation),
-    scopedPreferencesSettings
+    scopedPreferencesSettings,
+    explicitRememberSettings
   );
   const lessonBriefStore = new PostgresLessonBriefStore(appPool);
   const conversationRetentionSettings =
@@ -149,6 +161,15 @@ export function createProductContainer(
   const conversations = new PostgresConversationService(appPool, {
     retention: conversationRetentionSettings
   });
+  const conversationDispatch = new PostgresConversationDispatchService(
+    conversations,
+    personalization,
+    {
+      explicitRememberEnabled:
+        explicitRememberSettings.enabled && scopedPreferencesSettings.enabled,
+      scopedPreferencesEnabled: scopedPreferencesSettings.enabled
+    }
+  );
   const memoryApplications = new PostgresMemoryApplicationService(
     appPool,
     options.memoryApplicationObservabilitySettings ??
@@ -304,6 +325,7 @@ export function createProductContainer(
       personalization,
       memoryApplications,
       conversations,
+      conversationDispatch,
       files
     },
     infrastructure: {

@@ -374,6 +374,8 @@ try {
     }
     const scopedPreferenceMode =
       controlUrl.searchParams.get("scoped-preferences");
+    const explicitRememberMode =
+      controlUrl.searchParams.get("explicit-remember");
     if (
       scopedPreferenceMode !== null &&
       !["enabled", "disabled", "default"].includes(scopedPreferenceMode)
@@ -381,6 +383,16 @@ try {
       response.statusCode = 400;
       response.end(JSON.stringify({
         code: "E2E_CONTROL_INVALID_SCOPED_PREFERENCE_MODE"
+      }));
+      return;
+    }
+    if (
+      explicitRememberMode !== null &&
+      !["enabled", "disabled", "default"].includes(explicitRememberMode)
+    ) {
+      response.statusCode = 400;
+      response.end(JSON.stringify({
+        code: "E2E_CONTROL_INVALID_EXPLICIT_REMEMBER_MODE"
       }));
       return;
     }
@@ -393,6 +405,13 @@ try {
         nextApiEnvironment.MEMORY_SCOPED_PREFERENCES_ENABLED = "false";
       } else if (scopedPreferenceMode === "default") {
         delete nextApiEnvironment.MEMORY_SCOPED_PREFERENCES_ENABLED;
+      }
+      if (explicitRememberMode === "enabled") {
+        nextApiEnvironment.MEMORY_EXPLICIT_REMEMBER_ENABLED = "true";
+      } else if (explicitRememberMode === "disabled") {
+        nextApiEnvironment.MEMORY_EXPLICIT_REMEMBER_ENABLED = "false";
+      } else if (explicitRememberMode === "default") {
+        delete nextApiEnvironment.MEMORY_EXPLICIT_REMEMBER_ENABLED;
       }
       intentionalStops.add(apiProcess);
       stopProcessTree(apiProcess);
@@ -416,7 +435,8 @@ try {
       response.end(JSON.stringify({
         restarted: true,
         runId,
-        scopedPreferences: scopedPreferenceMode ?? "unchanged"
+        scopedPreferences: scopedPreferenceMode ?? "unchanged",
+        explicitRemember: explicitRememberMode ?? "unchanged"
       }));
     } catch (error) {
       response.statusCode = 500;

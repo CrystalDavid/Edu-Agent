@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type {
+  ConversationTurnView,
+  MemoryCandidateView,
   PedagogicalStrategy,
   ConversationThreadView,
   LessonPreparationTaskDetail,
@@ -10,6 +12,7 @@ import type {
   CreateTeacherCopilotTaskRequest,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
+  TeacherPersonalizationState,
   TeacherWorkspace,
   TeachingPlan
 } from "@edu-agent/contracts";
@@ -31,17 +34,20 @@ import {
 import {
   ApiError,
   cancelModelInvocation,
-  appendTeacherConversationTurn,
+  confirmMemoryCandidateReplacement,
   createTeacherConversation,
   createModelInvocation,
   createTeacherCopilotTask,
+  dispatchTeacherConversationTurn,
   disposeSuggestion,
   loadLessonPreparationTask,
   loadModelInvocation,
   loadTeacherConversation,
+  loadTeacherPersonalization,
   loadPendingProposals,
   loadProposalDetail,
   retryModelInvocation,
+  reviewMemoryCandidate,
   updateTaskResourceSelection,
   type RecoverableCopilotTask
 } from "../api";
@@ -52,7 +58,8 @@ import {
 import { MemoryUseDisclosure } from "../components/memory/MemoryUseDisclosure";
 import {
   cleanDisplayText,
-  lessonPreparationStatusLabel
+  lessonPreparationStatusLabel,
+  teacherPreferenceLabel
 } from "../presentation";
 import type { AppRoute } from "../route";
 import { applyDiffToPlan } from "../teaching-plan";
@@ -117,6 +124,9 @@ export function CopilotPage(props: {
   );
   const [conversation, setConversation] =
     useState<ConversationThreadView | null>(null);
+  const [personalization, setPersonalization] =
+    useState<TeacherPersonalizationState | null>(null);
+  const [memoryActionRef, setMemoryActionRef] = useState<string | null>(null);
 
   function applyProposalDetail(detail: ProposalReviewDetail) {
     props.setTask(detail);
@@ -157,6 +167,20 @@ export function CopilotPage(props: {
       active = false;
     };
   }, [conversationRef]);
+
+  useEffect(() => {
+    let active = true;
+    void loadTeacherPersonalization()
+      .then((result) => {
+        if (active) setPersonalization(result);
+      })
+      .catch(() => {
+        // Conversation generation remains available when this optional view fails.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!modelExecutionRef) return;
@@ -443,25 +467,35 @@ export function CopilotPage(props: {
             })
           ).conversation;
         }
-        const appended = await appendTeacherConversationTurn(
+        const dispatched = await dispatchTeacherConversationTurn(
           activeConversation.conversationRef,
           {
             teacherText: taskPrompt,
             parentTurnRef: activeConversation.lastTurnRef,
             expectedConversationVersion:
               activeConversation.version,
-            purpose: "teacher-copilot.conversation.append-turn",
+            purpose: "teacher-copilot.conversation.dispatch-turn",
             idempotencyKey:
               `ui:conversation:turn:${crypto.randomUUID()}`
           }
         );
-        activeConversation = appended.conversation;
+        activeConversation = dispatched.conversation;
         setConversation(activeConversation);
         setConversationRef(activeConversation.conversationRef);
+        replaceConversationSearch(activeConversation.conversationRef, null);
+        if (dispatched.kind !== "model_instruction") {
+          setTaskPrompt("");
+          try {
+            setPersonalization(await loadTeacherPersonalization());
+          } catch {
+            // The durable receipt remains in Conversation and can be reloaded.
+          }
+          return;
+        }
         turnContext = {
           conversationRef: activeConversation.conversationRef,
-          turnRef: appended.turn.turnRef,
-          parentTurnRef: appended.turn.parentTurnRef,
+          turnRef: dispatched.turn.turnRef,
+          parentTurnRef: dispatched.turn.parentTurnRef,
           conversationVersion: activeConversation.version
         };
       }
@@ -541,6 +575,39 @@ export function CopilotPage(props: {
       }
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function resolveMemoryConflict(
+    candidate: MemoryCandidateView,
+    action: "replace" | "keep"
+  ) {
+    if (!candidate.conflictPreferenceVersion) return;
+    setMemoryActionRef(candidate.candidateRef);
+    setError(null);
+    try {
+      if (action === "replace") {
+        await confirmMemoryCandidateReplacement(candidate.candidateRef, {
+          expectedCandidateVersion: candidate.version,
+          expectedPreferenceVersion: candidate.conflictPreferenceVersion,
+          purpose: "personalization.candidate.confirm-replacement",
+          idempotencyKey: `ui:memory-replacement:${crypto.randomUUID()}`
+        });
+      } else {
+        await reviewMemoryCandidate(candidate.candidateRef, "reject", {
+          expectedVersion: candidate.version,
+          purpose: "personalization.candidate.reject",
+          idempotencyKey: `ui:memory-keep-original:${crypto.randomUUID()}`
+        });
+      }
+      setPersonalization(await loadTeacherPersonalization());
+      if (conversationRef) {
+        setConversation(await loadTeacherConversation(conversationRef));
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setMemoryActionRef(null);
     }
   }
 
@@ -834,6 +901,22 @@ export function CopilotPage(props: {
                 <Paragraph>
                   {turn.teacherText ?? turn.surfaceSummary}
                 </Paragraph>
+                {turn.actorKind === "assistant_surface" &&
+                turn.contentKind === "command" ? (
+                  <MemoryCommandReceiptDetails
+                    turn={turn}
+                    personalization={personalization}
+                    busyCandidateRef={memoryActionRef}
+                    onResolve={resolveMemoryConflict}
+                    onOpenSettings={() => {
+                      window.sessionStorage.setItem(
+                        "teacher-settings-section",
+                        "personalization"
+                      );
+                      props.navigate("/settings");
+                    }}
+                  />
+                ) : null}
               </div>
             ))}
           </Space>
@@ -1371,6 +1454,144 @@ function shortEvidenceLabel(reference: string): string {
     return "待复核解释";
   }
   return "其他依据";
+}
+
+function MemoryCommandReceiptDetails(props: {
+  turn: ConversationTurnView;
+  personalization: TeacherPersonalizationState | null;
+  busyCandidateRef: string | null;
+  onResolve: (
+    candidate: MemoryCandidateView,
+    action: "replace" | "keep"
+  ) => Promise<void>;
+  onOpenSettings: () => void;
+}) {
+  const candidateRefs = props.turn.resultRefs.candidateRefs ?? [];
+  const preferenceRefs = props.turn.resultRefs.preferenceRefs ?? [];
+  const candidates = candidateRefs.flatMap((candidateRef) => {
+    const candidate = props.personalization?.candidates.find(
+      (entry) => entry.candidateRef === candidateRef
+    );
+    return candidate ? [candidate] : [];
+  });
+  const candidatePreferenceRefs = new Set(
+    candidates.flatMap((candidate) =>
+      props.personalization?.preferences
+        .filter((preference) =>
+          preference.sourceCandidateRef === candidate.candidateRef
+        )
+        .map((preference) => preference.preferenceRef) ?? []
+    )
+  );
+  const directPreferences = preferenceRefs.flatMap((preferenceRef) => {
+    if (candidatePreferenceRefs.has(preferenceRef)) return [];
+    const preference = props.personalization?.preferences.find(
+      (entry) => entry.preferenceRef === preferenceRef
+    );
+    return preference ? [preference] : [];
+  });
+  const expectsDetails = candidateRefs.length > 0 || preferenceRefs.length > 0;
+
+  return (
+    <div className="memory-command-receipt" data-testid="memory-command-receipt">
+      {expectsDetails && !props.personalization ? (
+        <Text type="secondary">正在恢复偏好详情…</Text>
+      ) : null}
+      {candidates.map((candidate) => {
+        const conflict = candidate.conflictPreferenceRef
+          ? props.personalization?.preferences.find((preference) =>
+              preference.preferenceRef === candidate.conflictPreferenceRef
+            )
+          : null;
+        const activated = props.personalization?.preferences.find(
+          (preference) =>
+            preference.sourceCandidateRef === candidate.candidateRef
+        );
+        return (
+          <div
+            key={candidate.candidateRef}
+            className="memory-command-item"
+            data-testid="memory-command-item"
+          >
+            <Text strong>
+              {teacherPreferenceLabel(
+                candidate.preferenceKey ?? candidate.canonicalKey ?? "preference"
+              )}：{candidate.preferenceValue}
+            </Text>
+            <Text type="secondary">
+              作用范围：{memoryScopeDisplay(candidate.proposedScope)}
+            </Text>
+            {candidate.status === "draft" && conflict ? (
+              <div data-testid="memory-conflict-card">
+                <Paragraph>
+                  已保存的是“{conflict.preferenceValue}”，这次提出的是
+                  “{candidate.preferenceValue}”。是否替换原偏好？
+                </Paragraph>
+                <Space>
+                  <Button
+                    type="primary"
+                    loading={props.busyCandidateRef === candidate.candidateRef}
+                    onClick={() => void props.onResolve(candidate, "replace")}
+                    data-testid="replace-memory-preference"
+                  >替换原偏好</Button>
+                  <Button
+                    disabled={props.busyCandidateRef === candidate.candidateRef}
+                    onClick={() => void props.onResolve(candidate, "keep")}
+                    data-testid="keep-memory-preference"
+                  >保留原偏好</Button>
+                </Space>
+              </div>
+            ) : candidate.status === "rejected" ? (
+              <Tag>已保留原偏好</Tag>
+            ) : activated ? (
+              <Tag color="success">
+                {activated.version > 1 ? "已替换并记住" : "已记住"}
+              </Tag>
+            ) : null}
+          </div>
+        );
+      })}
+      {directPreferences.map((preference) => (
+        <div
+          key={preference.preferenceRef}
+          className="memory-command-item"
+          data-testid="memory-command-item"
+        >
+          <Text strong>
+            {teacherPreferenceLabel(preference.preferenceKey)}：
+            {preference.preferenceValue}
+          </Text>
+          <Text type="secondary">
+            作用范围：{memoryScopeDisplay(preference.scope)}
+          </Text>
+          <Tag color="success">已经记住</Tag>
+        </div>
+      ))}
+      <Space size="small" wrap>
+        <Button type="link" onClick={props.onOpenSettings}>
+          查看助手偏好
+        </Button>
+        {expectsDetails ? (
+          <Button type="link" onClick={props.onOpenSettings}>
+            调整作用范围
+          </Button>
+        ) : null}
+      </Space>
+    </div>
+  );
+}
+
+function memoryScopeDisplay(
+  scope: MemoryCandidateView["proposedScope"]
+): string {
+  if (!scope || scope.kind === "global") return "所有普通备课";
+  if (scope.kind === "course_run") return "当前课程";
+  return {
+    subject: "指定学科",
+    subject_grade: "指定学科与年级",
+    lesson: "指定课时",
+    task: "指定任务"
+  }[scope.kind];
 }
 
 function replaceConversationSearch(

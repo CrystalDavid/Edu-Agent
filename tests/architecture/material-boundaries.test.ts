@@ -55,7 +55,7 @@ describe("Phase 8A-3 material boundaries", () => {
   it("adds no Material Bundle table and preserves all registered Migrations", () => {
     const migrations = filesUnder(join(root, "apps/api/src/modules"))
       .filter((path) => /[\\/]migrations[\\/].+\.sql$/u.test(path));
-    expect(migrations).toHaveLength(50);
+    expect(migrations).toHaveLength(51);
     const sql = migrations.map((path) => readFileSync(path, "utf8")).join("\n");
     expect(sql).not.toMatch(
       /CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+\w+\.(?:material_bundle|lesson_material)/iu

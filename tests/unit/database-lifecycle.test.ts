@@ -108,6 +108,13 @@ describe("PostgreSQL lifecycle isolation", () => {
     expect(e2eServer).toContain('"127.0.0.1"');
     expect(e2eServer).toContain('"x-e2e-run-id"');
     expect(e2eServer).toContain('"/__e2e/restart-api"');
+    expect(e2eServer).toContain('"explicit-remember"');
+    expect(e2eServer).toContain(
+      "MEMORY_EXPLICIT_REMEMBER_ENABLED"
+    );
+    expect(e2eServer).toContain(
+      "E2E_CONTROL_INVALID_EXPLICIT_REMEMBER_MODE"
+    );
     expect(source("apps/api/src/app.ts")).not.toContain(
       "/__e2e/restart-api"
     );

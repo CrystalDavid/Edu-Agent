@@ -6,7 +6,9 @@ export const ConversationPurposeFamilySchema = z.literal(
 
 export const ConversationTurnResultRefsSchema = z.object({
   modelExecutionRef: z.string().min(1).optional(),
-  proposalRevisionRef: z.string().min(1).optional()
+  proposalRevisionRef: z.string().min(1).optional(),
+  candidateRefs: z.array(z.string().trim().min(1).max(240)).max(10).optional(),
+  preferenceRefs: z.array(z.string().trim().min(1).max(240)).max(10).optional()
 });
 
 export const ConversationTurnViewSchema = z.object({
@@ -123,6 +125,20 @@ export const AppendTeacherConversationTurnResultSchema = z.object({
   workingMemory: WorkingMemoryViewSchema
 });
 
+export const AppendTeacherCommandTurnResultSchema = z.object({
+  replayed: z.boolean(),
+  conversation: ConversationThreadViewSchema,
+  turn: ConversationTurnViewSchema,
+  workingMemory: WorkingMemoryViewSchema.nullable()
+});
+
+export const AppendAssistantCommandReceiptResultSchema = z.object({
+  replayed: z.boolean(),
+  conversation: ConversationThreadViewSchema,
+  turn: ConversationTurnViewSchema,
+  workingMemory: WorkingMemoryViewSchema.nullable()
+});
+
 export const CloseTeacherConversationRequestSchema = z.object({
   expectedConversationVersion: z.number().int().positive(),
   purpose: z.literal("teacher-copilot.conversation.close"),
@@ -154,6 +170,12 @@ export type AppendTeacherConversationTurnRequest = z.infer<
 >;
 export type AppendTeacherConversationTurnResult = z.infer<
   typeof AppendTeacherConversationTurnResultSchema
+>;
+export type AppendTeacherCommandTurnResult = z.infer<
+  typeof AppendTeacherCommandTurnResultSchema
+>;
+export type AppendAssistantCommandReceiptResult = z.infer<
+  typeof AppendAssistantCommandReceiptResultSchema
 >;
 export type CloseTeacherConversationRequest = z.infer<
   typeof CloseTeacherConversationRequestSchema

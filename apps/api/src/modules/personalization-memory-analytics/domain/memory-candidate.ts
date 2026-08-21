@@ -57,6 +57,11 @@ export interface MemoryCandidateContent {
     readonly basis: TeacherPreferenceConsentBasis;
     readonly version: string;
   };
+  readonly sourceCommandRef?: string;
+  readonly conflictPreferenceRef?: string;
+  readonly conflictPreferenceVersion?: number;
+  readonly reviewReason?: string;
+  readonly parsingRuleId?: string;
 }
 
 export interface MemoryCandidate {
@@ -170,8 +175,23 @@ export function createMemoryCandidate(input: {
                 "teacher_settings_confirmed",
               version:
                 normalizeText(input.content.consentProposal?.version ??
-                  "consent:teacher-settings@1")
-            }
+                 "consent:teacher-settings@1")
+            },
+            ...(input.content.sourceCommandRef
+              ? { sourceCommandRef: normalizeText(input.content.sourceCommandRef) }
+              : {}),
+            ...(input.content.conflictPreferenceRef
+              ? { conflictPreferenceRef: normalizeText(input.content.conflictPreferenceRef) }
+              : {}),
+            ...(input.content.conflictPreferenceVersion !== undefined
+              ? { conflictPreferenceVersion: input.content.conflictPreferenceVersion }
+              : {}),
+            ...(input.content.reviewReason
+              ? { reviewReason: normalizeText(input.content.reviewReason) }
+              : {}),
+            ...(input.content.parsingRuleId
+              ? { parsingRuleId: normalizeText(input.content.parsingRuleId) }
+              : {})
           }
         : {})
     },
@@ -327,6 +347,79 @@ export function updateTeacherPreference(input: {
     updatedAt: input.updatedAt,
     version: input.preference.version + 1
   });
+}
+
+export function replaceTeacherPreferenceFromCandidate(input: {
+  readonly candidate: MemoryCandidate;
+  readonly preference: TeacherPreference;
+  readonly actorRef: string;
+  readonly expectedCandidateVersion: number;
+  readonly expectedPreferenceVersion: number;
+  readonly updatedAt: string;
+}): {
+  readonly candidate: MemoryCandidate;
+  readonly preference: TeacherPreference;
+} {
+  assertCandidateIntegrity(input.candidate);
+  assertTeacherPreferenceIntegrity(input.preference);
+  assertOwnerAction(input.candidate, input.actorRef);
+  assertPreferenceOwnerAndVersion(
+    input.preference,
+    input.actorRef,
+    input.expectedPreferenceVersion
+  );
+  assertVersion(input.candidate.version, input.expectedCandidateVersion);
+  assertDraftAndNotExpired(input.candidate, input.updatedAt);
+  if (input.candidate.type !== "preference") {
+    throw new MemoryCandidateDomainError(
+      "PREFERENCE_CANDIDATE_REQUIRED",
+      "Preference replacement requires a preference Candidate."
+    );
+  }
+  const content = input.candidate.content;
+  if (
+    content.conflictPreferenceRef !== input.preference.preferenceRef ||
+    content.conflictPreferenceVersion !== input.preference.version ||
+    normalizeCanonicalPreferenceKey(content.canonicalKey ?? "") !==
+      input.preference.canonicalKey ||
+    content.proposedScope?.fingerprint !== input.preference.scopeFingerprint
+  ) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_REPLACEMENT_CONFLICT_MISMATCH",
+      "The Candidate no longer identifies the current conflicting preference."
+    );
+  }
+  const preferenceValue = normalizeText(content.preferenceValue ?? "");
+  if (!preferenceValue) {
+    throw new MemoryCandidateDomainError(
+      "PREFERENCE_CONTENT_REQUIRED",
+      "Preference replacement requires a canonical value."
+    );
+  }
+  if (content.consentProposal?.basis !== "teacher_explicit_command" ||
+      content.consentProposal.version !== "consent:explicit-remember@1") {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_REPLACEMENT_CONSENT_INVALID",
+      "Preference replacement requires explicit teacher-command consent."
+    );
+  }
+  const candidate = reviseCandidate(input.candidate, {
+    status: "confirmed",
+    confirmedAt: assertTimestamp(input.updatedAt, "updatedAt")
+  });
+  const { contentHash: _hash, ...preferenceContent } = input.preference;
+  const preference = sealPreference({
+    ...preferenceContent,
+    preferenceValue,
+    sourceCandidateRef: candidate.candidateRef,
+    sourceCandidateHash: candidate.contentHash,
+    explicitness: "teacher_declared",
+    consentBasis: "teacher_explicit_command",
+    consentVersion: "consent:explicit-remember@1",
+    updatedAt: input.updatedAt,
+    version: input.preference.version + 1
+  });
+  return deepFreeze({ candidate, preference });
 }
 
 export function updateTeacherPreferenceScope(input: {
@@ -507,6 +600,16 @@ function assertContent(
     throw new MemoryCandidateDomainError(
       "EPISODIC_PREFERENCE_FIELDS_FORBIDDEN",
       "Episodic Candidate cannot contain preference fields."
+    );
+  }
+  if (
+    content.conflictPreferenceVersion !== undefined &&
+    (!Number.isInteger(content.conflictPreferenceVersion) ||
+      content.conflictPreferenceVersion < 1)
+  ) {
+    throw new MemoryCandidateDomainError(
+      "MEMORY_CONFLICT_VERSION_INVALID",
+      "Conflict preference version must be a positive integer."
     );
   }
 }

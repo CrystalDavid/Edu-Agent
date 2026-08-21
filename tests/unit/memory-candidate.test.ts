@@ -7,6 +7,7 @@ import {
 import {
   MemoryCandidateDomainError,
   createMemoryCandidate,
+  createMemoryScope,
   evaluateMemoryCandidate,
   evaluateTeacherPreference,
   memoryClassOwnership
@@ -238,6 +239,95 @@ describe("Phase 6 Memory Candidate foundation", () => {
       owner: { status: "failed" },
       lifecycle: { status: "failed", preferenceStatus: "revoked" }
     });
+  });
+
+  it("replaces a conflicting preference only through the explicit typed path", async () => {
+    const repository = new InMemoryMemoryCandidateRepository();
+    const scope = createMemoryScope({
+      kind: "global",
+      subject: null,
+      gradeLevel: null,
+      courseRunRef: null,
+      lessonRef: null,
+      taskRef: null,
+      skillIds: ["lesson-preparation"]
+    });
+    const original = await serviceAt(
+      repository,
+      "2026-08-04T08:00:00.000Z"
+    ).create({
+      ...preferenceCandidateInput(),
+      content: {
+        summary: "教案详细程度：简洁",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "简洁",
+        canonicalKey: "lesson_plan_detail",
+        proposedScope: scope
+      }
+    });
+    const confirmed = await serviceAt(
+      repository,
+      "2026-08-04T09:00:00.000Z"
+    ).confirm({
+      candidateRef: original.candidateRef,
+      actorRef: "user:teacher-1",
+      tenantRef: "school:1",
+      expectedVersion: original.version,
+      preferenceRef: "teacher-preference:replace"
+    });
+    const conflict = await serviceAt(
+      repository,
+      "2026-08-04T10:00:00.000Z"
+    ).create({
+      ...preferenceCandidateInput(),
+      candidateRef: "memory-candidate:replacement",
+      content: {
+        summary: "教案详细程度：详细",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "详细",
+        canonicalKey: "lesson_plan_detail",
+        proposedScope: scope,
+        consentProposal: {
+          basis: "teacher_explicit_command",
+          version: "consent:explicit-remember@1"
+        },
+        sourceCommandRef: "turn:command",
+        conflictPreferenceRef: confirmed.preference!.preferenceRef,
+        conflictPreferenceVersion: confirmed.preference!.version,
+        reviewReason: "existing_preference_conflict",
+        parsingRuleId: "catalog.lesson-plan-detail.detailed@1"
+      }
+    });
+    const replacement = await serviceAt(
+      repository,
+      "2026-08-04T11:00:00.000Z"
+    ).confirmReplacement({
+      candidateRef: conflict.candidateRef,
+      preferenceRef: confirmed.preference!.preferenceRef,
+      actorRef: "user:teacher-1",
+      tenantRef: "school:1",
+      expectedCandidateVersion: conflict.version,
+      expectedPreferenceVersion: confirmed.preference!.version
+    });
+
+    expect(replacement.candidate).toMatchObject({
+      status: "confirmed",
+      version: 2
+    });
+    expect(replacement.preference).toMatchObject({
+      preferenceRef: "teacher-preference:replace",
+      preferenceValue: "详细",
+      version: 2,
+      sourceCandidateRef: "memory-candidate:replacement",
+      consentBasis: "teacher_explicit_command",
+      consentVersion: "consent:explicit-remember@1"
+    });
+    expect(await repository.listPreferenceHistory("teacher-preference:replace"))
+      .toHaveLength(2);
+    expect(await repository.getMemoryEpoch({
+      tenantRef: "school:1",
+      teacherRef: "user:teacher-1"
+    })).toBe(2);
   });
 });
 
