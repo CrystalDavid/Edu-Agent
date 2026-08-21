@@ -4,5 +4,6 @@ export * from "./memory-scope.js";
 export * from "./teacher-preference-resolver.js";
 export * from "./teacher-preference-catalog.js";
 export * from "./explicit-teacher-memory-command.js";
+export * from "./explicit-teacher-forget-command.js";
 
 export const personalizationFoundation = "phase-6" as const;

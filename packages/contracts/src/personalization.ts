@@ -111,7 +111,8 @@ export const TeacherPersonalizationStateSchema = z.object({
   candidates: z.array(MemoryCandidateViewSchema),
   preferences: z.array(TeacherPreferenceViewSchema),
   scopedPreferencesEnabled: z.boolean().default(false),
-  explicitRememberEnabled: z.boolean().default(false)
+  explicitRememberEnabled: z.boolean().default(false),
+  explicitForgetEnabled: z.boolean().default(false)
 });
 
 export const CreateMemoryCandidateRequestSchema = z.object({
