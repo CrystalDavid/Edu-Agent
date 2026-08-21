@@ -159,6 +159,7 @@ test("portal bootstrap, sidebar and modular overview use the verified API contra
 
 function formatTodayForTest(): string {
   return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
     month: "long",
     day: "numeric",
     weekday: "long"
