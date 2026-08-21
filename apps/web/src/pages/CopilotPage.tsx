@@ -131,6 +131,8 @@ export function CopilotPage(props: {
   const [personalization, setPersonalization] =
     useState<TeacherPersonalizationState | null>(null);
   const [memoryActionRef, setMemoryActionRef] = useState<string | null>(null);
+  const [temporaryOverrideNotice, setTemporaryOverrideNotice] =
+    useState<string | null>(null);
 
   function applyProposalDetail(detail: ProposalReviewDetail) {
     props.setTask(detail);
@@ -421,7 +423,8 @@ export function CopilotPage(props: {
     disposing ||
     modelAction ||
     modelExecutionActive ||
-    preparationRequiresReopen;
+    preparationRequiresReopen ||
+    completedTaskReviewOnly;
   const generationDisabledReason = preparationRequiresReopen
     ? `当前备课任务为“${lessonPreparationStatusLabel(preparationTask!.status)}”；请先回到教学页显式重新打开或新建一轮备课。`
     : modelExecutionActive
@@ -485,6 +488,12 @@ export function CopilotPage(props: {
         );
         activeConversation = dispatched.conversation;
         setConversation(activeConversation);
+        setTemporaryOverrideNotice(
+          dispatched.kind === "model_instruction" &&
+            dispatched.temporaryOverrideReceipt
+            ? dispatched.temporaryOverrideReceipt.safeMessage
+            : null
+        );
         setConversationRef(activeConversation.conversationRef);
         replaceConversationSearch(activeConversation.conversationRef, null);
         if (dispatched.kind !== "model_instruction") {
@@ -940,6 +949,42 @@ export function CopilotPage(props: {
             </Tag>
           </div>
           <Space orientation="vertical" size="small">
+            {temporaryOverrideNotice ? (
+              <Alert
+                type="info"
+                showIcon
+                title={temporaryOverrideNotice}
+                data-testid="temporary-override-receipt"
+              />
+            ) : null}
+            {conversation.workingMemory?.builderVersion ===
+              "working-memory-builder@2" &&
+            conversation.workingMemory.temporaryOverrides.length > 0 ? (
+              <div
+                className="memory-command-receipt"
+                data-testid="active-temporary-overrides"
+              >
+                <Text strong>仅本次要求</Text>
+                {conversation.workingMemory.temporaryOverrides.map(
+                  (override) => (
+                    <div
+                      className="memory-command-item"
+                      key={override.overrideRef}
+                    >
+                      <Text>
+                        {teacherPreferenceLabel(override.preferenceKey)}：
+                        {override.effect === "suppress_preference"
+                          ? `仅本次不使用“${override.displayValue}”`
+                          : override.displayValue}
+                      </Text>
+                    </div>
+                  )
+                )}
+                <Text type="secondary">
+                  只在当前备课对话中延续；长期偏好未修改，结束对话后恢复平时习惯。
+                </Text>
+              </div>
+            ) : null}
             {conversation.turns.slice(-8).map((turn) => (
               <div key={turn.turnRef} data-testid="conversation-turn">
                 <Text strong>
@@ -983,6 +1028,7 @@ export function CopilotPage(props: {
           autoSize={{ minRows: 1, maxRows: 5 }}
           value={taskPrompt}
           onChange={(event) => setTaskPrompt(event.target.value)}
+          disabled={completedTaskReviewOnly}
           aria-label="告诉 Agent 你想完成什么"
         />
         <Button
