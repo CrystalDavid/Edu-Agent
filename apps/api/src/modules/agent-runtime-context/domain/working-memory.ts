@@ -27,7 +27,9 @@ export function buildWorkingMemory(input: {
   );
   const teacherTurns = ordered.filter(
     (turn): turn is ConversationTurnView & { teacherText: string } =>
-      turn.actorKind === "teacher" && turn.teacherText !== null
+      turn.actorKind === "teacher" &&
+      turn.contentKind === "teacher_text" &&
+      turn.teacherText !== null
   );
   const current = teacherTurns.at(-1);
   const source = ordered.at(-1);
@@ -51,6 +53,7 @@ export function buildWorkingMemory(input: {
     .find(
       (turn) =>
         turn.actorKind === "assistant_surface" &&
+        turn.contentKind !== "command" &&
         turn.surfaceSummary !== null
     );
   const priorAssistant = [...ordered]
@@ -59,6 +62,7 @@ export function buildWorkingMemory(input: {
       (turn) =>
         turn.sequence < current.sequence &&
         turn.actorKind === "assistant_surface" &&
+        turn.contentKind !== "command" &&
         turn.surfaceSummary !== null
     );
   const referentTarget = priorAssistant

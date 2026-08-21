@@ -33,7 +33,8 @@ export function TeacherPreferenceSettings(props: {
   const [state, setState] = useState<TeacherPersonalizationState>({
     candidates: [],
     preferences: [],
-    scopedPreferencesEnabled: false
+    scopedPreferencesEnabled: false,
+    explicitRememberEnabled: false
   });
   const [courseRuns, setCourseRuns] = useState<readonly CourseRunView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +140,11 @@ export function TeacherPreferenceSettings(props: {
                     <strong>{teacherPreferenceLabel(preference.preferenceKey)}</strong>
                     <small data-testid="preference-scope-label">
                       作用范围：{scopeDisplayLabel(preference.scope, courseRuns)}
+                    </small>
+                    <small data-testid="preference-source-label">
+                      来源：{preference.consentBasis === "teacher_explicit_command"
+                        ? "对话中明确记住"
+                        : "设置页明确确认"}
                     </small>
                   </span>
                   <Space wrap>

@@ -19,6 +19,8 @@ import {
   CreateModelInvocationRequestSchema,
   CreateTeacherConversationRequestSchema,
   AppendTeacherConversationTurnRequestSchema,
+  ConfirmMemoryCandidateReplacementRequestSchema,
+  DispatchTeacherConversationTurnRequestSchema,
   CloseTeacherConversationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
@@ -912,6 +914,7 @@ export function createApp(
     const modelInvocations =
       product.services.modelInvocations;
     const conversations = product.services.conversations;
+    const conversationDispatch = product.services.conversationDispatch;
     const withProductContext = async (request: Request, response?: Response) => {
       const identity = await productContextsFromRequest(
         request,
@@ -983,6 +986,27 @@ export function createApp(
         }
       );
     }
+
+    app.post(
+      apiRoutes.teacher.memoryCandidateConfirmReplacementPattern,
+      markRoute("product.teacher.personalization.candidate-confirm-replacement"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.confirmCandidateReplacement({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+            request: ConfirmMemoryCandidateReplacementRequestSchema.parse(
+              request.body
+            )
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.put(
       apiRoutes.teacher.teacherPreferencePattern,
@@ -2190,6 +2214,30 @@ export function createApp(
               request.params["conversationRef"]
             ),
             request: AppendTeacherConversationTurnRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationDispatchTurnPattern,
+      markRoute("product.teacher-conversations.dispatch-turn"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          const result = await conversationDispatch.dispatch({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+            request: DispatchTeacherConversationTurnRequestSchema.parse(
               request.body
             )
           });

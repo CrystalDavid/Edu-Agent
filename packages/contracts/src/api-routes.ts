@@ -126,6 +126,10 @@ export const apiRoutes = {
       "/api/v1/teacher/personalization/memory-candidates/:candidateRef/reject",
     memoryCandidateReject: (candidateRef: string): string =>
       `${teacherMemoryCandidateRoute(candidateRef)}/reject`,
+    memoryCandidateConfirmReplacementPattern:
+      "/api/v1/teacher/memory-candidates/:candidateRef/confirm-replacement",
+    memoryCandidateConfirmReplacement: (candidateRef: string): string =>
+      `/api/v1/teacher/memory-candidates/${encodeRouteSegment(candidateRef)}/confirm-replacement`,
     teacherPreferencePattern:
       "/api/v1/teacher/personalization/preferences/:preferenceRef",
     teacherPreference: teacherPreferenceRoute,
@@ -248,6 +252,10 @@ export const apiRoutes = {
       "/api/v1/teacher/conversations/:conversationRef/turns",
     conversationTurns: (conversationRef: string): string =>
       `${teacherConversationRoute(conversationRef)}/turns`,
+    conversationDispatchTurnPattern:
+      "/api/v1/teacher/conversations/:conversationRef/dispatch-turn",
+    conversationDispatchTurn: (conversationRef: string): string =>
+      `${teacherConversationRoute(conversationRef)}/dispatch-turn`,
     conversationClosePattern:
       "/api/v1/teacher/conversations/:conversationRef/close",
     conversationClose: (conversationRef: string): string =>

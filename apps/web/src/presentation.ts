@@ -110,6 +110,7 @@ export function calendarEventTypeLabel(eventType: string): string {
 
 export function teacherPreferenceLabel(preferenceKey: string): string {
   return {
+    lesson_plan_length: "教案长度",
     lesson_plan_detail: "教案详细程度",
     lesson_plan_style: "教案表达风格",
     example_preference: "案例偏好",

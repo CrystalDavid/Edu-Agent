@@ -5,6 +5,7 @@ import {
   expireMemoryCandidate,
   rejectMemoryCandidate,
   revokeTeacherPreference,
+  replaceTeacherPreferenceFromCandidate,
   updateTeacherPreference,
   updateTeacherPreferenceScope,
   type MemoryCandidate,
@@ -292,6 +293,51 @@ export class MemoryCandidateService {
       expectedPreviousVersion: current.version
     });
     return updated;
+  }
+
+  async confirmReplacement(input: {
+    readonly candidateRef: string;
+    readonly preferenceRef: string;
+    readonly actorRef: string;
+    readonly tenantRef: string;
+    readonly expectedCandidateVersion: number;
+    readonly expectedPreferenceVersion: number;
+  }): Promise<{
+    readonly candidate: MemoryCandidate;
+    readonly preference: TeacherPreference;
+  }> {
+    const candidate = await this.requireCandidate(
+      input.candidateRef,
+      input.tenantRef
+    );
+    const preference = await this.repository.getPreference(input.preferenceRef);
+    if (
+      !preference ||
+      preference.owner.tenantRef !== input.tenantRef ||
+      preference.owner.teacherRef !== input.actorRef
+    ) {
+      throw new MemoryCandidateApplicationError(
+        "TEACHER_PREFERENCE_NOT_FOUND",
+        "TeacherPreference was not found in the active tenant."
+      );
+    }
+    const result = replaceTeacherPreferenceFromCandidate({
+      candidate,
+      preference,
+      actorRef: input.actorRef,
+      expectedCandidateVersion: input.expectedCandidateVersion,
+      expectedPreferenceVersion: input.expectedPreferenceVersion,
+      updatedAt: this.clock().toISOString()
+    });
+    await this.repository.saveCandidate({
+      candidate: result.candidate,
+      expectedPreviousVersion: candidate.version
+    });
+    await this.repository.savePreference({
+      preference: result.preference,
+      expectedPreviousVersion: preference.version
+    });
+    return result;
   }
 
   async listCandidates(input: {
