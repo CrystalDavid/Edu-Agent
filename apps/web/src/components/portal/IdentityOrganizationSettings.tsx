@@ -23,6 +23,12 @@ import {
   updateSchoolMemberRoles,
   updateSchoolMemberStatus
 } from "../../api";
+import {
+  authenticationMethodLabel,
+  cleanDisplayText,
+  membershipStatusLabel,
+  roleLabel
+} from "../../presentation";
 
 type AuthenticatedSession = Extract<
   AuthenticationSessionStatus,
@@ -85,28 +91,106 @@ export function IdentityOrganizationSettings(props: {
     void refresh();
   }, [props.session.sessionRef, props.session.currentWorkspace?.membershipRef]);
 
+  if (!isAdmin) {
+    return (
+      <div className="identity-settings identity-settings--teacher" data-testid="identity-organization-settings">
+        {error ? <Alert type="error" showIcon message={error} /> : null}
+        <div className="identity-account-summary" aria-busy={loading}>
+          <article>
+            <span>当前学校</span>
+            <strong>{school ? cleanDisplayText(school.name) : "加载中"}</strong>
+          </article>
+          <article>
+            <span>登录账号</span>
+            <strong>{props.session.user.email ?? "未提供"}</strong>
+          </article>
+        </div>
+
+        <details className="identity-advanced-settings">
+          <summary>账号安全与数据管理</summary>
+          <section>
+            <h3>登录设备</h3>
+            <ul className="account-session-list">
+              {sessions.slice(0, 3).map((session) => (
+                <li key={session.sessionRef}>
+                  <span>
+                    <strong>{session.current ? "当前设备" : "其他登录设备"}</strong>
+                    <small>{new Date(session.expiresAt).toLocaleDateString("zh-CN")} 到期</small>
+                  </span>
+                  {!session.current && !session.revokedAt ? (
+                    <Button
+                      size="small"
+                      onClick={() => void execute(async () => {
+                        await revokeAuthenticationSession(session.sessionRef, session.version);
+                        props.onAction("登录设备已退出。");
+                        await refresh();
+                      })}
+                    >退出</Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section>
+            <h3>数据请求</h3>
+            <Space wrap>
+              <Button onClick={() => void execute(async () => {
+                const result = await createUserDataGovernanceRequest({
+                  requestType: "export",
+                  reason: "教师请求导出当前个人与组织成员数据。",
+                  idempotencyKey: `ui-export-${crypto.randomUUID()}`
+                });
+                setRequests(result.items);
+                props.onAction("数据导出请求已提交。");
+              })}>申请导出</Button>
+              <Button danger onClick={() => void execute(async () => {
+                const result = await createUserDataGovernanceRequest({
+                  requestType: "deletion",
+                  reason: "教师请求评估账号删除范围；保留依法和教学来源链必须保留的历史。",
+                  idempotencyKey: `ui-deletion-${crypto.randomUUID()}`
+                });
+                setRequests(result.items);
+                props.onAction("删除范围评估请求已提交。");
+              })}>申请删除评估</Button>
+            </Space>
+            {requests.length > 0 ? (
+              <ul className="data-governance-request-list">
+                {requests.slice(0, 3).map((request) => (
+                  <li key={request.requestRef}>
+                    <Tag>{governanceRequestTypeLabel(request.requestType)}</Tag>
+                    <span>{governanceRequestStatusLabel(request.status)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div className="identity-settings" data-testid="identity-organization-settings">
       {error ? <Alert type="error" showIcon message={error} /> : null}
       <div className="identity-summary-grid">
         <article>
           <Typography.Text type="secondary">用户</Typography.Text>
-          <strong>{props.session.user.displayName}</strong>
+          <strong>{cleanDisplayText(props.session.user.displayName)}</strong>
           <span>{props.session.user.email ?? "未提供邮箱"}</span>
         </article>
         <article>
           <Typography.Text type="secondary">当前学校</Typography.Text>
-          <strong>{school?.name ?? "加载中"}</strong>
-          <span>{school?.status ?? "—"} · {school?.timezone ?? "—"}</span>
+          <strong>{school ? cleanDisplayText(school.name) : "加载中"}</strong>
+          <span>{school ? membershipStatusLabel(school.status) : "—"} · {school?.timezone ?? "—"}</span>
         </article>
         <article>
           <Typography.Text type="secondary">角色与课程范围</Typography.Text>
-          <strong>{props.session.currentWorkspace?.roles.join(" / ")}</strong>
-          <span>{props.session.currentWorkspace?.courseRunRefs.length ?? 0} 个 CourseRun</span>
+          <strong>{props.session.currentWorkspace?.roles.map(roleLabel).join(" / ")}</strong>
+          <span>{props.session.currentWorkspace?.courseRunRefs.length ?? 0} 门授权课程</span>
         </article>
         <article>
           <Typography.Text type="secondary">会话</Typography.Text>
-          <strong>{props.session.authenticationMethod}</strong>
+          <strong>{authenticationMethodLabel(props.session.authenticationMethod)}</strong>
           <span>到期：{new Date(props.session.expiresAt).toLocaleString("zh-CN")}</span>
         </article>
       </div>
@@ -121,7 +205,10 @@ export function IdentityOrganizationSettings(props: {
           dataSource={sessions}
           columns={[
             { title: "客户端", dataIndex: "clientLabel", ellipsis: true },
-            { title: "方式", dataIndex: "authenticationMethod" },
+            {
+              title: "方式",
+              render: (_value, row) => authenticationMethodLabel(row.authenticationMethod)
+            },
             {
               title: "状态",
               render: (_value, row) =>
@@ -183,8 +270,8 @@ export function IdentityOrganizationSettings(props: {
         <ul className="data-governance-request-list">
           {requests.map((request) => (
             <li key={request.requestRef}>
-              <Tag>{request.requestType}</Tag>
-              <span>{request.status}</span>
+              <Tag>{governanceRequestTypeLabel(request.requestType)}</Tag>
+              <span>{governanceRequestStatusLabel(request.status)}</span>
               <small>{request.retentionNotice}</small>
             </li>
           ))}
@@ -198,14 +285,14 @@ export function IdentityOrganizationSettings(props: {
             type="info"
             showIcon
             message="管理员预配置成员"
-            description="本 Gate 不发送邮件；external subject 由学校管理员与身份供应商配置对应。"
+            description="新增成员后，请为其绑定登录账号并分配可访问的课程。"
           />
           <div className="member-create-row">
             <Input data-testid="admin-new-member-name" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="显示名称" />
-            <Input data-testid="admin-new-member-subject" value={newSubject} onChange={(event) => setNewSubject(event.target.value)} placeholder="外部 subject（合成）" />
+            <Input data-testid="admin-new-member-subject" value={newSubject} onChange={(event) => setNewSubject(event.target.value)} placeholder="登录账号标识" />
             <Select value={newRole} onChange={setNewRole} options={[
-              { value: "ordinary_teacher", label: "ordinary_teacher" },
-              { value: "school_admin", label: "school_admin" }
+              { value: "ordinary_teacher", label: "任课教师" },
+              { value: "school_admin", label: "学校管理员" }
             ]} />
             <Button
               data-testid="admin-create-member"
@@ -222,7 +309,7 @@ export function IdentityOrganizationSettings(props: {
                 });
                 setNewName("");
                 setNewSubject("");
-                props.onAction("成员已建立并绑定外部身份。");
+                props.onAction("成员已创建并绑定登录账号。");
                 await refresh();
               })}
             >添加成员</Button>
@@ -233,8 +320,14 @@ export function IdentityOrganizationSettings(props: {
             pagination={false}
             dataSource={members}
             columns={[
-              { title: "成员", dataIndex: "displayName" },
-              { title: "状态", dataIndex: "status" },
+              {
+                title: "成员",
+                render: (_value, row) => cleanDisplayText(row.displayName)
+              },
+              {
+                title: "状态",
+                render: (_value, row) => membershipStatusLabel(row.status)
+              },
               {
                 title: "角色",
                 render: (_value, row) => (
@@ -248,7 +341,7 @@ export function IdentityOrganizationSettings(props: {
                       "school_admin",
                       "subject_lead",
                       "homeroom_teacher"
-                    ].map((value) => ({ value, label: value }))}
+                    ].map((value) => ({ value, label: roleLabel(value) }))}
                     onChange={(roles) => void execute(async () => {
                       if (roles.length === 0) {
                         throw new Error("成员至少需要保留一个角色。");
@@ -304,12 +397,12 @@ export function IdentityOrganizationSettings(props: {
               }
             ]}
           />
-          <h3>关键安全 Audit</h3>
+          <h3>关键安全记录</h3>
           <ul className="security-event-list">
             {events.slice(0, 20).map((event) => (
               <li key={event.eventRef}>
-                <Tag color={event.outcome === "success" ? "green" : "red"}>{event.outcome}</Tag>
-                <strong>{event.eventType}</strong>
+                <Tag color={event.outcome === "success" ? "green" : "red"}>{event.outcome === "success" ? "成功" : "已拒绝"}</Tag>
+                <strong>{securityEventTypeLabel(event.eventType)}</strong>
                 <span>{event.safeReason}</span>
                 <small>{new Date(event.occurredAt).toLocaleString("zh-CN")}</small>
               </li>
@@ -317,8 +410,38 @@ export function IdentityOrganizationSettings(props: {
           </ul>
         </section>
       ) : (
-        <Alert type="info" message="学校成员管理仅对 school_admin 显示。" />
+        <Alert type="info" message="学校成员管理仅对学校管理员显示。" />
       )}
     </div>
   );
+}
+
+function governanceRequestTypeLabel(type: string): string {
+  return {
+    export: "数据导出",
+    de_identification: "去标识评估",
+    deletion: "删除范围评估"
+  }[type] ?? "数据治理请求";
+}
+
+function governanceRequestStatusLabel(status: string): string {
+  return {
+    requested: "进行中",
+    approved: "已完成",
+    rejected: "未完成",
+    processing: "进行中",
+    completed: "已完成"
+  }[status] ?? "进行中";
+}
+
+function securityEventTypeLabel(type: string): string {
+  return {
+    login_succeeded: "登录成功",
+    login_failed: "登录失败",
+    logout: "退出登录",
+    session_revoked: "会话已撤销",
+    authorization_denied: "访问被拒绝",
+    membership_suspended: "成员已停用",
+    membership_activated: "成员已启用"
+  }[type] ?? "安全操作";
 }

@@ -18,6 +18,11 @@ const teacherModelInvocationRoute = (
     modelExecutionRef
   )}`;
 
+const teacherConversationRoute = (conversationRef: string): string =>
+  `/api/v1/teacher/conversations/${encodeRouteSegment(
+    conversationRef
+  )}`;
+
 const teacherFileRoute = (assetRef: string): string =>
   `/api/v1/teacher/files/${encodeRouteSegment(assetRef)}`;
 
@@ -67,6 +72,12 @@ const teacherClassroomObservationRoute = (observationRef: string): string =>
 const teacherReflectionRoute = (reflectionRef: string): string =>
   `/api/v1/teacher/reflections/${encodeRouteSegment(reflectionRef)}`;
 
+const teacherMemoryCandidateRoute = (candidateRef: string): string =>
+  `/api/v1/teacher/personalization/memory-candidates/${encodeRouteSegment(candidateRef)}`;
+
+const teacherPreferenceRoute = (preferenceRef: string): string =>
+  `/api/v1/teacher/personalization/preferences/${encodeRouteSegment(preferenceRef)}`;
+
 export const apiRoutes = {
   health: "/api/health",
   authentication: {
@@ -74,6 +85,8 @@ export const apiRoutes = {
     session: "/api/v1/auth/session",
     sessionRefresh: "/api/v1/auth/session/refresh",
     localLogin: "/api/v1/auth/local-login",
+    localCredentialLogin: "/api/v1/auth/local-credential-login",
+    localSmsCode: "/api/v1/auth/local-sms-code",
     oidcStart: "/api/v1/auth/oidc/start",
     oidcCallback: "/api/v1/auth/oidc/callback",
     logout: "/api/v1/auth/logout",
@@ -103,6 +116,23 @@ export const apiRoutes = {
     requests: "/api/v1/user-governance/requests"
   },
   teacher: {
+    personalizationState: "/api/v1/teacher/personalization",
+    memoryCandidates: "/api/v1/teacher/personalization/memory-candidates",
+    memoryCandidateConfirmPattern:
+      "/api/v1/teacher/personalization/memory-candidates/:candidateRef/confirm",
+    memoryCandidateConfirm: (candidateRef: string): string =>
+      `${teacherMemoryCandidateRoute(candidateRef)}/confirm`,
+    memoryCandidateRejectPattern:
+      "/api/v1/teacher/personalization/memory-candidates/:candidateRef/reject",
+    memoryCandidateReject: (candidateRef: string): string =>
+      `${teacherMemoryCandidateRoute(candidateRef)}/reject`,
+    teacherPreferencePattern:
+      "/api/v1/teacher/personalization/preferences/:preferenceRef",
+    teacherPreference: teacherPreferenceRoute,
+    teacherPreferenceRevokePattern:
+      "/api/v1/teacher/personalization/preferences/:preferenceRef/revoke",
+    teacherPreferenceRevoke: (preferenceRef: string): string =>
+      `${teacherPreferenceRoute(preferenceRef)}/revoke`,
     courseRuns: "/api/v1/teacher/course-runs",
     courseRunPattern: "/api/v1/teacher/course-runs/:courseRunRef",
     courseRun: (courseRunRef: string): string =>
@@ -123,6 +153,34 @@ export const apiRoutes = {
     lessonPattern: "/api/v1/teacher/lessons/:lessonRef",
     lesson: (lessonRef: string): string =>
       `/api/v1/teacher/lessons/${encodeRouteSegment(lessonRef)}`,
+    lessonJourneyPattern:
+      "/api/v1/teacher/lessons/:lessonRef/journey",
+    lessonJourney: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/journey`,
+    lessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief",
+    lessonBrief: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief`,
+    generateLessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief/generate",
+    generateLessonBrief: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief/generate`,
+    decideLessonBriefPattern:
+      "/api/v1/teacher/lessons/:lessonRef/brief/:agentRunRef/disposition",
+    decideLessonBrief: (lessonRef: string, agentRunRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/brief/${encodeRouteSegment(agentRunRef)}/disposition`,
+    lessonMaterialBundlePattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle",
+    lessonMaterialBundle: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle`,
+    generateLessonMaterialBundlePattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle/generate",
+    generateLessonMaterialBundle: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle/generate`,
+    adoptLessonMaterialPattern:
+      "/api/v1/teacher/lessons/:lessonRef/material-bundle/:kind/adopt",
+    adoptLessonMaterial: (lessonRef: string, kind: string): string =>
+      `${teacherLessonRoute(lessonRef)}/material-bundle/${encodeRouteSegment(kind)}/adopt`,
     lessonPreparationSummary:
       "/api/v1/teacher/lesson-preparation/summary",
     preparationTasks:
@@ -178,6 +236,18 @@ export const apiRoutes = {
       "/api/v1/teacher/model-provider/usage",
     modelInvocations:
       "/api/v1/teacher/model-invocations",
+    conversations: "/api/v1/teacher/conversations",
+    conversationPattern:
+      "/api/v1/teacher/conversations/:conversationRef",
+    conversation: teacherConversationRoute,
+    conversationTurnsPattern:
+      "/api/v1/teacher/conversations/:conversationRef/turns",
+    conversationTurns: (conversationRef: string): string =>
+      `${teacherConversationRoute(conversationRef)}/turns`,
+    conversationClosePattern:
+      "/api/v1/teacher/conversations/:conversationRef/close",
+    conversationClose: (conversationRef: string): string =>
+      `${teacherConversationRoute(conversationRef)}/close`,
     modelInvocationPattern:
       "/api/v1/teacher/model-invocations/:modelExecutionRef",
     modelInvocation: teacherModelInvocationRoute,
@@ -330,7 +400,11 @@ export const apiRoutes = {
     lessonImplementationSummaryPattern: "/api/v1/teacher/lessons/:lessonRef/implementation-summary",
     lessonImplementationSummary: (lessonRef: string): string =>
       `${teacherLessonRoute(lessonRef)}/implementation-summary`,
+    lessonLatestClassroomFeedbackPattern: "/api/v1/teacher/lessons/:lessonRef/classroom-feedback/latest",
+    lessonLatestClassroomFeedback: (lessonRef: string): string =>
+      `${teacherLessonRoute(lessonRef)}/classroom-feedback/latest`,
     lessonDeliveries: "/api/v1/teacher/classroom/deliveries",
+    lessonDeliveryQuickFeedback: "/api/v1/teacher/classroom/deliveries/quick-feedback",
     lessonDeliveryPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef",
     lessonDelivery: teacherLessonDeliveryRoute,
     lessonDeliveryConfirmPattern: "/api/v1/teacher/classroom/deliveries/:deliveryRef/confirm",
@@ -353,6 +427,16 @@ export const apiRoutes = {
     reflectionGenerate: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/generate`,
     reflectionFollowUpsPattern: "/api/v1/teacher/reflections/:reflectionRef/follow-ups",
     reflectionFollowUps: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/follow-ups`,
+    reflectionNextLessonActionsPattern: "/api/v1/teacher/reflections/:reflectionRef/next-lesson-actions",
+    reflectionNextLessonActions: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/next-lesson-actions`,
+    reflectionNextLessonActionsGeneratePattern: "/api/v1/teacher/reflections/:reflectionRef/next-lesson-actions/generate",
+    reflectionNextLessonActionsGenerate: (reflectionRef: string): string => `${teacherReflectionRoute(reflectionRef)}/next-lesson-actions/generate`,
+    nextLessonActionPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef",
+    nextLessonAction: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}`,
+    nextLessonActionAcceptPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef/accept",
+    nextLessonActionAccept: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}/accept`,
+    nextLessonActionRejectPattern: "/api/v1/teacher/next-lesson-actions/:candidateRef/reject",
+    nextLessonActionReject: (candidateRef: string): string => `/api/v1/teacher/next-lesson-actions/${encodeRouteSegment(candidateRef)}/reject`,
     pendingReflections: "/api/v1/teacher/reflections/pending"
   },
   demo: {

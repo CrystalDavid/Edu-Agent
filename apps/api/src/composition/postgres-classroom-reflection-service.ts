@@ -28,7 +28,6 @@ import {
   type ReflectionDetail,
   type ReflectionRevisionView
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
 import type { Pool } from "pg";
 
 import { PostgresGate2ArtifactRepository } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
@@ -163,6 +162,22 @@ export class PostgresClassroomReflectionService {
     this.assertDemoActor(input.tenantRef, input.actorRef);
     const delivery = await this.education.getDelivery(this.pool, input.tenantRef, input.actorRef, input.deliveryRef);
     if (!delivery) throw new NotFoundError("课堂实施记录不存在。");
+    return delivery;
+  }
+
+  async getDeliveryRevision(input: {
+    tenantRef: string;
+    actorRef: string;
+    deliveryRevisionRef: string;
+  }) {
+    this.assertDemoActor(input.tenantRef, input.actorRef);
+    const delivery = await this.education.getDeliveryByRevision(
+      this.pool,
+      input.tenantRef,
+      input.actorRef,
+      input.deliveryRevisionRef
+    );
+    if (!delivery) throw new NotFoundError("课堂实施修订不存在。");
     return delivery;
   }
 

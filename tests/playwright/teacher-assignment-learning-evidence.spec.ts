@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { apiRoutes } from "@edu-agent/contracts";
 import { expect, test, type Page } from "@playwright/test";
 
-const screenshotRoot = "output/playwright/gate-2-7";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-7");
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
   "x-demo-actor": "user:teacher-001"
@@ -25,7 +27,7 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
 
   await page.getByTestId("create-assignment").click();
   await expect(page.getByTestId("assignment-editor")).toBeVisible();
-  const title = `斜率与图像变化合成作业 ${Date.now()}`;
+  const title = `斜率与图像变化练习 ${Date.now()}`;
   await page.getByTestId("assignment-title").fill(title);
   await page.getByTestId("assignment-item-3").fill(
     "请用自己的语言解释斜率正负与图像变化方向。"
@@ -50,13 +52,13 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   await page.getByTestId("publish-assignment").click();
   await page.locator(".ant-popconfirm-buttons").getByRole("button").last().click();
   expect((await publishResponse).status()).toBe(201);
-  await expect(page.getByTestId("assignment-detail")).toContainText("已发布");
+  await expect(page.getByTestId("assignment-detail")).toContainText("进行中");
 
   await page.reload();
   await expect(page.getByTestId("assignment-detail")).toContainText(title, {
     timeout: 20_000
   });
-  await expect(page.getByTestId("assignment-detail")).toContainText("已发布");
+  await expect(page.getByTestId("assignment-detail")).toContainText("进行中");
 
   const importResponse = page.waitForResponse(
     (response) =>
@@ -65,7 +67,7 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   );
   await page.getByTestId("import-submissions").click();
   expect((await importResponse).status()).toBe(201);
-  await expect(page.getByText("未交", { exact: true })).toHaveCount(2, {
+  await expect(page.getByTestId("assignment-detail")).toContainText("10/12 已交", {
     timeout: 20_000
   });
   const submissionsResponse = await request.get(
@@ -102,7 +104,7 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   await expect(page.getByTestId("assignment-analytics")).toBeVisible({
     timeout: 20_000
   });
-  await expect(page.getByTestId("assignment-analytics")).toContainText("LearningObjective 表现");
+  await expect(page.getByTestId("assignment-analytics")).toContainText("教学目标表现");
   await page.screenshot({
     path: `${screenshotRoot}/01-assignment-grading-and-evidence.png`,
     fullPage: true,
@@ -112,8 +114,9 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   await page.goto("/students");
   await expect(page.getByTestId("real-student-list")).toBeVisible();
   await page.getByTestId("real-student-list").getByRole("button").first().click();
+  await page.getByRole("button", { name: "学习证据", exact: true }).click();
   await expect(page.getByTestId("learner-confirmed-evidence")).toContainText(
-    "来源：Assignment → Attempt → ItemResponse → GradeDecision"
+    "已关联本课教学目标"
   );
   await expect(page.locator("body")).not.toContainText("差生");
   await expect(page.locator("body")).not.toContainText("低能力学生");
@@ -137,8 +140,7 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   await expect(page).toHaveURL(/\/agent\/tasks\//, { timeout: 20_000 });
   const workingSet = page.getByTestId("task-working-set");
   await expect(workingSet).toContainText("待定系数法");
-  await expect(workingSet).toContainText(assignmentRef);
-  await expect(workingSet.getByText(/evidence-observation:/).first()).toBeVisible();
+  await expect(workingSet).toContainText("条学习证据");
   await page.screenshot({
     path: `${screenshotRoot}/02-selected-evidence-working-set.png`,
     fullPage: true,
@@ -155,8 +157,8 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   expect(taskDetail.workingSet.evidenceRefs.length).toBeGreaterThan(0);
 
   const requestText =
-    "仅根据教师明确选择的本次作业 Evidence，调整下一课待定系数法的教学安排。";
-  await page.getByRole("textbox", { name: "教师助手任务说明" }).fill(requestText);
+    "仅根据教师明确选择的本次作业学习证据，调整下一课待定系数法的教学安排。";
+  await page.getByRole("textbox", { name: "告诉 Agent 你想完成什么" }).fill(requestText);
   const invocationResponse = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === apiRoutes.teacher.modelInvocations &&
@@ -189,15 +191,27 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   );
   await page.getByTestId("save-teacher-edits").click();
   await expect(page.getByText("修改后接受")).toBeVisible({ timeout: 20_000 });
-  await page.getByRole("button", { name: "查看教学计划" }).click();
+  await page.getByRole("button", { name: "查看教学方案" }).click();
   await expect(page.getByTestId("teaching-plan-preparation-task")).toContainText(
-    "awaiting_plan_review"
+    "当前状态：进行中"
   );
+  const awaitingTask = await request.get(
+    apiRoutes.teacher.preparationTask(adjustedBody.task.taskRef),
+    { headers }
+  );
+  expect(awaitingTask.status()).toBe(200);
+  expect((await awaitingTask.json()).status).toBe("awaiting_plan_review");
   await page.getByTestId("approve-teaching-plan").click();
   await expect(page.getByTestId("teaching-plan-preparation-task")).toContainText(
-    "ready_for_use",
+    "当前状态：已完成",
     { timeout: 20_000 }
   );
+  const readyTask = await request.get(
+    apiRoutes.teacher.preparationTask(adjustedBody.task.taskRef),
+    { headers }
+  );
+  expect(readyTask.status()).toBe(200);
+  expect((await readyTask.json()).status).toBe("ready_for_use");
 
   const nextLessonPlans = await request.get(
     apiRoutes.teacher.lessonTeachingPlans("lesson:coefficient-method"),
@@ -207,7 +221,7 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
   expect((await nextLessonPlans.json()).currentApproved).not.toBeNull();
   await page.reload();
   await expect(page.getByTestId("teaching-plan-preparation-task")).toContainText(
-    "ready_for_use",
+    "当前状态：已完成",
     { timeout: 20_000 }
   );
   await page.screenshot({
@@ -215,6 +229,24 @@ test("Assignment → confirmed Evidence → adjustment Task → approved next le
     fullPage: true,
     animations: "disabled"
   });
+  const cleanupTaskResponse = await request.get(
+    apiRoutes.teacher.preparationTask(adjustedBody.task.taskRef),
+    { headers }
+  );
+  expect(cleanupTaskResponse.status()).toBe(200);
+  const cleanupTask = await cleanupTaskResponse.json();
+  const cancelledTaskResponse = await request.post(
+    apiRoutes.teacher.preparationTaskCancel(adjustedBody.task.taskRef),
+    {
+      headers,
+      data: {
+        expectedVersion: cleanupTask.version,
+        purpose: "lesson-preparation.cancel",
+        idempotencyKey: `playwright:gate27:cancel:${crypto.randomUUID()}`
+      }
+    }
+  );
+  expect(cancelledTaskResponse.status()).toBe(201);
   await assertCleanMonitor(monitor);
 });
 

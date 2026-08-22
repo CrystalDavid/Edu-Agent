@@ -50,20 +50,21 @@ import {
   transitionLessonPreparationTask,
   updateAssignmentDraft
 } from "../api";
+import { cleanDisplayText } from "../presentation";
 
 const { Paragraph, Text, Title } = Typography;
 
 const statusLabels = {
-  draft: "草稿",
-  published: "已发布",
-  closed: "已关闭",
-  archived: "已归档"
+  draft: "未完成",
+  published: "进行中",
+  closed: "已完成",
+  archived: "已完成"
 } as const;
 
 const submissionLabels = {
-  not_submitted: "未交",
-  submitted: "待确认批改",
-  graded: "已确认"
+  not_submitted: "未完成",
+  submitted: "进行中",
+  graded: "已完成"
 } as const;
 
 export function AssignmentWorkspace(props: {
@@ -122,8 +123,11 @@ export function AssignmentWorkspace(props: {
         loadAssignments()
       ]);
       setCourses(courseResult.items);
-      setAssignments(assignmentResult.items);
       const course = courseResult.items[0];
+      const courseAssignments = course
+        ? assignmentResult.items.filter((assignment) => assignment.courseRunRef === course.courseRunRef)
+        : [];
+      setAssignments(courseAssignments);
       if (course) {
         const unitResult = await loadCurriculumUnits(course.courseRunRef);
         setUnits(unitResult.items);
@@ -140,7 +144,7 @@ export function AssignmentWorkspace(props: {
         }
       }
       const nextRef =
-        selectedAssignmentRef ?? assignmentResult.items[0]?.assignmentRef ?? null;
+        selectedAssignmentRef ?? courseAssignments[0]?.assignmentRef ?? null;
       setSelectedAssignmentRef(nextRef);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -310,7 +314,7 @@ export function AssignmentWorkspace(props: {
       });
       await loadSelected(detail.assignmentRef);
       props.onAction(
-        `已载入 ${result.submittedCount} 份匿名合成提交；${result.notSubmittedCount} 人明确显示为未交。`
+        `已载入 ${result.submittedCount} 份匿名提交；${result.notSubmittedCount} 人明确显示为未交。`
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -369,7 +373,7 @@ export function AssignmentWorkspace(props: {
       });
       setGradeDecision(result.decision);
       setGradeHistory((await loadGradeHistory(selectedSubmission.submissionRef)).items);
-      props.onAction("批改草稿已保存；尚未形成正式成绩或 Evidence。");
+      props.onAction("批改草稿已保存；尚未形成正式成绩或学习证据。");
       if (detail) await loadSelected(detail.assignmentRef, true);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -396,7 +400,7 @@ export function AssignmentWorkspace(props: {
       });
       setGradeDecision(result.decision);
       setGradeHistory((await loadGradeHistory(submissionRef)).items);
-      props.onAction("批改已由教师确认，并生成可追溯学习 Evidence。");
+      props.onAction("批改已由教师确认，并生成可追溯学习证据。");
       if (detail) await loadSelected(detail.assignmentRef, true);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -419,7 +423,7 @@ export function AssignmentWorkspace(props: {
       if (selectedSubmission?.submissionRef) {
         setGradeHistory((await loadGradeHistory(selectedSubmission.submissionRef)).items);
       }
-      props.onAction("已创建新的批改草稿；原确认版本和 Evidence 历史仍保留。");
+      props.onAction("已创建新的批改草稿；原确认版本和学习证据历史仍保留。");
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -435,7 +439,7 @@ export function AssignmentWorkspace(props: {
     const evidenceRefs = [...new Set(errors.flatMap((item) => item.evidenceRefs))];
     const itemRefs = [...new Set(errors.map((item) => item.itemRef))];
     if (evidenceRefs.length === 0) {
-      setError("请先选择至少一组已确认的共性错误 Evidence。");
+      setError("请先选择至少一组已确认的共性错误证据。");
       return;
     }
     setActing(true);
@@ -469,6 +473,26 @@ export function AssignmentWorkspace(props: {
     }
   }
 
+  const evidenceStageSummary = [
+    { label: "待发布", value: assignments.filter((item) => item.status === "draft").length },
+    { label: "进行中", value: assignments.filter((item) => item.status === "published").length },
+    {
+      label: "待批改",
+      value: assignments.reduce(
+        (total, item) => total + Math.max(0, item.submittedCount - item.confirmedGradeCount),
+        0
+      )
+    },
+    {
+      label: "已形成 Evidence",
+      value: assignments.reduce((total, item) => total + item.confirmedGradeCount, 0)
+    },
+    {
+      label: "已关闭",
+      value: assignments.filter((item) => item.status === "closed" || item.status === "archived").length
+    }
+  ];
+
   return (
     <Spin spinning={loading}>
       <div className="assignment-workspace" data-testid="assignment-workspace">
@@ -482,10 +506,22 @@ export function AssignmentWorkspace(props: {
             onClose={() => setError(null)}
           />
         ) : null}
+        <header className="assignment-evidence-header">
+          <div>
+            <Text className="section-kicker">ASSIGNMENTS &amp; EVIDENCE</Text>
+            <Title level={2}>作业与学习证据</Title>
+            <Paragraph>在课程范围内查看作业发布、提交、批改和已确认 Evidence；正式判断仍由教师完成。</Paragraph>
+          </div>
+          <div className="assignment-evidence-stages" aria-label="作业与证据状态概览">
+            {evidenceStageSummary.map((item) => (
+              <span key={item.label}><small>{item.label}</small><strong>{item.value}</strong></span>
+            ))}
+          </div>
+        </header>
         <div className="page-grid">
           <Card className="workspace-card" variant="borderless">
             <Space orientation="vertical" style={{ width: "100%" }}>
-              <Text className="section-kicker">PostgreSQL 作业</Text>
+              <Text className="section-kicker">作业流程</Text>
               <Button type="primary" onClick={startNew} data-testid="create-assignment">
                 创建作业草稿
               </Button>
@@ -502,16 +538,15 @@ export function AssignmentWorkspace(props: {
                     onClick={() => setSelectedAssignmentRef(assignment.assignmentRef)}
                     data-testid={`assignment-${assignment.status}`}
                   >
-                    <strong>{assignment.title}</strong>
+                    <strong>{cleanDisplayText(assignment.title)}</strong>
                     <small>
-                      {statusLabels[assignment.status]} · v{assignment.currentVersionNumber} ·
-                      {assignment.submittedCount}/{assignment.enrolledCount} 已交
+                      {statusLabels[assignment.status]} · {assignment.submittedCount}/{assignment.enrolledCount} 已交
                     </small>
                   </button>
                 ))}
               </div>
               {assignments.length === 0 ? (
-                <Empty description="尚无真实作业；请从当前课时创建草稿。" />
+                <Empty description="尚无作业。创建草稿后，提交、批改与已确认 Evidence 会在这里形成连续记录。" />
               ) : null}
             </Space>
           </Card>
@@ -525,7 +560,7 @@ export function AssignmentWorkspace(props: {
                   onChange={setSelectedLessonRef}
                   options={lessons.map((lesson) => ({
                     value: lesson.lessonRef,
-                    label: `${lesson.sequence}. ${lesson.title}`,
+                    label: `${lesson.sequence}. ${cleanDisplayText(lesson.title)}`,
                     disabled: lesson.learningObjectives.length === 0
                   }))}
                   style={{ width: "100%" }}
@@ -578,16 +613,14 @@ export function AssignmentWorkspace(props: {
             ) : detail ? (
               <section data-testid="assignment-detail">
                 <Space wrap>
-                  <Tag color={detail.status === "draft" ? "default" : "processing"}>
+                  <Tag color={detail.status === "draft" ? "error" : detail.status === "published" ? "warning" : "success"}>
                     {statusLabels[detail.status]}
                   </Tag>
-                  <Tag>聚合 v{detail.version}</Tag>
-                  <Tag>内容 v{detail.currentVersionNumber}</Tag>
                 </Space>
-                <Title level={2}>{detail.title}</Title>
-                <Paragraph>{detail.currentVersion.instructions}</Paragraph>
+                <Title level={2}>{cleanDisplayText(detail.title)}</Title>
+                <Paragraph>{cleanDisplayText(detail.currentVersion.instructions)}</Paragraph>
                 <Paragraph>
-                  {detail.lessonTitle} · {detail.itemCount} 题 · {detail.submittedCount}/
+                  {cleanDisplayText(detail.lessonTitle)} · {detail.itemCount} 题 · {detail.submittedCount}/
                   {detail.enrolledCount} 已交 · {detail.confirmedGradeCount} 已确认批改
                 </Paragraph>
                 <Space wrap>
@@ -607,7 +640,7 @@ export function AssignmentWorkspace(props: {
                   ) : null}
                   {detail.status === "published" && detail.submittedCount === 0 ? (
                     <Button loading={acting} onClick={() => void importDemo()} data-testid="import-submissions">
-                      载入匿名合成提交
+                      载入匿名提交
                     </Button>
                   ) : null}
                   {detail.status === "published" ? (
@@ -621,23 +654,25 @@ export function AssignmentWorkspace(props: {
                     </Button>
                   ) : null}
                 </Space>
-                <Title level={4}>版本历史</Title>
-                <Space wrap>
-                  {detail.versionHistory.map((version) => (
-                    <Tag key={version.assignmentVersionRef}>
-                      v{version.versionNumber} · {version.items.length} 题
-                    </Tag>
-                  ))}
-                </Space>
+                <details>
+                  <summary>历史记录</summary>
+                  <Space wrap>
+                    {detail.versionHistory.map((version) => (
+                      <Tag key={version.assignmentVersionRef}>
+                        第 {version.versionNumber} 版 · {version.items.length} 题
+                      </Tag>
+                    ))}
+                  </Space>
+                </details>
                 <Title level={4}>题目</Title>
                 {detail.currentVersion.items.map((item) => (
                   <Paragraph key={item.itemRef}>
-                    {item.sequence}. {item.prompt}（{item.maxScore} 分 · {itemTypeLabel(item.itemType)}）
+                    {item.sequence}. {cleanDisplayText(item.prompt)}（{item.maxScore} 分 · {itemTypeLabel(item.itemType)}）
                   </Paragraph>
                 ))}
               </section>
             ) : (
-              <Empty description="选择作业或创建新草稿" />
+              <Empty description="选择一份作业，查看提交、批改与已确认学习证据" />
             )}
           </Card>
         </div>
@@ -652,11 +687,11 @@ export function AssignmentWorkspace(props: {
                 dataSource={submissions}
                 pagination={{ pageSize: 12, hideOnSinglePage: true }}
                 columns={[
-                  { title: "匿名 learner", dataIndex: "displayName" },
+                  { title: "学生", dataIndex: "displayName", render: (value: string) => cleanDisplayText(value) },
                   {
                     title: "状态",
                     render: (_, record) => (
-                      <Tag color={record.submissionState === "not_submitted" ? "default" : "blue"}>
+                      <Tag color={record.submissionState === "not_submitted" ? "error" : record.submissionState === "submitted" ? "warning" : "success"}>
                         {submissionLabels[record.submissionState]}
                       </Tag>
                     )
@@ -672,7 +707,7 @@ export function AssignmentWorkspace(props: {
                       <Button
                         size="small"
                         disabled={!record.submissionRef}
-                        title={!record.submissionRef ? "未交表示没有 SubmissionAttempt，不能批改" : undefined}
+                        title={!record.submissionRef ? "未交表示没有提交记录，不能批改" : undefined}
                         onClick={() => void openSubmission(record)}
                       >
                         {record.gradeStatus === "confirmed" ? "查看批改" : "批改"}
@@ -688,8 +723,8 @@ export function AssignmentWorkspace(props: {
                 <>
                   <Title level={3}>{selectedSubmission.displayName} · 逐题批改</Title>
                   <Paragraph>
-                    Attempt {selectedSubmission.latestAttemptRef} · 不可变 ·
-                    {gradeDecision ? ` GradeDecision v${gradeDecision.version}` : " 尚无草稿"}
+                    第 {selectedSubmission.attempts.length} 次提交 · 原始作答保留 ·
+                    {gradeDecision ? ` 批改第 ${gradeDecision.version} 版` : " 尚无批改草稿"}
                   </Paragraph>
                   {gradeItems.map((grade, index) => {
                     const response = selectedSubmission.attempts
@@ -771,13 +806,13 @@ export function AssignmentWorkspace(props: {
                     type="info"
                     showIcon
                     title="保存不等于确认"
-                    description="只有教师确认后才形成正式 GradeDecision 和可追溯 Evidence；确定性评分只是建议。"
+                    description="只有教师确认后才形成正式批改结果和可追溯学习证据；系统评分只作为建议。"
                   />
                   <Title level={4}>批改与反馈历史</Title>
                   <Space orientation="vertical" size="small" data-testid="grade-history">
                     {gradeHistory.map((decision) => (
                       <Text key={decision.gradeDecisionRef}>
-                        v{decision.version} · {decision.status} · {decision.totalScore}/{decision.maxScore} · {decision.feedback || "无整体反馈"}
+                        第 {decision.version} 版 · {decision.status === "confirmed" ? "已确认" : "草稿"} · {decision.totalScore}/{decision.maxScore} · {decision.feedback || "无整体反馈"}
                       </Text>
                     ))}
                   </Space>
@@ -799,7 +834,7 @@ export function AssignmentWorkspace(props: {
               <Tag>平均分 {analytics.averageScore?.toFixed(1) ?? "—"}</Tag>
               <Tag>中位数 {analytics.medianScore?.toFixed(1) ?? "—"}</Tag>
             </Space>
-            <Title level={4}>共性错误与 Evidence 选择</Title>
+            <Title level={4}>共性错误与学习证据选择</Title>
             <Checkbox.Group
               value={selectedErrorRefs}
               onChange={(values) => setSelectedErrorRefs(values.map(String))}
@@ -807,7 +842,7 @@ export function AssignmentWorkspace(props: {
               <Space orientation="vertical">
                 {analytics.commonErrors.map((item) => (
                   <Checkbox key={item.errorRef} value={item.errorRef}>
-                    {item.summary} · {item.evidenceRefs.length} 条当前 Evidence
+                    {cleanDisplayText(item.summary)} · {item.evidenceRefs.length} 条当前证据
                   </Checkbox>
                 ))}
               </Space>
@@ -820,16 +855,16 @@ export function AssignmentWorkspace(props: {
                 </Text>
               ))}
             </Space>
-            <Title level={4}>LearningObjective 表现</Title>
+            <Title level={4}>教学目标表现</Title>
             <Space orientation="vertical" size="small">
               {analytics.objectivePerformance.map((objective) => (
                 <Text key={objective.objectiveRef}>
-                  {objective.objectiveTitle} · {objective.confirmedResponseCount} 条已确认作答 · 得分率 {objective.averageScoreRate === null ? "—" : `${Math.round(objective.averageScoreRate * 100)}%`}
+                  {cleanDisplayText(objective.objectiveTitle)} · {objective.confirmedResponseCount} 条已确认作答 · 得分率 {objective.averageScoreRate === null ? "—" : `${Math.round(objective.averageScoreRate * 100)}%`}
                 </Text>
               ))}
             </Space>
             <Paragraph type="secondary">
-              统计从 SubmissionAttempt、ItemResponse 与 confirmed GradeDecision 实时重算，不形成长期能力标签。
+              统计从提交、逐题作答与教师确认的批改结果实时重算，不形成长期能力标签。
             </Paragraph>
             <Button
               type="primary"
@@ -839,7 +874,7 @@ export function AssignmentWorkspace(props: {
               onClick={() => void adjustNextLesson()}
               data-testid="adjust-next-lesson"
             >
-              调整下一课{targetLesson ? `：${targetLesson.title}` : ""}
+              调整下一课{targetLesson ? `：${cleanDisplayText(targetLesson.title)}` : ""}
             </Button>
           </Card>
         ) : null}

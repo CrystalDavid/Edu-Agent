@@ -15,8 +15,7 @@ export const appRoutes = [
   "/evidence",
   "/copilot",
   "/teaching-plan",
-  "/runs",
-  "/style-guide"
+  "/runs"
 ] as const;
 
 export type AppRoute = (typeof appRoutes)[number];
@@ -169,6 +168,7 @@ export function parseAppRoute(
 export function useAppRoute(): {
   route: AppRoute;
   navigate: (route: AppRoute) => void;
+  goBack: (fallback?: AppRoute) => void;
   proposalRevisionRef: string | null;
   preparationTaskRef: string | null;
   reflectionRef: string | null;
@@ -184,20 +184,46 @@ export function useAppRoute(): {
   }) => void;
   navigatePreparation: (
     preparationTaskRef: string,
-    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs"
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs",
+    prompt?: string
   ) => void;
 } {
   const [location, setLocation] = useState<ParsedRoute>(() =>
     parseAppRoute(window.location.pathname, window.location.search)
   );
 
+  const historyDepth = () => {
+    const value = (window.history.state as { eduAgentDepth?: unknown } | null)
+      ?.eduAgentDepth;
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  };
+
+  const pushPath = (path: string) => {
+    window.history.pushState(
+      { eduAgentDepth: historyDepth() + 1 },
+      "",
+      path
+    );
+  };
+
   useEffect(() => {
     const initial = parseAppRoute(
       window.location.pathname,
       window.location.search
     );
+    if (typeof window.history.state?.eduAgentDepth !== "number") {
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), eduAgentDepth: 0 },
+        "",
+        window.location.href
+      );
+    }
     if (window.location.pathname !== initial.canonicalPath) {
-      window.history.replaceState({}, "", initial.canonicalPath);
+      window.history.replaceState(
+        { ...(window.history.state ?? {}), eduAgentDepth: historyDepth() },
+        "",
+        initial.canonicalPath
+      );
       setLocation(initial);
     }
     const onPopState = () => {
@@ -206,7 +232,11 @@ export function useAppRoute(): {
         window.location.search
       );
       if (window.location.pathname !== next.canonicalPath) {
-        window.history.replaceState({}, "", next.canonicalPath);
+        window.history.replaceState(
+          { ...(window.history.state ?? {}), eduAgentDepth: historyDepth() },
+          "",
+          next.canonicalPath
+        );
       }
       setLocation(next);
     };
@@ -222,6 +252,15 @@ export function useAppRoute(): {
     lessonRef: location.lessonRef,
     fileAssetRef: location.fileAssetRef,
     fileLessonRef: location.fileLessonRef,
+    goBack(fallback = defaultRoute) {
+      if (historyDepth() > 0) {
+        window.history.back();
+        return;
+      }
+      window.history.pushState({ eduAgentDepth: 1 }, "", fallback);
+      setLocation(parseAppRoute(fallback));
+      window.scrollTo({ top: 0, behavior: "instant" });
+    },
     navigate(nextRoute) {
       if (
         nextRoute === location.route &&
@@ -234,7 +273,7 @@ export function useAppRoute(): {
       ) {
         return;
       }
-      window.history.pushState({}, "", nextRoute);
+      pushPath(nextRoute);
       setLocation({
         route: nextRoute,
         proposalRevisionRef: null,
@@ -258,7 +297,7 @@ export function useAppRoute(): {
       ) {
         return;
       }
-      window.history.pushState({}, "", path);
+      pushPath(path);
       setLocation({
         route: "/copilot",
         proposalRevisionRef,
@@ -275,7 +314,7 @@ export function useAppRoute(): {
       const path = `/teaching/lessons/${encodeURIComponent(
         lessonRef
       )}`;
-      window.history.pushState({}, "", path);
+      pushPath(path);
       setLocation({
         route: "/teaching",
         proposalRevisionRef: null,
@@ -290,7 +329,7 @@ export function useAppRoute(): {
     },
     navigateReflection(reflectionRef) {
       const path = `/agent/reflections/${encodeURIComponent(reflectionRef)}`;
-      window.history.pushState({}, "", path);
+      pushPath(path);
       setLocation({
         route: "/agent",
         proposalRevisionRef: null,
@@ -308,7 +347,7 @@ export function useAppRoute(): {
       if (context.assetRef) search.set("asset", context.assetRef);
       if (context.lessonRef) search.set("lesson", context.lessonRef);
       const path = `/files${search.size > 0 ? `?${search.toString()}` : ""}`;
-      window.history.pushState({}, "", path);
+      pushPath(path);
       setLocation({
         route: "/files",
         proposalRevisionRef: null,
@@ -323,12 +362,16 @@ export function useAppRoute(): {
     },
     navigatePreparation(
       preparationTaskRef,
-      destination = "/agent"
+      destination = "/agent",
+      prompt
     ) {
-      const path = `${destination}/tasks/${encodeURIComponent(
+      const canonicalPath = `${destination}/tasks/${encodeURIComponent(
         preparationTaskRef
       )}`;
-      window.history.pushState({}, "", path);
+      const search = new URLSearchParams();
+      if (prompt?.trim()) search.set("prompt", prompt.trim());
+      const path = `${canonicalPath}${search.size > 0 ? `?${search.toString()}` : ""}`;
+      pushPath(path);
       setLocation({
         route: destination,
         proposalRevisionRef: null,
@@ -337,7 +380,7 @@ export function useAppRoute(): {
         lessonRef: null,
         fileAssetRef: null,
         fileLessonRef: null,
-        canonicalPath: path
+        canonicalPath
       });
       window.scrollTo({ top: 0, behavior: "instant" });
     }

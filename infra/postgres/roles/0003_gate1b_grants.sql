@@ -7,6 +7,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE
   ON ALL TABLES IN SCHEMA governance, work, runtime, capability,
   artifact, education
   TO edu_app;
+GRANT SELECT, INSERT, UPDATE
+  ON ALL TABLES IN SCHEMA personalization
+  TO edu_app;
+REVOKE DELETE, TRUNCATE
+  ON ALL TABLES IN SCHEMA personalization
+  FROM edu_app;
 
 GRANT USAGE ON SCHEMA runtime, governance, education, personalization
   TO edu_runtime;

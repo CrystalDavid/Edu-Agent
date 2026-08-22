@@ -1,171 +1,144 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
-import { Button, Drawer } from "antd";
+import type { LessonPreparationTaskSummary } from "@edu-agent/contracts";
+import { Alert, Button, Input, Spin } from "antd";
 
-import type { AppRoute } from "../route";
-import {
-  agentConversations,
-  initialAgentContext,
-  type AgentContextItem,
-  type AgentConversation
-} from "../teacher-portal-data";
-import {
-  AgentChat,
-  AgentContextPanel,
-  AgentConversationList
-} from "../components/portal/AgentComponents";
+import { loadLessonPreparationTasks } from "../api";
 import { WorkspaceIcon } from "../components/WorkspaceIcon";
-
-function responseFor(message: string): string {
-  if (message.includes("PPT") || message.includes("课件")) {
-    return "我可以基于当前教案，先生成一份 12 页的课件结构草稿：情境导入、斜率比较、课堂追问、即时练习和退出卡。开始前请确认是否继续使用八年级 3 班的当前教学目标。";
-  }
-  if (message.includes("作业")) {
-    return "最近作业最值得复核的是：部分学生能判断图像趋势，但解释时仍引用截距位置。这个结论只基于现有观察，建议加入一个新情境追问后再调整教学。";
-  }
-  if (message.includes("日程")) {
-    return "我找到了今天 15:00–16:00 的空闲时段，可以将“完善一次函数课件”安排进去。当前只是日程草稿，需要你确认后才会保存。";
-  }
-  return "我已经读取你明确选择的课程、班级和文件。可以先整理目标、现有材料与缺口，再给出一份可修改的任务草稿。";
-}
+import { formatDisplayDate, lessonPreparationStatusLabel } from "../presentation";
+import type { AppRoute } from "../route";
 
 export function AgentWorkspacePage(props: {
   navigate: (route: AppRoute) => void;
-  onAction: (message: string) => void;
+  navigatePreparation: (
+    taskRef: string,
+    destination?: "/agent" | "/copilot" | "/teaching-plan" | "/runs",
+    prompt?: string
+  ) => void;
 }) {
-  const [conversations, setConversations] = useState(agentConversations);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [context, setContext] = useState<AgentContextItem[]>(initialAgentContext);
-  const [contextDrawerOpen, setContextDrawerOpen] = useState(false);
-  const selected = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedId) ?? null,
-    [conversations, selectedId]
-  );
+  const [tasks, setTasks] = useState<LessonPreparationTaskSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState("");
 
   useEffect(() => {
-    const prefill = window.sessionStorage.getItem("agent-prefill");
-    if (prefill) {
-      startQuickTask(prefill);
-      window.sessionStorage.removeItem("agent-prefill");
-    }
-    // Intentional one-time import from navigation context.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    setLoading(true);
+    loadLessonPreparationTasks()
+      .then((result) => {
+        if (active) setTasks(result.items);
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : "无法读取备课任务。");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const updateConversation = (next: AgentConversation) => {
-    setConversations((items) => items.map((item) => item.id === next.id ? next : item));
-  };
-  const createConversation = (title = "新对话") => {
-    const next: AgentConversation = {
-      id: `conversation-local-${Date.now()}`,
-      title,
-      group: "今天",
-      updatedAt: "刚刚",
-      scope: "八年级 3 班",
-      messages: []
-    };
-    setConversations((items) => [next, ...items]);
-    setSelectedId(next.id);
-    return next;
-  };
-  const send = (message: string) => {
-    const current = selected ?? createConversation(message.slice(0, 18));
-    const next: AgentConversation = {
-      ...current,
-      title: current.title === "新对话" ? message.slice(0, 18) : current.title,
-      updatedAt: "刚刚",
-      messages: [
-        ...current.messages,
-        { id: `teacher-${Date.now()}`, role: "teacher", content: message },
-        {
-          id: `assistant-${Date.now() + 1}`,
-          role: "assistant",
-          content: responseFor(message),
-          sources: context.slice(0, 3).map((item) => item.title),
-          steps: ["确认用户目标与当前工作空间", "读取教师明确选择的上下文", "生成可编辑的演示草稿"]
-        }
-      ]
-    };
-    setConversations((items) => items.some((item) => item.id === next.id)
-      ? items.map((item) => item.id === next.id ? next : item)
-      : [next, ...items]);
-    setSelectedId(next.id);
-  };
-  const startQuickTask = (task: string) => {
-    const conversation = createConversation(task);
-    const next = {
-      ...conversation,
-      messages: [
-        { id: `teacher-${Date.now()}`, role: "teacher" as const, content: task },
-        {
-          id: `assistant-${Date.now() + 1}`,
-          role: "assistant" as const,
-          content: responseFor(task),
-          sources: context.slice(0, 3).map((item) => item.title),
-          steps: ["识别任务类型", "确认课程与文件范围", "准备可编辑的演示草稿"]
-        }
-      ]
-    };
-    setConversations((items) => items.map((item) => item.id === next.id ? next : item));
-  };
-  const handleAction = (action: string) => {
-    if (action === "创建教学任务") {
-      window.sessionStorage.setItem(
-        "copilot-prefill",
-        "根据当前学习证据，比较两种明日课堂调整策略"
-      );
-      props.navigate("/copilot");
+  const activeTasks = useMemo(
+    () => tasks
+      .filter((task) => !["completed", "cancelled"].includes(task.status))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    [tasks]
+  );
+  const nextTask = activeTasks[0] ?? null;
+  const recentTasks = activeTasks.slice(0, 4);
+  const suggestions = nextTask
+    ? ["完善教学目标", "调整课堂练习", "优化板书设计"]
+    : [];
+
+  const startAssistant = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!nextTask) {
+      props.navigate("/teaching");
       return;
     }
-    props.onAction(`${action}：当前为演示交互，正式写入需要后续业务能力。`);
+    props.navigatePreparation(
+      nextTask.taskRef,
+      "/agent",
+      prompt.trim() || undefined
+    );
   };
 
   return (
-    <div className="agent-workspace" data-testid="agent-page">
-      <AgentConversationList
-        conversations={conversations}
-        selectedId={selectedId}
-        onSelect={(conversation) => setSelectedId(conversation.id)}
-        onNew={() => createConversation()}
-        onUpdate={updateConversation}
-        onDelete={(id) => {
-          setConversations((items) => items.filter((item) => item.id !== id));
-          if (selectedId === id) setSelectedId(null);
-        }}
-      />
-      <AgentChat
-        conversation={selected}
-        onSend={send}
-        onQuickTask={startQuickTask}
-        onAction={handleAction}
-      />
-      <Button
-        className="agent-context-drawer-trigger"
-        icon={<WorkspaceIcon name="memory" />}
-        onClick={() => setContextDrawerOpen(true)}
-      >
-        待办与上下文
-      </Button>
-      <AgentContextPanel
-        context={context}
-        onRemove={(id) => setContext((items) => items.filter((item) => item.id !== id))}
-        onClear={() => setContext([])}
-        onAction={handleAction}
-      />
-      <Drawer
-        title="待办与上下文"
-        size="default"
-        open={contextDrawerOpen}
-        onClose={() => setContextDrawerOpen(false)}
-        className="agent-context-drawer"
-      >
-        <AgentContextPanel
-          context={context}
-          onRemove={(id) => setContext((items) => items.filter((item) => item.id !== id))}
-          onClear={() => setContext([])}
-          onAction={handleAction}
-        />
-      </Drawer>
+    <div className="portal-page agent-home-page" data-testid="agent-home-page">
+      {error ? <Alert type="error" showIcon message={error} /> : null}
+      {loading ? <Spin size="large" /> : null}
+
+      {!loading ? (
+        <main className="agent-workspace-home">
+          <section className="agent-focus" aria-label="助手入口">
+            <h1>{nextTask ? `继续准备「${nextTask.lessonTitle}」` : "今天先做什么？"}</h1>
+            <form className="agent-composer" onSubmit={startAssistant}>
+              <button
+                type="button"
+                className="agent-composer__attach"
+                aria-label="打开资料"
+                onClick={() => props.navigate("/files")}
+              >
+                <WorkspaceIcon name="plus" variant="filled" />
+              </button>
+              <Input.TextArea
+                aria-label="告诉 Agent 你想完成什么"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                placeholder="告诉 Agent 你想完成什么…"
+              />
+              <span className="agent-composer__mode">Agent</span>
+              <span className="agent-composer__voice" aria-hidden="true">
+                <WorkspaceIcon name="voice" variant="filled" />
+              </span>
+              <Button
+                type="primary"
+                htmlType="submit"
+                aria-label={nextTask ? "继续这项工作" : "选择课时"}
+                icon={<WorkspaceIcon name="send" variant="filled" />}
+              />
+            </form>
+            {suggestions.length > 0 ? (
+              <div className="agent-prompt-suggestions" aria-label="常用需求">
+                {suggestions.map((suggestion) => (
+                  <button type="button" key={suggestion} onClick={() => setPrompt(suggestion)}>
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="agent-recent-work" aria-label="最近工作">
+            <header>
+              <h2>最近工作</h2>
+              {recentTasks.length > 0 ? <span>{recentTasks.length} 项未完成</span> : null}
+            </header>
+            <div className="agent-task-list" data-testid="agent-task-list">
+              {recentTasks.length > 0 ? recentTasks.map((task) => (
+                <button
+                  type="button"
+                  key={task.taskRef}
+                  onClick={() => props.navigatePreparation(task.taskRef, "/agent")}
+                >
+                  <span>
+                    <strong>{task.lessonTitle}</strong>
+                    <small>{lessonPreparationStatusLabel(task.status)}{task.dueAt ? ` · ${formatDisplayDate(task.dueAt)}` : ""}</small>
+                  </span>
+                  <WorkspaceIcon name="arrowRight" />
+                </button>
+              )) : (
+                <button type="button" onClick={() => props.navigate("/teaching")}>
+                  <span><strong>选择一节课开始</strong><small>从课程进入新的教学工作</small></span>
+                  <WorkspaceIcon name="arrowRight" />
+                </button>
+              )}
+            </div>
+          </section>
+        </main>
+      ) : null}
     </div>
   );
 }

@@ -2,9 +2,11 @@ import type {
   AuthorizedContextPlan,
   FormalWriteMetadata,
   FormalWriteReceipt,
+  MemoryContextPackManifest,
   TeacherTaskRequest
 } from "@edu-agent/contracts";
 import {
+  MemoryContextPackManifestSchema,
   TeacherTaskRequestSchema
 } from "@edu-agent/contracts";
 
@@ -19,6 +21,55 @@ import {
 } from "../../../platform/postgres/write-context.js";
 
 export class PostgresGate2RuntimeRepository {
+  async getMemoryContextPackManifest(
+    executor: SqlExecutor,
+    agentRunRef: string
+  ): Promise<MemoryContextPackManifest | null> {
+    const result = await executor.query<{ manifest: unknown | null }>(
+      `SELECT output #> '{contextEngineering,memoryContextPackManifest}' AS manifest
+         FROM runtime.agent_run
+        WHERE agent_run_ref = $1`,
+      [agentRunRef]
+    );
+    const manifest = result.rows[0]?.manifest;
+    if (manifest === null || manifest === undefined) return null;
+    return MemoryContextPackManifestSchema.parse(manifest);
+  }
+
+  async updateMemoryApplicationObservabilityStatus(
+    executor: SqlExecutor,
+    input: {
+      readonly agentRunRef: string;
+      readonly status: "recorded" | "degraded";
+      readonly updatedAt: string;
+    }
+  ): Promise<void> {
+    const state = input.status === "recorded"
+      ? { status: "recorded" }
+      : {
+          status: "degraded",
+          safeErrorCategory: "MEMORY_APPLICATION_RECORDING_FAILED"
+        };
+    const result = await executor.query(
+      `UPDATE runtime.agent_run
+          SET output = jsonb_set(
+                output,
+                '{contextEngineering}',
+                COALESCE(output -> 'contextEngineering', '{}'::jsonb) ||
+                  jsonb_build_object(
+                    'memoryApplicationObservability', $2::jsonb
+                  ),
+                true
+              ),
+              updated_at = $3::timestamptz
+        WHERE agent_run_ref = $1`,
+      [input.agentRunRef, JSON.stringify(state), input.updatedAt]
+    );
+    if (result.rowCount !== 1) {
+      throw new Error("Memory application observability AgentRun is missing.");
+    }
+  }
+
   async insertContextManifest(
     client: PostgresClient,
     input: {
@@ -290,6 +341,7 @@ export class PostgresGate2RuntimeRepository {
         unknowns: string[];
         requestedFieldMask: string[];
         requestSummary: TeacherTaskRequest;
+        memoryContextPackManifest: MemoryContextPackManifest | null;
       }
     | undefined
   > {
@@ -306,6 +358,7 @@ export class PostgresGate2RuntimeRepository {
       unknowns: string[];
       requested_field_mask: string[];
       request_summary: unknown;
+      output: unknown;
     }>(
       `SELECT
          agent_run.agent_run_ref,
@@ -319,7 +372,8 @@ export class PostgresGate2RuntimeRepository {
          context.resource_refs,
          context.unknowns,
          context.requested_field_mask,
-         context.request_summary
+         context.request_summary,
+         agent_run.output
        FROM runtime.agent_run AS agent_run
        JOIN runtime.run_manifest AS manifest
          ON manifest.agent_run_ref = agent_run.agent_run_ref
@@ -346,10 +400,28 @@ export class PostgresGate2RuntimeRepository {
           requestedFieldMask: row.requested_field_mask,
           requestSummary: TeacherTaskRequestSchema.parse(
             row.request_summary
-          )
+          ),
+          memoryContextPackManifest:
+            memoryContextPackFromOutput(row.output)
         }
       : undefined;
   }
+}
+
+function memoryContextPackFromOutput(
+  output: unknown
+): MemoryContextPackManifest | null {
+  if (!isRecord(output)) return null;
+  const contextEngineering = output["contextEngineering"];
+  if (!isRecord(contextEngineering)) return null;
+  const manifest = contextEngineering["memoryContextPackManifest"];
+  return manifest === undefined || manifest === null
+    ? null
+    : MemoryContextPackManifestSchema.parse(manifest);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 interface AuthorizedContextPlanRow {

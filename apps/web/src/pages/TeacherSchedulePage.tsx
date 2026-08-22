@@ -32,7 +32,6 @@ import {
   localDate,
   TodoPanel
 } from "../components/portal/ScheduleComponents";
-import { PageHeader } from "../components/portal/PortalPrimitives";
 import type { AppRoute } from "../route";
 
 const timezone = "Asia/Shanghai";
@@ -123,7 +122,7 @@ export function TeacherSchedulePage(props: {
       startAt: new Date(draft.startAt).toISOString(),
       endAt: new Date(draft.endAt).toISOString(),
       timezone,
-      allDay: false,
+      allDay: draft.allDay,
       eventType: draft.eventType
     };
     if (existing) {
@@ -146,10 +145,6 @@ export function TeacherSchedulePage(props: {
 
   return (
     <div className="portal-page schedule-page" data-testid="schedule-page">
-      <PageHeader
-        title="日程"
-        subtitle="手工待办与日历是真实可编辑数据；备课、作业和批改事项来自源业务投影"
-      />
       <div className="schedule-layout">
         <CalendarView
           mode={mode}
@@ -160,7 +155,10 @@ export function TeacherSchedulePage(props: {
           onModeChange={setMode}
           onPrevious={() => movePeriod(-1)}
           onNext={() => movePeriod(1)}
-          onToday={() => setSelectedDate(localDate(new Date()))}
+          onDateSelect={(date) => {
+            setSelectedDate(date);
+            setMode("day");
+          }}
           onCreate={(draft) => saveCalendar(draft)}
           onUpdate={(event, draft) => saveCalendar(draft, event)}
           onCancelEvent={async (event) => {
@@ -176,6 +174,8 @@ export function TeacherSchedulePage(props: {
         <TodoPanel
           todos={todos}
           projections={projections}
+          calendarEvents={calendar}
+          selectedDate={selectedDate}
           lessonOptions={lessonOptions}
           loading={loading}
           error={error}

@@ -12,8 +12,8 @@ import {
   readModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+  createConfiguredModelProvider
+} from "../modules/capability-integration/infrastructure/model-provider-factory.js";
 import {
   readPostgresEnvironment
 } from "../platform/postgres/config.js";
@@ -99,7 +99,7 @@ try {
       : capabilityResult.capabilities.supportsJsonObject
         ? "json_object"
         : "prompt_json";
-  const provider = new VolcengineArkProvider(settings.ark);
+  const provider = createConfiguredModelProvider(settings);
   const request = createSyntheticLiveModelRequest(
     responseFormat
   );
@@ -234,7 +234,7 @@ function loadLocalEnvironmentWithoutDisplayingIt(): void {
   ) {
     const localPostgresEnvironmentPath = fileURLToPath(
       new URL(
-        "../../../../infra/docker/.env.local",
+        "../../../../infra/local/postgres/.env.local",
         import.meta.url
       )
     );

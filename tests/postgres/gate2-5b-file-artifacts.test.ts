@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Readable } from "node:stream";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import JSZip from "jszip";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -13,7 +13,8 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../apps/api/src/app.js";
 import {
   gate25DemoRefs
-} from "../../apps/api/src/composition/gate2-5-demo-fixture.js";
+} from "../../scripts/sample/gate2-5-demo-fixture.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   createProductContainer
 } from "../../apps/api/src/composition/product-container.js";
@@ -40,7 +41,7 @@ const demoHeaders = {
 beforeEach(async () => {
   await resetGate1BData(adminPool);
   await rm(objectRoot, { recursive: true, force: true });
-  await product.services.seed.seed({ includeGate25: true });
+  await seedSampleData(postgresEnvironment, { includeGate25: true });
 });
 
 afterAll(async () => {
@@ -54,7 +55,10 @@ function metadataHeader(value: unknown): string {
 
 describe("Gate 2.5B file and teaching artifact persistence", () => {
   it("binds a teacher upload to both an Assignment and its immutable content version", async () => {
-    await product.services.seed.seed({ includeGate25: true, includeGate27: true });
+    await seedSampleData(postgresEnvironment, {
+      includeGate25: true,
+      includeGate27: true
+    });
     const assignment = await request(app)
       .post(apiRoutes.teacher.assignments)
       .set(demoHeaders)

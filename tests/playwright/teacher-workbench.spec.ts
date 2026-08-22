@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
-const screenshotRoot = "output/playwright/gate-2-8";
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-8");
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
   "x-demo-actor": "user:teacher-001"
@@ -20,23 +22,23 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   test.setTimeout(120_000);
   const monitor = monitorPage(page);
   await page.setViewportSize({ width: 1536, height: 960 });
-  await page.goto("/overview");
+  await page.goto("/schedule");
+  const todoPanel = page.getByTestId("todo-panel");
   const title = `准备周五教研材料 ${Date.now()}`;
   await page.getByRole("button", { name: "新建待办" }).click();
-  await page.getByTestId("overview-todo-title").fill(title);
+  await page.getByTestId("todo-title-input").fill(title);
   const createdResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === apiRoutes.teacher.todos && response.request().method() === "POST"
   );
   await page.getByRole("dialog").filter({ hasText: "新建个人待办" }).getByRole("button", { name: /创\s*建/u }).click();
   expect((await createdResponse).status()).toBe(201);
-  await expect(page.getByTestId("today-work")).toContainText(title);
+  await expect(todoPanel).toContainText(title);
 
-  await page.goto("/schedule");
-  const todoPanel = page.getByTestId("todo-panel");
   const todo = todoPanel.locator("article").filter({ hasText: title });
   await expect(todo).toBeVisible();
 
-  await todo.getByTitle("安排到日历").click();
+  await openTodoActions(todo);
+  await todo.getByRole("button", { name: "安排时间" }).click();
   const scheduleDialog = page.getByRole("dialog").filter({ hasText: title });
   const date = localDate(new Date());
   await scheduleDialog.locator('input[type="datetime-local"]').nth(0).fill(`${date}T15:00`);
@@ -50,26 +52,26 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   const scheduledBody = await scheduled.json();
 
   const calendar = page.getByTestId("calendar-view");
-  await expect(calendar.getByRole("button", { name: new RegExp(title) })).toBeVisible();
-  const fifteenHour = calendar.locator(".day-calendar__row").nth(8);
-  await expect(fifteenHour.locator("time")).toHaveText("15:00");
-  await expect(fifteenHour).toContainText(title);
+  const scheduledEvent = calendar.getByRole("button", { name: new RegExp(title) });
+  await expect(scheduledEvent).toBeVisible();
+  await expect(scheduledEvent).toContainText("15:00–16:00");
   await calendar.locator(".segmented-control").getByRole("button", { name: "周" }).click();
   await expect(calendar.getByTestId("week-calendar")).toContainText(title);
   await calendar.locator(".segmented-control").getByRole("button", { name: "月" }).click();
-  await expect(calendar.getByTestId("month-calendar")).toContainText(title);
+  await expect(calendar.getByTestId("month-calendar")).toBeVisible();
+  await expect(calendar.getByTestId("month-calendar")).not.toContainText("还有");
   await calendar.locator(".segmented-control").getByRole("button", { name: "日" }).click();
 
   await calendar.getByRole("button", { name: new RegExp(title) }).click();
-  const editDialog = page.getByRole("dialog").filter({ hasText: "编辑手工日程" });
-  await editDialog.locator('input[type="datetime-local"]').nth(1).fill(`${date}T16:30`);
+  const editDialog = page.getByRole("dialog").filter({ hasText: "编辑日程" });
+  await editDialog.getByLabel("结束时间").fill("16:30");
   const updateResponse = page.waitForResponse(
     (response) => response.url().includes("/calendar-events/") && response.request().method() === "PUT"
   );
   await editDialog.getByRole("button", { name: /保\s*存/u }).click();
   expect((await updateResponse).status()).toBe(200);
 
-  await todo.getByRole("checkbox", { name: new RegExp(`完成 ${escapeRegex(title)}`) }).click();
+  await todo.getByRole("button", { name: new RegExp(`完成 ${escapeRegex(title)}`) }).click();
   await expect(todo).toHaveCount(0);
   await todoPanel.getByRole("button", { name: "已完成" }).click();
   await expect(todoPanel).toContainText(title);
@@ -93,7 +95,7 @@ test("manual Todo and Calendar remain independent and recover after restart", as
   await assertCleanMonitor(monitor);
 });
 
-test("Assignment projections can be snoozed and a Todo handoff seals only explicit Agent context", async ({
+test("Assignment projections and a Todo handoff keep source truth and explicit Agent context", async ({
   page,
   request
 }) => {
@@ -103,19 +105,11 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
 
   await page.goto("/schedule");
   const todoPanel = page.getByTestId("todo-panel");
-  await todoPanel.getByRole("button", { name: /业务提醒/ }).click();
   const grading = todoPanel.locator("article").filter({
     hasText: `待确认批改：${assignment.title}`
   });
   await expect(grading).toBeVisible({ timeout: 20_000 });
-  const snoozeResponse = page.waitForResponse(
-    (response) => response.url().endsWith("/preference") && response.request().method() === "POST"
-  );
-  await grading.getByRole("button", { name: "明天提醒" }).click();
-  expect((await snoozeResponse).status()).toBe(200);
-  await expect(grading).toHaveCount(0);
-  await todoPanel.getByRole("button", { name: "查看已稍后提醒" }).click();
-  await expect(todoPanel).toContainText(`待确认批改：${assignment.title}`);
+  await expect(grading.getByRole("button", { name: /^完成 /u })).toHaveCount(0);
 
   const assignmentDetail = await request.get(
     apiRoutes.teacher.assignment(assignment.assignmentRef),
@@ -126,8 +120,7 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   expect(source.status).toBe("published");
   expect(source.dueAt).toBe(assignment.dueAt);
 
-  await todoPanel.getByRole("button", { name: "进行中" }).click();
-  await todoPanel.getByRole("button", { name: "新建待办" }).click();
+  await todoPanel.getByRole("button", { name: "新建待办", exact: true }).click();
   const todoTitle = `用 Agent 整理教研提纲 ${Date.now()}`;
   await page.getByTestId("todo-title-input").fill(todoTitle);
   const todoCreatedResponse = page.waitForResponse(
@@ -139,7 +132,8 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   const todoBody = await todoCreated.json();
 
   const todo = todoPanel.locator("article").filter({ hasText: todoTitle });
-  await todo.getByTitle("关联课时", { exact: true }).click();
+  await openTodoActions(todo);
+  await todo.getByRole("button", { name: "关联课时", exact: true }).click();
   const linkDialog = page.getByRole("dialog").filter({ hasText: "关联课时" });
   await linkDialog.getByRole("combobox").click();
   await page.locator(".ant-select-item-option").filter({ hasText: /^斜率与图像变化$/ }).click();
@@ -150,21 +144,24 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   expect((await linkResponse).status()).toBe(201);
 
   const refreshedTodo = todoPanel.locator("article").filter({ hasText: todoTitle });
+  await openTodoActions(refreshedTodo);
   const handoffResponse = page.waitForResponse(
     (response) => response.url().endsWith("/agent-handoff") && response.request().method() === "POST"
   );
-  await refreshedTodo.getByTitle("在 Agent 中处理", { exact: true }).click();
+  await refreshedTodo.getByRole("button", { name: "交给助手", exact: true }).click();
   const handoff = await handoffResponse;
   expect(handoff.status()).toBe(201);
   const handoffBody = await handoff.json();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
   const workingSet = page.getByTestId("task-working-set");
-  await expect(workingSet).toContainText(todoTitle, { timeout: 20_000 });
   await expect(workingSet).toContainText("斜率与图像变化");
-  await expect(workingSet).toContainText("lesson:slope-and-graph-change");
+  await expect(workingSet).toContainText("4 条学习证据");
+  expect(handoffBody.workingSet.sourceResourceRefs).toContain(
+    "lesson:slope-and-graph-change"
+  );
 
   const prompt = "请根据当前课时和这条教研待办生成一份可审阅的教学建议。";
-  await page.getByRole("textbox", { name: "教师助手任务说明" }).fill(prompt);
+  await page.getByRole("textbox", { name: "告诉 Agent 你想完成什么" }).fill(prompt);
   const invocationResponse = page.waitForResponse(
     (response) => new URL(response.url()).pathname === apiRoutes.teacher.modelInvocations && response.request().method() === "POST"
   );
@@ -183,7 +180,9 @@ test("Assignment projections can be snoozed and a Todo handoff seals only explic
   await restartApi(request);
   await page.reload();
   await expect(page.getByText(prompt).first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("task-working-set")).toContainText(todoTitle);
+  await expect(page.getByTestId("task-working-set")).toContainText(
+    "斜率与图像变化"
+  );
   await page.screenshot({
     path: `${screenshotRoot}/02-source-reminder-agent-context.png`,
     fullPage: true,
@@ -203,7 +202,7 @@ async function createPublishedAssignmentWithSubmissions(request: APIRequestConte
       curriculumUnitRef: "curriculum-unit:linear-functions",
       lessonRef: "lesson:slope-and-graph-change",
       title,
-      instructions: "仅用于合成演示。",
+      instructions: "用于验证教师工作台的作业提醒。",
       dueAt,
       items: [{
         sequence: 1,
@@ -249,6 +248,14 @@ async function createPublishedAssignmentWithSubmissions(request: APIRequestConte
   );
   expect(imported.status()).toBe(201);
   return { assignmentRef, title, dueAt };
+}
+
+async function openTodoActions(todo: Locator) {
+  const details = todo.locator("details.todo-overflow");
+  if (!(await details.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await details.locator("summary").click();
+  }
+  await expect(details).toHaveAttribute("open", "");
 }
 
 async function restartApi(request: APIRequestContext) {

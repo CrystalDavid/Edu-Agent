@@ -4,6 +4,9 @@ import {
   ProviderAvailabilitySchema,
   type ProviderAvailability
 } from "@edu-agent/contracts";
+import type {
+  ModelBudgetConfig
+} from "../application/model-budget-policy.js";
 
 const positiveInteger = (fallback: number) =>
   z.coerce.number().int().positive().default(fallback);
@@ -64,19 +67,6 @@ export interface VolcengineArkConfig {
   timeoutMs: number;
   maxOutputTokens: number;
   maxAttempts: number;
-}
-
-export interface ModelBudgetConfig {
-  maxInputTokens: number;
-  maxOutputTokens: number;
-  maxSingleCost: number;
-  dailyBudget: number;
-  teacherDailyBudget: number;
-  maxConcurrency: number;
-  maxQueueWaitMs: number;
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  allowedModelIds: readonly string[];
 }
 
 export interface ModelProviderSettings {
@@ -217,7 +207,7 @@ export function readModelProviderSettings(
       : "Deterministic MockModelProvider";
   const safeReason =
     raw.MODEL_PROVIDER_MODE === "ark" && !arkConfigured
-      ? `火山方舟配置不完整，已使用本地演示助手：${missing.join("、")}。`
+      ? "在线生成服务暂不可用，当前使用内置教学助手。"
       : null;
   const availability = ProviderAvailabilitySchema.parse({
     requestedMode: raw.MODEL_PROVIDER_MODE,

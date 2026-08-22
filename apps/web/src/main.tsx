@@ -6,9 +6,11 @@ import zhCN from "antd/locale/zh_CN";
 import { App } from "./App";
 import { antdTheme, installDesignTokens } from "./design-tokens";
 import "antd/dist/reset.css";
+import "@fontsource-variable/noto-sans-sc";
 import "./fonts.css";
 import "./styles.css";
 import "./teacher-portal.css";
+import "./ui-v3.css";
 
 const root = document.getElementById("root");
 if (!root) {

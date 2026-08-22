@@ -1,10 +1,13 @@
 import {
   PendingProposalListSchema,
+  MemoryContextExplanationSchema,
   ProposalReviewDetailSchema,
   RunExplanationSchema,
   TeachingPlanStateViewSchema,
   TeacherWorkspaceSchema,
   type PendingProposalList,
+  type MemoryContextExplanation,
+  type MemoryContextPackManifest,
   type ProposalReviewDetail,
   type RunExplanation,
   type LessonPreparationStatus,
@@ -12,10 +15,6 @@ import {
   type TeachingPlanStateView,
   type TeacherWorkspace
 } from "@edu-agent/contracts";
-import {
-  gate2DemoRefs,
-  gate2SyntheticFixture
-} from "@edu-agent/test-fixtures";
 import type { Pool } from "pg";
 
 import {
@@ -47,43 +46,50 @@ import {
 } from "../modules/work-assistant-durable-execution/infrastructure/postgres-gate2-work-repository.js";
 import {
   AuthorizationDeniedError,
+  DomainConflictError,
   NotFoundError
 } from "../platform/errors.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
+import { PostgresMemoryApplicationService } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.js";
 
 export class PostgresGate2ReadService {
+  private readonly work = new PostgresGate2WorkRepository();
+  private readonly gate25Work = new PostgresGate25WorkRepository();
+  private readonly runtime = new PostgresGate2RuntimeRepository();
+  private readonly capability = new PostgresGate2CapabilityRepository();
+  private readonly artifacts = new PostgresGate2ArtifactRepository();
+  private readonly education = new PostgresEducationRepository();
+  private readonly gate25Education = new PostgresGate25EducationRepository();
+  private readonly governance = new PostgresGate2GovernanceRepository();
+  private readonly memoryApplications: PostgresMemoryApplicationService;
+  private readonly conversations: PostgresConversationService;
+
   constructor(
     private readonly pool: Pool,
-    private readonly work = new PostgresGate2WorkRepository(),
-    private readonly gate25Work =
-      new PostgresGate25WorkRepository(),
-    private readonly runtime =
-      new PostgresGate2RuntimeRepository(),
-    private readonly capability =
-      new PostgresGate2CapabilityRepository(),
-    private readonly artifacts =
-      new PostgresGate2ArtifactRepository(),
-    private readonly education = new PostgresEducationRepository(),
-    private readonly gate25Education =
-      new PostgresGate25EducationRepository(),
-    private readonly governance =
-      new PostgresGate2GovernanceRepository()
-  ) {}
+    dependencies: {
+      readonly memoryApplications?: PostgresMemoryApplicationService;
+      readonly conversations?: PostgresConversationService;
+    } = {}
+  ) {
+    this.memoryApplications = dependencies.memoryApplications ??
+      new PostgresMemoryApplicationService(pool);
+    this.conversations = dependencies.conversations ??
+      new PostgresConversationService(pool);
+  }
 
   async getWorkspace(input: {
     tenantRef: string;
     actorRef: string;
-    organizationName?: string;
-    actorDisplayName?: string;
+    organizationName: string;
+    actorDisplayName: string;
     roleRefs?: readonly string[];
     membershipRef?: string;
     demoIdentity?: boolean;
     modelMode?: "mock" | "ark";
-    courseRunRefs?: readonly string[];
+    courseRunRefs: readonly string[];
   }): Promise<TeacherWorkspace> {
     await this.assertDemoActor(input.tenantRef, input.actorRef);
-    const courseRunRef = input.courseRunRefs
-      ? input.courseRunRefs[0]
-      : gate2DemoRefs.courseRunRef;
+    const courseRunRef = input.courseRunRefs[0];
     if (!courseRunRef) {
       throw new NotFoundError(
         "The current teacher has no authorized CourseRun in this workspace."
@@ -96,24 +102,20 @@ export class PostgresGate2ReadService {
       });
     if (!educationContext) {
       throw new NotFoundError(
-        "Gate 2 合成数据尚未初始化。"
+        "当前工作空间没有可用的 CourseRun 数据。"
       );
     }
-    const goal = await this.pool.query<{ goal_ref: string }>(
-      `SELECT goal_ref
-         FROM work.goal_record
-        WHERE tenant_ref = $1 AND status = 'active'
-        ORDER BY created_at, goal_ref
-        LIMIT 1`,
-      [input.tenantRef]
+    const activeGoals = await this.work.listActiveCasesAndGoals(
+      this.pool,
+      input.tenantRef
     );
-    const workContext = goal.rows[0]
-      ? await this.work.getDemoCaseAndGoal(
-          this.pool,
-          input.tenantRef,
-          goal.rows[0].goal_ref
-        )
-      : undefined;
+    if (activeGoals.length > 1) {
+      throw new DomainConflictError(
+        "WORKSPACE_GOAL_SELECTION_REQUIRED",
+        "当前工作空间存在多个活动教学改进 Goal，必须从具体 Task 进入。"
+      );
+    }
+    const workContext = activeGoals[0];
     if (!workContext) {
       throw new NotFoundError(
         "Gate 2 教学改进 Goal 尚未初始化。"
@@ -147,11 +149,9 @@ export class PostgresGate2ReadService {
     return TeacherWorkspaceSchema.parse({
       identity: {
         tenantRef: input.tenantRef,
-        schoolName:
-          input.organizationName ?? gate2SyntheticFixture.identity.schoolName,
+        schoolName: input.organizationName,
         teacherRef: input.actorRef,
-        teacherName:
-          input.actorDisplayName ?? gate2SyntheticFixture.identity.teacherName,
+        teacherName: input.actorDisplayName,
         dataMode: "synthetic",
         modelMode: input.modelMode ?? "mock",
         ...(input.roleRefs ? { roleRefs: [...input.roleRefs] } : {}),
@@ -238,6 +238,77 @@ export class PostgresGate2ReadService {
     });
   }
 
+  async getAuthorizedLessonEvidence(input: {
+    tenantRef: string;
+    actorRef: string;
+    courseRunRef: string;
+    requestedEvidenceRefs: readonly string[];
+  }): Promise<{
+    items: Array<{
+      evidenceRef: string;
+      evidenceType: "observation" | "claim";
+      summary: string;
+      observedAt: string | null;
+      status: string;
+      sourceRefs: string[];
+    }>;
+    excludedRefs: string[];
+  }> {
+    await this.assertDemoActor(input.tenantRef, input.actorRef);
+    const context = await this.education.getTeacherCopilotContext(this.pool, {
+      tenantRef: input.tenantRef,
+      courseRunRef: input.courseRunRef
+    });
+    if (!context) {
+      throw new NotFoundError("当前课程没有可读取的教学 Evidence 上下文。");
+    }
+    const observations = new Map(
+      context.observations.map((item) => [item.observationRef, item] as const)
+    );
+    const claims = new Map(
+      context.claims.map((item) => [item.claimRef, item] as const)
+    );
+    const items: Array<{
+      evidenceRef: string;
+      evidenceType: "observation" | "claim";
+      summary: string;
+      observedAt: string | null;
+      status: string;
+      sourceRefs: string[];
+    }> = [];
+    const excludedRefs: string[] = [];
+    for (const reference of [...new Set(input.requestedEvidenceRefs)]) {
+      const observation = observations.get(reference);
+      if (observation) {
+        items.push({
+          evidenceRef: observation.observationRef,
+          evidenceType: "observation",
+          summary: observation.summary,
+          observedAt: observation.observedAt,
+          status: "observed",
+          sourceRefs: [observation.sourceRef]
+        });
+        continue;
+      }
+      const claim = claims.get(reference);
+      if (claim) {
+        items.push({
+          evidenceRef: claim.claimRef,
+          evidenceType: "claim",
+          summary: claim.summary,
+          observedAt: claim.validFrom,
+          status: claim.status,
+          sourceRefs: claim.supportingObservationRefs.length > 0
+            ? [...claim.supportingObservationRefs]
+            : [claim.claimRef]
+        });
+        continue;
+      }
+      excludedRefs.push(reference);
+    }
+    return { items, excludedRefs };
+  }
+
   async getProposalDetail(input: {
     tenantRef: string;
     actorRef: string;
@@ -306,6 +377,14 @@ export class PostgresGate2ReadService {
             disposition.resultingRevisionRef
           )) ?? null
         : null;
+    const memoryContext = await this.composeMemoryContext({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      taskRef: work.taskRef,
+      agentRunRef: runtime.agentRunRef,
+      manifest: runtime.memoryContextPackManifest,
+      disposition: disposition?.kind ?? null
+    });
 
     return ProposalReviewDetailSchema.parse({
       proposalArtifactRef: work.proposalArtifactRef,
@@ -346,7 +425,8 @@ export class PostgresGate2ReadService {
             createdAt: disposition.createdAt
           }
         : null,
-      inReviewRevision
+      inReviewRevision,
+      ...(memoryContext ? { memoryContext } : {})
     });
   }
 
@@ -408,7 +488,7 @@ export class PostgresGate2ReadService {
     if (!work) {
       throw new NotFoundError("Teacher Copilot 运行不存在。");
     }
-    const goal = await this.work.getDemoCaseAndGoal(
+    const goal = await this.work.getCaseAndGoal(
       this.pool,
       input.tenantRef,
       work.goalRef
@@ -583,6 +663,14 @@ export class PostgresGate2ReadService {
         planStatus: scopedRevision?.lifecycleStatus ?? null
       };
     }
+    const memoryContext = await this.composeMemoryContext({
+      tenantRef: input.tenantRef,
+      actorRef: input.actorRef,
+      taskRef: work.taskRef,
+      agentRunRef: runtime.agentRunRef,
+      manifest: runtime.memoryContextPackManifest,
+      disposition: work.disposition?.kind ?? null
+    });
 
     return RunExplanationSchema.parse({
       task: {
@@ -684,7 +772,163 @@ export class PostgresGate2ReadService {
         : null,
       outbox,
       auditTimeline,
-      ...(lessonPreparation ? { lessonPreparation } : {})
+      ...(lessonPreparation ? { lessonPreparation } : {}),
+      ...(memoryContext ? { memoryContext } : {})
+    });
+  }
+
+  private async composeMemoryContext(input: {
+    readonly tenantRef: string;
+    readonly actorRef: string;
+    readonly taskRef: string;
+    readonly agentRunRef: string;
+    readonly manifest: MemoryContextPackManifest | null;
+    readonly disposition:
+      | "accepted"
+      | "accepted_with_changes"
+      | "rejected"
+      | "deferred"
+      | null;
+  }): Promise<MemoryContextExplanation | undefined> {
+    const manifest = input.manifest;
+    if (!manifest) return undefined;
+    if (
+      manifest.owner.tenantRef !== input.tenantRef ||
+      manifest.owner.teacherRef !== input.actorRef
+    ) {
+      throw new NotFoundError("The memory context is not available.");
+    }
+    const display = await this.conversations.resolveMemoryContextDisplay(
+      this.pool,
+      {
+        tenantRef: input.tenantRef,
+        teacherRef: input.actorRef,
+        taskRef: input.taskRef,
+        conversationRef: manifest.conversationRef,
+        turnRef: manifest.currentTurnRef,
+        turnSequence: manifest.currentTurnSequence,
+        turnContentHash: manifest.currentTurnContentHash,
+        snapshotRef: manifest.workingMemorySnapshotRef,
+        snapshotVersion: manifest.workingMemorySnapshotVersion,
+        snapshotContentHash: manifest.workingMemorySnapshotContentHash
+      }
+    );
+    const [applications, outcomes] = await Promise.all([
+      this.memoryApplications.listApplicationsForRun({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        agentRunRef: input.agentRunRef
+      }),
+      this.memoryApplications.listOutcomesForRun({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        agentRunRef: input.agentRunRef
+      })
+    ]);
+    const applicationByDecision = new Map(
+      applications.map((application) => [
+        preferenceDecisionKey(
+          application.preferenceRef,
+          application.preferenceVersion,
+          application.decision
+        ),
+        application
+      ])
+    );
+    const outcomeByApplication = new Map(
+      outcomes.map((outcome) => [outcome.applicationRef, outcome])
+    );
+    const durablePreferences: MemoryContextExplanation["durablePreferences"] = [];
+    for (const decision of manifest.preferenceDecisions) {
+      const revision = await this.memoryApplications.resolvePreferenceRevision({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.actorRef
+        },
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        expectedContentHash: decision.sourceContentHash
+      });
+      if (!revision) {
+        throw new NotFoundError("The memory context is not available.");
+      }
+      const application = applicationByDecision.get(
+        preferenceDecisionKey(
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision
+        )
+      );
+      const outcome = application
+        ? outcomeByApplication.get(application.applicationRef)
+        : undefined;
+      durablePreferences.push({
+        preferenceRef: revision.preferenceRef,
+        preferenceVersion: revision.preferenceVersion,
+        preferenceKey: revision.preferenceKey,
+        preferenceValue: revision.preferenceValue,
+        currentStatus: revision.currentStatus,
+        decision: decision.decision,
+        reasonCode: decision.reasonCode,
+        outcomeStatus: outcome?.outcomeStatus ?? null,
+        targetFields: [...decision.targetFields]
+      });
+    }
+    const included = (decision: string) =>
+      decision === "selected" || decision === "injected";
+    const currentTurnIncluded = manifest.contextDecisions.some(
+      (decision) =>
+        decision.sourceKind === "current_instruction" &&
+        included(decision.decision)
+    );
+    const workingMemoryDecision = manifest.contextDecisions.find(
+      (decision) => decision.sourceKind === "working_memory"
+    );
+    const recordedOutcome = outcomes.at(-1)?.outcomeStatus ?? null;
+    return MemoryContextExplanationSchema.parse({
+      packRef: manifest.packRef,
+      packContentHash: manifest.packContentHash,
+      manifestVersion: manifest.manifestVersion,
+      policyVersion: manifest.policyVersion,
+      skillRef: manifest.skillRef,
+      skillVersion: manifest.skillVersion,
+      currentTurn:
+        currentTurnIncluded && display.currentTurn
+          ? display.currentTurn
+          : null,
+      workingMemory:
+        workingMemoryDecision && display.workingMemory
+          ? [
+              {
+                sourceRef: display.workingMemory.sourceRef,
+                sourceKind: "working_memory",
+                displaySummary: display.workingMemory.displaySummary,
+                decision: workingMemoryDecision.decision,
+                reasonCode: workingMemoryDecision.reasonCode
+              }
+            ]
+          : [],
+      durablePreferences,
+      excluded: [
+        ...manifest.contextDecisions,
+        ...manifest.preferenceDecisions
+      ]
+        .filter(
+          (decision) =>
+            decision.decision === "excluded" ||
+            decision.decision === "overridden"
+        )
+        .map((decision) => ({
+          sourceKind: decision.sourceKind,
+          sourceRef: decision.sourceRef,
+          reasonCode: decision.reasonCode
+        })),
+      outcomeStatus:
+        recordedOutcome ?? outcomeStatusFromDisposition(input.disposition)
     });
   }
 
@@ -847,7 +1091,7 @@ export class PostgresGate2ReadService {
   ): Promise<void> {
     if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
-        "本地演示身份没有访问该租户或学习者数据的权限。"
+        "当前身份没有访问该学校或学生数据的权限。"
       );
     }
     const membership = await this.pool.query(
@@ -873,5 +1117,35 @@ export class PostgresGate2ReadService {
         "The authenticated user has no active teacher membership in this school."
       );
     }
+  }
+}
+
+function preferenceDecisionKey(
+  preferenceRef: string,
+  preferenceVersion: number,
+  decision: string
+): string {
+  return `${preferenceRef}|${preferenceVersion}|${decision}`;
+}
+
+function outcomeStatusFromDisposition(
+  disposition:
+    | "accepted"
+    | "accepted_with_changes"
+    | "rejected"
+    | "deferred"
+    | null
+): MemoryContextExplanation["outcomeStatus"] {
+  switch (disposition) {
+    case "accepted":
+      return "adopted";
+    case "accepted_with_changes":
+      return "edited";
+    case "rejected":
+      return "rejected";
+    case "deferred":
+      return "deferred";
+    case null:
+      return null;
   }
 }

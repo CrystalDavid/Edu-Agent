@@ -1,4 +1,5 @@
 import {
+  existsSync,
   readFileSync,
   readdirSync,
   statSync
@@ -21,6 +22,31 @@ const modules = {
 };
 const failures = [];
 let assertions = 0;
+
+for (const requiredPath of [
+  "apps",
+  "packages",
+  "packages/sample-data",
+  "infra/local/postgres",
+  "scripts/local",
+  "scripts/testing",
+  "scripts/quality",
+  "tests",
+  "docs"
+]) {
+  assert(
+    existsSync(join(root, requiredPath)) &&
+      statSync(join(root, requiredPath)).isDirectory(),
+    `Canonical repository path is missing: ${requiredPath}`
+  );
+}
+
+for (const forbiddenRoot of ["environments", "deploy"]) {
+  assert(
+    !readdirSync(root).includes(forbiddenRoot),
+    `Premature repository root must not exist: ${forbiddenRoot}`
+  );
+}
 
 // Authentication/organization foundation tables are security infrastructure,
 // not module business-command facts. They carry their own actor/source/time
@@ -207,8 +233,8 @@ for (const schema of [
 }
 
 for (const document of [
-  "教育智能体平台v0.3.2勘误与ADR包.md",
-  "教育智能体平台第一轮工程验证计划.md"
+  "docs/history/architecture/education-platform-v0.3.2-adr-bundle.md",
+  "docs/history/research/教育智能体平台第一轮工程验证计划.md"
 ]) {
   const content = readFileSync(join(root, document), "utf8");
   assert(

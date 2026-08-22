@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   AuthorizedContextPlanSchema,
   CreateModelInvocationResultSchema,
+  MaterialContentDraftSchema,
   ReflectionGenerationResultSchema,
   GenerateReflectionRequestSchema,
   ReflectionContentSchema,
@@ -15,6 +16,8 @@ import {
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
   type FormalWriteReceipt,
+  type LessonBriefSnapshot,
+  type MemoryContextPackManifest,
   type ModelExecutionView,
   type ModelFailureCategory,
   type ModelProviderName,
@@ -27,8 +30,64 @@ import {
 import type { Pool } from "pg";
 
 import {
+  createBuiltInSkillRegistry,
+  LessonPreparationContextBuildError,
+  legacyLessonPreparationSkillRef,
+  lessonBriefPreparationSkillRef,
+  lessonPreparationSkillRef,
+  loadReflectionAnalysisSkill,
+  loadHistoricalLessonPreparationSkill,
+  loadLessonPreparationSkill,
+  reflectionAnalysisSkillRef,
+  type ReflectionAnalysisEvaluation,
+  type ReflectionAnalysisSkillVersion,
+  type LessonPreparationSkillEvaluation,
+  type LessonPreparationContextEvaluation,
+  type LessonPreparationEngineeringManifest,
+  type LessonBriefContextEvaluation,
+  type LessonBriefPreparationManifest,
+  type ConversationPreparationManifest,
+  type PersonalizedLessonPreparationManifest,
+  type PreferenceContextEvaluation,
+  type LessonPreparationSkillVersion,
+  type VersionedSkillRegistry
+} from "../agent/skills/index.js";
+import {
+  RuntimeKernelService
+} from "../modules/agent-runtime-context/application/runtime-kernel-service.js";
+import type {
+  MaterialGenerationRunStore
+} from "../modules/agent-runtime-context/application/material-generation-service.js";
+import type {
+  RuntimeKernelEvent
+} from "../modules/agent-runtime-context/domain/runtime-kernel.js";
+import type { ConfirmedLessonBriefContextProvider } from "../modules/agent-runtime-context/application/confirmed-lesson-brief-provider.js";
+import type {
+  ConfirmedTeacherPreferenceSnapshot,
+  PersonalizationContextProvider
+} from "../modules/personalization-memory-analytics/application/personalization-context-provider.js";
+import {
+  estimateContextTokens
+} from "../agent/skills/lesson-preparation/context-builder.js";
+import type {
+  MemoryApplicationRecorder,
+  MemoryApplicationSelection
+} from "../modules/personalization-memory-analytics/application/memory-application-recorder.js";
+import type {
+  TeacherPreferenceRevisionReader
+} from "../modules/personalization-memory-analytics/application/teacher-preference-revision-reader.js";
+import {
+  buildMemoryContextPackManifest
+} from "../modules/agent-runtime-context/domain/memory-context-pack.js";
+import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
+import type {
+  PersistedWorkingMemorySnapshot
+} from "../modules/agent-runtime-context/infrastructure/postgres-working-memory-repository.js";
+import {
+  PostgresRuntimeCheckpointAdapter
+} from "../modules/agent-runtime-context/infrastructure/postgres-runtime-checkpoint-adapter.js";
 import {
   PostgresRuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-runtime-repository.js";
@@ -36,11 +95,6 @@ import {
   PostgresGate2ArtifactRepository
 } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-artifact-repository.js";
 import { PostgresGate29ArtifactRepository } from "../modules/artifact-collaboration/infrastructure/postgres-gate2-9-artifact-repository.js";
-import {
-  assembleLessonPreparationModelRequest,
-  assembleRepairModelRequest,
-  lessonPreparationPromptBundle
-} from "../modules/capability-integration/application/lesson-preparation-prompt-bundle.js";
 import {
   ModelBudgetPolicy,
   estimateCost
@@ -50,18 +104,17 @@ import {
   detectProhibitedModelInput
 } from "../modules/capability-integration/application/model-data-manifest.js";
 import {
-  validateModelOutput
-} from "../modules/capability-integration/application/model-output-validation.js";
-import {
   assembleLessonReflectionModelRequest,
   assembleReflectionRepairRequest,
   lessonReflectionPromptBundle
 } from "../modules/capability-integration/application/lesson-reflection-prompt-bundle.js";
 import { validateReflectionOutput } from "../modules/capability-integration/application/reflection-output-validation.js";
-import {
-  ProviderCapabilityProbe,
-  type ProviderCapabilityProbeResult
-} from "../modules/capability-integration/application/provider-capability-probe.js";
+import type {
+  ProviderCapabilityProbeResult
+} from "../modules/capability-integration/application/provider-capability.js";
+import type {
+  ModelInvocationApplicationFacade
+} from "../modules/capability-integration/application/model-invocation-facade.js";
 import {
   LocalSyntheticModelDebugSink,
   maskProviderRequestId
@@ -73,12 +126,12 @@ import type {
   ModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
+  createConfiguredProviderCapabilityProbe
+} from "../modules/capability-integration/infrastructure/model-provider-factory.js";
+import {
   PostgresModelExecutionRepository,
   type StoredModelExecution
 } from "../modules/capability-integration/infrastructure/postgres-model-execution-repository.js";
-import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
 import {
   PostgresEducationRepository
 } from "../modules/education-domain/infrastructure/postgres-education-repository.js";
@@ -109,7 +162,10 @@ import {
   createWriteMetadata,
   type WriteContext
 } from "../platform/postgres/write-context.js";
+import type { PostgresClient } from "../platform/postgres/types.js";
 import { buildDiff } from "./postgres-gate2-teacher-copilot-service.js";
+import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
 
 const GENERATE_PURPOSE =
   "teacher-copilot.adjust-next-lesson";
@@ -137,6 +193,13 @@ interface ModelInvocationDependencies {
   gate2Work?: PostgresGate2WorkRepository;
   gate25Work?: PostgresGate25WorkRepository;
   runtime?: PostgresRuntimeRepository;
+  runtimeKernel?: RuntimeKernelService<PostgresClient>;
+  skills?: VersionedSkillRegistry;
+  personalization?: PersonalizationContextProvider;
+  memoryApplications?: MemoryApplicationRecorder & TeacherPreferenceRevisionReader;
+  memoryApplicationCollectionEnabled?: boolean;
+  lessonBriefs?: ConfirmedLessonBriefContextProvider;
+  conversations?: PostgresConversationService;
   gate2Runtime?: PostgresGate2RuntimeRepository;
   artifacts?: PostgresGate2ArtifactRepository;
   education?: PostgresEducationRepository;
@@ -151,12 +214,51 @@ interface ModelInvocationDependencies {
   random?: () => number;
 }
 
-export class PostgresModelInvocationService {
+type LessonPreparationContextEngineering = {
+  readonly manifest: LessonPreparationEngineeringManifest;
+  readonly evaluation: LessonPreparationContextEvaluation;
+  readonly personalizationManifest?: PersonalizedLessonPreparationManifest;
+  readonly preferenceEvaluation?: PreferenceContextEvaluation;
+  readonly lessonBriefManifest?: LessonBriefPreparationManifest;
+  readonly lessonBriefEvaluation?: LessonBriefContextEvaluation;
+  readonly conversationManifest?: ConversationPreparationManifest;
+  readonly memoryContextPackManifest?: MemoryContextPackManifest;
+  readonly memoryApplicationObservability?: {
+    readonly status: "disabled" | "pending" | "recorded" | "degraded";
+    readonly safeErrorCategory?: "MEMORY_APPLICATION_RECORDING_FAILED";
+  };
+};
+
+type LessonPreparationPromptContext = {
+  readonly request: ModelRequestV2;
+  readonly baseline: {
+    readonly revisionRef: string;
+    readonly artifactRef: string;
+    readonly content: TeachingPlan;
+  };
+  readonly contextEngineering?: LessonPreparationContextEngineering;
+  readonly memoryApplicationSelections?: readonly MemoryApplicationSelection[];
+};
+
+export class PostgresModelInvocationService
+  implements ModelInvocationApplicationFacade, MaterialGenerationRunStore
+{
   private readonly governance: PostgresGovernanceRepository;
   private readonly work: PostgresWorkRepository;
   private readonly gate2Work: PostgresGate2WorkRepository;
   private readonly gate25Work: PostgresGate25WorkRepository;
   private readonly runtime: PostgresRuntimeRepository;
+  private readonly runtimeKernel: RuntimeKernelService<PostgresClient>;
+  private readonly skills: VersionedSkillRegistry;
+  private readonly lessonPreparationSkill: LessonPreparationSkillVersion;
+  private readonly reflectionAnalysisSkill: ReflectionAnalysisSkillVersion;
+  private readonly personalization: PersonalizationContextProvider;
+  private readonly memoryApplications:
+    | (MemoryApplicationRecorder & TeacherPreferenceRevisionReader)
+    | undefined;
+  private readonly memoryApplicationCollectionEnabled: boolean;
+  private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
+  private readonly conversations: PostgresConversationService;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
   private readonly artifacts: PostgresGate2ArtifactRepository;
   private readonly education: PostgresEducationRepository;
@@ -194,6 +296,30 @@ export class PostgresModelInvocationService {
       new PostgresGate25WorkRepository();
     this.runtime =
       dependencies.runtime ?? new PostgresRuntimeRepository();
+    this.skills = dependencies.skills ?? createBuiltInSkillRegistry();
+    this.lessonPreparationSkill = loadLessonPreparationSkill(this.skills);
+    this.reflectionAnalysisSkill = loadReflectionAnalysisSkill(
+      this.skills,
+      reflectionAnalysisSkillRef
+    );
+    this.personalization = dependencies.personalization ?? {
+      async listConfirmedPreferences() {
+        return [];
+      }
+    };
+    this.memoryApplications = dependencies.memoryApplications;
+    this.memoryApplicationCollectionEnabled =
+      dependencies.memoryApplicationCollectionEnabled ?? false;
+    this.lessonBriefs =
+      dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
+    this.conversations =
+      dependencies.conversations ?? new PostgresConversationService(pool);
+    this.runtimeKernel =
+      dependencies.runtimeKernel ??
+      new RuntimeKernelService(
+        new PostgresRuntimeCheckpointAdapter(),
+        this.skills
+      );
     this.gate2Runtime =
       dependencies.gate2Runtime ??
       new PostgresGate2RuntimeRepository();
@@ -279,6 +405,220 @@ export class PostgresModelInvocationService {
     });
   }
 
+  async saveGenerated(
+    input: Parameters<MaterialGenerationRunStore["saveGenerated"]>[0]
+  ) {
+    const now = this.clock().toISOString();
+    const rootKey = [
+      input.context.tenantRef,
+      input.context.actorRef,
+      input.request.purpose,
+      input.request.idempotencyKey
+    ].join("|");
+    const decisionRef = `authorization-decision:${hash(rootKey).slice(0, 32)}`;
+    const writeContext: WriteContext = {
+      actorRef: input.context.actorRef,
+      purpose: input.request.purpose,
+      rootIdempotencyKey: input.request.idempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt: now
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: input.requestFingerprint,
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "material-generation-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return parseMaterialGenerationStoredResult(reservation.result, true);
+      }
+      const authorization: AuthorizationDecision = {
+        decisionRef,
+        actorRef: input.context.actorRef,
+        tenantRef: input.context.tenantRef,
+        purpose: input.request.purpose,
+        action: input.request.purpose,
+        resourceRef: input.context.lessonRef,
+        requestedFieldMask: [
+          ...input.runtimeContext.manifest.requestedFieldMask
+        ],
+        effect: "allow",
+        reasonCodes: [
+          "authenticated-teacher",
+          "current-approved-teaching-plan",
+          "authorized-context-only",
+          "draft-only"
+        ],
+        policyVersion: "policy:material-generation-context@1",
+        decidedAt: now
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision: authorization,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "material-generation-authorization"
+          )
+        })
+      ];
+      receipts.push(
+        await this.work.insertQueryRun(client, {
+          queryRunRef: input.queryRunRef,
+          queryName: "material-generation",
+          status: "completed",
+          resourceRef: input.context.lessonRef,
+          requestedFieldMask:
+            input.runtimeContext.manifest.requestedFieldMask,
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "material-generation-query-run"
+          )
+        })
+      );
+      const runtimeOutput = {
+        kind: "material_content_draft",
+        tenantRef: input.context.tenantRef,
+        lessonRef: input.context.lessonRef,
+        teachingPlanRevisionRef:
+          input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+        runtimeStatus: "waiting_for_human",
+        skill: input.skill,
+        contextManifestHash: input.runtimeContext.manifest.contentHash,
+        evaluation: input.evaluation,
+        drafts: input.drafts
+      };
+      receipts.push(
+        ...(await this.runtime.insertAgentRunBundle(client, {
+          agentRun: {
+            agentRunRef: input.agentRunRef,
+            runKind: "QueryRun",
+            boundRunRef: input.queryRunRef,
+            status: "completed",
+            modelProvider: "none",
+            modelProfile: "deterministic-material-generation@1",
+            toolName: "none",
+            output: runtimeOutput,
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "material-generation-agent-run"
+            )
+          },
+          manifest: {
+            manifestRef: `run-manifest:${randomUUID()}`,
+            agentRunRef: input.agentRunRef,
+            contextManifestRef: input.contextManifestRef,
+            promptVersionRef:
+              `${input.skill.promptBundleRef}@${input.skill.promptBundleVersion}`,
+            policyVersionRef: "material-generation-context@1",
+            capabilityRefs: [input.skill.ref],
+            contextRefs: input.runtimeContext.manifest.resourceRefs,
+            contentHash: hash({
+              skill: input.skill,
+              contextManifestHash: input.runtimeContext.manifest.contentHash,
+              drafts: input.drafts
+            }),
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "material-generation-run-manifest"
+            )
+          },
+          outbox: {
+            outboxRef: `outbox:${randomUUID()}`,
+            eventName: "MaterialContentDraftGenerated",
+            aggregateRef: input.agentRunRef,
+            payload: {
+              lessonRef: input.context.lessonRef,
+              teachingPlanRevisionRef:
+                input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+              skillRef: input.skill.ref,
+              contextManifestHash: input.runtimeContext.manifest.contentHash,
+              kinds: input.drafts.map((draft) => draft.kind),
+              candidateOnly: true
+            },
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "material-generation-outbox"
+            )
+          }
+        }))
+      );
+      receipts.push(
+        await this.gate2Runtime.insertContextManifest(client, {
+          contextManifestRef: input.contextManifestRef,
+          agentRunRef: input.agentRunRef,
+          resourceRefs: input.runtimeContext.manifest.resourceRefs,
+          evidenceRefs: input.runtimeContext.manifest.evidenceRefs,
+          unknowns: [
+            ...input.runtimeContext.manifest.missingInformation,
+            ...input.runtimeContext.manifest.excludedInformation
+          ],
+          requestedFieldMask:
+            input.runtimeContext.manifest.requestedFieldMask,
+          taskRef: input.queryRunRef,
+          requestSummary: {
+            requestText:
+              input.request.teacherAdjustment ??
+              `生成教学材料：${input.request.kinds.join("、")}`,
+            actorRef: input.context.actorRef,
+            purpose: input.request.purpose,
+            courseRunRef:
+              input.runtimeContext.input.lesson.courseRunRef,
+            learningObjectiveRefs: [
+              ...input.runtimeContext.input.lesson.learningObjectiveRefs
+            ],
+            selectedEvidenceRefs: [
+              ...input.runtimeContext.manifest.evidenceRefs
+            ],
+            curriculumUnitRef: input.runtimeContext.input.lesson.unitRef,
+            lessonRef: input.context.lessonRef,
+            baselineTeachingPlanRef:
+              input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+            createdAt: now,
+            requestVersion: 1
+          },
+          metadata: createWriteMetadata(
+            writeContext,
+            "runtime",
+            "material-generation-context-manifest"
+          )
+        })
+      );
+      const result = {
+        agentRunRef: input.agentRunRef,
+        contextManifestRef: input.contextManifestRef,
+        contextManifestHash: input.runtimeContext.manifest.contentHash,
+        drafts: input.drafts
+      };
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return { replayed: false, ...result };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async runCapabilityProbe(): Promise<ProviderCapabilities> {
     return (
       await this.runCapabilityProbeDetailed({ live: false })
@@ -294,18 +634,18 @@ export class PostgresModelInvocationService {
         "A live capability snapshot requires strict Ark Live mode; Mock and Fake snapshots cannot be marked live."
       );
     }
-    if (!(this.provider instanceof VolcengineArkProvider)) {
+    const probe = createConfiguredProviderCapabilityProbe(
+      this.provider,
+      this.clock,
+      { live: input.live }
+    );
+    if (!probe) {
       throw new DomainConflictError(
         "ARK_PROVIDER_NOT_CONFIGURED",
         "Volcengine Ark must be configured before running the live capability probe."
       );
     }
-    const result =
-      await new ProviderCapabilityProbe(
-        this.provider,
-        this.clock,
-        { live: input.live }
-      ).runDetailed();
+    const result = await probe.runDetailed();
     const capabilities = result.capabilities;
     const now = this.clock().toISOString();
     const writeContext = systemWriteContext(
@@ -321,7 +661,7 @@ export class PostgresModelInvocationService {
           decision: modelActionDecision({
             decisionRef:
               writeContext.authorizationDecisionRef,
-            tenantRef: "tenant:demo-school",
+            tenantRef: "tenant:system-capability-probe",
             actorRef: writeContext.actorRef,
             purpose: writeContext.purpose,
             action: CAPABILITY_PROBE_PURPOSE,
@@ -444,6 +784,51 @@ export class PostgresModelInvocationService {
           input.actorRef
         );
       this.assertInvocationContext(preparationTask, input.request);
+      const lessonBriefRefs = (
+        preparationTask.workingSet.sourceResourceRefs ?? []
+      ).filter((reference) => reference.startsWith("lesson-brief-run:"));
+      if (lessonBriefRefs.length > 1) {
+        throw new DomainConflictError(
+          "LESSON_BRIEF_SELECTION_AMBIGUOUS",
+          "The TaskWorkingSet contains more than one adopted Lesson Brief."
+        );
+      }
+      const lessonBriefRef = lessonBriefRefs[0] ?? null;
+      const sealedConversation = input.request.requestVersion === 2
+        ? await this.conversations.requireInvocationContext(client, {
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
+            conversationRef: input.request.conversationRef!,
+            turnRef: input.request.turnRef!,
+            conversationVersion: input.request.conversationVersion!,
+            requestText: input.request.requestText,
+            taskRef: preparationTask.taskRef,
+            courseRunRef: preparationTask.courseRunRef,
+            lessonRef: preparationTask.lessonRef
+          })
+        : null;
+      const lessonPreparationSkill = loadLessonPreparationSkill(
+        this.skills,
+        input.request.requestVersion === 2
+          ? lessonPreparationSkillRef
+          : lessonBriefRef
+            ? lessonBriefPreparationSkillRef
+            : legacyLessonPreparationSkillRef
+      );
+      const adoptedLessonBrief = lessonBriefRef
+        ? await this.lessonBriefs.loadAdopted({
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
+            lessonRef: preparationTask.lessonRef,
+            briefRef: lessonBriefRef
+          })
+        : null;
+      if (lessonBriefRef && !adoptedLessonBrief) {
+        throw new DomainConflictError(
+          "LESSON_BRIEF_CONTEXT_INVALID",
+          "The Lesson Brief selected by the Task is not an adopted, authorized snapshot."
+        );
+      }
 
       const educationContext =
         await this.education.getTeacherCopilotContext(client, {
@@ -462,7 +847,7 @@ export class PostgresModelInvocationService {
           input.tenantRef,
           input.request.curriculumUnitRef
         );
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         input.request.goalRef
@@ -517,6 +902,13 @@ export class PostgresModelInvocationService {
       const evidenceRefs = [
         ...new Set(input.request.selectedEvidenceRefs)
       ];
+      const conversationResourceRefs = sealedConversation
+        ? [
+            sealedConversation.thread.conversationRef,
+            sealedConversation.turn.turnRef,
+            sealedConversation.workingMemory.snapshotRef
+          ]
+        : [];
       const knownGaps = [
         ...new Set(
           educationContext.observations.flatMap(
@@ -548,7 +940,8 @@ export class PostgresModelInvocationService {
             ...(preparationTask.workingSet.sourceTodoRef
               ? [preparationTask.workingSet.sourceTodoRef]
               : []),
-            ...(preparationTask.workingSet.sourceResourceRefs ?? [])
+            ...(preparationTask.workingSet.sourceResourceRefs ?? []),
+            ...conversationResourceRefs
           ],
           authorizedEvidenceRefs: evidenceRefs,
           deniedResourceRefs: [],
@@ -576,7 +969,8 @@ export class PostgresModelInvocationService {
               ...(preparationTask.workingSet.sourceTodoRef
                 ? [preparationTask.workingSet.sourceTodoRef]
                 : []),
-              ...(preparationTask.workingSet.sourceResourceRefs ?? [])
+              ...(preparationTask.workingSet.sourceResourceRefs ?? []),
+              ...conversationResourceRefs
             ],
             evidenceRefs,
             requestedFieldMask:
@@ -617,14 +1011,20 @@ export class PostgresModelInvocationService {
       const requestHash = hash({
         taskRunRef,
         requestTextHash: hash(taskRequest.requestText),
+        skillRef: lessonPreparationSkill.manifest.ref,
+        skillContentHash:
+          lessonPreparationSkill.manifest.contentHash,
         promptBundleVersion:
-          lessonPreparationPromptBundle.version,
+          lessonPreparationSkill.promptBundle.version,
+        lessonBriefContentHash: adoptedLessonBrief?.contentHash ?? null,
+        workingMemoryContentHash:
+          sealedConversation?.workingMemory.contentHash ?? null,
         contextManifestHash:
           authorizedContextPlan.contentHash,
         provider,
         modelId,
         outputSchemaVersion:
-          lessonPreparationPromptBundle.outputSchemaVersion,
+          lessonPreparationSkill.promptBundle.outputSchemaVersion,
         generationSettings: {
           maxOutputTokens:
             provider === "volcengine-ark"
@@ -636,6 +1036,32 @@ export class PostgresModelInvocationService {
               : 120_000
         }
       });
+      const runtimeCheckpoint =
+        this.runtimeKernel.createLessonPreparationRun({
+          agentRunRef,
+          taskRef: preparationTask.taskRef,
+          tenantRef: input.tenantRef,
+          actorRef: input.actorRef,
+          purpose: input.request.purpose,
+          contextPlanRef: authorizedContextPlanRef,
+          contextPlanHash: authorizedContextPlan.contentHash,
+          contextManifestRef,
+          contextManifestHash: hash({
+            authorizedContextPlanRef,
+            resourceRefs:
+              authorizedContextPlan.authorizedResourceRefs,
+            evidenceRefs,
+            requestedFieldMask:
+              authorizedContextPlan.requestedFieldMask,
+            knownGaps
+          }),
+          tokenBudget: this.settings.budget.maxInputTokens,
+          promptBundleRef:
+            lessonPreparationSkill.promptBundle.promptBundleRef,
+          requestHash,
+          skillRef: lessonPreparationSkill.manifest.ref,
+          createdAt: now
+        });
       const decision: AuthorizationDecision = {
         decisionRef,
         actorRef: input.actorRef,
@@ -705,7 +1131,7 @@ export class PostgresModelInvocationService {
         policyVersionRef:
           educationContext.profile.policyVersionRef,
         promptVersionRef:
-          lessonPreparationPromptBundle.promptBundleRef,
+          lessonPreparationSkill.promptBundle.promptBundleRef,
         evidenceRuleVersionRef:
           educationContext.profile.evidenceRuleVersionRef,
         participationMode:
@@ -726,7 +1152,7 @@ export class PostgresModelInvocationService {
           policyVersionRef:
             educationContext.profile.policyVersionRef,
           promptVersionRef:
-            lessonPreparationPromptBundle.promptBundleRef,
+            lessonPreparationSkill.promptBundle.promptBundleRef,
           evidenceRuleVersionRef:
             educationContext.profile.evidenceRuleVersionRef,
           participationMode:
@@ -769,7 +1195,8 @@ export class PostgresModelInvocationService {
             toolName: "none",
             output: {
               proposalOnly: true,
-              rawProviderContentStored: false
+              rawProviderContentStored: false,
+              runtimeCheckpoint
             },
             metadata: createWriteMetadata(
               writeContext,
@@ -783,7 +1210,7 @@ export class PostgresModelInvocationService {
             contractRef,
             contextManifestRef,
             promptVersionRef:
-              lessonPreparationPromptBundle.promptBundleRef,
+              lessonPreparationSkill.promptBundle.promptBundleRef,
             policyVersionRef: decision.policyVersion,
             capabilityRefs: [this.provider.descriptor.capabilityRef],
             contextRefs: [
@@ -792,8 +1219,10 @@ export class PostgresModelInvocationService {
             ],
             contentHash: hash({
               contractContentHash,
+              skill:
+                lessonPreparationSkill.manifest.contentHash,
               promptBundle:
-                lessonPreparationPromptBundle.contentHash,
+                lessonPreparationSkill.promptBundle.contentHash,
               authorizedContextPlan:
                 authorizedContextPlan.contentHash
             }),
@@ -809,7 +1238,11 @@ export class PostgresModelInvocationService {
             aggregateRef: agentRunRef,
             payload: {
               taskRunRef,
-              modelExecutionRef: executionRef
+              modelExecutionRef: executionRef,
+              checkpointRef: runtimeCheckpoint.checkpointRef,
+              checkpointVersion:
+                runtimeCheckpoint.checkpointVersion,
+              checkpointHash: runtimeCheckpoint.contentHash
             },
             metadata: createWriteMetadata(
               writeContext,
@@ -863,9 +1296,9 @@ export class PostgresModelInvocationService {
             taskRunRef,
             agentRunRef,
             promptBundleRef:
-              lessonPreparationPromptBundle.promptBundleRef,
+              lessonPreparationSkill.promptBundle.promptBundleRef,
             promptBundleVersion:
-              lessonPreparationPromptBundle.version,
+              lessonPreparationSkill.promptBundle.version,
             contextManifestRef,
             authorizedContextPlanRef,
             modelDataManifestRef:
@@ -883,6 +1316,38 @@ export class PostgresModelInvocationService {
               requestTextHash: hash(taskRequest.requestText),
               contextManifestHash:
                 authorizedContextPlan.contentHash,
+              ...(sealedConversation
+                ? {
+                    conversationRef:
+                      sealedConversation.thread.conversationRef,
+                    turnRef: sealedConversation.turn.turnRef,
+                    turnSequence: sealedConversation.turn.sequence,
+                    turnContentHash:
+                      sealedConversation.turn.contentHash,
+                    conversationVersion:
+                      sealedConversation.thread.version,
+                    workingMemorySnapshotRef:
+                      sealedConversation.workingMemory.snapshotRef,
+                    workingMemoryVersion:
+                      sealedConversation.workingMemory.version,
+                    workingMemoryContentHash:
+                      sealedConversation.workingMemory.contentHash,
+                    workingMemorySourceTurnSequence:
+                      sealedConversation.workingMemory.sourceTurnSequence
+                  }
+                : {}),
+              skillRef: lessonPreparationSkill.manifest.ref,
+              skillContentHash:
+                lessonPreparationSkill.manifest.contentHash,
+              ...(lessonBriefRef && adoptedLessonBrief
+                ? {
+                    lessonBriefRef,
+                    lessonBriefAgentRunRef: adoptedLessonBrief.agentRunRef,
+                    lessonBriefContentHash: adoptedLessonBrief.contentHash,
+                    lessonBriefContextManifestHash:
+                      adoptedLessonBrief.contextManifestHash
+                  }
+                : {}),
               syntheticData: true
             },
             maxAttempts:
@@ -899,7 +1364,7 @@ export class PostgresModelInvocationService {
                   this.settings.budget.maxOutputTokens)
                 : this.settings.budget.maxOutputTokens,
             outputSchemaVersion:
-              lessonPreparationPromptBundle.outputSchemaVersion,
+              lessonPreparationSkill.promptBundle.outputSchemaVersion,
             resultKind: "teaching_proposal",
             metadata: createWriteMetadata(
               writeContext,
@@ -953,9 +1418,9 @@ export class PostgresModelInvocationService {
         taskRunRef,
         agentRunRef,
         promptBundleRef:
-          lessonPreparationPromptBundle.promptBundleRef,
+          lessonPreparationSkill.promptBundle.promptBundleRef,
         promptBundleVersion:
-          lessonPreparationPromptBundle.version,
+          lessonPreparationSkill.promptBundle.version,
         contextManifestRef,
         authorizedContextPlanRef,
         attemptCount: 0,
@@ -973,8 +1438,11 @@ export class PostgresModelInvocationService {
         safeErrorCategory: null,
         safeMessage: null,
         outputSchemaVersion:
-          lessonPreparationPromptBundle.outputSchemaVersion,
+          lessonPreparationSkill.promptBundle.outputSchemaVersion,
         proposalRevisionRef: null,
+        conversationRef:
+          sealedConversation?.thread.conversationRef ?? null,
+        turnRef: sealedConversation?.turn.turnRef ?? null,
         retryOfModelExecutionRef: null,
         queuedAt: now,
         startedAt: null,
@@ -1102,6 +1570,16 @@ export class PostgresModelInvocationService {
           "反思生成只能使用当前明确选择的已确认课堂事实与 Evidence。"
         );
       }
+      const latestLessonBrief = await this.lessonBriefs.loadLatestAdopted({
+        tenantRef: input.tenantRef,
+        teacherRef: input.actorRef,
+        lessonRef: draft.lessonRef
+      });
+      const adoptedLessonBrief = latestLessonBrief;
+      const lessonBriefRef = adoptedLessonBrief
+        ? `lesson-brief-run:${adoptedLessonBrief.agentRunRef}`
+        : null;
+      const reflectionSkill = this.reflectionAnalysisSkill;
       const provider = this.settings.activeProvider;
       const modelId = provider === "volcengine-ark"
         ? this.settings.ark?.modelId
@@ -1123,7 +1601,8 @@ export class PostgresModelInvocationService {
         draft.teachingPlanRevisionRef,
         draft.deliveryRevisionRef,
         draft.reflectionRevisionRef,
-        ...draft.observationRevisionRefs
+        ...draft.observationRevisionRefs,
+        ...(lessonBriefRef ? [lessonBriefRef] : [])
       ];
       const authorizedContextPlan = AuthorizedContextPlanSchema.parse({
         authorizedContextPlanRef,
@@ -1235,6 +1714,13 @@ export class PostgresModelInvocationService {
           output: {
             resultKind: "lesson_reflection_draft",
             reflectionRef: request.reflectionRef,
+            runtimeStatus: "queued",
+            skill: {
+              id: reflectionSkill.manifest.id,
+              version: reflectionSkill.manifest.version,
+              ref: reflectionSkill.manifest.ref,
+              contentHash: reflectionSkill.manifest.contentHash
+            },
             teacherConfirmationRequired: true,
             rawProviderContentStored: false
           },
@@ -1246,11 +1732,15 @@ export class PostgresModelInvocationService {
           contextManifestRef,
           promptVersionRef: lessonReflectionPromptBundle.promptBundleRef,
           policyVersionRef: decision.policyVersion,
-          capabilityRefs: [this.provider.descriptor.capabilityRef],
+          capabilityRefs: [
+            this.provider.descriptor.capabilityRef,
+            reflectionSkill.manifest.ref
+          ],
           contextRefs: [...resourceRefs, ...draft.assignmentEvidenceRefs],
           contentHash: hash({
             prompt: lessonReflectionPromptBundle.contentHash,
-            context: authorizedContextPlan.contentHash
+            context: authorizedContextPlan.contentHash,
+            skill: reflectionSkill.manifest.contentHash
           }),
           metadata: createWriteMetadata(writeContext, "runtime", "reflection-run-manifest")
         },
@@ -1323,6 +1813,13 @@ export class PostgresModelInvocationService {
             deliveryRevisionRef: draft.deliveryRevisionRef,
             observationRevisionRefs: draft.observationRevisionRefs,
             assignmentEvidenceRefs: draft.assignmentEvidenceRefs,
+            lessonBriefRef,
+            lessonBriefContentHash: adoptedLessonBrief?.contentHash ?? null,
+            teacherNotesProvided: request.teacherNotes.trim().length > 0,
+            skillId: reflectionSkill.manifest.id,
+            skillVersion: reflectionSkill.manifest.version,
+            skillRef: reflectionSkill.manifest.ref,
+            skillContentHash: reflectionSkill.manifest.contentHash,
             teacherNotesHash: hash(request.teacherNotes),
             syntheticData: true
           },
@@ -1505,15 +2002,19 @@ export class PostgresModelInvocationService {
           status: "cancelled",
           updatedAt: now
         });
-        await this.runtime.updateAgentRunStatus(client, {
-          agentRunRef: execution.agentRunRef,
-          status: "cancelled",
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution,
+          compatibilityStatus: "cancelled",
+          event: { type: "cancelled", at: now },
           output: {
             proposalCreated: false,
             cancellation: "requested-before-provider-call"
           },
-          updatedAt: now
+          operation: "model-cancelled-before-provider"
         });
+        if (runtimeReceipt) {
+          await this.governance.saveAudits(client, [runtimeReceipt]);
+        }
       }
       const refreshed = await this.executions.get(
         client,
@@ -1728,8 +2229,26 @@ export class PostgresModelInvocationService {
             "capability",
             "model-retry-outbox"
           )
-        }))
+          }))
       ];
+      if (source.resultKind === "teaching_proposal") {
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution: source,
+          compatibilityStatus: "queued",
+          event: {
+            type: "retry_requested",
+            modelExecutionRef: executionRef,
+            at: now
+          },
+          output: {
+            proposalOnly: true,
+            modelExecutionRef: executionRef,
+            retryOfModelExecutionRef: source.executionRef
+          },
+          operation: "model-retry-runtime-checkpoint"
+        });
+        if (runtimeReceipt) receipts.push(runtimeReceipt);
+      }
       if (source.resultKind === "lesson_reflection_draft") {
         const transitioned = await this.gate29Work.setReflectionTaskStatus(client, {
           taskRef: source.taskRef,
@@ -1807,10 +2326,46 @@ export class PostgresModelInvocationService {
       await this.finishCancelled(execution);
       return;
     }
+    if (
+      execution.status === "running" &&
+      execution.resultKind === "teaching_proposal"
+    ) {
+      await this.recoverAgentRun(execution);
+    }
 
-    const context = execution.resultKind === "lesson_reflection_draft"
-      ? await this.loadReflectionPromptContext(execution)
-      : await this.loadPromptContext(execution);
+    const lessonSkill = execution.resultKind === "teaching_proposal"
+      ? this.requireExecutionLessonPreparationSkill(execution)
+      : null;
+
+    let context:
+      | Awaited<ReturnType<typeof this.loadReflectionPromptContext>>
+      | Awaited<ReturnType<typeof this.loadPromptContext>>;
+    try {
+      context = execution.resultKind === "lesson_reflection_draft"
+        ? await this.loadReflectionPromptContext(execution)
+        : await this.loadPromptContext(execution);
+    } catch (error) {
+      if (error instanceof LessonPreparationContextBuildError) {
+        const budgetOnly =
+          error.evaluation.budget.status === "failed" &&
+          error.evaluation.authorization.status === "passed" &&
+          error.evaluation.completeness.status === "passed" &&
+          error.evaluation.value.status === "passed";
+        await this.finishFailure(execution, {
+          status: budgetOnly
+            ? "budget_exceeded"
+            : "validation_failed",
+          category: budgetOnly
+            ? "BUDGET_EXCEEDED"
+            : "POLICY_BLOCKED",
+          safeMessage: budgetOnly
+            ? "本次模型请求超过输入预算，未调用模型。"
+            : "本次备课上下文未通过授权或完整性校验，未调用模型。"
+        });
+        return;
+      }
+      throw error;
+    }
     let request = context.request;
     const usage = await this.executions.usageSnapshot(
       this.pool,
@@ -1872,7 +2427,10 @@ export class PostgresModelInvocationService {
         const attempt = execution.attemptCount + 1;
         execution = await this.beginAttempt(
           executionRef,
-          attempt
+          attempt,
+          (context as {
+            readonly contextEngineering?: LessonPreparationContextEngineering;
+          }).contextEngineering
         );
         if (execution.status === "cancel_requested") {
           await this.finishCancelled(execution);
@@ -1887,6 +2445,12 @@ export class PostgresModelInvocationService {
         }
         if (execution.status !== "running") {
           return;
+        }
+        if (execution.resultKind === "teaching_proposal") {
+          await this.recordMemoryApplicationSelections(
+            execution,
+            context as LessonPreparationPromptContext
+          );
         }
         const result = await this.provider.invoke(request, {
           signal: controller.signal
@@ -1959,36 +2523,117 @@ export class PostgresModelInvocationService {
             outputText: result.outputText
           })
           .catch(() => undefined);
-        const validation = execution.resultKind === "lesson_reflection_draft"
-          ? validateReflectionOutput({
-              outputText: result.outputText,
-              request,
-              teachingPlanRevisionRef: String(
-                execution.inputSummary["teachingPlanRevisionRef"] ?? ""
-              ),
-              deliveryRevisionRef: String(
-                execution.inputSummary["deliveryRevisionRef"] ?? ""
-              ),
-              observationRevisionRefs: Array.isArray(
-                execution.inputSummary["observationRevisionRefs"]
-              )
-                ? execution.inputSummary["observationRevisionRefs"] as string[]
-                : []
-            })
-          : validateModelOutput({
-              outputText: result.outputText,
-              request
+        let validationIssues: string[] = [];
+        if (execution.resultKind === "lesson_reflection_draft") {
+          const modelValidation = validateReflectionOutput({
+            outputText: result.outputText,
+            request,
+            teachingPlanRevisionRef: String(
+              execution.inputSummary["teachingPlanRevisionRef"] ?? ""
+            ),
+            deliveryRevisionRef: String(
+              execution.inputSummary["deliveryRevisionRef"] ?? ""
+            ),
+            observationRevisionRefs: Array.isArray(
+              execution.inputSummary["observationRevisionRefs"]
+            )
+              ? execution.inputSummary["observationRevisionRefs"] as string[]
+              : []
+          });
+          if (modelValidation.valid && "analysisContext" in context) {
+            const analysisDraft = this.reflectionAnalysisSkill.normalize({
+              context: context.analysisContext.input,
+              modelOutput: modelValidation.output,
+              knownGaps: context.analysisContext.manifest.missingInformation
             });
-        if (validation.valid) {
-          await this.persistValidatedOutput(
-            execution,
-            validation.output,
-            latestOutput
-          );
-          await this.finalizeValidatedExecution(
-            execution.executionRef
-          );
-          return;
+            const skillValidation = this.reflectionAnalysisSkill.validate({
+              output: analysisDraft,
+              sources: context.analysisContext.manifest.sourceRefs
+            });
+            if (skillValidation.valid) {
+              const skillEvaluation = this.reflectionAnalysisSkill.evaluate({
+                context: context.analysisContext,
+                validation: skillValidation,
+                operation: {
+                  latencyMs: result.latencyMs,
+                  ...(result.inputTokens !== undefined
+                    ? { inputTokens: result.inputTokens }
+                    : {}),
+                  ...(result.outputTokens !== undefined
+                    ? { outputTokens: result.outputTokens }
+                    : {}),
+                  retryCount: Math.max(0, execution.attemptCount - 1),
+                  estimatedCost: estimateCost({
+                    inputTokens: result.inputTokens ?? 0,
+                    outputTokens: result.outputTokens ?? 0,
+                    inputPricePerMillion:
+                      this.settings.budget.inputPricePerMillion,
+                    outputPricePerMillion:
+                      this.settings.budget.outputPricePerMillion
+                  })
+                }
+              });
+              await this.persistValidatedOutput(
+                execution,
+                modelValidation.output,
+                latestOutput,
+                skillEvaluation
+              );
+              await this.finalizeValidatedExecution(
+                execution.executionRef
+              );
+              return;
+            }
+            validationIssues = skillValidation.issues;
+          } else {
+            validationIssues = modelValidation.valid
+              ? ["Reflection Skill Context could not be reconstructed."]
+              : modelValidation.issues;
+          }
+        } else {
+          const validation = lessonSkill!.validateOutput({
+            outputText: result.outputText,
+            request
+          });
+          if (validation.valid) {
+            const skillEvaluation = lessonSkill!.evaluateOutput({
+              validation,
+              operation: {
+                latencyMs: result.latencyMs,
+                ...(result.inputTokens !== undefined &&
+                result.outputTokens !== undefined
+                  ? {
+                      usage: {
+                        inputTokens: result.inputTokens,
+                        outputTokens: result.outputTokens,
+                        totalTokens:
+                          result.inputTokens + result.outputTokens
+                      }
+                    }
+                  : {}),
+                attemptCount: execution.attemptCount,
+                estimatedCostUsd: estimateCost({
+                  inputTokens: result.inputTokens ?? 0,
+                  outputTokens: result.outputTokens ?? 0,
+                  inputPricePerMillion:
+                    this.settings.budget.inputPricePerMillion,
+                  outputPricePerMillion:
+                    this.settings.budget.outputPricePerMillion
+                })
+              }
+            });
+            await this.persistValidatedOutput(
+              execution,
+              validation.output,
+              latestOutput,
+              skillEvaluation
+            );
+            await this.finalizeValidatedExecution(
+              execution.executionRef
+            );
+            return;
+          }
+          validationIssues = validation.issues;
         }
         if (attempt < execution.maxAttempts) {
           await this.recordRetryableFailure(
@@ -1999,15 +2644,15 @@ export class PostgresModelInvocationService {
             latestOutput
           );
           request = execution.resultKind === "lesson_reflection_draft"
-            ? assembleReflectionRepairRequest({
-                original: context.request,
-                invalidOutput: result.outputText,
-                validationIssues: validation.issues
-              })
-            : assembleRepairModelRequest({
+              ? assembleReflectionRepairRequest({
+                  original: context.request,
+                  invalidOutput: result.outputText,
+                  validationIssues
+                })
+              : lessonSkill!.assembleRepairRequest({
             original: context.request,
             invalidOutput: result.outputText,
-            validationIssues: validation.issues
+            validationIssues
               });
           execution =
             (await this.executions.get(
@@ -2040,14 +2685,7 @@ export class PostgresModelInvocationService {
 
   private async loadPromptContext(
     execution: StoredModelExecution
-  ): Promise<{
-    request: ModelRequestV2;
-    baseline: {
-      revisionRef: string;
-      artifactRef: string;
-      content: TeachingPlan;
-    };
-  }> {
+  ): Promise<LessonPreparationPromptContext> {
     const tenantRef = await this.executionTenantRef(execution);
     const taskRun = await this.gate25Work.getTaskRun(
       this.pool,
@@ -2184,8 +2822,81 @@ export class PostgresModelInvocationService {
           : capabilities?.supportsJsonObject === false
             ? "prompt_json"
             : "json_object";
-    return {
-      request: assembleLessonPreparationModelRequest({
+    const skill = this.requireExecutionLessonPreparationSkill(execution);
+    const storedLessonBriefRef = execution.inputSummary["lessonBriefRef"];
+    const lessonBriefRef = typeof storedLessonBriefRef === "string"
+      ? storedLessonBriefRef
+      : null;
+    const adoptedLessonBrief = lessonBriefRef
+      ? await this.lessonBriefs.loadAdopted({
+          tenantRef,
+          teacherRef: execution.actorRef,
+          lessonRef: preparationTask.lessonRef,
+          briefRef: lessonBriefRef
+        })
+      : null;
+    if (skill.manifest.ref === lessonBriefPreparationSkillRef) {
+      if (!lessonBriefRef || !adoptedLessonBrief) {
+        throw new Error(
+          "lesson-preparation@4 requires an adopted Lesson Brief bound to the sealed TaskWorkingSet."
+        );
+      }
+    }
+    if (lessonBriefRef && adoptedLessonBrief) {
+      if (
+        execution.inputSummary["lessonBriefContentHash"] !==
+        adoptedLessonBrief.contentHash
+      ) {
+        throw new Error("The adopted Lesson Brief hash no longer matches the bound ModelExecution.");
+      }
+    }
+    const sealedWorkingMemory = skill.manifest.ref === lessonPreparationSkillRef
+      ? await this.conversations.loadSealedWorkingMemory(this.pool, {
+          tenantRef,
+          teacherRef: execution.actorRef,
+          conversationRef: requiredSummaryString(
+            execution,
+            "conversationRef"
+          ),
+          snapshotRef: requiredSummaryString(
+            execution,
+            "workingMemorySnapshotRef"
+          ),
+          expectedVersion: requiredSummaryNumber(
+            execution,
+            "workingMemoryVersion"
+          ),
+          expectedContentHash: requiredSummaryString(
+            execution,
+            "workingMemoryContentHash"
+          ),
+          expectedSourceTurnSequence: requiredSummaryNumber(
+            execution,
+            "workingMemorySourceTurnSequence"
+          )
+        })
+      : null;
+    const sealedMemoryContextPack =
+      skill.manifest.ref === lessonPreparationSkillRef
+        ? await this.gate2Runtime.getMemoryContextPackManifest(
+            this.pool,
+            execution.agentRunRef
+          )
+        : null;
+    const confirmedPreferences =
+      skill.manifest.memoryPolicy.mode === "authorized_context_only"
+        ? sealedMemoryContextPack
+          ? await this.loadSealedPreferenceSnapshots({
+              execution,
+              tenantRef,
+              manifest: sealedMemoryContextPack
+            })
+          : await this.personalization.listConfirmedPreferences({
+              tenantRef,
+              teacherRef: execution.actorRef
+            })
+        : [];
+    const skillInput = skill.inputSchema.parse({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
         agentRunRef: execution.agentRunRef,
@@ -2237,20 +2948,424 @@ export class PostgresModelInvocationService {
           sourceAssignmentRef:
             preparationTask.workingSet.sourceAssignmentRef ?? null,
           sourceAssignmentItemRefs:
-            preparationTask.workingSet.sourceAssignmentItemRefs ?? []
-        }
-      }),
+            preparationTask.workingSet.sourceAssignmentItemRefs ?? [],
+          sourceResourceRefs:
+            preparationTask.workingSet.sourceResourceRefs ?? []
+        },
+        confirmedPreferences,
+        ...(lessonBriefRef && adoptedLessonBrief
+          ? {
+              confirmedLessonBrief: toConfirmedLessonBriefContext({
+                briefRef: lessonBriefRef,
+                brief: adoptedLessonBrief,
+                authorizedEvidenceRefs: contextManifest.evidenceRefs
+              })
+            }
+          : {}),
+        ...(sealedWorkingMemory
+          ? {
+              conversationContext: {
+                conversationRef: sealedWorkingMemory.conversationRef,
+                turnRef: requiredSummaryString(execution, "turnRef"),
+                workingMemorySnapshotRef:
+                  sealedWorkingMemory.snapshotRef,
+                snapshotContentHash:
+                  sealedWorkingMemory.contentHash,
+                sourceTurnSequence:
+                  sealedWorkingMemory.sourceTurnSequence,
+                activeGoal: sealedWorkingMemory.activeGoal,
+                recentTeacherRequests:
+                  sealedWorkingMemory.recentTeacherRequests,
+                referents: sealedWorkingMemory.referents,
+                pendingIntents: sealedWorkingMemory.pendingIntents,
+                selectedOptions: sealedWorkingMemory.selectedOptions,
+                temporaryOverrides:
+                  sealedWorkingMemory.temporaryOverrides,
+                latestAssistantResult:
+                  sealedWorkingMemory.latestAssistantResult,
+                rollingSummary: sealedWorkingMemory.rollingSummary
+              }
+            }
+          : {})
+      });
+    const contextBuild = skill.buildContext?.({
+      contextPlan: {
+        purpose: "lesson_preparation",
+        actorRef: execution.actorRef,
+        tenantRef,
+        resourceTypes:
+          skill.manifest.contextPolicy.requiredResourceKinds,
+        fieldMask: authorizedContextPlan.requestedFieldMask,
+        authorizationDecisionRef:
+          authorizedContextPlan.authorizationDecisionRef,
+        authorizedResourceRefs:
+          authorizedContextPlan.authorizedResourceRefs,
+        authorizedEvidenceRefs:
+          authorizedContextPlan.authorizedEvidenceRefs,
+        tokenBudget: this.settings.budget.maxInputTokens,
+        timeRange: null,
+        workingSetVersion:
+          authorizedContextPlan.workingSetVersion
+      },
+      sealedContext: {
+        contextManifestRef: contextManifest.contextManifestRef,
+        resourceRefs: contextManifest.resourceRefs,
+        evidenceRefs: contextManifest.evidenceRefs,
+        missingInformation: contextManifest.unknowns
+      },
+      skillInput,
+      baselineRevisionRef: baseline.revisionRef,
+      confirmedPreferences
+    });
+    const memoryObservability =
+      contextBuild &&
+      sealedWorkingMemory &&
+      "personalizationManifest" in contextBuild &&
+      "conversationManifest" in contextBuild
+        ? this.buildMemoryApplicationObservability({
+            execution,
+            tenantRef,
+            skill,
+            requestText: taskRun.request.requestText,
+            workingMemory: sealedWorkingMemory,
+            personalizationManifest: contextBuild.personalizationManifest,
+            conversationManifest: contextBuild.conversationManifest,
+            confirmedPreferences,
+            authorizationDecisionRef:
+              authorizedContextPlan.authorizationDecisionRef,
+            sealedManifest: sealedMemoryContextPack
+          })
+        : null;
+    return {
+      request: skill.assembleRequest(
+        contextBuild?.input ?? skillInput
+      ),
       baseline: {
         revisionRef: baseline.revisionRef,
         artifactRef: baseline.artifactRef,
         content: baseline.content
+      },
+      ...(contextBuild
+        ? {
+            contextEngineering: {
+              manifest: contextBuild.manifest,
+              evaluation: contextBuild.evaluation,
+              ...("personalizationManifest" in contextBuild
+                ? {
+                    personalizationManifest:
+                      contextBuild.personalizationManifest,
+                    preferenceEvaluation:
+                      contextBuild.preferenceEvaluation
+                  }
+                : {}),
+              ...("lessonBriefManifest" in contextBuild
+                ? {
+                    lessonBriefManifest: contextBuild.lessonBriefManifest,
+                    lessonBriefEvaluation: contextBuild.lessonBriefEvaluation
+                  }
+                : {}),
+              ...("conversationManifest" in contextBuild
+                ? {
+                    conversationManifest:
+                      contextBuild.conversationManifest
+                  }
+                : {}),
+              ...(memoryObservability
+                ? {
+                    memoryContextPackManifest:
+                      memoryObservability.manifest,
+                    memoryApplicationObservability: {
+                      status: this.memoryApplicationCollectionEnabled
+                        ? "pending" as const
+                        : "disabled" as const
+                    }
+                  }
+                : {})
+            }
+          }
+        : {}),
+      ...(memoryObservability && this.memoryApplicationCollectionEnabled
+        ? {
+            memoryApplicationSelections:
+              memoryObservability.selections
+          }
+        : {})
+    };
+  }
+
+  private async loadSealedPreferenceSnapshots(input: {
+    readonly execution: StoredModelExecution;
+    readonly tenantRef: string;
+    readonly manifest: MemoryContextPackManifest;
+  }): Promise<readonly ConfirmedTeacherPreferenceSnapshot[]> {
+    if (
+      input.manifest.owner.tenantRef !== input.tenantRef ||
+      input.manifest.owner.teacherRef !== input.execution.actorRef ||
+      input.manifest.conversationRef !==
+        requiredSummaryString(input.execution, "conversationRef") ||
+      input.manifest.currentTurnRef !==
+        requiredSummaryString(input.execution, "turnRef")
+    ) {
+      throw new Error(
+        "The sealed MemoryContextPack owner or conversation binding does not match."
+      );
+    }
+    const uniqueSources = new Map<
+      string,
+      MemoryContextPackManifest["preferenceDecisions"][number]
+    >();
+    for (const decision of input.manifest.preferenceDecisions) {
+      const key = [
+        decision.sourceRef,
+        decision.sourceVersion,
+        decision.sourceContentHash
+      ].join("|");
+      uniqueSources.set(key, decision);
+    }
+    if (uniqueSources.size === 0) return [];
+    if (!this.memoryApplications) {
+      throw new Error(
+        "The sealed MemoryContextPack preference resolver is unavailable."
+      );
+    }
+    const snapshots: ConfirmedTeacherPreferenceSnapshot[] = [];
+    for (const decision of uniqueSources.values()) {
+      const revision = await this.memoryApplications.resolvePreferenceRevision({
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        expectedContentHash: decision.sourceContentHash
+      });
+      if (!revision || revision.statusAtRun !== "active") {
+        throw new Error(
+          "The sealed TeacherPreference revision cannot be reconstructed."
+        );
       }
+      snapshots.push({
+        tenantRef: input.tenantRef,
+        teacherRef: input.execution.actorRef,
+        preferenceRef: revision.preferenceRef,
+        preferenceKey: revision.preferenceKey,
+        preferenceValue: revision.preferenceValue,
+        version: revision.preferenceVersion,
+        contentHash: revision.preferenceContentHash,
+        sourceCandidateRef: revision.sourceCandidateRef,
+        confirmedAt: revision.confirmedAt,
+        updatedAt: revision.updatedAt
+      });
+    }
+    return Object.freeze(snapshots);
+  }
+
+  private buildMemoryApplicationObservability(input: {
+    readonly execution: StoredModelExecution;
+    readonly tenantRef: string;
+    readonly skill: LessonPreparationSkillVersion;
+    readonly requestText: string;
+    readonly workingMemory: PersistedWorkingMemorySnapshot;
+    readonly personalizationManifest: PersonalizedLessonPreparationManifest;
+    readonly conversationManifest: ConversationPreparationManifest;
+    readonly confirmedPreferences: readonly ConfirmedTeacherPreferenceSnapshot[];
+    readonly authorizationDecisionRef: string;
+    readonly sealedManifest: MemoryContextPackManifest | null;
+  }): {
+    readonly manifest: MemoryContextPackManifest;
+    readonly selections: readonly MemoryApplicationSelection[];
+  } {
+    const currentTurnRef = requiredSummaryString(
+      input.execution,
+      "turnRef"
+    );
+    const currentTurnSequence = requiredSummaryNumber(
+      input.execution,
+      "turnSequence"
+    );
+    const currentTurnContentHash = requiredSummaryString(
+      input.execution,
+      "turnContentHash"
+    );
+    const workingMemoryVersion = requiredSummaryNumber(
+      input.execution,
+      "workingMemoryVersion"
+    );
+    if (
+      input.conversationManifest.conversationRef !==
+        requiredSummaryString(input.execution, "conversationRef") ||
+      input.conversationManifest.turnRef !== currentTurnRef ||
+      input.conversationManifest.snapshotRef !== input.workingMemory.snapshotRef ||
+      input.conversationManifest.snapshotContentHash !==
+        input.workingMemory.contentHash ||
+      input.workingMemory.version !== workingMemoryVersion
+    ) {
+      throw new Error(
+        "The MemoryContextPack sources do not match the sealed conversation context."
+      );
+    }
+    const preferenceByRef = new Map(
+      input.confirmedPreferences.map((preference) => [
+        preference.preferenceRef,
+        preference
+      ])
+    );
+    const preferenceDecisions: MemoryContextPackManifest["preferenceDecisions"] = [
+      ...input.personalizationManifest.confirmedPreferences.map((entry) => ({
+        sourceKind: "teacher_preference" as const,
+        sourceRef: entry.preferenceRef,
+        sourceVersion: entry.version,
+        sourceContentHash: entry.contentHash,
+        decision: "injected" as const,
+        reasonCode: "active_confirmed_preference" as const,
+        targetFields: ["prompt.context.confirmedPreferences"],
+        allowedEffects: ["prompt_context"],
+        estimatedTokens: entry.estimatedTokens
+      })),
+      ...input.personalizationManifest.excludedPreferences.map((entry) => {
+        const preference = preferenceByRef.get(entry.preferenceRef);
+        if (!preference || entry.reason === "owner_mismatch") {
+          throw new Error(
+            "A successful MemoryContextPack cannot contain an unresolved or foreign Preference."
+          );
+        }
+        return {
+          sourceKind: "teacher_preference" as const,
+          sourceRef: preference.preferenceRef,
+          sourceVersion: preference.version,
+          sourceContentHash: preference.contentHash,
+          decision: "excluded" as const,
+          reasonCode: entry.reason,
+          targetFields: ["prompt.context.confirmedPreferences"],
+          allowedEffects: [] as string[],
+          estimatedTokens: estimateContextTokens({
+            preferenceRef: preference.preferenceRef,
+            preferenceKey: preference.preferenceKey,
+            preferenceValue: preference.preferenceValue,
+            version: preference.version,
+            contentHash: preference.contentHash,
+            sourceCandidateRef: preference.sourceCandidateRef
+          })
+        };
+      })
+    ];
+    const manifest = buildMemoryContextPackManifest({
+      owner: {
+        tenantRef: input.tenantRef,
+        teacherRef: input.execution.actorRef
+      },
+      useCase: "lesson_preparation",
+      policyVersion: "memory-context-pack-policy@1",
+      skillRef: input.skill.manifest.ref,
+      skillVersion: input.skill.manifest.version,
+      skillContentHash: input.skill.manifest.contentHash,
+      conversationRef: requiredSummaryString(
+        input.execution,
+        "conversationRef"
+      ),
+      currentTurnRef,
+      currentTurnSequence,
+      currentTurnContentHash,
+      workingMemorySnapshotRef: input.workingMemory.snapshotRef,
+      workingMemorySnapshotVersion: workingMemoryVersion,
+      workingMemorySnapshotContentHash: input.workingMemory.contentHash,
+      contextDecisions: [
+        {
+          sourceKind: "current_instruction",
+          sourceRef: currentTurnRef,
+          sourceVersion: currentTurnSequence,
+          sourceContentHash: currentTurnContentHash,
+          decision: "injected",
+          reasonCode: "current_instruction",
+          targetFields: ["prompt.context.currentInstruction"],
+          allowedEffects: ["prompt_context"],
+          estimatedTokens: estimateContextTokens(input.requestText)
+        },
+        {
+          sourceKind: "working_memory",
+          sourceRef: input.workingMemory.snapshotRef,
+          sourceVersion: workingMemoryVersion,
+          sourceContentHash: input.workingMemory.contentHash,
+          decision: "injected",
+          reasonCode: "same_task_working_memory",
+          targetFields: ["prompt.context.workingMemory"],
+          allowedEffects: ["prompt_context"],
+          estimatedTokens: input.conversationManifest.estimatedTokens
+        }
+      ],
+      preferenceDecisions,
+      createdAt:
+        input.sealedManifest?.createdAt ?? this.clock().toISOString()
+    });
+    if (
+      input.sealedManifest &&
+      (manifest.packRef !== input.sealedManifest.packRef ||
+        manifest.packContentHash !== input.sealedManifest.packContentHash)
+    ) {
+      throw new Error(
+        "The sealed MemoryContextPack cannot be deterministically reconstructed."
+      );
+    }
+    const scopeHash = hash([
+      input.tenantRef,
+      input.execution.actorRef,
+      manifest.conversationRef,
+      input.execution.taskRef,
+      manifest.skillRef
+    ]);
+    const selections = manifest.preferenceDecisions.map((decision) => {
+      const reasonCode = preferenceApplicationReasonCode(decision.reasonCode);
+      return {
+        owner: {
+          tenantRef: input.tenantRef,
+          teacherRef: input.execution.actorRef
+        },
+        conversationRef: manifest.conversationRef,
+        turnRef: manifest.currentTurnRef,
+        taskRef: input.execution.taskRef,
+        agentRunRef: input.execution.agentRunRef,
+        modelExecutionRef: null,
+        skillRef: manifest.skillRef,
+        useCase: manifest.useCase,
+        scopeHash,
+        preferenceRef: decision.sourceRef,
+        preferenceVersion: decision.sourceVersion,
+        preferenceContentHash: decision.sourceContentHash,
+        packRef: manifest.packRef,
+        packContentHash: manifest.packContentHash,
+        decision: decision.decision,
+        reasonCode,
+        targetFields: [...decision.targetFields],
+        estimatedTokens: decision.estimatedTokens,
+        policyVersion: manifest.policyVersion,
+        idempotencyKey: `memory-application:${hash([
+          input.execution.agentRunRef,
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision
+        ])}`,
+        authorizationDecisionRef: input.authorizationDecisionRef,
+        auditRef: `audit:${hash([
+          input.execution.agentRunRef,
+          decision.sourceRef,
+          decision.sourceVersion,
+          decision.decision,
+          manifest.packContentHash
+        ]).slice(0, 40)}`
+      };
+    });
+    return {
+      manifest,
+      selections: Object.freeze(selections)
     };
   }
 
   private async loadReflectionPromptContext(
     execution: StoredModelExecution
-  ): Promise<{ request: ModelRequestV2 }> {
+  ): Promise<{
+    request: ModelRequestV2;
+    analysisContext: ReturnType<ReflectionAnalysisSkillVersion["buildContext"]>;
+  }> {
     const tenantRef = await this.executionTenantRef(execution);
     const reflectionRef = String(
       execution.inputSummary["reflectionRef"] ?? ""
@@ -2368,6 +3483,139 @@ export class PostgresModelInvocationService {
             reflection.assignmentEvidenceRefs
           ]
         );
+    const sealedLessonBriefRef = typeof execution.inputSummary["lessonBriefRef"] === "string"
+      ? execution.inputSummary["lessonBriefRef"]
+      : null;
+    const adoptedLessonBrief = sealedLessonBriefRef
+      ? await this.lessonBriefs.loadAdopted({
+          tenantRef: reflection.tenantRef,
+          teacherRef: execution.actorRef,
+          lessonRef: reflection.lessonRef,
+          briefRef: sealedLessonBriefRef
+        })
+      : null;
+    if (
+      sealedLessonBriefRef &&
+      (
+        !adoptedLessonBrief ||
+        adoptedLessonBrief.contentHash !==
+          execution.inputSummary["lessonBriefContentHash"]
+      )
+    ) {
+      throw new Error("The sealed adopted Lesson Brief cannot be reconstructed.");
+    }
+    const selectedBriefCandidateIds = new Set(
+      adoptedLessonBrief?.disposition?.selectedCandidateIds ?? []
+    );
+    const selectedBriefTitles = (items: LessonBriefSnapshot["teachingFocusCandidates"]) =>
+      items
+        .filter((item) => selectedBriefCandidateIds.has(item.candidateId))
+        .map((item) => item.title);
+    const analysisContext = this.reflectionAnalysisSkill.buildContext({
+      tenantRef: reflection.tenantRef,
+      actorRef: execution.actorRef,
+      lesson: {
+        lessonRef: lesson.lessonRef,
+        courseRunRef: courseRun.courseRunRef,
+        title: lesson.title,
+        learningObjectiveRefs: lesson.learningObjectives.map(
+          (item) => item.objectiveRef
+        ),
+        source: {
+          ref: lesson.lessonRef,
+          version: `${lesson.preparationState}:${lesson.plannedAt ?? "unscheduled"}`,
+          contentHash: hash(lesson),
+          provenance: "education.lesson.authorized-read"
+        }
+      },
+      approvedTeachingPlan: {
+        revisionRef: teachingPlan.revisionRef,
+        content: teachingPlan.content,
+        source: {
+          ref: teachingPlan.revisionRef,
+          version: String(teachingPlan.revisionNumber),
+          contentHash: hash(teachingPlan.content),
+          provenance: "artifact.teaching-plan.current-approved"
+        }
+      },
+      confirmedDelivery: {
+        deliveryRevisionRef: delivery.deliveryRevisionRef,
+        actualStartAt: delivery.actualStartAt,
+        actualEndAt: delivery.actualEndAt,
+        steps: delivery.steps,
+        paceNotes: delivery.paceNotes,
+        unresolvedQuestions: delivery.unresolvedQuestions,
+        followUpNotes: delivery.followUpNotes,
+        source: {
+          ref: delivery.deliveryRevisionRef,
+          version: `${delivery.revisionNumber}:${delivery.status}`,
+          contentHash: hash(delivery),
+          provenance: "education.lesson-delivery.confirmed-revision"
+        }
+      },
+      confirmedObservations: observations.map((item) => ({
+        observationRevisionRef: item.observationRevisionRef,
+        scope: item.scope,
+        scopeRef: item.scopeRef,
+        observationType: item.observationType,
+        content: item.content,
+        observedAt: item.observedAt,
+        source: {
+          ref: item.observationRevisionRef,
+          version: `${item.revisionNumber}:${item.status}`,
+          contentHash: hash(item),
+          provenance: "education.classroom-observation.confirmed-selection"
+        }
+      })),
+      selectedEvidence: evidenceResult.rows.map((item) => ({
+        evidenceRef: item.observation_ref,
+        objectiveRef: item.objective_ref,
+        summary: `教师已确认的作业 Evidence，结果：${item.outcome}`,
+        source: {
+          ref: item.observation_ref,
+          version: "current-confirmed",
+          contentHash: hash(item),
+          provenance: "education.assignment-evidence.authorized-selection"
+        }
+      })),
+      lessonBrief: adoptedLessonBrief && sealedLessonBriefRef
+        ? {
+            briefRef: sealedLessonBriefRef,
+            status: "adopted",
+            teachingFocus: selectedBriefTitles(
+              adoptedLessonBrief.teachingFocusCandidates
+            ),
+            difficultyFocus: selectedBriefTitles(
+              adoptedLessonBrief.difficultyCandidates
+            ),
+            attentionPoints: selectedBriefTitles(
+              adoptedLessonBrief.suggestedAttentionPoints
+            ),
+            knownGaps: adoptedLessonBrief.knownGaps,
+            source: {
+              ref: sealedLessonBriefRef,
+              version: adoptedLessonBrief.generatedAt,
+              contentHash: adoptedLessonBrief.contentHash,
+              provenance: "runtime.lesson-brief.teacher-adopted"
+            }
+          }
+        : null,
+      currentReflectionDraft: reflection.content,
+      teacherAdjustment: execution.inputSummary["teacherNotesProvided"] === true
+        ? taskRun.request.requestText
+        : null,
+      authorizedEvidenceRefs: reflection.assignmentEvidenceRefs,
+      excludedEvidenceRefs: [],
+      generatedAt: execution.queuedAt
+    });
+    if (
+      !sameStringRefs(
+        analysisContext.manifest.evidenceRefs,
+        contextManifest.evidenceRefs
+      )
+    ) {
+      throw new Error("The Reflection Skill context exceeds the sealed Evidence selection.");
+    }
     const capabilities = await this.getCapabilities();
     const responseFormat = execution.provider === "mock"
       ? "json_schema"
@@ -2376,7 +3624,17 @@ export class PostgresModelInvocationService {
         : capabilities?.supportsJsonObject === false
           ? "prompt_json"
           : "json_object";
+    const reflectionPromptBundleVersion = execution.promptBundleVersion;
+    if (
+      execution.promptBundleRef !== lessonReflectionPromptBundle.promptBundleRef ||
+      (reflectionPromptBundleVersion !== 1 && reflectionPromptBundleVersion !== 2)
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} has an unsupported Reflection prompt bundle.`
+      );
+    }
     return {
+      analysisContext,
       request: assembleLessonReflectionModelRequest({
         invocationRef: execution.executionRef,
         taskRunRef: execution.taskRunRef,
@@ -2424,14 +3682,25 @@ export class PostgresModelInvocationService {
           objectiveRef: item.objective_ref,
           summary: `教师已确认的合成作业 Evidence，结果：${item.outcome}`
         })),
-        currentReflectionDraft: reflection.content
+        adoptedLessonBrief: analysisContext.input.lessonBrief
+          ? {
+              briefRef: analysisContext.input.lessonBrief.briefRef,
+              teachingFocus: analysisContext.input.lessonBrief.teachingFocus,
+              difficultyFocus: analysisContext.input.lessonBrief.difficultyFocus,
+              attentionPoints: analysisContext.input.lessonBrief.attentionPoints,
+              knownGaps: analysisContext.input.lessonBrief.knownGaps
+            }
+          : null,
+        currentReflectionDraft: reflection.content,
+        promptBundleVersion: reflectionPromptBundleVersion
       })
     };
   }
 
   private async beginAttempt(
     executionRef: string,
-    attempt: number
+    attempt: number,
+    contextEngineering?: LessonPreparationContextEngineering
   ): Promise<StoredModelExecution> {
     const now = this.clock().toISOString();
     const client = await this.pool.connect();
@@ -2465,16 +3734,28 @@ export class PostgresModelInvocationService {
         status: "running",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: running.agentRunRef,
-        status: "running",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution: running,
+        compatibilityStatus: "running",
+        event: {
+          type: "model_started",
+          modelExecutionRef: running.executionRef,
+          attempt,
+          at: now
+        },
         output: {
           proposalOnly: true,
           modelExecutionRef: running.executionRef,
-          attempt
+          attempt,
+          ...(contextEngineering
+            ? { contextEngineering }
+            : {})
         },
-        updatedAt: now
+        operation: `model-attempt-${attempt}-runtime-checkpoint`
       });
+      if (runtimeReceipt) {
+        await this.governance.saveAudits(client, [runtimeReceipt]);
+      }
       await client.query("COMMIT");
       return running;
     } catch (error) {
@@ -2483,6 +3764,119 @@ export class PostgresModelInvocationService {
     } finally {
       client.release();
     }
+  }
+
+  private async recordMemoryApplicationSelections(
+    execution: StoredModelExecution,
+    context: LessonPreparationPromptContext
+  ): Promise<void> {
+    if (
+      !this.memoryApplicationCollectionEnabled ||
+      !context.contextEngineering?.memoryContextPackManifest
+    ) {
+      return;
+    }
+    let status: "recorded" | "degraded" = "recorded";
+    try {
+      if (!this.memoryApplications) {
+        throw new Error("MemoryApplicationRecorder is not configured.");
+      }
+      for (const selection of context.memoryApplicationSelections ?? []) {
+        await this.memoryApplications.recordSelection(selection);
+      }
+    } catch {
+      status = "degraded";
+    }
+    try {
+      await this.gate2Runtime.updateMemoryApplicationObservabilityStatus(
+        this.pool,
+        {
+          agentRunRef: execution.agentRunRef,
+          status,
+          updatedAt: this.clock().toISOString()
+        }
+      );
+    } catch {
+      status = "degraded";
+    }
+    if (status === "degraded") {
+      process.stderr.write(
+        "Memory application observability degraded; model execution continues.\n"
+      );
+    }
+  }
+
+  private async recoverAgentRun(
+    execution: StoredModelExecution
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const now = this.clock().toISOString();
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "queued",
+        event: { type: "recovered", at: now },
+        output: {
+          proposalOnly: true,
+          modelExecutionRef: execution.executionRef,
+          recoveredAfterProcessRestart: true
+        },
+        operation: "model-runtime-recovered"
+      });
+      if (runtimeReceipt) {
+        await this.governance.saveAudits(client, [runtimeReceipt]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async updateAgentRunLifecycle(
+    client: PostgresClient,
+    input: {
+      execution: StoredModelExecution;
+      compatibilityStatus:
+        | "queued"
+        | "running"
+        | "validating"
+        | "completed"
+        | "failed"
+        | "cancelled";
+      event: RuntimeKernelEvent;
+      output: Record<string, unknown>;
+      operation: string;
+    }
+  ): Promise<FormalWriteReceipt | null> {
+    if (input.execution.resultKind === "teaching_proposal") {
+      const transitioned =
+        await this.runtimeKernel.transitionIfPresent(client, {
+          agentRunRef: input.execution.agentRunRef,
+          event: input.event,
+          compatibilityOutputPatch: input.output,
+          outboxRef: `outbox:${randomUUID()}`,
+          metadata: createWriteMetadata(
+            executionWriteContext(
+              input.execution,
+              input.event.at
+            ),
+            "runtime",
+            input.operation
+          )
+        });
+      if (transitioned) return transitioned.receipt;
+    }
+    await this.runtime.updateAgentRunStatus(client, {
+      agentRunRef: input.execution.agentRunRef,
+      status: input.compatibilityStatus,
+      output: input.output,
+      updatedAt: input.event.at
+    });
+    return null;
   }
 
   private async recordBudgetDecision(
@@ -2597,7 +3991,10 @@ export class PostgresModelInvocationService {
       latencyMs: number;
       providerRequestId?: string;
       finishReason?: string;
-    }
+    },
+    skillEvaluation?:
+      | LessonPreparationSkillEvaluation
+      | ReflectionAnalysisEvaluation
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -2640,17 +4037,27 @@ export class PostgresModelInvocationService {
             "model-output-validating"
           )
         });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "validating",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "validating",
+        event: {
+          type: "validation_started",
+          modelExecutionRef: execution.executionRef,
+          outputHash: hash(output),
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           outputHash: hash(output),
-          rawProviderContentStored: false
+          rawProviderContentStored: false,
+          ...(skillEvaluation ? { skillEvaluation } : {})
         },
-        updatedAt: now
+        operation: "model-output-runtime-validating"
       });
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -2711,7 +4118,44 @@ export class PostgresModelInvocationService {
               "model-result-reused"
             )
           });
-        await this.governance.saveAudits(client, [receipt]);
+        const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+          execution,
+          compatibilityStatus: "completed",
+          event: {
+            type: "proposal_created",
+            proposalRef: existing.proposalRevisionRef,
+            outputHash:
+              execution.outputHash ?? hash(execution.validatedOutput),
+            at: now
+          },
+          output: {
+            modelExecutionRef: execution.executionRef,
+            proposalRevisionRef: existing.proposalRevisionRef,
+            proposalOnly: true,
+            reusedExistingProposal: true,
+            rawProviderContentStored: false
+          },
+          operation: "model-result-reused-runtime-checkpoint"
+        });
+        const reusedConversationReceipts =
+          typeof execution.inputSummary["conversationRef"] === "string"
+            ? await this.conversations.appendAssistantResult(client, {
+                tenantRef: await this.executionTenantRef(execution, client),
+                teacherRef: execution.actorRef,
+                conversationRef: execution.inputSummary["conversationRef"],
+                taskRunRef: execution.taskRunRef,
+                agentRunRef: execution.agentRunRef,
+                modelExecutionRef: execution.executionRef,
+                proposalRevisionRef: existing.proposalRevisionRef,
+                writeContext,
+                createdAt: now
+              })
+            : [];
+        await this.governance.saveAudits(client, [
+          receipt,
+          ...(runtimeReceipt ? [runtimeReceipt] : []),
+          ...reusedConversationReceipts
+        ]);
         await client.query("COMMIT");
         return;
       }
@@ -2719,7 +4163,8 @@ export class PostgresModelInvocationService {
       const promptContext = await this.loadPromptContext(
         execution
       );
-      const validation = validateModelOutput({
+      const skill = this.requireExecutionLessonPreparationSkill(execution);
+      const validation = skill.validateOutput({
         outputText: JSON.stringify(execution.validatedOutput),
         request: promptContext.request
       });
@@ -2856,9 +4301,15 @@ export class PostgresModelInvocationService {
         status: "completed",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "completed",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "completed",
+        event: {
+          type: "proposal_created",
+          proposalRef: proposalRevisionRef,
+          outputHash: execution.outputHash ?? hash(execution.validatedOutput),
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           proposalRevisionRef,
@@ -2866,8 +4317,24 @@ export class PostgresModelInvocationService {
           proposalOnly: true,
           rawProviderContentStored: false
         },
-        updatedAt: now
+        operation: "model-proposal-runtime-checkpoint"
       });
+      if (runtimeReceipt) receipts.push(runtimeReceipt);
+      if (typeof execution.inputSummary["conversationRef"] === "string") {
+        receipts.push(
+          ...(await this.conversations.appendAssistantResult(client, {
+            tenantRef: preparation.tenantRef,
+            teacherRef: execution.actorRef,
+            conversationRef: execution.inputSummary["conversationRef"],
+            taskRunRef: execution.taskRunRef,
+            agentRunRef: execution.agentRunRef,
+            modelExecutionRef: execution.executionRef,
+            proposalRevisionRef,
+            writeContext,
+            createdAt: now
+          }))
+        );
+      }
       receipts.push(
         await this.executions.markTerminal(client, {
           executionRef,
@@ -2933,10 +4400,44 @@ export class PostgresModelInvocationService {
     if (!validation.valid) {
       throw new Error("Persisted Reflection output no longer passes validation.");
     }
+    const analysisDraft = this.reflectionAnalysisSkill.normalize({
+      context: context.analysisContext.input,
+      modelOutput: output,
+      knownGaps: context.analysisContext.manifest.missingInformation
+    });
+    const skillValidation = this.reflectionAnalysisSkill.validate({
+      output: analysisDraft,
+      sources: context.analysisContext.manifest.sourceRefs
+    });
+    if (!skillValidation.valid) {
+      throw new Error(
+        `Persisted Reflection analysis no longer passes validation: ${skillValidation.issues.join("; ")}`
+      );
+    }
+    const skillEvaluation = this.reflectionAnalysisSkill.evaluate({
+      context: context.analysisContext,
+      validation: skillValidation,
+      operation: {
+        latencyMs: execution.latencyMs ?? 0,
+        ...(execution.inputTokens !== null
+          ? { inputTokens: execution.inputTokens }
+          : {}),
+        ...(execution.outputTokens !== null
+          ? { outputTokens: execution.outputTokens }
+          : {}),
+        retryCount: Math.max(0, execution.attemptCount - 1),
+        estimatedCost: execution.estimatedCost ?? 0
+      }
+    });
+    if (!skillEvaluation.passed) {
+      throw new Error("Persisted Reflection analysis evaluation no longer passes.");
+    }
     const now = this.clock().toISOString();
     const writeContext = executionWriteContext(execution, now);
     const revisionRef = `artifact-revision:${randomUUID()}`;
-    const content = ReflectionContentSchema.parse(output);
+    const content = ReflectionContentSchema.parse(
+      analysisDraft.reflectionContent
+    );
     const inserted = await this.gate29Artifacts.insertDraftRevision(client, {
       reflectionRef,
       revisionRef,
@@ -3012,8 +4513,20 @@ export class PostgresModelInvocationService {
         resultKind: "lesson_reflection_draft",
         reflectionRef,
         reflectionRevisionRef: revisionRef,
+        runtimeStatus: "waiting_for_human",
+        skill: {
+          id: this.reflectionAnalysisSkill.manifest.id,
+          version: this.reflectionAnalysisSkill.manifest.version,
+          ref: this.reflectionAnalysisSkill.manifest.ref,
+          contentHash: this.reflectionAnalysisSkill.manifest.contentHash
+        },
+        contextManifestHash: context.analysisContext.manifest.contentHash,
+        reflectionContextManifest: context.analysisContext.manifest,
+        reflectionAnalysis: analysisDraft,
+        skillEvaluation,
         teacherConfirmationRequired: true,
-        outputHash: execution.outputHash,
+        outputHash: hash(analysisDraft),
+        providerOutputHash: execution.outputHash,
         rawProviderContentStored: false
       },
       updatedAt: now
@@ -3109,15 +4622,20 @@ export class PostgresModelInvocationService {
         status: "failed",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: execution.agentRunRef,
-        status: "failed",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution,
+        compatibilityStatus: "failed",
+        event: {
+          type: "failed",
+          safeErrorCategory: input.category,
+          at: now
+        },
         output: {
           modelExecutionRef: execution.executionRef,
           proposalCreated: false,
           safeErrorCategory: input.category
         },
-        updatedAt: now
+        operation: `model-${input.status}-runtime-checkpoint`
       });
       if (execution.resultKind === "lesson_reflection_draft") {
         await this.gate29Work.setReflectionTaskStatus(client, {
@@ -3128,7 +4646,10 @@ export class PostgresModelInvocationService {
           updatedAt: now
         });
       }
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -3175,14 +4696,15 @@ export class PostgresModelInvocationService {
         status: "cancelled",
         updatedAt: now
       });
-      await this.runtime.updateAgentRunStatus(client, {
-        agentRunRef: current.agentRunRef,
-        status: "cancelled",
+      const runtimeReceipt = await this.updateAgentRunLifecycle(client, {
+        execution: current,
+        compatibilityStatus: "cancelled",
+        event: { type: "cancelled", at: now },
         output: {
           modelExecutionRef: current.executionRef,
           proposalCreated: false
         },
-        updatedAt: now
+        operation: "model-cancelled-runtime-checkpoint"
       });
       if (current.resultKind === "lesson_reflection_draft") {
         await this.gate29Work.setReflectionTaskStatus(client, {
@@ -3193,7 +4715,10 @@ export class PostgresModelInvocationService {
           updatedAt: now
         });
       }
-      await this.governance.saveAudits(client, [receipt]);
+      await this.governance.saveAudits(client, [
+        receipt,
+        ...(runtimeReceipt ? [runtimeReceipt] : [])
+      ]);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -3243,6 +4768,54 @@ export class PostgresModelInvocationService {
       throw new Error("The ModelDataManifest scope is missing.");
     }
     return tenantRef;
+  }
+
+  private requireExecutionLessonPreparationSkill(
+    execution: StoredModelExecution
+  ): LessonPreparationSkillVersion {
+    const storedSkillRef = execution.inputSummary["skillRef"];
+    const skillRef = typeof storedSkillRef === "string"
+      ? storedSkillRef
+      : execution.promptBundleRef ===
+          this.lessonPreparationSkill.promptBundle.promptBundleRef &&
+        execution.promptBundleVersion ===
+          this.lessonPreparationSkill.promptBundle.version
+        ? lessonPreparationSkillRef
+        : null;
+    if (!skillRef) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} has no resolvable SkillVersion.`
+      );
+    }
+    const skill = loadHistoricalLessonPreparationSkill(
+      this.skills,
+      skillRef
+    );
+    if (skill.manifest.status === "draft") {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} cannot execute draft Skill ${skillRef}.`
+      );
+    }
+    const storedContentHash = execution.inputSummary["skillContentHash"];
+    if (
+      typeof storedContentHash === "string" &&
+      storedContentHash !== skill.manifest.contentHash
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} Skill manifest hash does not match.`
+      );
+    }
+    if (
+      execution.promptBundleRef !== skill.promptBundle.promptBundleRef ||
+      execution.promptBundleVersion !== skill.promptBundle.version ||
+      execution.outputSchemaVersion !==
+        skill.promptBundle.outputSchemaVersion
+    ) {
+      throw new Error(
+        `ModelExecution ${execution.executionRef} is not bound to ${skillRef} artifacts.`
+      );
+    }
+    return skill;
   }
 
   private assertInvocationContext(
@@ -3425,8 +4998,50 @@ function createTaskRequest(
     ...(request.workingSetVersion !== undefined
       ? { workingSetVersion: request.workingSetVersion }
       : {}),
+    ...(request.conversationRef
+      ? { conversationRef: request.conversationRef }
+      : {}),
+    ...(request.turnRef ? { turnRef: request.turnRef } : {}),
+    ...(request.parentTurnRef !== undefined
+      ? { parentTurnRef: request.parentTurnRef }
+      : {}),
+    ...(request.conversationVersion !== undefined
+      ? { conversationVersion: request.conversationVersion }
+      : {}),
     createdAt,
     requestVersion: request.requestVersion
+  };
+}
+
+function toConfirmedLessonBriefContext(input: {
+  readonly briefRef: string;
+  readonly brief: LessonBriefSnapshot;
+  readonly authorizedEvidenceRefs: readonly string[];
+}) {
+  const selected = new Set(
+    input.brief.disposition?.selectedCandidateIds ?? []
+  );
+  const onlySelected = <T extends { candidateId: string }>(
+    candidates: readonly T[]
+  ) => candidates.filter((candidate) => selected.has(candidate.candidateId));
+  const authorizedEvidence = new Set(input.authorizedEvidenceRefs);
+  return {
+    briefRef: input.briefRef,
+    agentRunRef: input.brief.agentRunRef,
+    lessonRef: input.brief.lessonRef,
+    contentHash: input.brief.contentHash,
+    contextManifestRef: input.brief.contextManifestRef,
+    contextManifestHash: input.brief.contextManifestHash,
+    generatedBySkillRef: input.brief.generatedBySkillRef,
+    selectedCandidateIds: [...selected],
+    teachingFocus: onlySelected(input.brief.teachingFocusCandidates),
+    difficultyFocus: onlySelected(input.brief.difficultyCandidates),
+    attentionPoints: onlySelected(input.brief.suggestedAttentionPoints),
+    classEvidenceSummary: input.brief.classEvidenceSummary.filter(
+      (summary) => authorizedEvidence.has(summary.evidenceRef)
+    ),
+    knownGaps: [...input.brief.knownGaps],
+    sourceVersionVector: input.brief.sourceVersionVector
   };
 }
 
@@ -3463,6 +5078,14 @@ function toExecutionView(
     resultKind: execution.resultKind,
     resultRef: execution.resultRef,
     proposalRevisionRef: execution.proposalRevisionRef,
+    conversationRef:
+      typeof execution.inputSummary["conversationRef"] === "string"
+        ? execution.inputSummary["conversationRef"]
+        : null,
+    turnRef:
+      typeof execution.inputSummary["turnRef"] === "string"
+        ? execution.inputSummary["turnRef"]
+        : null,
     retryOfModelExecutionRef:
       execution.retryOfExecutionRef,
     queuedAt: execution.queuedAt,
@@ -3470,6 +5093,54 @@ function toExecutionView(
     completedAt: execution.completedAt,
     cancelledAt: execution.cancelledAt
   });
+}
+
+function requiredSummaryString(
+  execution: StoredModelExecution,
+  key: string
+): string {
+  const value = execution.inputSummary[key];
+  if (typeof value !== "string" || !value) {
+    throw new Error(
+      `ModelExecution ${execution.executionRef} is missing ${key}.`
+    );
+  }
+  return value;
+}
+
+function requiredSummaryNumber(
+  execution: StoredModelExecution,
+  key: string
+): number {
+  const value = execution.inputSummary[key];
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new Error(
+      `ModelExecution ${execution.executionRef} is missing ${key}.`
+    );
+  }
+  return value;
+}
+
+function preferenceApplicationReasonCode(
+  reasonCode: MemoryContextPackManifest["preferenceDecisions"][number]["reasonCode"]
+): MemoryApplicationSelection["reasonCode"] {
+  switch (reasonCode) {
+    case "active_confirmed_preference":
+    case "duplicate_key":
+    case "token_budget":
+    case "skill_not_allowed":
+    case "current_instruction_override":
+    case "expired":
+    case "revoked":
+    case "superseded":
+      return reasonCode;
+    case "current_instruction":
+    case "same_task_working_memory":
+    case "owner_mismatch":
+      throw new Error(
+        "MemoryContextPack contains an invalid TeacherPreference reason code."
+      );
+  }
 }
 
 function activeModelId(
@@ -3568,6 +5239,28 @@ function transitionMetadata(
 
 function stableDecisionRef(rootKey: string): string {
   return `authorization-decision:${hash(rootKey).slice(0, 32)}`;
+}
+
+function parseMaterialGenerationStoredResult(
+  value: Record<string, unknown> | undefined,
+  replayed: boolean
+) {
+  if (!value) {
+    throw new Error("Material generation replay result is missing.");
+  }
+  const agentRunRef = String(value["agentRunRef"] ?? "");
+  const contextManifestRef = String(value["contextManifestRef"] ?? "");
+  const contextManifestHash = String(value["contextManifestHash"] ?? "");
+  if (!agentRunRef || !contextManifestRef || contextManifestHash.length < 16) {
+    throw new Error("Material generation replay result is invalid.");
+  }
+  return {
+    replayed,
+    agentRunRef,
+    contextManifestRef,
+    contextManifestHash,
+    drafts: MaterialContentDraftSchema.array().parse(value["drafts"])
+  };
 }
 
 function hash(value: unknown): string {

@@ -47,7 +47,7 @@ describe("Gate 2.8 architecture invariants", () => {
     expect(worker).toContain("projectionCount");
   });
 
-  it("keeps overview and all calendar views on typed PostgreSQL APIs", () => {
+  it("keeps all calendar views on typed PostgreSQL APIs and the overview presentation-only", () => {
     const schedule = source("apps/web/src/pages/TeacherSchedulePage.tsx");
     const components = source("apps/web/src/components/portal/ScheduleComponents.tsx");
     const overview = source("apps/web/src/pages/OverviewPage.tsx");
@@ -56,7 +56,8 @@ describe("Gate 2.8 architecture invariants", () => {
     expect(schedule).toContain("loadTeacherTodos");
     expect(schedule).toContain("loadTeacherWorkActionItems");
     expect(components).toContain("props.events");
-    expect(overview).toContain("loadTeacherWorkbenchOverview");
+    expect(overview).not.toContain("loadTeacherWorkbenchOverview");
+    expect(overview).toContain("你好，");
     expect(schedule).not.toContain("teacher-portal-data");
     expect(schedule).not.toContain("sessionStorage");
     expect(agent).not.toContain("agent-todo-context");

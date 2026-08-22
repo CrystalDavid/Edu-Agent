@@ -129,6 +129,8 @@ export const CalendarEventTypeSchema = z.enum([
   "meeting",
   "grading",
   "lesson_preparation",
+  "duty",
+  "school_affair",
   "custom_reminder",
   "todo_time_block",
   "assignment_deadline"

@@ -17,6 +17,9 @@ import {
   CreateAssignmentRequestSchema,
   CreateAdjustmentTaskRequestSchema,
   CreateModelInvocationRequestSchema,
+  CreateTeacherConversationRequestSchema,
+  AppendTeacherConversationTurnRequestSchema,
+  CloseTeacherConversationRequestSchema,
   CreateTeacherCopilotTaskRequestSchema,
   IngressEnvelopeSchema,
   LinkTeacherTodoResourceRequestSchema,
@@ -54,7 +57,10 @@ import {
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
   GenerateReflectionRequestSchema,
+  LocalCredentialLoginRequestSchema,
   LocalLoginRequestSchema,
+  LocalSmsChallengeSchema,
+  RequestLocalSmsCodeSchema,
   RefreshSessionRequestSchema,
   SwitchWorkspaceRequestSchema,
   RevokeSessionRequestSchema,
@@ -63,6 +69,19 @@ import {
   UpdateMemberRolesRequestSchema,
   UpdateMemberCourseAccessRequestSchema,
   CreateDataGovernanceRequestSchema,
+  CreateMemoryCandidateRequestSchema,
+  ReviewMemoryCandidateRequestSchema,
+  UpdateTeacherPreferenceRequestSchema,
+  RevokeTeacherPreferenceRequestSchema,
+  GenerateLessonBriefRequestSchema,
+  DecideLessonBriefRequestSchema,
+  GenerateMaterialBundleRequestSchema,
+  GenerateClassroomFeedbackRequestSchema,
+  GenerateNextLessonActionsRequestSchema,
+  UpdateNextLessonActionRequestSchema,
+  AcceptNextLessonActionRequestSchema,
+  RejectNextLessonActionRequestSchema,
+  AdoptMaterialBundleItemRequestSchema,
   SupersedeClassroomObservationRequestSchema,
   UpdateClassroomObservationDraftRequestSchema,
   UpdateLessonDeliveryDraftRequestSchema,
@@ -94,7 +113,7 @@ import {
 import type {
   ProductResourceRefs,
   ResolvedProductIdentity
-} from "./composition/postgres-identity-organization-service.js";
+} from "./modules/identity-governance-audit/application/identity-context-facade.js";
 
 type RouteResponseLocals = {
   routeId?: string;
@@ -569,6 +588,42 @@ export function createApp(
       }
     );
 
+    app.post(
+      apiRoutes.authentication.localSmsCode,
+      markRoute("authentication.local.sms-code"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const parsed = RequestLocalSmsCodeSchema.parse(request.body);
+          const result = await identity.requestLocalSmsCode(parsed.phone);
+          response.status(201).json(LocalSmsChallengeSchema.parse(result));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.authentication.localCredentialLogin,
+      markRoute("authentication.local.credential-login"),
+      async (request, response, next) => {
+        try {
+          assertAllowedAuthOrigin(request);
+          const parsed = LocalCredentialLoginRequestSchema.parse(request.body);
+          const fingerprint = clientFingerprint(request);
+          const result = await identity.localCredentialLogin({
+            request: parsed,
+            clientLabel: clientLabel(request),
+            ...(fingerprint ? { clientFingerprint: fingerprint } : {})
+          });
+          setSessionCookies(response, result.sessionToken, result.csrfToken);
+          response.status(201).json(result.status);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
     app.get(
       apiRoutes.authentication.oidcStart,
       markRoute("authentication.oidc.start"),
@@ -847,8 +902,15 @@ export function createApp(
     const files = product.services.files;
     const workbench = product.services.teacherWorkbench;
     const classroom = product.services.classroomReflection;
+    const lessonJourney = product.services.lessonJourney;
+    const lessonBrief = product.services.lessonBrief;
+    const materialGeneration = product.services.materialGeneration;
+    const classroomFeedback = product.services.classroomFeedback;
+    const nextLessonOptimization = product.services.nextLessonOptimization;
+    const personalization = product.services.personalization;
     const modelInvocations =
       product.services.modelInvocations;
+    const conversations = product.services.conversations;
     const withProductContext = async (request: Request, response?: Response) => {
       const identity = await productContextsFromRequest(
         request,
@@ -861,6 +923,99 @@ export function createApp(
       }
       return identity;
     };
+
+    app.get(
+      apiRoutes.teacher.personalizationState,
+      markRoute("product.teacher.personalization.state"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.getState({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.memoryCandidates,
+      markRoute("product.teacher.personalization.candidate-create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          const result = await personalization.createCandidate({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateMemoryCandidateRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    for (const action of ["confirm", "reject"] as const) {
+      app.post(
+        action === "confirm"
+          ? apiRoutes.teacher.memoryCandidateConfirmPattern
+          : apiRoutes.teacher.memoryCandidateRejectPattern,
+        markRoute(`product.teacher.personalization.candidate-${action}`),
+        async (request, response, next) => {
+          try {
+            const contexts = await withProductContext(request, response);
+            response.json(await personalization.reviewCandidate({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              candidateRef: routeParameter(request.params["candidateRef"]),
+              action,
+              request: ReviewMemoryCandidateRequestSchema.parse(request.body)
+            }));
+          } catch (error) {
+            next(error);
+          }
+        }
+      );
+    }
+
+    app.put(
+      apiRoutes.teacher.teacherPreferencePattern,
+      markRoute("product.teacher.personalization.preference-update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.updatePreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            preferenceRef: routeParameter(request.params["preferenceRef"]),
+            request: UpdateTeacherPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.teacherPreferenceRevokePattern,
+      markRoute("product.teacher.personalization.preference-revoke"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(await personalization.revokePreference({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            preferenceRef: routeParameter(request.params["preferenceRef"]),
+            request: RevokeTeacherPreferenceRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
 
     app.get(
       apiRoutes.teacher.pendingReflections,
@@ -889,6 +1044,47 @@ export function createApp(
             actorRef: contexts.acting.actorRef,
             lessonRef: routeParameter(request.params["lessonRef"])
           }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonLatestClassroomFeedbackPattern,
+      markRoute("product.teacher.classroom.feedback.latest"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await classroomFeedback.latest({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            lessonRef: routeParameter(request.params["lessonRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.lessonDeliveryQuickFeedback,
+      markRoute("product.teacher.classroom.feedback.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const parsed = GenerateClassroomFeedbackRequestSchema.parse(
+            request.body
+          );
+          const result = await classroomFeedback.generate({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: parsed.lessonRef
+            },
+            request: parsed
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
         } catch (error) {
           next(error);
         }
@@ -1197,6 +1393,117 @@ export function createApp(
             actorRef: contexts.acting.actorRef,
             reflectionRef: routeParameter(request.params["reflectionRef"]),
             request: CreateReflectionFollowUpRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.reflectionNextLessonActionsPattern,
+      markRoute("product.teacher.next-lesson-actions.list"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.list({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            reflectionRef: routeParameter(request.params["reflectionRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.reflectionNextLessonActionsGeneratePattern,
+      markRoute("product.teacher.next-lesson-actions.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await nextLessonOptimization.generate({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              reflectionRef: routeParameter(request.params["reflectionRef"])
+            },
+            request: GenerateNextLessonActionsRequestSchema.parse(request.body)
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.nextLessonActionPattern,
+      markRoute("product.teacher.next-lesson-actions.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.get({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"])
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.patch(
+      apiRoutes.teacher.nextLessonActionPattern,
+      markRoute("product.teacher.next-lesson-actions.update"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.update({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: UpdateNextLessonActionRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.nextLessonActionAcceptPattern,
+      markRoute("product.teacher.next-lesson-actions.accept"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.accept({
+            context: {
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef
+            },
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: AcceptNextLessonActionRequestSchema.parse(request.body)
+          }));
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.nextLessonActionRejectPattern,
+      markRoute("product.teacher.next-lesson-actions.reject"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(await nextLessonOptimization.reject({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            candidateRef: routeParameter(request.params["candidateRef"]),
+            request: RejectNextLessonActionRequestSchema.parse(request.body)
           }));
         } catch (error) {
           next(error);
@@ -1805,6 +2112,93 @@ export function createApp(
       }
     );
 
+    app.post(
+      apiRoutes.teacher.conversations,
+      markRoute("product.teacher-conversations.create"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.create({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            request: CreateTeacherConversationRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.conversationPattern,
+      markRoute("product.teacher-conversations.detail"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          response.json(
+            await conversations.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              conversationRef: routeParameter(
+                request.params["conversationRef"]
+              )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationTurnsPattern,
+      markRoute("product.teacher-conversations.append-turn"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.appendTeacherTurn({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            request: AppendTeacherConversationTurnRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.conversationClosePattern,
+      markRoute("product.teacher-conversations.close"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request);
+          const result = await conversations.close({
+            tenantRef: contexts.tenant.tenantRef,
+            actorRef: contexts.acting.actorRef,
+            conversationRef: routeParameter(
+              request.params["conversationRef"]
+            ),
+            request: CloseTeacherConversationRequestSchema.parse(
+              request.body
+            )
+          });
+          response.status(result.replayed ? 200 : 201).json(result);
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
     app.get(
       apiRoutes.teacher.modelInvocationPattern,
       markRoute("product.model-invocations.detail"),
@@ -1990,6 +2384,154 @@ export function createApp(
               lessonRef: routeParameter(
                 request.params["lessonRef"]
               )
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonJourneyPattern,
+      markRoute("product.teacher.lessons.journey"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonJourney.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
+              lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonBriefPattern,
+      markRoute("product.teacher.lessons.brief"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonBrief.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.generateLessonBriefPattern,
+      markRoute("product.teacher.lessons.brief.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.status(201).json(
+            await lessonBrief.generate({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              request: GenerateLessonBriefRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.decideLessonBriefPattern,
+      markRoute("product.teacher.lessons.brief.decide"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await lessonBrief.decide({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              agentRunRef: routeParameter(request.params["agentRunRef"]),
+              request: DecideLessonBriefRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.get(
+      apiRoutes.teacher.lessonMaterialBundlePattern,
+      markRoute("product.teacher.lessons.material-bundle"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await materialGeneration.get({
+              tenantRef: contexts.tenant.tenantRef,
+              actorRef: contexts.acting.actorRef,
+              lessonRef: routeParameter(request.params["lessonRef"])
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.generateLessonMaterialBundlePattern,
+      markRoute("product.teacher.lessons.material-bundle.generate"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.status(201).json(
+            await materialGeneration.generate({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              request: GenerateMaterialBundleRequestSchema.parse(request.body)
+            })
+          );
+        } catch (error) {
+          next(error);
+        }
+      }
+    );
+
+    app.post(
+      apiRoutes.teacher.adoptLessonMaterialPattern,
+      markRoute("product.teacher.lessons.material-bundle.adopt"),
+      async (request, response, next) => {
+        try {
+          const contexts = await withProductContext(request, response);
+          response.json(
+            await materialGeneration.adopt({
+              context: {
+                tenantRef: contexts.tenant.tenantRef,
+                actorRef: contexts.acting.actorRef,
+                lessonRef: routeParameter(request.params["lessonRef"])
+              },
+              kind: routeParameter(request.params["kind"]),
+              request: AdoptMaterialBundleItemRequestSchema.parse(request.body)
             })
           );
         } catch (error) {
@@ -2727,28 +3269,28 @@ export function createApp(
             product,
             demoIdentity
           );
+          const organizationName =
+            contexts.status.currentWorkspace?.organizationName;
+          if (!organizationName) {
+            throw new NotFoundError(
+              "The authenticated user has no active school workspace."
+            );
+          }
           const result = await product.services.read.getWorkspace({
             tenantRef: contexts.tenant.tenantRef,
             actorRef: contexts.acting.actorRef,
             actorDisplayName: contexts.status.user.displayName,
+            organizationName,
             roleRefs: contexts.acting.roleRefs,
             demoIdentity: contexts.status.demoIdentity,
+            courseRunRefs: contexts.acting.courseRunRefs ?? [],
             modelMode:
               product.services.modelInvocations.settings.activeProvider ===
               "volcengine-ark"
                 ? "ark"
                 : "mock",
-            ...(contexts.status.currentWorkspace?.organizationName
-              ? {
-                  organizationName:
-                    contexts.status.currentWorkspace.organizationName
-                }
-              : {}),
             ...(contexts.acting.membershipRef
               ? { membershipRef: contexts.acting.membershipRef }
-              : {}),
-            ...(contexts.acting.courseRunRefs
-              ? { courseRunRefs: contexts.acting.courseRunRefs }
               : {})
           });
           response.json(result);
@@ -2924,6 +3466,7 @@ export function createApp(
             await product.services.teacherCopilot.approveTeachingPlan({
               tenantRef: contexts.tenant.tenantRef,
               actorRef: contexts.acting.actorRef,
+              allowedCourseRunRefs: contexts.acting.courseRunRefs ?? [],
               inReviewRevisionRef: routeParameter(
                 request.params["revisionRef"]
               ),

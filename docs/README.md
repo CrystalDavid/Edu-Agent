@@ -1,102 +1,47 @@
 # Edu-Agent 文档入口
 
-> 当前最新 Verified Gate：Gate 2.10A / `gate-2-10a-verified`
-> 核实基线：`main` @ `bbba3428602bb148a3d73a201ad97fcb29181c1b`
+> 状态：CURRENT
+>
+> 原则：当前事实与历史记录严格分离。日常开发和产品修改不得把 `history/` 当作设计输入。
 
-状态标记：
+根 [README](../README.md) 是产品总入口，[AGENTS.md](../AGENTS.md) 是工程 Agent 的强制边界。本目录只保留仍需日常维护的当前文档；阶段报告、旧方案和实施证据统一归档到 `history/`。
 
-- **CURRENT**：描述当前代码和当前决策，应优先使用；
-- **HISTORICAL**：准确记录当时阶段，不代表当前完整能力；
-- **SUPERSEDED**：后来已有更权威文档，保留用于审计；
-- **DRAFT**：规划/差距分析，尚不是已交付能力。
+## 默认阅读顺序
 
-## 1. 新开发者推荐阅读顺序
+工程 Agent 默认只读取以下内容：
 
-1. **CURRENT** — [根 README](../README.md)：定位、快速启动和验证命令；
-2. **CURRENT** — [当前能力地图](project/CURRENT_CAPABILITIES.md)：页面与闭环的 REAL/PARTIAL/MOCK 状态；
-3. **CURRENT** — [当前技术架构](project/CURRENT_ARCHITECTURE.md)：实际模块、Adapter、数据流与安全边界；
-4. **CURRENT** — [仓库结构地图](project/REPOSITORY_MAP.md)：在哪里新增对象、Migration、Contract、页面和测试；
-5. **CURRENT** — [完整版本历史](project/VERSION_HISTORY.md)：严格时间顺序、Commit、PR、Tag、Migration 与各 Gate；
-6. **DRAFT** — [仓库清理计划](project/REPOSITORY_CLEANUP_PLAN.md)；
-7. **DRAFT** — [Gate 2.10B 部署就绪差距](project/DEPLOYMENT_READINESS_GAPS.md)。
+1. [项目 README](../README.md)
+2. [Agent 工作指南](../AGENTS.md)
+3. [当前能力](capabilities.md)
+4. [当前架构](architecture/README.md)
+5. [开发指南](engineering/README.md)
+6. 与本次任务直接相关的当前目录说明
 
-## 2. 项目现状
+除非用户明确要求追溯历史、核对旧决策，或当前文档明确链接到一项历史证据，否则**不要扫描、总结或引用 `docs/history/`**。
 
-| 状态 | 文档 | 用途 |
-|---|---|---|
-| CURRENT | [CURRENT_CAPABILITIES](project/CURRENT_CAPABILITIES.md) | 当前页面和业务闭环能力 |
-| CURRENT | [CURRENT_ARCHITECTURE](project/CURRENT_ARCHITECTURE.md) | 当前代码架构与数据流 |
-| CURRENT | [REPOSITORY_MAP](project/REPOSITORY_MAP.md) | 仓库定位指南 |
-| CURRENT | [VERSION_HISTORY](project/VERSION_HISTORY.md) | 0 → Gate 2.10A 完整历史 |
-| SUPERSEDED / HISTORICAL | [CURRENT_STATE_AND_NEXT_STEP_OPTIONS](project/CURRENT_STATE_AND_NEXT_STEP_OPTIONS.md) | 从 Teacher Portal v1 开始的逐 Gate 决策日志；当前事实已被能力地图替代 |
-| SUPERSEDED / HISTORICAL | [PROJECT_EVOLUTION_0_TO_1](project/PROJECT_EVOLUTION_0_TO_1.md) | 2026-07-30 的 0→1 调查与 Gate2.5 补记 |
+## 当前目录结构
 
-## 3. 产品与 Gate 文档
-
-以下文档均为 **HISTORICAL / VERIFIED**：它们冻结对应阶段语义；当前组合能力以能力地图为准。
-
-| 实际时间顺序 | 文档 | Verified 入口 |
-|---:|---|---|
-| 1 | Gate 1A / 1B：见根目录[第一轮工程验证计划](../教育智能体平台第一轮工程验证计划.md)与版本历史 | `gate-1b-verified` |
-| 2 | [Gate 2.4 — Copilot 正确性与可恢复性](product/GATE_2_4_COPILOT_CORRECTNESS.md) | `gate-2-4-verified` |
-| 3 | [Gate 2.5 — 最小可恢复备课](product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md) | `gate-2-5-verified` |
-| 4 | [Gate 2.6A — Volcengine Ark Provider](product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md) | `gate-2-6a-verified` |
-| 5 | [Gate 2.5B — 文件与教学成果](product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md) | `gate-2-5b-verified` |
-| 6 | [Gate 2.5C — 产品稳定性矩阵](product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md) | `gate-2-5c-verified` |
-| 7 | [Gate 2.7 — 作业、Evidence 与调整下一课](product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md) | `gate-2-7-verified` |
-| 8 | [Gate 2.8 — 教师工作台](product/GATE_2_8_TEACHER_WORKBENCH.md) | `gate-2-8-verified` |
-| 9 | [Gate 2.9 — 课堂实施与反思](product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md) | `gate-2-9-verified` |
-| 10 | [Gate 2.10A — 身份与学校组织](product/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md) | `gate-2-10a-verified` |
-
-Gate 2、UI redesign v1/v2 和 Teacher Portal UI v1 没有独立 PR/Tag；见版本历史。**Gate 2.6B 没有实施**，不存在产品文档、分支、PR 或 Tag。
-
-## 4. 当前功能矩阵
-
-- **CURRENT** — [普通教师端功能矩阵](product/TEACHER_PORTAL_FUNCTION_MATRIX.md)：逐交互 REAL/MOCK/READ_ONLY/DISABLED/DEAD；
-- **HISTORICAL / VERIFIED** — [Gate 2.5C 稳定性矩阵](product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md)：P0/P1/P2/P3 问题、根因和回归证据。
-
-## 5. UI 历史
-
-以下文档为 **HISTORICAL**，用于解释当前门户视觉演进，不是当前业务真值：
-
-- [Gate 2 UI redesign v1](ui/GATE2_UI_REDESIGN.md)；
-- [Gate 2 UI redesign v2](ui/GATE2_UI_REDESIGN_V2.md)；
-- [Teacher Portal UI v1](ui/TEACHER_PORTAL_UI_V1.md)；
-- `docs/ui/images/`：当时的对比/验收图。
-
-## 6. Demo、测试与验收
-
-- **CURRENT** — [本地 Demo](demo/LOCAL_DEMO.md)：数据库、身份、模型、ObjectStore、启动和人工验收；
-- **HISTORICAL / VERIFIED** — [Gate 2.6A Live Acceptance](verification/GATE_2_6A_LIVE_ACCEPTANCE.md)：脱敏真实 Ark 验收摘要；
-- **CURRENT** — 根 README 的验证命令；
-- **CURRENT** — `tests/` 和 `scripts/` 位置见仓库结构地图；
-- **CURRENT** — `corepack pnpm verify:version-history`：离线核对 Commit、Merge、Tag、Gate 文档和本地链接。
-
-## 7. 部署
-
-- **DRAFT** — [DEPLOYMENT_READINESS_GAPS](project/DEPLOYMENT_READINESS_GAPS.md)：Gate2.10B 的 Blocker/Required/Recommended/Later；
-- 当前没有生产部署手册或受支持云环境；本地 Docker 配置不能当作学校试点生产方案。
-
-## 8. 早期架构资料
-
-根目录五份中文文档保留历史价值：
-
-| 状态 | 文档 |
+| 目录或文档 | 唯一职责 |
 |---|---|
-| HISTORICAL | [架构红队审查与 v0.3 建议](../教育智能体平台架构红队审查与v0.3建议.md) |
-| SUPERSEDED | [v0.3.1 架构修订](../教育智能体平台v0.3.1架构修订.md) |
-| HISTORICAL | [v0.3.2 架构修订](../教育智能体平台v0.3.2架构修订.md) |
-| HISTORICAL | [v0.3.2 勘误与 ADR 包](../教育智能体平台v0.3.2勘误与ADR包.md) |
-| HISTORICAL / VERIFIED BASELINE | [第一轮工程验证计划](../教育智能体平台第一轮工程验证计划.md) |
+| [当前能力](capabilities.md) | REAL / PARTIAL / MOCK 能力、限制和真实产品状态 |
+| [当前架构](architecture/README.md) | 七模块、状态所有权、数据流和安全边界 |
+| [架构边界规则](architecture/module-boundary-rules.md) | 跨模块写入、Port、Runtime 与领域状态的强约束 |
+| [架构决策](architecture/decisions/README.md) | 新增长期、不可逆架构决策的入口 |
+| [当前 UI](ui/README.md) | 当前视觉系统、字体方案 B、导航和交互原则 |
+| [开发指南](engineering/README.md) | 目录、命令和常见修改路径 |
+| [仓库地图](engineering/repository-map.md) | 当前代码应放在哪里 |
+| [验证指南](engineering/validation.md) | 测试类型、隔离语义和最低验证要求 |
+| [运维入口](operations/README.md) | 本地生命周期和当前运维边界 |
+| [Roadmap](roadmap.md) | 尚未完成的未来工作 |
+| [版本历史](version-history.md) | 已完成阶段的 Commit、PR、Tag 和 Migration 时间线 |
+| [历史资料](history/README.md) | 只在明确追溯历史时使用的归档索引 |
 
-这些文件不应被删除或改写 Git 历史；涉及当前实现时，请转到 CURRENT_ARCHITECTURE。
+## 文档维护规则
 
-## 9. 维护约定
-
-每个 verified Gate 固化时应同步：
-
-1. 更新 VERSION_HISTORY、CHANGELOG、CURRENT_CAPABILITIES 和功能矩阵；
-2. 把 Gate 文档状态从待验收改为 verified，并记录 PR/Merge/Tag；
-3. 运行 `corepack pnpm verify:version-history`；
-4. 如架构、仓库位置或部署差距改变，同步对应 CURRENT 文档；
-5. 未来计划必须标 DRAFT，不能在 CURRENT 能力中写成已实现。
+- 当前事实只能在一个当前权威文档中维护，其他位置只链接，不复制。
+- 架构更新直接替换 `architecture/` 中的当前说明；旧设计若有审计价值，移动到 `history/architecture/`。
+- UI 更新直接修改 `ui/README.md`；截图报告、阶段复盘和已被推翻的方案进入 `history/ui/`。
+- 已完成的阶段报告进入 `history/`；待评审草稿、临时审计和已经失效且无追溯价值的计划直接删除。
+- 不新增 `phase-*`、`*-draft.md`、`*-audit.md` 或一次性实施计划到当前目录。
+- 新的长期架构决策写入 `architecture/decisions/`，不要修改旧历史文档来伪装当前事实。
+- 文档移动或删除后必须运行 `corepack pnpm verify:markdown-links` 和 `corepack pnpm verify:repo-sync`。

@@ -8,11 +8,13 @@ import {
   type Page
 } from "@playwright/test";
 
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
 const headers = {
   "x-demo-tenant": "tenant:demo-school",
   "x-demo-actor": "user:teacher-001"
 };
-const screenshotRoot = "output/playwright/gate-2-6a";
+const screenshotRoot = playwrightArtifactPath("evidence", "gate-2-6a");
 const fakeArkPort = Number(process.env.E2E_FAKE_ARK_PORT);
 const fakeArkControlOrigin =
   `http://127.0.0.1:${fakeArkPort}/__fake_ark`;
@@ -29,6 +31,7 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
   const monitor = monitorPage(page);
   await setFakeArkScenario(request, "timeout");
   await page.goto("/teaching");
+  await expect(page.getByTestId("lesson-list")).toBeVisible();
   await page.getByTestId("lesson-3").click();
   await page.getByTestId("start-lesson-preparation").click();
   await expect(page).toHaveURL(/\/agent\/tasks\//);
@@ -38,7 +41,7 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
 
   const first = await submitModelRequest(
     page,
-    "请生成一条用于验证超时恢复的合成备课建议。"
+    "请生成一条用于验证超时恢复的备课建议。"
   );
   const taskRef = first.execution.taskRef as string;
   await expect(page.getByTestId("generate-copilot")).toBeDisabled();
@@ -83,10 +86,10 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
       })
       .first()
   ).toBeVisible();
-  await expect(page.getByText("Token usage")).toBeVisible();
+  await expect(page.getByText("模型用量")).toBeVisible();
   await expect(page.getByText("估算费用")).toBeVisible();
-  await expect(page.getByText("Attempt")).toBeVisible();
-  await expect(page.getByText("Provider request ID")).toBeVisible();
+  await expect(page.getByText("尝试次数")).toBeVisible();
+  await expect(page.getByText("服务请求标识")).toBeVisible();
   await expect(page.locator("body")).not.toContainText(
     "placeholder-for-local-fake"
   );
@@ -100,7 +103,7 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
   await setFakeArkScenario(request, "rate-limit-once");
   await submitModelRequest(
     page,
-    "请验证 429 后有限重试可以形成同一条合成 Proposal。"
+    "请验证限流后有限重试可以形成同一条教学建议。"
   );
   await expect(
     page.getByRole("heading", { name: "比较教学策略" })
@@ -131,7 +134,7 @@ test("Fake Ark remains recoverable across timeout, retry, 429, repair failure an
   await setFakeArkScenario(request, "timeout");
   const cancelled = await submitModelRequest(
     page,
-    "请验证运行中的合成调用可以取消。"
+    "请验证运行中的教学建议生成可以取消。"
   );
   await expect(
     page.getByTestId("model-execution-status")
@@ -167,7 +170,7 @@ async function submitModelRequest(
   requestText: string
 ) {
   const input = page.getByRole("textbox", {
-    name: "教师助手任务说明"
+    name: "告诉 Agent 你想完成什么"
   });
   await input.fill(requestText);
   const responsePromise = page.waitForResponse(

@@ -2,15 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 
 import type {
   PedagogicalStrategy,
+  ConversationThreadView,
   LessonPreparationTaskDetail,
   ModelExecutionStatus,
   ModelExecutionView,
-  ProviderAvailability,
   ProposalReviewDetail,
   CreateTeacherCopilotTaskRequest,
   SuggestionDispositionKind,
   SuggestionDispositionResult,
-  TeacherTodoView,
   TeacherWorkspace,
   TeachingPlan
 } from "@edu-agent/contracts";
@@ -18,7 +17,6 @@ import {
   Alert,
   Button,
   Card,
-  Collapse,
   Divider,
   Drawer,
   Input,
@@ -33,28 +31,28 @@ import {
 import {
   ApiError,
   cancelModelInvocation,
+  appendTeacherConversationTurn,
+  createTeacherConversation,
   createModelInvocation,
   createTeacherCopilotTask,
   disposeSuggestion,
   loadLessonPreparationTask,
   loadModelInvocation,
-  loadModelProviderAvailability,
+  loadTeacherConversation,
   loadPendingProposals,
   loadProposalDetail,
-  loadTeacherTodo,
   retryModelInvocation,
   updateTaskResourceSelection,
   type RecoverableCopilotTask
 } from "../api";
-import { SemanticTag } from "../components/SemanticTag";
 import {
   planFieldLabels,
   TeachingPlanDiffView
 } from "../components/TeachingPlanView";
+import { MemoryUseDisclosure } from "../components/memory/MemoryUseDisclosure";
 import {
   cleanDisplayText,
-  lessonPreparationStatusLabel,
-  modelExecutionStatusLabel
+  lessonPreparationStatusLabel
 } from "../presentation";
 import type { AppRoute } from "../route";
 import { applyDiffToPlan } from "../teaching-plan";
@@ -102,9 +100,6 @@ export function CopilotPage(props: {
   );
   const [preparationTask, setPreparationTask] =
     useState<LessonPreparationTaskDetail | null>(null);
-  const [sourceTodo, setSourceTodo] = useState<TeacherTodoView | null>(null);
-  const [providerAvailability, setProviderAvailability] =
-    useState<ProviderAvailability | null>(null);
   const [modelExecution, setModelExecution] =
     useState<ModelExecutionView | null>(null);
   const [modelExecutionRef, setModelExecutionRef] =
@@ -114,6 +109,14 @@ export function CopilotPage(props: {
       )
     );
   const [modelAction, setModelAction] = useState(false);
+  const [conversationRef, setConversationRef] = useState<string | null>(
+    () =>
+      new URLSearchParams(window.location.search).get(
+        "conversation"
+      )
+  );
+  const [conversation, setConversation] =
+    useState<ConversationThreadView | null>(null);
 
   function applyProposalDetail(detail: ProposalReviewDetail) {
     props.setTask(detail);
@@ -141,10 +144,11 @@ export function CopilotPage(props: {
   }
 
   useEffect(() => {
+    if (!conversationRef) return;
     let active = true;
-    void loadModelProviderAvailability()
+    void loadTeacherConversation(conversationRef)
       .then((result) => {
-        if (active) setProviderAvailability(result);
+        if (active) setConversation(result);
       })
       .catch((caught) => {
         if (active) setError(errorMessage(caught));
@@ -152,7 +156,7 @@ export function CopilotPage(props: {
     return () => {
       active = false;
     };
-  }, []);
+  }, [conversationRef]);
 
   useEffect(() => {
     if (!modelExecutionRef) return;
@@ -185,8 +189,24 @@ export function CopilotPage(props: {
               )
             );
           }
+          if (execution.conversationRef) {
+            const recoveredConversation =
+              await loadTeacherConversation(
+                execution.conversationRef
+              );
+            if (!active) return;
+            setConversation(recoveredConversation);
+            setConversationRef(
+              recoveredConversation.conversationRef
+            );
+            setTaskPrompt("");
+          }
           props.navigateProposal(
             execution.proposalRevisionRef
+          );
+          replaceConversationSearch(
+            execution.conversationRef,
+            null
           );
           return;
         }
@@ -217,6 +237,13 @@ export function CopilotPage(props: {
       setModelExecution(null);
       setModelExecutionRef(null);
     }
+    const urlConversationRef = new URLSearchParams(
+      window.location.search
+    ).get("conversation");
+    if (!urlConversationRef) {
+      setConversation(null);
+      setConversationRef(null);
+    }
     void loadLessonPreparationTask(props.preparationTaskRef)
       .then((result) => {
         if (!active) return;
@@ -225,8 +252,15 @@ export function CopilotPage(props: {
           result.latestProposalRevisionRef &&
           !props.proposalRevisionRef
         ) {
+          const currentSearch = new URLSearchParams(
+            window.location.search
+          );
           props.navigateProposal(
             result.latestProposalRevisionRef
+          );
+          replaceConversationSearch(
+            currentSearch.get("conversation"),
+            currentSearch.get("modelExecution")
           );
         }
       })
@@ -243,25 +277,6 @@ export function CopilotPage(props: {
     props.preparationTaskRef,
     props.proposalRevisionRef
   ]);
-
-  useEffect(() => {
-    const sourceTodoRef = preparationTask?.workingSet.sourceTodoRef;
-    if (!sourceTodoRef) {
-      setSourceTodo(null);
-      return;
-    }
-    let active = true;
-    void loadTeacherTodo(sourceTodoRef)
-      .then((todo) => {
-        if (active) setSourceTodo(todo);
-      })
-      .catch(() => {
-        if (active) setSourceTodo(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [preparationTask?.workingSet.sourceTodoRef]);
 
   useEffect(() => {
     if (props.initialPrompt) {
@@ -356,6 +371,10 @@ export function CopilotPage(props: {
     props.task !== null &&
     "status" in props.task &&
     props.task.status === "disposed";
+  const proposalMemoryContext =
+    props.task && "memoryContext" in props.task
+      ? props.task.memoryContext
+      : undefined;
   const modelExecutionActive = Boolean(
     modelExecution && !terminalModelStatuses.has(modelExecution.status)
   );
@@ -378,9 +397,9 @@ export function CopilotPage(props: {
   const generationDisabledReason = preparationRequiresReopen
     ? `当前备课任务为“${lessonPreparationStatusLabel(preparationTask!.status)}”；请先回到教学页显式重新打开或新建一轮备课。`
     : modelExecutionActive
-      ? "已有模型执行正在进行；完成、取消或失败后才能再次提交。"
+      ? "已有任务正在处理，请稍候。"
       : recovering
-        ? "正在恢复服务端任务与 Proposal，请稍候。"
+        ? "正在恢复备课任务与候选方案，请稍候。"
         : null;
 
   async function generate() {
@@ -389,6 +408,63 @@ export function CopilotPage(props: {
     setError(null);
     setDisposition(null);
     try {
+      let turnContext:
+        | {
+            conversationRef: string;
+            turnRef: string;
+            parentTurnRef: string | null;
+            conversationVersion: number;
+          }
+        | null = null;
+      if (preparationTask) {
+        let activeConversation =
+          conversation?.taskRef === preparationTask.taskRef
+            ? conversation
+            : null;
+        if (!activeConversation && conversationRef) {
+          const recovered = await loadTeacherConversation(
+            conversationRef
+          );
+          if (recovered.taskRef === preparationTask.taskRef) {
+            activeConversation = recovered;
+          }
+        }
+        if (!activeConversation) {
+          activeConversation = (
+            await createTeacherConversation({
+              taskRef: preparationTask.taskRef,
+              purposeFamily: "lesson_preparation",
+              courseRunRef:
+                preparationTask.workingSet.courseRunRef,
+              lessonRef: preparationTask.lessonRef,
+              purpose: "teacher-copilot.conversation.create",
+              idempotencyKey:
+                `ui:conversation:create:${crypto.randomUUID()}`
+            })
+          ).conversation;
+        }
+        const appended = await appendTeacherConversationTurn(
+          activeConversation.conversationRef,
+          {
+            teacherText: taskPrompt,
+            parentTurnRef: activeConversation.lastTurnRef,
+            expectedConversationVersion:
+              activeConversation.version,
+            purpose: "teacher-copilot.conversation.append-turn",
+            idempotencyKey:
+              `ui:conversation:turn:${crypto.randomUUID()}`
+          }
+        );
+        activeConversation = appended.conversation;
+        setConversation(activeConversation);
+        setConversationRef(activeConversation.conversationRef);
+        turnContext = {
+          conversationRef: activeConversation.conversationRef,
+          turnRef: appended.turn.turnRef,
+          parentTurnRef: appended.turn.parentTurnRef,
+          conversationVersion: activeConversation.version
+        };
+      }
       const command: CreateTeacherCopilotTaskRequest = {
         requestText: taskPrompt,
         courseRunRef:
@@ -409,7 +485,7 @@ export function CopilotPage(props: {
               (item) => item.claimRef
             )
           ],
-        requestVersion: 1,
+        requestVersion: turnContext ? 2 : 1,
         purpose: "teacher-copilot.adjust-next-lesson",
         idempotencyKey: `ui:teacher-copilot:${crypto.randomUUID()}`,
         ...(preparationTask
@@ -423,7 +499,8 @@ export function CopilotPage(props: {
               expectedPreparationTaskVersion:
                 preparationTask.version
             }
-          : {})
+          : {}),
+        ...(turnContext ?? {})
       };
       if (preparationTask) {
         const queued = await createModelInvocation(command);
@@ -431,17 +508,9 @@ export function CopilotPage(props: {
         setModelExecutionRef(
           queued.execution.modelExecutionRef
         );
-        const search = new URLSearchParams(
-          window.location.search
-        );
-        search.set(
-          "modelExecution",
+        replaceConversationSearch(
+          queued.execution.conversationRef,
           queued.execution.modelExecutionRef
-        );
-        window.history.replaceState(
-          {},
-          "",
-          `${window.location.pathname}?${search.toString()}`
         );
         return;
       }
@@ -537,17 +606,9 @@ export function CopilotPage(props: {
       setModelExecutionRef(
         result.execution.modelExecutionRef
       );
-      const search = new URLSearchParams(
-        window.location.search
-      );
-      search.set(
-        "modelExecution",
+      replaceConversationSearch(
+        result.execution.conversationRef ?? conversationRef,
         result.execution.modelExecutionRef
-      );
-      window.history.replaceState(
-        {},
-        "",
-        `${window.location.pathname}?${search.toString()}`
       );
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
@@ -662,7 +723,7 @@ export function CopilotPage(props: {
         } catch {
           // Preserve the original structured conflict below.
         }
-        setError(`${errorMessage(caught)}；页面已重新读取 TaskWorkingSet。`);
+        setError(`${errorMessage(caught)}；页面已重新读取本次备课范围。`);
       } else {
         setError(errorMessage(caught));
       }
@@ -676,8 +737,6 @@ export function CopilotPage(props: {
       workspace={props.workspace}
       task={props.task}
       preparationTask={preparationTask}
-      providerAvailability={providerAvailability}
-      modelExecution={modelExecution}
     />
   );
 
@@ -685,36 +744,18 @@ export function CopilotPage(props: {
     <div className="page-stack copilot-page">
       <header className="page-header page-header--compact">
         <div>
-          <span className="page-icon page-icon--purple" aria-hidden="true">✦</span>
           <div>
-            <Title>教师助手</Title>
-            <Paragraph>
-              围绕当前教学目标和学习证据比较策略，最终判断始终由教师完成。
-            </Paragraph>
+            <Title>{preparationTask ? `继续准备「${preparationTask.lessonTitle}」` : "准备教学任务"}</Title>
           </div>
         </div>
         <Button
+          type="text"
           className="context-drawer-trigger"
           onClick={() => setContextOpen(true)}
         >
-          查看依据与边界
+          教学依据
         </Button>
       </header>
-
-      <Alert
-        className="proposal-boundary"
-        type="info"
-        showIcon
-        title="以下内容为教学建议草稿，需由教师判断和修改。"
-        description="接受建议只会形成待审核的教学计划版本，不表示课堂已经实施，也不会自动发布。"
-      />
-      <Alert
-        type="warning"
-        showIcon
-        title="当前使用本地演示教师身份"
-        description="前端显式发送合成教师身份；这不是正式登录或 SSO。服务端默认不会在缺失身份时自动放行。"
-      />
-
       {error ? (
         <Alert
           type="error"
@@ -728,139 +769,87 @@ export function CopilotPage(props: {
 
       {preparationTask ? (
         <Card
-          className="workspace-card"
+          className="workspace-card copilot-task-summary"
           variant="borderless"
           data-testid="task-working-set"
         >
           <div className="section-heading">
             <div>
-              <Text className="section-kicker">
-                TaskWorkingSet · v
-                {preparationTask.workingSet.version}
-              </Text>
               <Title level={3}>{preparationTask.title}</Title>
             </div>
-            <Tag color="processing">
+            <Tag color={preparationTask.status === "completed" ? "success" : "warning"}>
               {lessonPreparationStatusLabel(preparationTask.status)}
-              <Text type="secondary">（{preparationTask.status}）</Text>
             </Tag>
           </div>
-          <dl className="detail-list">
-            <div>
-              <dt>CourseRun</dt>
-              <dd>{preparationTask.courseRunRef}</dd>
-            </div>
-            <div>
-              <dt>单元</dt>
-              <dd>{preparationTask.curriculumUnitRef}</dd>
-            </div>
-            <div>
-              <dt>课时</dt>
-              <dd>
-                {preparationTask.lessonTitle} ·{" "}
-                {preparationTask.lessonRef}
-              </dd>
-            </div>
-            <div>
-              <dt>教学目标</dt>
-              <dd>
-                {preparationTask.workingSet.learningObjectiveRefs.join(
-                  "，"
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>baseline approved plan</dt>
-              <dd>
-                {preparationTask.workingSet
-                  .baselineTeachingPlanRef ?? "无"}
-              </dd>
-            </div>
-            {preparationTask.workingSet.sourceAssignmentRef ? (
-              <div>
-                <dt>作业 Evidence 来源</dt>
-                <dd>
-                  {preparationTask.workingSet.sourceAssignmentRef} · 来源课时 {preparationTask.workingSet.sourceLessonRef} · 题目 {preparationTask.workingSet.sourceAssignmentItemRefs?.join("，") || "无"}
-                </dd>
-              </div>
-            ) : null}
-            {preparationTask.workingSet.sourceTodoRef ? (
-              <div>
-                <dt>教师待办上下文</dt>
-                <dd>
-                  {sourceTodo?.title ?? preparationTask.workingSet.sourceTodoRef}
-                  {sourceTodo ? ` · ${sourceTodo.status} · ${sourceTodo.description || "无说明"}` : ""}
-                  {preparationTask.workingSet.sourceResourceRefs?.length
-                    ? ` · 明确关联资源 ${preparationTask.workingSet.sourceResourceRefs.join("，")}`
-                    : " · 无额外关联资源"}
-                </dd>
-              </div>
-            ) : null}
-            {preparationTask.workingSet.sourceReflectionRef ? (
-              <div>
-                <dt>课后反思来源</dt>
-                <dd>
-                  {preparationTask.workingSet.sourceReflectionRef}
-                  {preparationTask.workingSet.sourceDeliveryRevisionRef
-                    ? ` · 实施 ${preparationTask.workingSet.sourceDeliveryRevisionRef}`
-                    : ""}
-                  {preparationTask.workingSet.sourceObservationRevisionRefs?.length
-                    ? ` · 教师确认观察 ${preparationTask.workingSet.sourceObservationRevisionRefs.join("，")}`
-                    : " · 未选择课堂观察"}
-                  {preparationTask.workingSet.evidenceRefs.length
-                    ? ` · Assignment Evidence ${preparationTask.workingSet.evidenceRefs.join("，")}`
-                    : " · 未选择 Assignment Evidence"}
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-          <Text strong>本次允许使用的 Evidence</Text>
-          <Space wrap>
-            {preparationTask.workingSet.evidenceRefs.map(
-              (reference) => (
+          <details className="copilot-evidence-disclosure">
+            <summary>{preparationTask.workingSet.evidenceRefs.length} 条学习证据</summary>
+            <Space wrap>
+              {preparationTask.workingSet.evidenceRefs.map((reference) => (
                 <Tag
                   key={reference}
-                  closable={
-                    preparationTask.workingSet.evidenceRefs
-                      .length > 1
-                  }
+                  closable={preparationTask.workingSet.evidenceRefs.length > 1}
                   onClose={(event) => {
                     event.preventDefault();
                     void removeEvidence(reference);
                   }}
                 >
-                  {reference}
+                  {shortEvidenceLabel(reference)}
                 </Tag>
-              )
-            )}
-          </Space>
-          <Alert
-            type="info"
-            showIcon
-            title="核心课时与 Purpose 已锁定"
-            description="可以删除可选 Evidence；CourseRun、单元、课时、教学目标、Purpose 和字段掩码不能在此被静默替换。每次 Run 都会重新授权并封存新的 ContextManifest。"
-          />
+              ))}
+            </Space>
+          </details>
         </Card>
       ) : (
         <Alert
           type="warning"
           showIcon
-          title="当前是 Gate 2.4 兼容入口"
-          description="要进入可恢复备课闭环，请先从教学页面选择课时并创建备课 Task。"
+          title="尚未关联备课课时"
+          description="请先从教学页面选择课时并创建备课任务。"
         />
       )}
 
-      <Card className="task-composer" variant="borderless">
+      {conversation && conversation.turns.length > 0 ? (
+        <Card
+          className="workspace-card"
+          variant="borderless"
+          data-testid="copilot-conversation"
+        >
+          <div className="section-heading">
+            <div>
+              <Title level={3}>本次备课对话</Title>
+              <Text type="secondary">
+                刷新页面后仍会保留；这里只显示教师原话和安全结果摘要。
+              </Text>
+            </div>
+            <Tag color="blue">
+              {conversation.turns.length} 轮记录
+            </Tag>
+          </div>
+          <Space orientation="vertical" size="small">
+            {conversation.turns.slice(-8).map((turn) => (
+              <div key={turn.turnRef} data-testid="conversation-turn">
+                <Text strong>
+                  {turn.actorKind === "teacher" ? "你" : "Agent"}
+                </Text>
+                <Paragraph>
+                  {turn.teacherText ?? turn.surfaceSummary}
+                </Paragraph>
+              </div>
+            ))}
+          </Space>
+        </Card>
+      ) : null}
+
+      <Card className="task-composer ai-task-composer" variant="borderless">
         <div>
-          <Text strong>当前教学任务</Text>
-          <Text type="secondary">
-            用一句话说明你想比较或调整什么
-          </Text>
+          <Text strong>告诉 Agent 你想完成什么</Text>
         </div>
-        <Input
+        <Input.TextArea
+          className="ai-task-input"
+          autoSize={{ minRows: 1, maxRows: 5 }}
           value={taskPrompt}
           onChange={(event) => setTaskPrompt(event.target.value)}
-          aria-label="教师助手任务说明"
+          aria-label="告诉 Agent 你想完成什么"
         />
         <Button
           type="primary"
@@ -870,16 +859,15 @@ export function CopilotPage(props: {
           onClick={generate}
           data-testid="generate-copilot"
         >
-          {props.task ? "提交新的备课任务" : "生成备课建议"}
+          生成建议
         </Button>
       </Card>
 
       {generationDisabledReason ? (
         <Alert
-          type="info"
+          type="warning"
           showIcon
-          title="当前不能提交新的生成请求"
-          description={generationDisabledReason}
+          title={generationDisabledReason}
           data-testid="generation-disabled-reason"
         />
       ) : null}
@@ -887,118 +875,39 @@ export function CopilotPage(props: {
         <Alert
           type="warning"
           showIcon
-          title="已完成任务仅允许补充审阅"
-          description="可以生成新建议并选择拒绝或延后；如需接受修改并形成新的待审核计划，请先回到教学页显式重新打开任务或新建一轮备课。当前 completed 状态不会被模型静默改写。"
+          title="当前任务已完成；如需继续调整，请从课程页重新开始"
           data-testid="completed-task-review-only"
         />
       ) : null}
 
-      {providerAvailability ? (
-        <Alert
-          type={
-            providerAvailability.fallbackToMock
-              ? "warning"
-              : "info"
-          }
-          showIcon
-          title={
-            providerAvailability.activeProvider ===
-            "volcengine-ark"
-              ? `当前生成服务：${providerAvailability.modelDisplayName}`
-              : "当前生成服务：本地演示助手"
-          }
-          description={
-            providerAvailability.safeReason ??
-            "模型配置只存在于服务端；普通教师页面不会显示密钥、Base URL 或模型选择器。"
-          }
-          data-testid="model-provider-availability"
-        />
-      ) : null}
-
-      {modelExecution ? (
-        <Card
-          className="workspace-card"
-          variant="borderless"
-          data-testid="model-execution-status"
-        >
-          <Space
-            orientation="vertical"
-            size="middle"
-            style={{ width: "100%" }}
-          >
-            <div className="section-heading">
-              <div>
-                <Text className="section-kicker">
-                  模型执行
-                </Text>
-                <Title level={3}>
-                  {modelExecutionStatusLabel(modelExecution.status)}
-                </Title>
-              </div>
-              <Tag
-                color={
-                  modelExecution.status === "succeeded"
-                    ? "success"
-                    : terminalModelStatuses.has(
-                          modelExecution.status
-                        )
-                      ? "error"
-                      : "processing"
-                }
-              >
-                attempt {modelExecution.attemptCount}/
-                {modelExecution.maxAttempts}
-              </Tag>
-            </div>
-            <Paragraph type="secondary">
-              {modelExecution.safeMessage ??
-                modelStatusDescription(
-                  modelExecution.status
-                )}
-            </Paragraph>
-            <Space wrap>
-              {["queued", "running", "retryable_failed"].includes(
-                modelExecution.status
-              ) ? (
-                <Button
-                  loading={modelAction}
-                  onClick={cancelExecution}
-                  data-testid="cancel-model-execution"
-                >
-                  取消
-                </Button>
-              ) : null}
-              {isRetryableTerminalStatus(
-                modelExecution.status
-              ) ? (
-                <Button
-                  type="primary"
-                  loading={modelAction}
-                  onClick={retryExecution}
-                  data-testid="retry-model-execution"
-                >
-                  人工重试
-                </Button>
-              ) : null}
-            </Space>
+      {modelExecution && modelExecution.status !== "succeeded" ? (
+        <section className="copilot-execution-feedback" data-testid="model-execution-status">
+          <Tag color={terminalModelStatuses.has(modelExecution.status) ? "error" : "warning"}>
+            {terminalModelStatuses.has(modelExecution.status) ? "未完成" : "进行中"}
+          </Tag>
+          <Space wrap>
+            {["queued", "running", "retryable_failed"].includes(modelExecution.status) ? (
+              <Button type="text" loading={modelAction} onClick={cancelExecution} data-testid="cancel-model-execution">取消</Button>
+            ) : null}
+            {isRetryableTerminalStatus(modelExecution.status) ? (
+              <Button type="primary" loading={modelAction} onClick={retryExecution} data-testid="retry-model-execution">重试</Button>
+            ) : null}
           </Space>
-        </Card>
+        </section>
       ) : null}
 
-      <Card
+      {pendingProposals.length > 0 ? <Card
         className="workspace-card"
         variant="borderless"
         data-testid="pending-proposals"
       >
         <div className="section-heading">
           <div>
-            <Text className="section-kicker">可恢复审阅</Text>
-            <Title level={3}>待审建议</Title>
+            <Title level={3}>继续审阅</Title>
           </div>
           <Tag>{pendingProposals.length} 条</Tag>
         </div>
-        {pendingProposals.length ? (
-          <Space orientation="vertical" size="middle">
+        <Space orientation="vertical" size="middle">
             {pendingProposals.map((proposal) => (
               <Card
                 key={proposal.proposalRevisionRef}
@@ -1025,38 +934,25 @@ export function CopilotPage(props: {
                 </Space>
               </Card>
             ))}
-          </Space>
-        ) : (
-          <Text type="secondary">当前没有待审建议。</Text>
-        )}
-      </Card>
+        </Space>
+      </Card> : null}
 
       {recovering ? (
         <Card className="workspace-card loading-card" variant="borderless">
           <Spin />
-          <Text>正在从 PostgreSQL 恢复建议、请求与证据…</Text>
+          <Text>正在恢复建议、教师请求与学习依据…</Text>
         </Card>
       ) : null}
 
       {generating ? (
         <Card className="workspace-card loading-card" variant="borderless">
           <Spin size="large" />
-          <Title level={4}>正在准备课堂策略</Title>
-          <Paragraph>
-            助手正在读取允许使用的证据，并形成可审查的建议草稿。
-          </Paragraph>
+          <Title level={4}>正在准备建议</Title>
         </Card>
       ) : null}
 
       {props.task && selectedStrategy ? (
         <div className="copilot-workspace">
-          <aside className="copilot-evidence-column">
-            <EvidenceContext
-              workspace={props.workspace}
-              task={props.task}
-            />
-          </aside>
-
           <section className="copilot-main-column">
             <div className="section-heading">
               <div>
@@ -1065,6 +961,8 @@ export function CopilotPage(props: {
               </div>
               <Tag>选择后可继续修改</Tag>
             </div>
+
+            <MemoryUseDisclosure memoryContext={proposalMemoryContext} />
 
             <div className="strategy-comparison-grid">
               {props.task.strategies.map((strategy, index) => (
@@ -1106,8 +1004,7 @@ export function CopilotPage(props: {
               <Alert
                 type="info"
                 showIcon
-                title="这条建议已经完成最终处置"
-                description="系统从持久化记录恢复了原处置；同一 Proposal 版本不能再次处置。"
+                title="这条建议已完成"
               />
             ) : (
               <Card
@@ -1115,11 +1012,7 @@ export function CopilotPage(props: {
                 variant="borderless"
               >
                 <div>
-                  <Text className="section-kicker">教师控制</Text>
-                  <Title level={3}>教师处置</Title>
-                  <Paragraph>
-                    接受表示你完成了建议处置，不表示课堂已实施；保存只形成待审核版本。
-                  </Paragraph>
+                  <Title level={3}>确认方案</Title>
                 </div>
                 <Space wrap>
                   <Button
@@ -1136,7 +1029,7 @@ export function CopilotPage(props: {
                     onClick={() => submitDisposition("accepted")}
                     data-testid="accept-suggestion"
                   >
-                    接受并提交审阅
+                    确认方案
                   </Button>
                   <Button
                     onClick={() => setEditOpen(true)}
@@ -1150,26 +1043,33 @@ export function CopilotPage(props: {
                     }
                     data-testid="edit-suggestion"
                   >
-                    修改字段
-                  </Button>
-                  <Button
-                    danger
-                    loading={disposing}
-                    disabled={disposing || recovering}
-                    onClick={() => submitDisposition("rejected")}
-                    data-testid="reject-suggestion"
-                  >
-                    拒绝
-                  </Button>
-                  <Button
-                    loading={disposing}
-                    disabled={disposing || recovering}
-                    onClick={() => submitDisposition("deferred")}
-                    data-testid="defer-suggestion"
-                  >
-                    延后
+                    修改
                   </Button>
                 </Space>
+                <details className="copilot-disposition-more">
+                  <summary>其他处理</summary>
+                  <Space wrap>
+                    <Button
+                      danger
+                      type="text"
+                      loading={disposing}
+                      disabled={disposing || recovering}
+                      onClick={() => submitDisposition("rejected")}
+                      data-testid="reject-suggestion"
+                    >
+                      不采用
+                    </Button>
+                    <Button
+                      type="text"
+                      loading={disposing}
+                      disabled={disposing || recovering}
+                      onClick={() => submitDisposition("deferred")}
+                      data-testid="defer-suggestion"
+                    >
+                      稍后处理
+                    </Button>
+                  </Space>
+                </details>
               </Card>
             )}
 
@@ -1181,8 +1081,8 @@ export function CopilotPage(props: {
                 )}`}
                 subTitle={
                   disposition.resultingRevision
-                    ? `已形成第 ${disposition.resultingRevision.revisionNumber} 版，状态为待审核；没有发布。`
-                    : "没有创建新的教学计划版本，也没有写入已实施教学事实。"
+                    ? "已形成一份待审核教学方案；还没有发布。"
+                    : "没有创建新的教学方案，也没有写入已实施的课堂事实。"
                 }
                 extra={[
                   <Button
@@ -1197,59 +1097,17 @@ export function CopilotPage(props: {
                         : props.navigate("/teaching-plan")
                     }
                   >
-                    查看教学计划
-                  </Button>,
-                  <Button
-                    key="run"
-                    onClick={() =>
-                      preparationTask
-                        ? props.navigatePreparation(
-                            preparationTask.taskRef,
-                            "/runs"
-                          )
-                        : props.navigate("/runs")
-                    }
-                  >
-                    查看运行依据
+                    查看教学方案
                   </Button>
                 ]}
               />
             ) : null}
           </section>
-
-          <aside className="copilot-explanation-column">
-            {contextPanel}
-          </aside>
         </div>
-      ) : (
-        <div className="copilot-empty-grid">
-          <EvidenceContext workspace={props.workspace} task={null} />
-          <Card className="workspace-card copilot-launch" variant="borderless">
-            <SemanticTag kind="claim">
-              {`${props.workspace.evidence.claims.length} 条待复核解释`}
-            </SemanticTag>
-            <Title level={2}>先看证据，再启动任务</Title>
-            <Paragraph>
-              当前只读取本课程、教学目标、学习证据和教学计划；不会修改正式教育事实。
-            </Paragraph>
-            <Button
-              type="primary"
-              loading={generating}
-              disabled={generationDisabled}
-              title={generationDisabledReason ?? undefined}
-              onClick={generate}
-            >
-              生成备课建议
-            </Button>
-          </Card>
-          <div className="copilot-explanation-column">
-            {contextPanel}
-          </div>
-        </div>
-      )}
+      ) : null}
 
       <Drawer
-        title="系统为什么这样建议"
+        title="教学依据"
         open={contextOpen}
         onClose={() => setContextOpen(false)}
         size={420}
@@ -1363,83 +1221,6 @@ export function CopilotPage(props: {
   );
 }
 
-function EvidenceContext({
-  workspace,
-  task
-}: {
-  workspace: TeacherWorkspace;
-  task: RecoverableCopilotTask | null;
-}) {
-  const evidence =
-    task && "evidence" in task
-      ? task.evidence
-      : {
-          observations: workspace.evidence.observations.filter(
-            (item) =>
-              !task ||
-              task.request.selectedEvidenceRefs.includes(
-                item.observationRef
-              )
-          ),
-          claims: workspace.evidence.claims.filter(
-            (item) =>
-              !task ||
-              task.request.selectedEvidenceRefs.includes(
-                item.claimRef
-              )
-          )
-        };
-  return (
-    <Card className="workspace-card evidence-context" variant="borderless">
-      <Text className="section-kicker">当前依据</Text>
-      <Title level={3}>目标与证据</Title>
-      <section>
-        <Text type="secondary">当前教学目标</Text>
-        <p>{workspace.goal.title}</p>
-      </section>
-      <section>
-        <Text type="secondary">直接观察</Text>
-        {evidence.observations.map((observation) => (
-          <article key={observation.observationRef}>
-            <strong>{cleanDisplayText(observation.learnerLabel)}</strong>
-            <p>{observation.summary}</p>
-            <small>
-              {new Date(observation.observedAt).toLocaleString(
-                "zh-CN"
-              )}
-            </small>
-          </article>
-        ))}
-      </section>
-      <section>
-        <Text type="secondary">未知项</Text>
-        <ul>
-          {Array.from(
-            new Set(
-              evidence.observations.flatMap(
-                (item) => item.unknowns
-              )
-            )
-          ).map((unknown) => (
-            <li key={unknown}>{unknown}</li>
-          ))}
-        </ul>
-      </section>
-      <section>
-        <Text type="secondary">辅助情况</Text>
-        <p>
-          {evidence.observations[0]?.assistance
-            .description ?? "未记录"}
-        </p>
-      </section>
-      <section>
-        <Text type="secondary">待复核解释</Text>
-        <p>{evidence.claims.length} 条（不作为学生能力定论）</p>
-      </section>
-    </Card>
-  );
-}
-
 function StrategyCard(props: {
   label: string;
   strategy: PedagogicalStrategy;
@@ -1544,115 +1325,33 @@ function CopilotContextPanel(props: {
   workspace: TeacherWorkspace;
   task: RecoverableCopilotTask | null;
   preparationTask: LessonPreparationTaskDetail | null;
-  providerAvailability: ProviderAvailability | null;
-  modelExecution: ModelExecutionView | null;
 }) {
   return (
     <Card className="workspace-card context-panel" variant="borderless">
-      <Text className="section-kicker">建议解释</Text>
-      <Title level={3}>建议依据与控制边界</Title>
+      <Title level={3}>教学依据</Title>
       <dl>
         <div>
-          <dt>备课 Task / Lesson</dt>
+          <dt>当前课时</dt>
           <dd>
             {props.preparationTask
-              ? `${props.preparationTask.taskRef} / ${props.preparationTask.lessonTitle}`
+              ? props.preparationTask.lessonTitle
               : "未绑定"}
           </dd>
         </div>
         <div>
-          <dt>TaskWorkingSet</dt>
+          <dt>学习证据</dt>
           <dd>
-            {props.preparationTask
-              ? `v${props.preparationTask.workingSet.version} · ${props.preparationTask.workingSet.evidenceRefs.length} 条 Evidence`
-              : "未创建"}
+            {props.workspace.evidence.observations.length} 条课堂观察 · {props.workspace.evidence.claims.length} 条学习情况
           </dd>
         </div>
         <div>
-          <dt>使用的数据</dt>
-          <dd>
-            当前课程、学习目标、{props.workspace.evidence.observations.length}
-            条观察与 {props.workspace.evidence.claims.length}
-            条待复核解释
-          </dd>
-        </div>
-        <div>
-          <dt>教师原始请求</dt>
+          <dt>教师请求</dt>
           <dd>
             {props.task?.request.requestText ??
-              "任务启动后按原文持久化"}
+              "尚未提交"}
           </dd>
-        </div>
-        <div>
-          <dt>本次任务边界</dt>
-          <dd>
-            {props.task
-              ? `${props.task.request.selectedEvidenceRefs.length} 条证据引用已固定，不随后台变化`
-              : "任务启动时固定"}
-          </dd>
-        </div>
-        <div>
-          <dt>助手状态</dt>
-          <dd>
-            {props.providerAvailability?.activeProvider ===
-            "volcengine-ark"
-              ? `${props.providerAvailability.modelDisplayName} · 服务端受控调用`
-              : "本地演示助手 · 不发起外部模型请求"}
-          </dd>
-        </div>
-        <div>
-          <dt>教师控制</dt>
-          <dd>接受、编辑、拒绝、延后；系统不能自动发布</dd>
         </div>
       </dl>
-      <Alert
-        type="info"
-        title="边界"
-        description="建议不会改写已有证据、教学目标或已发布内容；系统也不能代替教师作出教学承诺。"
-      />
-      <Collapse
-        ghost
-        size="small"
-        className="technical-disclosure"
-        items={[
-          {
-            key: "technical",
-            label: "查看技术详情",
-            children: (
-              <dl className="detail-list">
-                <div>
-                  <dt>Contract</dt>
-                  <dd>{props.task?.contractRef ?? "任务创建后生成"}</dd>
-                </div>
-                <div>
-                  <dt>AuthorizationDecision</dt>
-                  <dd>
-                    {props.task?.authorizationDecisionRef ??
-                      "任务创建后生成"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>ModelProvider</dt>
-                  <dd>
-                    {props.modelExecution?.provider ===
-                    "volcengine-ark"
-                      ? "Volcengine Ark"
-                      : "MockModelProvider"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>ModelExecution</dt>
-                  <dd>
-                    {props.modelExecution
-                      ? `${props.modelExecution.modelExecutionRef} · ${modelExecutionStatusLabel(props.modelExecution.status)}`
-                      : "提交任务后创建"}
-                  </dd>
-                </div>
-              </dl>
-            )
-          }
-        ]}
-      />
     </Card>
   );
 }
@@ -1672,6 +1371,29 @@ function shortEvidenceLabel(reference: string): string {
     return "待复核解释";
   }
   return "其他依据";
+}
+
+function replaceConversationSearch(
+  conversationRef: string | null,
+  modelExecutionRef: string | null
+): void {
+  const search = new URLSearchParams(window.location.search);
+  if (conversationRef) {
+    search.set("conversation", conversationRef);
+  } else {
+    search.delete("conversation");
+  }
+  if (modelExecutionRef) {
+    search.set("modelExecution", modelExecutionRef);
+  } else {
+    search.delete("modelExecution");
+  }
+  const query = search.toString();
+  window.history.replaceState(
+    {},
+    "",
+    `${window.location.pathname}${query ? `?${query}` : ""}`
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -1724,33 +1446,4 @@ function isRetryableTerminalStatus(
   return retryableTerminalStatuses.has(
     status as RetryableTerminalStatus
   );
-}
-
-function modelStatusDescription(
-  status: ModelExecutionStatus
-): string {
-  return {
-    queued:
-      "请求、权限和上下文已经封存；后台 Worker 将在事务外调用模型。",
-    running:
-      "页面关闭不会取消任务；刷新后可继续查看同一 ModelExecution。",
-    validating:
-      "正在检查 JSON Schema、EvidenceRef、课时目标和教学安全边界。",
-    retryable_failed:
-      "遇到临时故障，正在按有限次数与退避策略重试。",
-    succeeded:
-      "验证后的建议已保存为待教师审阅 Proposal；没有自动批准教学计划。",
-    cancel_requested:
-      "已请求中止当前网络调用，不会创建 Proposal。",
-    cancelled:
-      "本次执行已取消；备课任务和当前已批准教学计划未被改写。",
-    timed_out:
-      "模型在时限内未完成；可以保留失败记录并人工重试。",
-    validation_failed:
-      "一次受控修复后仍未通过验证，未创建 Proposal。",
-    permanently_failed:
-      "模型服务未能安全完成本次调用，可以稍后人工重试。",
-    budget_exceeded:
-      "服务端预算策略在调用前阻止了请求，因此没有发生外部调用。"
-  }[status];
 }

@@ -101,28 +101,33 @@ describe("Gate 2 architecture invariants", () => {
       "apps/web/src/pages/OverviewPage.tsx"
     );
     const agent = source(
-      "apps/web/src/components/portal/AgentComponents.tsx"
+      "apps/web/src/pages/AgentWorkspacePage.tsx"
     );
     for (const route of [
-      "概览",
+      "首页",
+      "课程",
+      "学情",
+      "助手",
       "日程",
-      "教学",
-      "学生",
-      "文件",
-      "Agent"
+      "资料"
     ]) {
       expect(sidebar).toContain(route);
     }
     expect(sidebar).not.toContain("学习证据");
     expect(sidebar).not.toContain("运行记录");
-    expect(agent).toContain("有什么可以帮你？");
-    expect(agent).toContain("描述你想完成的教学任务");
-    expect(overview).toContain("今天需要做什么");
-    expect(overview).toContain("今日课程");
-    expect(overview).toContain("学生概况");
-    expect(overview).toContain("备课组动态");
-    expect(overview).toContain("学校动态");
-    expect(overview).toContain("最近文件");
+    expect(agent).toContain("告诉 Agent 你想完成什么");
+    expect(agent).toContain("最近工作");
+    expect(agent).not.toContain("ChatGPT");
+    expect(agent).toContain("loadLessonPreparationTasks");
+    expect(agent).not.toContain("sessionStorage");
+    expect(overview).toContain("你好，");
+    expect(overview).toContain("formatToday");
+    expect(overview).not.toContain("今天需要处理");
+    expect(overview).not.toContain("下一节课");
+    expect(overview).not.toContain("学情快照");
+    expect(overview).not.toContain("备课组动态");
+    expect(overview).not.toContain("学校动态");
+    expect(overview).not.toContain("最近资料");
     expect(app).not.toMatch(/Chat(Input|Box)|聊天框/);
   });
 
@@ -130,23 +135,50 @@ describe("Gate 2 architecture invariants", () => {
     const tokens = source("apps/web/src/design-tokens.ts");
     const main = source("apps/web/src/main.tsx");
     const presentation = source("apps/web/src/presentation.ts");
+    const sidebar = source(
+      "apps/web/src/components/portal/TeacherSidebar.tsx"
+    );
+    const uiV3 = source("apps/web/src/ui-v3.css");
     const overview = source(
       "apps/web/src/pages/OverviewPage.tsx"
     );
 
     expect(tokens).toContain('colorBrand: "#3370FF"');
     expect(tokens).toContain(
-      'sidebarWidth: "260px"'
+      'sidebarWidth: "168px"'
     );
+    expect(tokens).toContain('fontDisplay: "32px"');
+    expect(tokens).toContain('fontPageTitle: "28px"');
+    expect(tokens).toContain('fontBody: "15px"');
+    expect(tokens).toContain('fontWeightBody: "400"');
+    expect(tokens).toContain('fontWeightContent: "500"');
+    expect(tokens).toContain('fontWeightSection: "600"');
+    expect(tokens).toContain('fontWeightPage: "700"');
+    expect(tokens).toContain('"Nunito"');
+    expect(tokens).toContain('"Noto Sans SC Variable"');
+    expect(tokens).toContain('radiusSmall: "8px"');
+    expect(tokens).toContain('radiusControl: "12px"');
+    expect(tokens).toContain('radiusMedium: "16px"');
+    expect(tokens).toContain('radiusLarge: "24px"');
+    expect(tokens).not.toContain("space20");
     expect(main).toContain("installDesignTokens");
     expect(main).toContain("theme={antdTheme}");
+    expect(main).toContain('import "./ui-v3.css"');
+    expect(main).toContain('import "./fonts.css"');
+    expect(sidebar).toContain('size={44}');
+    expect(sidebar).toContain('data-label={item.label}');
+    expect(uiV3).toContain('grid-template-columns: 28px minmax(0, 1fr)');
+    expect(uiV3).toContain('stroke-width: 1.8');
+    expect(uiV3).toContain('Typography scheme B');
+    expect(uiV3).toContain('var(--font-weight-page)');
     expect(presentation).toContain("teachingPlanStateLabel");
     expect(presentation).toContain("合成学生");
     expect(overview).not.toContain("明日教学重点");
     expect(overview).not.toContain("我的常用");
-    expect(overview).toContain("今日课程");
-    expect(overview).toContain("备课组动态");
-    expect(overview).toContain("最近文件");
+    expect(overview).toContain("你好，");
+    expect(overview).not.toContain("下一节课");
+    expect(overview).not.toContain("备课组动态");
+    expect(overview).not.toContain("最近资料");
   });
 
   it("uses one shared route contract instead of handwritten web paths", () => {
@@ -348,6 +380,9 @@ describe("Gate 2 architecture invariants", () => {
     const localAdapter = source(
       "apps/api/src/modules/capability-integration/infrastructure/local-object-store.ts"
     );
+    const objectStoreFactory = source(
+      "apps/api/src/modules/capability-integration/infrastructure/object-store-factory.ts"
+    );
     const fileService = source(
       "apps/api/src/composition/postgres-file-artifact-service.ts"
     );
@@ -362,7 +397,9 @@ describe("Gate 2 architecture invariants", () => {
     expect(localAdapter).toContain("randomUUID");
     expect(localAdapter).toContain("assertWithinRoot");
     expect(productContainer).toContain("PostgresFileArtifactService");
-    expect(productContainer).toContain("LocalObjectStore");
+    expect(productContainer).toContain("createConfiguredObjectStore");
+    expect(productContainer).not.toContain("LocalObjectStore");
+    expect(objectStoreFactory).toContain("LocalObjectStore");
     expect(productContainer).not.toContain("FileManager");
     expect(fileService).toContain("TEACHING_PLAN_DOCX_TEMPLATE_VERSION");
     expect(fileService).toContain("TEACHING_PLAN_EXPORT_REQUIRES_APPROVED_REVISION");
@@ -372,11 +409,9 @@ describe("Gate 2 architecture invariants", () => {
   it("keeps fonts self-hosted, licensed and honest about delivery tradeoffs", () => {
     const fonts = source("apps/web/src/fonts.css");
     const attribution = source(
-      "apps/web/public/fonts/ATTRIBUTION.md"
+      "apps/web/public/fonts/attribution.md"
     );
-    const styleGuide = source(
-      "apps/web/src/pages/TeacherStyleGuidePage.tsx"
-    );
+    const tokens = source("apps/web/src/design-tokens.ts");
 
     expect(fonts).not.toMatch(/https?:\/\//);
     expect(fonts).toContain(
@@ -391,7 +426,8 @@ describe("Gate 2 architecture invariants", () => {
     expect(attribution).toContain(
       "8c6a9bb9732545b9ed53f29ec5e1ab0ff53c4e6f"
     );
-    expect(styleGuide).toContain("HarmonyOS Sans SC 2.040");
-    expect(styleGuide).toContain("加载失败时回退");
+    expect(fonts).toContain('/fonts/nunito/nunito-latin-variable.woff2');
+    expect(tokens).toContain('"Nunito"');
+    expect(tokens).toContain('"Noto Sans SC Variable"');
   });
 });

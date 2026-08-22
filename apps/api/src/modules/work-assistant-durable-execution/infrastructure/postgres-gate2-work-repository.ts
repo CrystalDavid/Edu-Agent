@@ -272,7 +272,7 @@ export class PostgresGate2WorkRepository {
     });
   }
 
-  async getDemoCaseAndGoal(
+  async getCaseAndGoal(
     executor: SqlExecutor,
     tenantRef: string,
     goalRef: string
@@ -325,6 +325,59 @@ export class PostgresGate2WorkRepository {
           successCriteria: row.success_criteria
         }
       : undefined;
+  }
+
+  async listActiveCasesAndGoals(
+    executor: SqlExecutor,
+    tenantRef: string
+  ): Promise<
+    Array<{
+      caseRef: string;
+      caseTitle: string;
+      caseStatus: "active";
+      goalRef: string;
+      goalTitle: string;
+      goalStatus: "active";
+      successCriteria: string[];
+    }>
+  > {
+    const result = await executor.query<{
+      case_ref: string;
+      case_title: string;
+      case_status: "active";
+      goal_ref: string;
+      goal_title: string;
+      goal_status: "active";
+      success_criteria: string[];
+    }>(
+      `SELECT
+         case_record.case_ref,
+         case_record.title AS case_title,
+         case_record.status AS case_status,
+         goal.goal_ref,
+         goal.title AS goal_title,
+         goal.status AS goal_status,
+         goal.success_criteria
+       FROM work.goal_record AS goal
+       JOIN work.case_record AS case_record
+         ON case_record.case_ref = goal.case_ref
+        AND case_record.tenant_ref = goal.tenant_ref
+       WHERE goal.tenant_ref = $1
+         AND goal.status = 'active'
+         AND case_record.status = 'active'
+       ORDER BY goal.created_at, goal.goal_ref
+       LIMIT 2`,
+      [tenantRef]
+    );
+    return result.rows.map((row) => ({
+      caseRef: row.case_ref,
+      caseTitle: row.case_title,
+      caseStatus: row.case_status,
+      goalRef: row.goal_ref,
+      goalTitle: row.goal_title,
+      goalStatus: row.goal_status,
+      successCriteria: row.success_criteria
+    }));
   }
 
   async listSuggestionSummaries(

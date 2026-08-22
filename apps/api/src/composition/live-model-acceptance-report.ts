@@ -8,7 +8,7 @@ import type {
 
 import type {
   SafeProviderCapabilityProbeCall
-} from "../modules/capability-integration/application/provider-capability-probe.js";
+} from "../modules/capability-integration/application/provider-capability.js";
 
 export interface SafeLiveStructuredProbeCall {
   probe: "structured_teaching_output";
@@ -59,7 +59,7 @@ export async function writeSafeLiveAcceptanceReport(
   report: SafeLiveAcceptanceReport
 ): Promise<string> {
   const directory = resolve(
-    ".demo",
+    ".local-data",
     "live-model-reports"
   );
   await mkdir(directory, { recursive: true });

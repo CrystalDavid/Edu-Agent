@@ -10,11 +10,10 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx watch src/index.ts",
-    "demo": "node --import tsx src/index.ts"
+    "start:local": "node --import tsx src/index.ts"
   },
   "dependencies": {
     "@edu-agent/contracts": "workspace:*",
-    "@edu-agent/test-fixtures": "workspace:*",
     "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",

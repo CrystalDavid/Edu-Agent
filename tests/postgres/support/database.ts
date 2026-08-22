@@ -28,6 +28,12 @@ export async function resetGate1BData(
 ): Promise<void> {
   await adminPool.query(`
     TRUNCATE TABLE
+      personalization.memory_application_outcome,
+      personalization.memory_application,
+      personalization.teacher_preference_revision,
+      personalization.teacher_preference,
+      personalization.memory_candidate_revision,
+      personalization.memory_candidate,
       governance.data_governance_request,
       governance.security_event,
       governance.identity_command,
@@ -51,6 +57,7 @@ export async function resetGate1BData(
       artifact.file_asset,
       artifact.teaching_plan_scope_event,
       artifact.teaching_plan_scope_lifecycle,
+      runtime.working_memory_snapshot,
       runtime.authorized_context_plan,
       work.calendar_event_status_history,
       work.teacher_todo_status_history,
@@ -82,6 +89,8 @@ export async function resetGate1BData(
       education.lesson,
       education.curriculum_unit,
       work.outbox_consumer_effect,
+      work.conversation_turn,
+      work.conversation_thread,
       work.suggestion_disposition,
       work.task_result,
       work.resolved_learning_interaction_contract,
@@ -120,7 +129,7 @@ export async function tableCount(
   qualifiedTable: string
 ): Promise<number> {
   if (
-    !/^(governance|work|runtime|capability|artifact|education)\.[a-z_]+$/.test(
+    !/^(governance|work|runtime|capability|artifact|education|personalization)\.[a-z_]+$/.test(
       qualifiedTable
     )
   ) {
@@ -153,7 +162,7 @@ export function dockerCompose(
       "--project-name",
       projectName,
       "-f",
-      "infra/docker/compose.postgres.yml",
+      "infra/local/postgres/compose.postgres.yml",
       action,
       service
     ],

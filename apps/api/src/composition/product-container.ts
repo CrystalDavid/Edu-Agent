@@ -1,6 +1,9 @@
+import { createBuiltInSkillRegistry } from "../agent/skills/index.js";
 import type { PostgresEnvironment } from "../platform/postgres/config.js";
 import { createRolePool } from "../platform/postgres/pool.js";
-import { Gate2DemoSeedService } from "./gate2-demo-seed-service.js";
+import type {
+  ModelInvocationApplicationFacade
+} from "../modules/capability-integration/application/model-invocation-facade.js";
 import {
   PostgresDemoIdentityAuditService
 } from "./postgres-demo-identity-audit-service.js";
@@ -15,14 +18,11 @@ import {
   LocalCopilotOutboxWorker
 } from "./local-copilot-outbox-worker.js";
 import {
-  MockModelProvider
-} from "../modules/capability-integration/infrastructure/mock-model-provider.js";
-import {
   readModelProviderSettings
 } from "../modules/capability-integration/infrastructure/model-provider-config.js";
 import {
-  VolcengineArkProvider
-} from "../modules/capability-integration/infrastructure/volcengine-ark-provider.js";
+  createConfiguredModelProvider
+} from "../modules/capability-integration/infrastructure/model-provider-factory.js";
 import type {
   ModelProvider
 } from "../modules/capability-integration/domain/capability.js";
@@ -39,8 +39,8 @@ import type {
   ObjectStore
 } from "../modules/capability-integration/domain/object-store.js";
 import {
-  LocalObjectStore
-} from "../modules/capability-integration/infrastructure/local-object-store.js";
+  createConfiguredObjectStore
+} from "../modules/capability-integration/infrastructure/object-store-factory.js";
 import {
   readObjectStoreSettings,
   type ObjectStoreSettings
@@ -62,14 +62,39 @@ import type {
   IdentityProvider
 } from "../modules/identity-governance-audit/domain/identity-provider.js";
 import {
-  LocalIdentityProvider
-} from "../modules/identity-governance-audit/infrastructure/local-identity-provider.js";
-import {
-  OidcIdentityProvider
-} from "../modules/identity-governance-audit/infrastructure/oidc-identity-provider.js";
+  createConfiguredIdentityProviders
+} from "../modules/identity-governance-audit/infrastructure/identity-provider-factory.js";
 import {
   PostgresIdentityOrganizationService
 } from "./postgres-identity-organization-service.js";
+import { PostgresPersonalizationService } from "./postgres-personalization-service.js";
+import { LessonJourneyReadAdapter } from "./lesson-journey-read-adapter.js";
+import { LessonJourneyReadService } from "../modules/work-assistant-durable-execution/application/lesson-journey-read-service.js";
+import { LessonBriefService } from "../modules/agent-runtime-context/application/lesson-brief-service.js";
+import { LessonBriefSourceAdapter } from "./lesson-brief-source-adapter.js";
+import { PostgresLessonBriefStore } from "./postgres-lesson-brief-store.js";
+import { MaterialGenerationService } from "../modules/agent-runtime-context/application/material-generation-service.js";
+import { MaterialGenerationSourceAdapter } from "./material-generation-source-adapter.js";
+import { ClassroomFeedbackService } from "../modules/agent-runtime-context/application/classroom-feedback-service.js";
+import { ClassroomFeedbackSourceAdapter } from "./classroom-feedback-source-adapter.js";
+import { ClassroomFeedbackDeliveryAdapter } from "./classroom-feedback-delivery-adapter.js";
+import { NextLessonOptimizationService } from "../modules/agent-runtime-context/application/next-lesson-optimization-service.js";
+import { NextLessonOptimizationSourceAdapter } from "./next-lesson-optimization-source-adapter.js";
+import { NextLessonActionTargetAdapter } from "./next-lesson-action-target-adapter.js";
+import { PostgresNextLessonActionRuntimePort } from "../modules/agent-runtime-context/infrastructure/postgres-next-lesson-action-runtime-port.js";
+import { PostgresNextLessonActionGovernancePort } from "../modules/identity-governance-audit/infrastructure/postgres-next-lesson-action-governance-port.js";
+import { PostgresNextLessonActionWorkPort } from "../modules/work-assistant-durable-execution/infrastructure/postgres-next-lesson-action-work-port.js";
+import { PostgresNextLessonActionStore } from "./postgres-next-lesson-action-store.js";
+import { PostgresConversationService } from "./postgres-conversation-service.js";
+import {
+  readConversationRetentionSettings,
+  type ConversationRetentionSettings
+} from "../modules/work-assistant-durable-execution/infrastructure/conversation-retention-config.js";
+import {
+  readMemoryApplicationObservabilitySettings,
+  type MemoryApplicationObservabilitySettings
+} from "../modules/personalization-memory-analytics/infrastructure/memory-application-observability-config.js";
+import { PostgresMemoryApplicationService } from "../modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.js";
 
 export function createProductContainer(
   environment: PostgresEnvironment,
@@ -80,6 +105,8 @@ export function createProductContainer(
     objectStore?: ObjectStore;
     identitySettings?: IdentitySettings;
     identityProvider?: IdentityProvider;
+    conversationRetentionSettings?: ConversationRetentionSettings;
+    memoryApplicationObservabilitySettings?: MemoryApplicationObservabilitySettings;
   } = {}
 ) {
   const appPool = createRolePool(environment, "app", {
@@ -94,39 +121,59 @@ export function createProductContainer(
     options.modelSettings ?? readModelProviderSettings();
   const modelProvider =
     options.modelProvider ??
-    (modelSettings.activeProvider === "volcengine-ark" &&
-    modelSettings.ark
-      ? new VolcengineArkProvider(modelSettings.ark)
-      : new MockModelProvider());
-  const modelInvocations =
-    new PostgresModelInvocationService(
-      appPool,
-      modelProvider,
-      modelSettings
-    );
+    createConfiguredModelProvider(modelSettings);
+  const skillRegistry = createBuiltInSkillRegistry();
+  const personalization = new PostgresPersonalizationService(appPool);
+  const lessonBriefStore = new PostgresLessonBriefStore(appPool);
+  const conversationRetentionSettings =
+    options.conversationRetentionSettings ??
+    readConversationRetentionSettings();
+  const conversations = new PostgresConversationService(appPool, {
+    retention: conversationRetentionSettings
+  });
+  const memoryApplications = new PostgresMemoryApplicationService(
+    appPool,
+    options.memoryApplicationObservabilitySettings ??
+      readMemoryApplicationObservabilitySettings()
+  );
+  const modelInvocationService = new PostgresModelInvocationService(
+    appPool,
+    modelProvider,
+    modelSettings,
+    {
+      skills: skillRegistry,
+      personalization,
+      memoryApplications,
+      memoryApplicationCollectionEnabled: memoryApplications.collectionEnabled,
+      lessonBriefs: lessonBriefStore,
+      conversations
+    }
+  );
+  const modelInvocations: ModelInvocationApplicationFacade =
+    modelInvocationService;
   const objectStoreSettings =
     options.objectStoreSettings ?? readObjectStoreSettings();
   const objectStore =
     options.objectStore ??
-    new LocalObjectStore(objectStoreSettings.rootDirectory);
+    createConfiguredObjectStore(objectStoreSettings);
   const identitySettings =
     options.identitySettings ?? readIdentitySettings();
-  const localIdentityProvider =
-    identitySettings.providerMode === "local"
-      ? new LocalIdentityProvider(identitySettings.localProviderEnabled)
-      : undefined;
+  const configuredIdentityProviders =
+    createConfiguredIdentityProviders(identitySettings);
   const identityProvider =
     options.identityProvider ??
-    (identitySettings.providerMode === "oidc" && identitySettings.oidc
-      ? new OidcIdentityProvider(identitySettings.oidc)
-      : localIdentityProvider!);
+    configuredIdentityProviders.identityProvider;
   const identity = new PostgresIdentityOrganizationService(
     appPool,
     identitySettings,
     identityProvider,
-    localIdentityProvider
+    configuredIdentityProviders.localIdentityProvider
   );
   const lessonPreparation = new PostgresLessonPreparationService(appPool);
+  const read = new PostgresGate2ReadService(appPool, {
+    memoryApplications,
+    conversations
+  });
   const teacherWorkbench = new PostgresTeacherWorkbenchService(
     appPool,
     lessonPreparation
@@ -137,6 +184,72 @@ export function createProductContainer(
     lessonPreparation,
     assignments,
     teacherWorkbench
+  );
+  const files = new PostgresFileArtifactService(
+    appPool,
+    objectStore,
+    objectStoreSettings
+  );
+  const teacherCopilot = new PostgresGate2TeacherCopilotService(appPool);
+  const lessonBrief = new LessonBriefService(
+    new LessonBriefSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization
+    ),
+    lessonBriefStore,
+    skillRegistry
+  );
+  const materialGeneration = new MaterialGenerationService(
+    new MaterialGenerationSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization,
+      lessonBriefStore
+    ),
+    modelInvocationService,
+    files,
+    skillRegistry
+  );
+  const classroomFeedback = new ClassroomFeedbackService(
+    new ClassroomFeedbackSourceAdapter(
+      lessonPreparation,
+      read,
+      personalization,
+      classroomReflection
+    ),
+    teacherCopilot,
+    new ClassroomFeedbackDeliveryAdapter(classroomReflection),
+    skillRegistry
+  );
+  const nextLessonOptimization = new NextLessonOptimizationService(
+    new NextLessonOptimizationSourceAdapter(
+      classroomReflection,
+      lessonPreparation,
+      read,
+      personalization
+    ),
+    new PostgresNextLessonActionStore(
+      appPool,
+      new PostgresNextLessonActionGovernancePort(),
+      new PostgresNextLessonActionWorkPort(),
+      new PostgresNextLessonActionRuntimePort()
+    ),
+    new NextLessonActionTargetAdapter(
+      classroomReflection,
+      lessonPreparation
+    ),
+    skillRegistry
+  );
+  const lessonJourney = new LessonJourneyReadService(
+    new LessonJourneyReadAdapter(
+      lessonPreparation,
+      read,
+      files,
+      classroomReflection,
+      lessonBrief,
+      nextLessonOptimization
+    )
   );
   const copilotOutbox = new LocalCopilotOutboxWorker(
     workerPool,
@@ -150,27 +263,30 @@ export function createProductContainer(
         projectionCount += await teacherWorkbench.refreshProjections(scope);
       }
       return projectionCount;
-    }
+    },
+    memoryApplications
   );
   return {
     services: {
-      seed: new Gate2DemoSeedService(appPool, identity),
       identity,
-      read: new PostgresGate2ReadService(appPool),
+      read,
       demoIdentityAudit:
         new PostgresDemoIdentityAuditService(appPool),
-      teacherCopilot:
-        new PostgresGate2TeacherCopilotService(appPool),
+      teacherCopilot,
       modelInvocations,
       lessonPreparation,
       assignments,
       teacherWorkbench,
       classroomReflection,
-      files: new PostgresFileArtifactService(
-        appPool,
-        objectStore,
-        objectStoreSettings
-      )
+      lessonJourney,
+      lessonBrief,
+      materialGeneration,
+      classroomFeedback,
+      nextLessonOptimization,
+      personalization,
+      memoryApplications,
+      conversations,
+      files
     },
     infrastructure: {
       objectStore,

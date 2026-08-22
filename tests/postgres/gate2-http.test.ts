@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   gate2DemoRefs
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/sample-data";
 import { apiRoutes } from "@edu-agent/contracts";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import { createApp } from "../../apps/api/src/app.js";
 import {
   createProductContainer
 } from "../../apps/api/src/composition/product-container.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -34,7 +35,7 @@ const demoHeaders = {
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await product.services.seed.seed();
+  await seedSampleData(postgresEnvironment);
 });
 
 afterAll(async () => {
