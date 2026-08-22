@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -78,6 +78,70 @@ describe("PR-1 memory application observability boundaries", () => {
     expect(migration).not.toMatch(
       /(?:turn_text|preference_value|full_prompt|raw_prompt|provider_response|hidden_reasoning|chain_of_thought|evidence_body)/iu
     );
+  });
+
+  it("uses the collection flag only on observability write paths", () => {
+    const service = source(
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/postgres-memory-application-service.ts"
+    );
+    const recording = service.slice(
+      service.indexOf("async recordSelection"),
+      service.indexOf("async listApplicationsForRun")
+    );
+    const historicalReads = service.slice(
+      service.indexOf("async listApplicationsForRun"),
+      service.indexOf("async resolvePreferenceRevision")
+    );
+    expect(recording).toContain("settings.collectionEnabled");
+    expect(historicalReads).not.toContain("collectionEnabled");
+
+    const readService = source(
+      "apps/api/src/composition/postgres-gate2-read-service.ts"
+    );
+    const explanationRead = readService.slice(
+      readService.indexOf("private async composeMemoryContext"),
+      readService.indexOf("async getTeachingPlanRevision")
+    );
+    expect(explanationRead).not.toContain("collectionEnabled");
+    expect(explanationRead).not.toContain("memoryApplications.enabled");
+    expect(explanationRead).toContain("manifest.owner.tenantRef");
+    expect(explanationRead).toContain("resolveMemoryContextDisplay");
+  });
+
+  it("lets API data, not a browser collection flag, control historical disclosure", () => {
+    const webFiles = [
+      "apps/web/src/components/memory/MemoryUseDisclosure.tsx",
+      "apps/web/src/components/memory/memory-use-disclosure-visibility.ts",
+      "apps/web/src/pages/RunsPage.tsx",
+      "apps/web/src/pages/CopilotPage.tsx"
+    ].map(source).join("\n");
+    expect(webFiles).not.toContain(
+      "MEMORY_APPLICATION_OBSERVABILITY_ENABLED"
+    );
+    expect(webFiles).not.toContain("collectionEnabled");
+    expect(webFiles).toContain("memoryContext");
+  });
+
+  it("does not change the PR-1 migration or import later memory products", () => {
+    const migrationPath = join(
+      root,
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0003_memory_application_observability.sql"
+    );
+    expect(
+      createHash("sha256").update(readFileSync(migrationPath)).digest("hex")
+    ).toBe(
+      "b7e7b5f26c052f1453d674de1036af6762966944fa6800e81d6f7da4343efff3"
+    );
+    expect(existsSync(join(
+      root,
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0004_teacher_preference_scope_and_epoch.sql"
+    ))).toBe(false);
+    expect(existsSync(join(
+      root,
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0013_explicit_memory_command_turn.sql"
+    ))).toBe(false);
+    const packageManifest = source("package.json");
+    expect(packageManifest).not.toMatch(/(?:pgvector|vector database)/iu);
   });
 
   it("leaves all 48 PR-0 migrations byte-for-byte unchanged", () => {

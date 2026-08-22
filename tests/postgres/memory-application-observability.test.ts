@@ -169,7 +169,7 @@ describe("Memory application observability PostgreSQL", () => {
     ).toEqual([]);
 
     const disabled = new PostgresMemoryApplicationService(appPool, {
-      enabled: false,
+      collectionEnabled: false,
       retentionDurationMilliseconds: 365 * 24 * 60 * 60 * 1000,
       policyVersion: "memory-application-observability@1",
       retentionPolicyVersion: "memory-application-retention@1"
@@ -185,12 +185,19 @@ describe("Memory application observability PostgreSQL", () => {
       idempotencyKey: "memory-outcome:disabled"
     });
     expect(await applicationCount()).toBe(0);
-    await expect(
-      disabled.listApplicationsForRun({
-        owner,
-        agentRunRef: selection.agentRunRef
-      })
-    ).resolves.toEqual([]);
+    await product.services.memoryApplications.recordSelection(selection);
+    expect(await applicationCount()).toBe(1);
+    await expect(disabled.listApplicationsForRun({
+      owner,
+      agentRunRef: selection.agentRunRef
+    })).resolves.toMatchObject([{
+      preferenceRef: preference.preferenceRef,
+      packContentHash: selection.packContentHash
+    }]);
+    await expect(disabled.listApplicationsForRun({
+      owner: { ...owner, teacherRef: "user:teacher-foreign" },
+      agentRunRef: selection.agentRunRef
+    })).resolves.toEqual([]);
   });
 });
 

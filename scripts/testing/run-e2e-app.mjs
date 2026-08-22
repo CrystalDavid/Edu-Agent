@@ -320,9 +320,10 @@ try {
     );
   }
 
+  let currentApplicationEnvironment = applicationEnvironment;
   let apiProcess = startPackage(
     "@edu-agent/api",
-    applicationEnvironment,
+    currentApplicationEnvironment,
     "start:local"
   );
   await waitForJson(
@@ -336,9 +337,13 @@ try {
   let restartInProgress = false;
   controlServer = createHttpServer(async (request, response) => {
     response.setHeader("content-type", "application/json; charset=utf-8");
+    const controlUrl = new URL(
+      request.url ?? "/",
+      `http://127.0.0.1:${controlPort}`
+    );
     if (
       request.method !== "POST" ||
-      request.url !== "/__e2e/restart-api"
+      controlUrl.pathname !== "/__e2e/restart-api"
     ) {
       response.statusCode = 404;
       response.end(JSON.stringify({ code: "E2E_CONTROL_NOT_FOUND" }));
@@ -354,14 +359,37 @@ try {
       response.end(JSON.stringify({ code: "E2E_RESTART_IN_PROGRESS" }));
       return;
     }
+    const observabilityMode =
+      controlUrl.searchParams.get("memory-application-observability") ??
+      "unchanged";
+    if (!["unchanged", "enabled", "disabled", "default"].includes(
+      observabilityMode
+    )) {
+      response.statusCode = 400;
+      response.end(JSON.stringify({ code: "E2E_CONTROL_INVALID_MODE" }));
+      return;
+    }
     restartInProgress = true;
     try {
       intentionalStops.add(apiProcess);
       stopProcessTree(apiProcess);
       await waitForProcessExit(apiProcess);
+      currentApplicationEnvironment = {
+        ...currentApplicationEnvironment
+      };
+      if (observabilityMode === "enabled") {
+        currentApplicationEnvironment.MEMORY_APPLICATION_OBSERVABILITY_ENABLED =
+          "true";
+      } else if (observabilityMode === "disabled") {
+        currentApplicationEnvironment.MEMORY_APPLICATION_OBSERVABILITY_ENABLED =
+          "false";
+      } else if (observabilityMode === "default") {
+        delete currentApplicationEnvironment
+          .MEMORY_APPLICATION_OBSERVABILITY_ENABLED;
+      }
       apiProcess = startPackage(
         "@edu-agent/api",
-        applicationEnvironment,
+        currentApplicationEnvironment,
         "start:local"
       );
       await waitForJson(
@@ -373,7 +401,11 @@ try {
         (payload) => payload?.identity?.dataMode === "synthetic"
       );
       response.statusCode = 200;
-      response.end(JSON.stringify({ restarted: true, runId }));
+      response.end(JSON.stringify({
+        restarted: true,
+        runId,
+        memoryApplicationObservability: observabilityMode
+      }));
     } catch (error) {
       response.statusCode = 500;
       response.end(

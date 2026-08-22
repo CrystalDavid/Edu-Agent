@@ -141,6 +141,42 @@ describe("memory application observability", () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
+  it("keeps owner-scoped historical reads available when collection is disabled", async () => {
+    const application = applicationRow(
+      "memory-application:history",
+      "preference:history"
+    );
+    const outcome = outcomeRow(application.application_ref);
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("memory_application_outcome")) {
+        return queryResult(1, [outcome]);
+      }
+      return queryResult(1, [application]);
+    });
+    const service = new PostgresMemoryApplicationService(
+      { query } as never,
+      settings(false),
+      () => new Date("2026-08-04T10:00:00.000Z")
+    );
+
+    await expect(service.listApplicationsForRun({
+      owner: { tenantRef: "tenant:1", teacherRef: "teacher:1" },
+      agentRunRef: "agent-run:1"
+    })).resolves.toHaveLength(1);
+    await expect(service.listOutcomesForRun({
+      owner: { tenantRef: "tenant:1", teacherRef: "teacher:1" },
+      agentRunRef: "agent-run:1"
+    })).resolves.toMatchObject([{ outcomeStatus: "adopted" }]);
+    await expect(service.getApplicationForOwner({
+      owner: { tenantRef: "tenant:1", teacherRef: "teacher:1" },
+      applicationRef: application.application_ref
+    })).resolves.toMatchObject({
+      applicationRef: application.application_ref,
+      preferenceRef: "preference:history"
+    });
+    expect(query).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps canonical selection inputs free of copied memory or model payloads", () => {
     const serialized = JSON.stringify(selection());
     for (const forbidden of [
@@ -227,12 +263,31 @@ function applicationRow(applicationRef: string, preferenceRef: string) {
   };
 }
 
-function settings(enabled: boolean) {
+function settings(collectionEnabled: boolean) {
   return {
-    enabled,
+    collectionEnabled,
     retentionDurationMilliseconds: 365 * 24 * 60 * 60 * 1000,
     policyVersion: "memory-application-observability@1" as const,
     retentionPolicyVersion: "memory-application-retention@1" as const
+  };
+}
+
+function outcomeRow(applicationRef: string) {
+  return {
+    outcome_ref: "memory-application-outcome:history",
+    application_ref: applicationRef,
+    tenant_ref: "tenant:1",
+    teacher_ref: "teacher:1",
+    source_event_ref: "outbox:history",
+    agent_run_ref: "agent-run:1",
+    outcome_status: "adopted",
+    resulting_revision_ref: "teaching-plan-revision:history",
+    policy_version: "memory-application-outcome@1",
+    idempotency_key: "memory-outcome:history",
+    authorization_decision_ref: "authorization-decision:1",
+    audit_ref: "audit:history",
+    content_hash: "e".repeat(64),
+    created_at: "2026-08-04T10:00:00.000Z"
   };
 }
 

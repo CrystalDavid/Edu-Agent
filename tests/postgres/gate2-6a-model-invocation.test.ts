@@ -404,6 +404,61 @@ describe("Gate 2.6A durable ModelExecution", () => {
       status: "rejected"
     });
 
+    const historicalRowsBefore = await memoryObservationRows(
+      proposal.body.agentRunRef
+    );
+    const collectionDisabledProduct = createProductContainer(
+      postgresEnvironment,
+      {
+        memoryApplicationObservabilitySettings:
+          memoryApplicationSettings(false)
+      }
+    );
+    try {
+      const collectionDisabledApp = createApp({
+        product: collectionDisabledProduct
+      });
+      await request(collectionDisabledApp)
+        .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+        .set(demoHeaders)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.memoryContext).toMatchObject({
+            packRef: proposal.body.memoryContext.packRef,
+            packContentHash: proposal.body.memoryContext.packContentHash,
+            outcomeStatus: "rejected",
+            durablePreferences: [expect.objectContaining({
+              preferenceRef:
+                confirmedPreference.body.preference.preferenceRef,
+              preferenceValue: "简洁",
+              decision: "injected",
+              outcomeStatus: "rejected"
+            })]
+          });
+        });
+      await request(collectionDisabledApp)
+        .get(apiRoutes.demo.runExplanation(task.taskRef))
+        .set(demoHeaders)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.memoryContext.packContentHash).toBe(
+            proposal.body.memoryContext.packContentHash
+          );
+        });
+      await request(collectionDisabledApp)
+        .get(apiRoutes.demo.proposalDetail(secondProposalRef))
+        .set({
+          ...demoHeaders,
+          "x-demo-actor": "user:teacher-foreign"
+        })
+        .expect(403);
+      expect(await memoryObservationRows(proposal.body.agentRunRef)).toEqual(
+        historicalRowsBefore
+      );
+    } finally {
+      await collectionDisabledProduct.close();
+    }
+
     await request(app)
       .post(
         apiRoutes.teacher.teacherPreferenceRevoke(
@@ -443,6 +498,124 @@ describe("Gate 2.6A durable ModelExecution", () => {
         "x-demo-actor": "user:teacher-foreign"
       })
       .expect(403);
+  });
+
+  it("keeps generation and sealed context available without collecting new applications", async () => {
+    const candidate = await request(app)
+      .post(apiRoutes.teacher.memoryCandidates)
+      .set(demoHeaders)
+      .send({
+        summary: "合成教师确认教案应保持简洁。",
+        preferenceKey: "lesson_plan_detail",
+        preferenceValue: "简洁",
+        purpose: "personalization.candidate.create",
+        idempotencyKey: `memory-observability:disabled:create:${randomUUID()}`
+      })
+      .expect(201);
+    const confirmed = await request(app)
+      .post(apiRoutes.teacher.memoryCandidateConfirm(
+        candidate.body.candidate.candidateRef
+      ))
+      .set(demoHeaders)
+      .send({
+        expectedVersion: candidate.body.candidate.version,
+        purpose: "personalization.candidate.confirm",
+        idempotencyKey: `memory-observability:disabled:confirm:${randomUUID()}`
+      })
+      .expect(200);
+    const disabledProduct = createProductContainer(postgresEnvironment, {
+      memoryApplicationObservabilitySettings: memoryApplicationSettings(false)
+    });
+    try {
+      const disabledApp = createApp({ product: disabledProduct });
+      const task = await createStartedTask(disabledApp);
+      const teacherText = "请保持简洁，并保留一个独立检查。";
+      const context = await createConversationTurn(
+        disabledApp,
+        task,
+        teacherText
+      );
+      const queued = await request(disabledApp)
+        .post(apiRoutes.teacher.modelInvocations)
+        .set(demoHeaders)
+        .send({
+          ...invocationCommand(task),
+          requestText: teacherText,
+          requestVersion: 2,
+          conversationRef: context.conversation.conversationRef,
+          turnRef: context.turn.turnRef,
+          parentTurnRef: context.turn.parentTurnRef,
+          conversationVersion: context.conversation.version
+        })
+        .expect(202);
+      await disabledProduct.workers.copilotOutbox.processAvailable(100);
+      const execution = await request(disabledApp)
+        .get(apiRoutes.teacher.modelInvocation(
+          queued.body.execution.modelExecutionRef
+        ))
+        .set(demoHeaders)
+        .expect(200);
+      expect(execution.body.status).toBe("succeeded");
+      const proposalRef = execution.body.proposalRevisionRef as string;
+      const proposal = await request(disabledApp)
+        .get(apiRoutes.demo.proposalDetail(proposalRef))
+        .set(demoHeaders)
+        .expect(200);
+      expect(proposal.body.memoryContext).toMatchObject({
+        manifestVersion: 1,
+        durablePreferences: [expect.objectContaining({
+          preferenceRef: confirmed.body.preference.preferenceRef,
+          preferenceValue: "简洁",
+          decision: "injected",
+          outcomeStatus: null
+        })]
+      });
+      expect(proposal.body.memoryContext.packContentHash).toHaveLength(64);
+      expect(await memoryObservationRows(proposal.body.agentRunRef)).toEqual({
+        applications: [],
+        outcomes: []
+      });
+
+      await disabledProduct.services.modelInvocations.processExecution(
+        queued.body.execution.modelExecutionRef
+      );
+      await request(disabledApp)
+        .post(apiRoutes.demo.suggestionDisposition(proposalRef))
+        .set(demoHeaders)
+        .send({
+          purpose: "teacher-copilot.review-suggestion",
+          idempotencyKey: `memory-observability:disabled:reject:${randomUUID()}`,
+          disposition: "rejected",
+          selectedStrategyId: proposal.body.strategies[0].strategyId,
+          expectedProposalRevisionNumber: proposal.body.proposalRevisionNumber,
+          teacherEdits: {}
+        })
+        .expect(201);
+      await disabledProduct.workers.copilotOutbox.processAvailable(100);
+      expect(await memoryObservationRows(proposal.body.agentRunRef)).toEqual({
+        applications: [],
+        outcomes: []
+      });
+      await request(disabledApp)
+        .get(apiRoutes.demo.proposalDetail(proposalRef))
+        .set(demoHeaders)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.memoryContext.packContentHash).toBe(
+            proposal.body.memoryContext.packContentHash
+          );
+          expect(body.memoryContext.outcomeStatus).toBe("rejected");
+        });
+      await request(disabledApp)
+        .get(apiRoutes.demo.proposalDetail(proposalRef))
+        .set({
+          ...demoHeaders,
+          "x-demo-actor": "user:teacher-foreign"
+        })
+        .expect(403);
+    } finally {
+      await disabledProduct.close();
+    }
   });
 
   it("keeps ModelExecution successful when memory application recording is degraded", async () => {
@@ -1782,6 +1955,44 @@ function invocationCommand(task: {
     lessonRef: task.lessonRef,
     workingSetVersion: task.workingSet.version,
     expectedPreparationTaskVersion: task.version
+  };
+}
+
+function memoryApplicationSettings(collectionEnabled: boolean) {
+  return {
+    collectionEnabled,
+    retentionDurationMilliseconds: 365 * 24 * 60 * 60 * 1000,
+    policyVersion: "memory-application-observability@1" as const,
+    retentionPolicyVersion: "memory-application-retention@1" as const
+  };
+}
+
+async function memoryObservationRows(agentRunRef: string) {
+  const applications = await adminPool.query<{
+    application_ref: string;
+    content_hash: string;
+    created_at: string;
+  }>(
+    `SELECT application_ref, content_hash, created_at::text
+       FROM personalization.memory_application
+      WHERE agent_run_ref = $1
+      ORDER BY application_ref`,
+    [agentRunRef]
+  );
+  const outcomes = await adminPool.query<{
+    outcome_ref: string;
+    content_hash: string;
+    created_at: string;
+  }>(
+    `SELECT outcome_ref, content_hash, created_at::text
+       FROM personalization.memory_application_outcome
+      WHERE agent_run_ref = $1
+      ORDER BY outcome_ref`,
+    [agentRunRef]
+  );
+  return {
+    applications: applications.rows,
+    outcomes: outcomes.rows
   };
 }
 

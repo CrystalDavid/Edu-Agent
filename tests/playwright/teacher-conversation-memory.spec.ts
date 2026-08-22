@@ -14,9 +14,16 @@ const screenshotRoot = playwrightArtifactPath(
   "evidence",
   "memory-application-observability"
 );
+let collectionDisabled = false;
 
 test.beforeAll(async () => {
   await mkdir(screenshotRoot, { recursive: true });
+});
+
+test.afterEach(async ({ request }) => {
+  if (!collectionDisabled) return;
+  await restartApiWithObservability(request, "enabled");
+  collectionDisabled = false;
 });
 
 test("first-round memory keeps a lesson-preparation conversation across turns and refresh", async ({
@@ -256,6 +263,95 @@ test("first-round memory keeps a lesson-preparation conversation across turns an
     "lesson-preparation@5"
   );
 
+  const proposalDetailResponse = await request.get(
+    apiRoutes.demo.proposalDetail(secondProposalRef),
+    { headers }
+  );
+  expect(proposalDetailResponse.status()).toBe(200);
+  const proposalDetail = (await proposalDetailResponse.json()) as {
+    agentRunRef: string;
+    strategies: Array<{ strategyId: string }>;
+    proposalRevisionNumber: number;
+  };
+  const dispositionResponse = await request.post(
+    apiRoutes.demo.suggestionDisposition(secondProposalRef),
+    {
+      headers,
+      data: {
+        purpose: "teacher-copilot.review-suggestion",
+        idempotencyKey:
+          `playwright:memory:disposition:${crypto.randomUUID()}`,
+        disposition: "rejected",
+        selectedStrategyId: proposalDetail.strategies[0]!.strategyId,
+        expectedProposalRevisionNumber:
+          proposalDetail.proposalRevisionNumber,
+        teacherEdits: {}
+      }
+    }
+  );
+  expect(dispositionResponse.status()).toBe(201);
+  await expect.poll(async () => {
+    const response = await request.get(
+      apiRoutes.demo.runExplanation(task.taskRef),
+      { headers }
+    );
+    expect(response.status()).toBe(200);
+    return ((await response.json()) as {
+      memoryContext?: { outcomeStatus: string | null };
+    }).memoryContext?.outcomeStatus;
+  }).toBe("rejected");
+
+  await restartApiWithObservability(request, "disabled");
+  collectionDisabled = true;
+  await page.reload();
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await expect(page.getByTestId("memory-use-disclosure")).toHaveAttribute(
+    "data-pack-content-hash",
+    secondPackHash!
+  );
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-preference")).toContainText("简洁");
+  await expect(page.getByTestId("memory-preference")).toContainText(
+    "injected"
+  );
+  await expect(page.getByTestId("memory-run-metadata")).toContainText(
+    "已拒绝"
+  );
+  await expect(page.getByTestId("memory-disclaimer")).toContainText(
+    "不代表模型一定完整采用"
+  );
+  await expect(page.getByText("正在采集", { exact: false })).toHaveCount(0);
+
+  await page.goto(
+    `/agent/tasks/${encodeURIComponent(task.taskRef)}?conversation=${encodeURIComponent(conversationRef)}`
+  );
+  const disabledCollectionRequest =
+    "保持当前目标，在采集关闭时再生成一版独立检查。";
+  await input.fill(disabledCollectionRequest);
+  const disabledInvocationResponse = page.waitForResponse(
+    isModelInvocationCreate
+  );
+  await page.getByTestId("generate-copilot").click();
+  const disabledInvocation = await disabledInvocationResponse;
+  expect(disabledInvocation.status()).toBe(202);
+  const disabledInvocationBody = (await disabledInvocation.json()) as {
+    execution: { modelExecutionRef: string };
+  };
+  await waitForExecution(
+    request,
+    disabledInvocationBody.execution.modelExecutionRef
+  );
+  await expect(page.getByTestId("memory-use-disclosure")).toBeVisible({
+    timeout: 20_000
+  });
+  await page.getByTestId("memory-use-toggle").click();
+  await expect(page.getByTestId("memory-current-instruction")).toContainText(
+    disabledCollectionRequest
+  );
+  await expect(page.getByTestId("memory-preferences")).toContainText("简洁");
+
   const revoked = await request.post(
     apiRoutes.teacher.teacherPreferenceRevoke(preference.preferenceRef),
     {
@@ -366,6 +462,8 @@ test("first-round memory keeps a lesson-preparation conversation across turns an
     );
     expect(cancelResponse.status()).toBe(201);
   }
+  await restartApiWithObservability(request, "enabled");
+  collectionDisabled = false;
 });
 
 async function confirmPreference(request: APIRequestContext): Promise<{
@@ -496,4 +594,25 @@ async function waitForExecution(
     status: string;
     proposalRevisionRef: string | null;
   };
+}
+
+async function restartApiWithObservability(
+  request: APIRequestContext,
+  mode: "enabled" | "disabled"
+): Promise<void> {
+  const controlPort = process.env.E2E_CONTROL_PORT;
+  const runId = process.env.E2E_RUN_ID;
+  if (!controlPort || !runId) {
+    throw new Error("The isolated E2E control endpoint is unavailable.");
+  }
+  const response = await request.post(
+    `http://127.0.0.1:${controlPort}/__e2e/restart-api?memory-application-observability=${mode}`,
+    { headers: { "x-e2e-run-id": runId } }
+  );
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toMatchObject({
+    restarted: true,
+    runId,
+    memoryApplicationObservability: mode
+  });
 }
