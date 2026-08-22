@@ -197,7 +197,7 @@ interface ModelInvocationDependencies {
   skills?: VersionedSkillRegistry;
   personalization?: PersonalizationContextProvider;
   memoryApplications?: MemoryApplicationRecorder & TeacherPreferenceRevisionReader;
-  memoryApplicationObservabilityEnabled?: boolean;
+  memoryApplicationCollectionEnabled?: boolean;
   lessonBriefs?: ConfirmedLessonBriefContextProvider;
   conversations?: PostgresConversationService;
   gate2Runtime?: PostgresGate2RuntimeRepository;
@@ -256,7 +256,7 @@ export class PostgresModelInvocationService
   private readonly memoryApplications:
     | (MemoryApplicationRecorder & TeacherPreferenceRevisionReader)
     | undefined;
-  private readonly memoryApplicationObservabilityEnabled: boolean;
+  private readonly memoryApplicationCollectionEnabled: boolean;
   private readonly lessonBriefs: ConfirmedLessonBriefContextProvider;
   private readonly conversations: PostgresConversationService;
   private readonly gate2Runtime: PostgresGate2RuntimeRepository;
@@ -308,8 +308,8 @@ export class PostgresModelInvocationService
       }
     };
     this.memoryApplications = dependencies.memoryApplications;
-    this.memoryApplicationObservabilityEnabled =
-      dependencies.memoryApplicationObservabilityEnabled ?? false;
+    this.memoryApplicationCollectionEnabled =
+      dependencies.memoryApplicationCollectionEnabled ?? false;
     this.lessonBriefs =
       dependencies.lessonBriefs ?? new PostgresLessonBriefStore(pool);
     this.conversations =
@@ -3021,8 +3021,7 @@ export class PostgresModelInvocationService
       contextBuild &&
       sealedWorkingMemory &&
       "personalizationManifest" in contextBuild &&
-      "conversationManifest" in contextBuild &&
-      (this.memoryApplicationObservabilityEnabled || sealedMemoryContextPack)
+      "conversationManifest" in contextBuild
         ? this.buildMemoryApplicationObservability({
             execution,
             tenantRef,
@@ -3076,7 +3075,7 @@ export class PostgresModelInvocationService
                     memoryContextPackManifest:
                       memoryObservability.manifest,
                     memoryApplicationObservability: {
-                      status: this.memoryApplicationObservabilityEnabled
+                      status: this.memoryApplicationCollectionEnabled
                         ? "pending" as const
                         : "disabled" as const
                     }
@@ -3085,7 +3084,7 @@ export class PostgresModelInvocationService
             }
           }
         : {}),
-      ...(memoryObservability && this.memoryApplicationObservabilityEnabled
+      ...(memoryObservability && this.memoryApplicationCollectionEnabled
         ? {
             memoryApplicationSelections:
               memoryObservability.selections
@@ -3772,7 +3771,7 @@ export class PostgresModelInvocationService
     context: LessonPreparationPromptContext
   ): Promise<void> {
     if (
-      !this.memoryApplicationObservabilityEnabled ||
+      !this.memoryApplicationCollectionEnabled ||
       !context.contextEngineering?.memoryContextPackManifest
     ) {
       return;

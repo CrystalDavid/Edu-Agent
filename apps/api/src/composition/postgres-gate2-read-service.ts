@@ -791,7 +791,7 @@ export class PostgresGate2ReadService {
       | null;
   }): Promise<MemoryContextExplanation | undefined> {
     const manifest = input.manifest;
-    if (!this.memoryApplications.enabled || !manifest) return undefined;
+    if (!manifest) return undefined;
     if (
       manifest.owner.tenantRef !== input.tenantRef ||
       manifest.owner.teacherRef !== input.actorRef

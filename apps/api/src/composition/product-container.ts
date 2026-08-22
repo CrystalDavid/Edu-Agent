@@ -144,7 +144,7 @@ export function createProductContainer(
       skills: skillRegistry,
       personalization,
       memoryApplications,
-      memoryApplicationObservabilityEnabled: memoryApplications.enabled,
+      memoryApplicationCollectionEnabled: memoryApplications.collectionEnabled,
       lessonBriefs: lessonBriefStore,
       conversations
     }

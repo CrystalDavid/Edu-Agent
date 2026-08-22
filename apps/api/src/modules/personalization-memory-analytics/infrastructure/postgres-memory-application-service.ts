@@ -37,12 +37,12 @@ export class PostgresMemoryApplicationService
     private readonly clock: Clock = () => new Date()
   ) {}
 
-  get enabled(): boolean {
-    return this.settings.enabled;
+  get collectionEnabled(): boolean {
+    return this.settings.collectionEnabled;
   }
 
   async recordSelection(input: MemoryApplicationSelection): Promise<void> {
-    if (!this.settings.enabled) return;
+    if (!this.settings.collectionEnabled) return;
     assertSelection(input);
     const createdAt = this.clock().toISOString();
     const retentionUntil = new Date(
@@ -104,7 +104,7 @@ export class PostgresMemoryApplicationService
   }
 
   async recordOutcome(input: MemoryApplicationOutcome): Promise<void> {
-    if (!this.settings.enabled) return;
+    if (!this.settings.collectionEnabled) return;
     assertOutcome(input);
     const client = await this.pool.connect();
     try {
@@ -172,7 +172,6 @@ export class PostgresMemoryApplicationService
     readonly owner: MemoryApplicationOwner;
     readonly agentRunRef: string;
   }): Promise<readonly RecordedMemoryApplication[]> {
-    if (!this.settings.enabled) return [];
     assertOwner(input.owner);
     assertRef(input.agentRunRef, "agentRunRef");
     return new PostgresMemoryApplicationRepository(this.pool)
@@ -188,7 +187,6 @@ export class PostgresMemoryApplicationService
     readonly owner: MemoryApplicationOwner;
     readonly agentRunRef: string;
   }): Promise<readonly RecordedMemoryApplicationOutcome[]> {
-    if (!this.settings.enabled) return [];
     assertOwner(input.owner);
     assertRef(input.agentRunRef, "agentRunRef");
     return new PostgresMemoryApplicationRepository(this.pool)
@@ -204,7 +202,6 @@ export class PostgresMemoryApplicationService
     readonly owner: MemoryApplicationOwner;
     readonly applicationRef: string;
   }): Promise<RecordedMemoryApplication | null> {
-    if (!this.settings.enabled) return null;
     assertOwner(input.owner);
     assertRef(input.applicationRef, "applicationRef");
     return new PostgresMemoryApplicationRepository(this.pool)

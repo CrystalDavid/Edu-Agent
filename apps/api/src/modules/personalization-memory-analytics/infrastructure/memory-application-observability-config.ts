@@ -4,6 +4,7 @@ const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
 const MemoryApplicationObservabilityEnvironmentSchema = z.object({
   NODE_ENV: z.string().optional(),
+  APP_ENV: z.string().optional(),
   MEMORY_APPLICATION_OBSERVABILITY_ENABLED: z
     .enum(["true", "false"])
     .optional(),
@@ -15,7 +16,7 @@ const MemoryApplicationObservabilityEnvironmentSchema = z.object({
 });
 
 export interface MemoryApplicationObservabilitySettings {
-  readonly enabled: boolean;
+  readonly collectionEnabled: boolean;
   readonly retentionDurationMilliseconds: number;
   readonly policyVersion: "memory-application-observability@1";
   readonly retentionPolicyVersion: "memory-application-retention@1";
@@ -27,11 +28,14 @@ export function readMemoryApplicationObservabilitySettings(
   const parsed = MemoryApplicationObservabilityEnvironmentSchema.parse(
     environment
   );
-  const enabled = parsed.MEMORY_APPLICATION_OBSERVABILITY_ENABLED === undefined
-    ? parsed.NODE_ENV !== "production"
+  const production =
+    parsed.NODE_ENV === "production" || parsed.APP_ENV === "production";
+  const collectionEnabled =
+    parsed.MEMORY_APPLICATION_OBSERVABILITY_ENABLED === undefined
+    ? !production
     : parsed.MEMORY_APPLICATION_OBSERVABILITY_ENABLED === "true";
   return Object.freeze({
-    enabled,
+    collectionEnabled,
     retentionDurationMilliseconds:
       parsed.MEMORY_APPLICATION_RETENTION_DAYS * millisecondsPerDay,
     policyVersion: "memory-application-observability@1",
