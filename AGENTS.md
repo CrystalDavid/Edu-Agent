@@ -24,7 +24,7 @@
 | `capability-integration` | `capability` | 模型执行、Prompt/预算、Provider、ObjectStore Port |
 | `artifact-collaboration` | `artifact` | Proposal、TeachingPlan、Reflection、文件和 Revision |
 | `education-domain` | `education` | 课程、课时、作业、提交、批改、Evidence、实施和观察 |
-| `personalization-memory-analytics` | `personalization` | MemoryCandidate、TeacherPreference 确认/撤销领域基础；尚无产品持久化 Adapter |
+| `personalization-memory-analytics` | `personalization` | MemoryCandidate、TeacherPreference 及不可变 revision；Preference application/outcome PostgreSQL Adapter |
 
 ## 不可违反的不变量
 

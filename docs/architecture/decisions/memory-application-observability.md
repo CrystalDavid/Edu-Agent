@@ -30,7 +30,7 @@ RunExplanation 在读取时先执行当前 owner 授权，再分别通过 Work/R
 - application 记录 `retention_policy_version` 和 `retention_until`；outcome 随其 application 的 owner 与保留边界读取，且不得比相关审计要求保留更少。
 - `MEMORY_APPLICATION_RETENTION_DAYS` 当前默认 365 天只是可配置运行值，生产期限、学校级覆盖、Legal Hold、备份清理和治理 SLA 均为**待产品确认**。
 - application 与 outcome 不允许 UPDATE 或物理 DELETE。后续治理必须走获批的 redaction/tombstone 或清理 Worker，不能破坏不可变 Audit。
-- `MEMORY_APPLICATION_OBSERVABILITY_ENABLED=false` 时不新增 application/outcome，API 不返回该区域，Web 安全隐藏；生成、审批、短期会话记忆和既有历史表不受影响。local/test 未显式配置时启用；production 未显式配置时关闭，避免静默开启新数据收集。
+- `MEMORY_APPLICATION_OBSERVABILITY_ENABLED` 只控制新的 application/outcome 采集。设为 `false` 时 recorder 不写入，但 Runtime 仍封存当前 Run 的 pack，API 仍可在当前 Session、ActingContext、owner 授权与 retention 边界内读取既有 pack/application/outcome，Web 按 API 返回的数据继续显示历史解释；开关不会删除、隐藏、重算或改写历史记录。local/test 未显式配置时启用；`APP_ENV` 或 `NODE_ENV` 任一为 production 且未显式配置时关闭，生产只能用显式 `true` 开启新数据收集。
 
 ## 备选方案
 
@@ -43,4 +43,4 @@ RunExplanation 在读取时先执行当前 owner 授权，再分别通过 Work/R
 
 每个新 Run 增加一个有界 manifest，以及每个被考虑的 durable Preference 一条 append-only application；处置后再追加 outcome。数据库唯一约束保证同一 Run、Preference revision 和 decision 不因重试重复写入。读取增加 owner-scoped Work/Runtime/Personalization 组合查询，但不会增加模型输入或改变输出语义。
 
-回滚应用行为时关闭 feature flag 即可停止新写入并隐藏 UI；Migration 和既有历史记录保留，不删除、不回写。M2 可以在现有 decision/reason 与 policyVersion 上增加显式 scope/override/consent，但必须另做前向 Contract/Migration，不能把当前 application 日志改造成 Preference 真值。本 ADR 不授权 Candidate 学习、Episode/Habit、全文或向量检索。
+回滚应用行为时关闭 feature flag 即可停止新的 application/outcome 写入；Migration 和既有历史记录保留，不删除、不回写，授权历史解释也不随采集回滚而隐藏。M2 可以在现有 decision/reason 与 policyVersion 上增加显式 scope/override/consent，但必须另做前向 Contract/Migration，不能把当前 application 日志改造成 Preference 真值。本 ADR 不授权 Candidate 学习、Episode/Habit、全文或向量检索。

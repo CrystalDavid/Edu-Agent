@@ -49,7 +49,7 @@
 | 数据治理请求 | PARTIAL | 记录 export、de-identification/deletion 请求与状态基础 | 未实现导出/去标识执行 Worker、审批门户或 SLA |
 | 教师偏好与个性化 | REAL（最小） | 候选 draft、教师确认/修改/拒绝/撤销、不可变 revision、跨重启恢复；仅 active confirmed preference 进入 lesson preparation Context | 无学生画像、向量检索、自动人格分析或未确认 Memory 入模 |
 | 备课会话工作记忆 | REAL（第一轮） | owner-scoped Conversation/不可变 Turn、最多六条近期教师要求、当前目标、指代、临时约束和最近安全结果引用；确定性构建并版本化；刷新/重启恢复；显式 close API、到期排除与新会话隔离 | 只用于同一备课 Task 的短期连续性；不自动形成长期习惯，不保存原始供应商响应、完整 Prompt 或隐藏推理；尚无关闭/遗忘 UI、语义向量检索或跨任务行为学习；正式 retention 期限待产品确认 |
-| 教师记忆应用观测 | REAL（M0-lite） | Runtime 封存 `MemoryContextPackManifest@1`；Personalization append-only 记录 durable Preference 的 selected/injected/excluded/overridden 与 Proposal outcome；Proposal/Runs 读取时按 owner 动态展示“本次参考”；Provider/Worker retry 幂等，写入失败时生成继续且标记 degraded | 不改变 Preference 排序、数量截断、Prompt 权重或输出语义；不复制 Turn、WorkingMemory、Preference value、完整 Prompt/响应/Evidence；生产默认关闭新数据收集，正式 retention 待产品确认 |
+| 教师记忆应用观测 | REAL（M0-lite） | Runtime 封存 `MemoryContextPackManifest@1`；Personalization append-only 记录 durable Preference 的 selected/injected/excluded/overridden 与 Proposal outcome；Proposal/Runs 读取时按 owner 动态展示“本次参考”；Provider/Worker retry 幂等，写入失败时生成继续且标记 degraded | 不改变 Preference 排序、数量截断、Prompt 权重或输出语义；不复制 Turn、WorkingMemory、Preference value、完整 Prompt/响应/Evidence；生产默认关闭新 application/outcome 采集，关闭后既有历史解释仍可在 owner 授权和 retention 边界内读取；正式 retention 待产品确认 |
 | 考试 | DISABLED | 无伪造展示 | 正式领域、API、Persistence 均未开始 |
 | 多模态 | NOT_STARTED（产品） | Ark capability probe 可探测 image URL | 文件/图片未进入正式模型上下文；无 OCR |
 | 学生端 | NOT_STARTED | 无 | 当前只有教师查看匿名样例学习者 |
