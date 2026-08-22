@@ -94,6 +94,19 @@ async function assertPortAvailable(port, label) {
   });
 }
 
+async function waitForPortAvailable(port, label, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await assertPortAvailable(port, label);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error(`${label} port ${port} was not released before timeout.`);
+}
+
 async function waitForJson(url, validate, timeoutMs = 45_000) {
   const startedAt = Date.now();
   let lastStatus = "no response";
@@ -374,6 +387,7 @@ try {
       intentionalStops.add(apiProcess);
       stopProcessTree(apiProcess);
       await waitForProcessExit(apiProcess);
+      await waitForPortAvailable(apiPort, "API");
       currentApplicationEnvironment = {
         ...currentApplicationEnvironment
       };
