@@ -1,6 +1,8 @@
 import type { AuthenticationSessionStatus } from "@edu-agent/contracts";
 import { Button, Card, Tag, Typography } from "antd";
 
+import { cleanDisplayText, roleLabel } from "../presentation";
+
 type AuthenticatedSession = Extract<
   AuthenticationSessionStatus,
   { authenticated: true }
@@ -21,7 +23,7 @@ export function WorkspaceSelectionPage(props: {
       <Card className="identity-card">
         <Typography.Title level={2}>选择学校工作空间</Typography.Title>
         <Typography.Paragraph type="secondary">
-          {props.session.user.displayName} 拥有多个学校成员关系。每次只在一个学校范围内读取课程和教学数据。
+          {cleanDisplayText(props.session.user.displayName)}，请选择本次进入的学校。
         </Typography.Paragraph>
         <div className="workspace-membership-list">
           {active.map((membership) => (
@@ -32,12 +34,12 @@ export function WorkspaceSelectionPage(props: {
               onClick={() => void props.onSelect(membership.membershipRef)}
             >
               <span>
-                <strong>{membership.organizationName}</strong>
+                <strong>{cleanDisplayText(membership.organizationName)}</strong>
                 <small>{membership.courseRunRefs.length} 个已授权课程</small>
               </span>
               <span className="workspace-role-tags">
                 {membership.roles.map((role) => (
-                  <Tag key={role}>{role}</Tag>
+                  <Tag key={role}>{roleLabel(role)}</Tag>
                 ))}
               </span>
             </button>
@@ -45,7 +47,7 @@ export function WorkspaceSelectionPage(props: {
         </div>
         {active.length === 0 ? (
           <Typography.Text type="danger">
-            当前没有活动 Membership，请联系学校管理员。
+            当前没有可用的学校工作空间，请联系学校管理员。
           </Typography.Text>
         ) : null}
         <Button data-testid="workspace-logout" onClick={() => void props.onLogout()}>退出登录</Button>

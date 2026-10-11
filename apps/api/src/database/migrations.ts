@@ -75,6 +75,21 @@ export const moduleMigrations = [
       "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0009_gate2_9_reflection_workflow.sql"
   },
   {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0010_calendar_event_categories.sql"
+  },
+  {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0011_next_lesson_action_candidates.sql"
+  },
+  {
+    owner: "work",
+    relativePath:
+      "apps/api/src/modules/work-assistant-durable-execution/infrastructure/migrations/0012_conversation_thread_turn.sql"
+  },
+  {
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0001_runtime.sql"
@@ -103,6 +118,11 @@ export const moduleMigrations = [
     owner: "runtime",
     relativePath:
       "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0006_gate2_6a_agent_run_lifecycle.sql"
+  },
+  {
+    owner: "runtime",
+    relativePath:
+      "apps/api/src/modules/agent-runtime-context/infrastructure/migrations/0007_working_memory_snapshot.sql"
   },
   {
     owner: "capability",
@@ -213,5 +233,15 @@ export const moduleMigrations = [
     owner: "personalization",
     relativePath:
       "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0001_personalization.sql"
+  },
+  {
+    owner: "personalization",
+    relativePath:
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0002_phase7a_memory_persistence.sql"
+  },
+  {
+    owner: "personalization",
+    relativePath:
+      "apps/api/src/modules/personalization-memory-analytics/infrastructure/migrations/0003_memory_application_observability.sql"
   }
 ] as const;

@@ -47,7 +47,7 @@ const patterns = [
   {
     name: "Ark API key",
     expression: new RegExp(
-      `${arkPrefix}[A-Za-z0-9_\\-]{16,}`,
+      `(?<![A-Za-z0-9_])${arkPrefix}[A-Za-z0-9_\\-]{16,}`,
       "g"
     )
   },
@@ -84,6 +84,11 @@ const detectorFixtures = [
     label: "Ark prefix",
     content: arkPrefix + "synthetic" + "x".repeat(20),
     expected: true
+  },
+  {
+    label: "Ark substring inside a UI marker",
+    content: "data-testid=mark-reflection-uncertain",
+    expected: false
   },
   {
     label: "Bearer header",

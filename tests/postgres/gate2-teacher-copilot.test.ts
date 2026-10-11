@@ -2,27 +2,18 @@ import { randomUUID } from "node:crypto";
 
 import {
   gate2DemoRefs
-} from "@edu-agent/test-fixtures";
+} from "@edu-agent/sample-data";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   Gate2DemoSeedService
-} from "../../apps/api/src/composition/gate2-demo-seed-service.js";
+} from "../../scripts/sample/gate2-demo-seed-service.js";
 import {
   PostgresGate2ReadService
 } from "../../apps/api/src/composition/postgres-gate2-read-service.js";
 import {
   PostgresGate2TeacherCopilotService
 } from "../../apps/api/src/composition/postgres-gate2-teacher-copilot-service.js";
-import {
-  PostgresIdentityOrganizationService
-} from "../../apps/api/src/composition/postgres-identity-organization-service.js";
-import {
-  LocalIdentityProvider
-} from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
-import {
-  readIdentitySettings
-} from "../../apps/api/src/platform/auth/config.js";
 import {
   LocalCopilotOutboxWorker,
   localCopilotOutboxEventNames
@@ -45,19 +36,7 @@ import {
 const adminPool = poolFor("admin");
 const appPool = poolFor("app", { max: 8 });
 const workerPool = poolFor("worker");
-const identitySettings = readIdentitySettings({
-  APP_ENV: "test",
-  IDENTITY_PROVIDER_MODE: "local",
-  LOCAL_IDENTITY_PROVIDER_ENABLED: "true"
-});
-const localIdentityProvider = new LocalIdentityProvider(true);
-const identity = new PostgresIdentityOrganizationService(
-  appPool,
-  identitySettings,
-  localIdentityProvider,
-  localIdentityProvider
-);
-const seedService = new Gate2DemoSeedService(appPool, identity);
+const seedService = new Gate2DemoSeedService(appPool);
 const copilot = new PostgresGate2TeacherCopilotService(appPool);
 const read = new PostgresGate2ReadService(appPool);
 
@@ -98,7 +77,10 @@ describe("Gate 2 PostgreSQL Teacher Copilot slice", () => {
   it("loads tenant-scoped synthetic evidence with provenance and no estimate", async () => {
     const workspace = await read.getWorkspace({
       tenantRef: gate2DemoRefs.tenantRef,
-      actorRef: gate2DemoRefs.teacherRef
+      actorRef: gate2DemoRefs.teacherRef,
+      organizationName: "明远实验中学",
+      actorDisplayName: "林老师",
+      courseRunRefs: [gate2DemoRefs.courseRunRef]
     });
 
     expect(workspace.identity).toMatchObject({
@@ -298,7 +280,10 @@ describe("Gate 2 PostgreSQL Teacher Copilot slice", () => {
     await expect(
       read.getWorkspace({
         tenantRef: "tenant:other-school",
-        actorRef: gate2DemoRefs.teacherRef
+        actorRef: gate2DemoRefs.teacherRef,
+        organizationName: "其他学校",
+        actorDisplayName: "林老师",
+        courseRunRefs: [gate2DemoRefs.courseRunRef]
       })
     ).rejects.toBeInstanceOf(AuthorizationDeniedError);
     await expect(tableCount(appPool, "work.task")).resolves.toBe(0);
@@ -343,7 +328,10 @@ describe("Gate 2 PostgreSQL Teacher Copilot slice", () => {
         expect(result.resultingRevision?.state).toBe("in_review");
         const workspace = await read.getWorkspace({
           tenantRef: gate2DemoRefs.tenantRef,
-          actorRef: gate2DemoRefs.teacherRef
+          actorRef: gate2DemoRefs.teacherRef,
+          organizationName: "明远实验中学",
+          actorDisplayName: "林老师",
+          courseRunRefs: [gate2DemoRefs.courseRunRef]
         });
         expect(
           workspace.currentInReviewPlan?.selectedStrategyId
@@ -570,12 +558,14 @@ describe("Gate 2 PostgreSQL Teacher Copilot slice", () => {
     const approved = await copilot.approveTeachingPlan({
       tenantRef: gate2DemoRefs.tenantRef,
       actorRef: gate2DemoRefs.teacherRef,
+      allowedCourseRunRefs: [gate2DemoRefs.courseRunRef],
       inReviewRevisionRef: inReview.revisionRef,
       request: approvalRequest
     });
     const approvalReplay = await copilot.approveTeachingPlan({
       tenantRef: gate2DemoRefs.tenantRef,
       actorRef: gate2DemoRefs.teacherRef,
+      allowedCourseRunRefs: [gate2DemoRefs.courseRunRef],
       inReviewRevisionRef: inReview.revisionRef,
       request: approvalRequest
     });

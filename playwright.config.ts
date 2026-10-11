@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { playwrightArtifactPath } from "./tests/config/test-artifacts.js";
+
 const webOrigin = `http://127.0.0.1:${
   process.env.E2E_WEB_PORT ?? "5173"
 }`;
@@ -8,7 +10,7 @@ export default defineConfig({
   globalSetup: "./tests/playwright/global-setup.ts",
   testDir: "./tests/playwright",
   testIgnore: "teacher-model-provider.spec.ts",
-  outputDir: "./test-results/playwright",
+  outputDir: playwrightArtifactPath("default", "results"),
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
@@ -18,14 +20,14 @@ export default defineConfig({
     [
       "html",
       {
-        outputFolder: "playwright-report",
+        outputFolder: playwrightArtifactPath("default", "report"),
         open: "never"
       }
     ]
   ],
   use: {
     baseURL: webOrigin,
-    storageState: "./test-results/playwright/.auth/teacher.json",
+    storageState: playwrightArtifactPath("shared", ".auth", "teacher.json"),
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
@@ -35,7 +37,7 @@ export default defineConfig({
     }
   },
   webServer: {
-    command: "node scripts/demo/run-e2e-demo.mjs",
+    command: "node scripts/testing/run-e2e-app.mjs",
     url: `${webOrigin}/api/health`,
     reuseExistingServer:
       process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "true",

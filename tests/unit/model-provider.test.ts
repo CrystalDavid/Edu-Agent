@@ -30,7 +30,7 @@ import {
 } from "../../apps/api/src/modules/capability-integration/application/model-output-validation.js";
 import {
   ProviderCapabilityProbe
-} from "../../apps/api/src/modules/capability-integration/application/provider-capability-probe.js";
+} from "../../apps/api/src/modules/capability-integration/infrastructure/provider-capability-probe.js";
 import {
   LocalSyntheticModelDebugSink,
   maskProviderRequestId,
@@ -409,7 +409,7 @@ describe("Gate 2.6A policy helpers", () => {
     expect(() =>
       createModelDataManifest({
         purpose: "teacher-copilot.lesson-preparation",
-        tenantRef: "tenant:real-school",
+        tenantRef: "",
         actorRef: "user:teacher-001",
         taskRunRef: "task-run:test",
         contextManifestRef: "context:test",
@@ -424,7 +424,7 @@ describe("Gate 2.6A policy helpers", () => {
     expect(() =>
       createModelDataManifest({
         purpose: "teacher-copilot.lesson-preparation",
-        tenantRef: "tenant:demo-school-lookalike",
+        tenantRef: "tenant:authorized-school",
         actorRef: "user:teacher-001",
         taskRunRef: "task-run:test",
         contextManifestRef: "context:test",
@@ -432,7 +432,7 @@ describe("Gate 2.6A policy helpers", () => {
         modelId: "mock",
         resourceRefs: ["lesson:synthetic"],
         authorizationDecisionRef: "decision:test",
-        syntheticData: true,
+        syntheticData: false,
         createdAt: "2026-07-31T10:00:00.000Z"
       })
     ).toThrow(/MODEL_DATA_POLICY_BLOCKED/u);

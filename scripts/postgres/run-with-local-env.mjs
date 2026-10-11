@@ -7,7 +7,7 @@ if (!command) {
   throw new Error("A command is required.");
 }
 
-const envPath = resolve("infra/docker/.env.local");
+const envPath = resolve("infra/local/postgres/.env.local");
 const localEnvironment = Object.fromEntries(
   readFileSync(envPath, "utf8")
     .split(/\r?\n/)

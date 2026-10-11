@@ -1,10 +1,14 @@
 import { mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 
 import { request, type FullConfig } from "@playwright/test";
 
-export const teacherAuthenticationStatePath = resolve(
-  "test-results/playwright/.auth/teacher.json"
+import { playwrightArtifactPath } from "../config/test-artifacts.js";
+
+export const teacherAuthenticationStatePath = playwrightArtifactPath(
+  "shared",
+  ".auth",
+  "teacher.json"
 );
 
 export default async function globalSetup(config: FullConfig): Promise<void> {

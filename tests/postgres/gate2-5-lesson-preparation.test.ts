@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { apiRoutes } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
+import { gate2DemoRefs } from "@edu-agent/sample-data";
 import request from "supertest";
 import {
   afterAll,
@@ -14,7 +14,8 @@ import {
 import { createApp } from "../../apps/api/src/app.js";
 import {
   gate25DemoRefs
-} from "../../apps/api/src/composition/gate2-5-demo-fixture.js";
+} from "../../scripts/sample/gate2-5-demo-fixture.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   createProductContainer
 } from "../../apps/api/src/composition/product-container.js";
@@ -41,7 +42,7 @@ const demoHeaders = {
 
 beforeEach(async () => {
   await resetGate1BData(adminPool);
-  await product.services.seed.seed({ includeGate25: true });
+  await seedSampleData(postgresEnvironment, { includeGate25: true });
 });
 
 afterAll(async () => {

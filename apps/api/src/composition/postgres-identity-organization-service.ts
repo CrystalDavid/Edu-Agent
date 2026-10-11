@@ -8,13 +8,13 @@ import {
   DataGovernanceRequestListSchema,
   SchoolDetailSchema,
   SecurityEventListSchema,
-  type ActingContext,
   type AuthenticationProviderAvailability,
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
   type CreateMemberRequest,
+  type LocalCredentialLoginRequest,
+  type LocalSmsChallenge,
   type OrganizationRole,
-  type TenantContext,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
   type UpdateMemberStatusRequest,
@@ -22,6 +22,16 @@ import {
 } from "@edu-agent/contracts";
 import type { Pool, PoolClient } from "pg";
 
+import type {
+  IdentityContextFacade,
+  ProductResourceRefs,
+  ResolvedProductIdentity,
+  SessionCreationResult
+} from "../modules/identity-governance-audit/application/identity-context-facade.js";
+import type {
+  LocalAuthenticationPort,
+  LocalIdentityProfile
+} from "../modules/identity-governance-audit/application/local-authentication-port.js";
 import type { IdentitySettings } from "../platform/auth/config.js";
 import {
   AuthenticationRequiredError,
@@ -35,45 +45,11 @@ import type {
   IdentityProvider,
   OidcAuthorizationRequest
 } from "../modules/identity-governance-audit/domain/identity-provider.js";
-import {
-  LocalIdentityProvider,
-  type LocalIdentityProfile
-} from "../modules/identity-governance-audit/infrastructure/local-identity-provider.js";
-
-const SCHOOL_A = "tenant:demo-school";
-const SCHOOL_B = "tenant:demo-school-b";
-const COURSE_A = "course-run:grade8-math-class3-2026-fall";
-const COURSE_B = "course-run:school-b-grade8-math-2026-fall";
 
 type AuthenticatedStatus = Extract<
   AuthenticationSessionStatus,
   { authenticated: true }
 >;
-
-export interface ResolvedProductIdentity {
-  tenant: TenantContext;
-  acting: ActingContext;
-  status: AuthenticatedStatus;
-  csrfTokenHash?: string;
-}
-
-export interface SessionCreationResult {
-  sessionToken: string;
-  csrfToken: string;
-  status: AuthenticatedStatus;
-}
-
-export interface ProductResourceRefs {
-  courseRunRefs?: readonly string[];
-  unitRefs?: readonly string[];
-  lessonRefs?: readonly string[];
-  assignmentRefs?: readonly string[];
-  learnerRefs?: readonly string[];
-  deliveryRefs?: readonly string[];
-  observationRefs?: readonly string[];
-  reflectionRefs?: readonly string[];
-  taskRefs?: readonly string[];
-}
 
 interface SessionRow {
   session_ref: string;
@@ -115,166 +91,15 @@ function maskSubjectHint(value: string | null): string | null {
   return `${value.slice(0, 2)}***${value.slice(-2)}`;
 }
 
-export class PostgresIdentityOrganizationService {
+export class PostgresIdentityOrganizationService
+  implements IdentityContextFacade
+{
   constructor(
     private readonly pool: Pool,
     readonly settings: IdentitySettings,
     private readonly provider: IdentityProvider,
-    private readonly localProvider?: LocalIdentityProvider
+    private readonly localProvider?: LocalAuthenticationPort
   ) {}
-
-  async seedSyntheticFoundation(): Promise<void> {
-    const createdAt = "2026-09-18T07:45:00.000Z";
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const organizations = [
-        [SCHOOL_A, "明远实验中学"],
-        [SCHOOL_B, "远航实验学校（合成）"]
-      ] as const;
-      for (const [organizationRef, name] of organizations) {
-        await client.query(
-          `INSERT INTO governance.organization (
-             organization_ref, organization_type, name, status,
-             timezone, data_source, version, created_at, updated_at
-           ) VALUES ($1, 'school', $2, 'active', 'Asia/Shanghai',
-             'synthetic-demo-seed', 1, $3, $3)
-           ON CONFLICT (organization_ref) DO UPDATE
-             SET name = EXCLUDED.name,
-                 updated_at = EXCLUDED.updated_at`,
-          [organizationRef, name, createdAt]
-        );
-      }
-
-      const users = [
-        {
-          userRef: "user:teacher-001",
-          displayName: "林老师（合成）",
-          email: "lin.teacher@example.test",
-          subject: "teacher-a"
-        },
-        {
-          userRef: "user:school-admin-001",
-          displayName: "周管理员（合成）",
-          email: "zhou.admin@example.test",
-          subject: "school-admin-a"
-        },
-        {
-          userRef: "user:multi-school-001",
-          displayName: "陈老师（多学校合成）",
-          email: "chen.teacher@example.test",
-          subject: "multi-school-teacher"
-        },
-        {
-          userRef: "user:teacher-b-001",
-          displayName: "王老师（合成）",
-          email: "wang.teacher@example.test",
-          subject: "teacher-b"
-        }
-      ] as const;
-      for (const user of users) {
-        await client.query(
-          `INSERT INTO governance.user_account (
-             user_ref, display_name, email, status, data_source,
-             version, created_at, updated_at
-           ) VALUES ($1, $2, $3, 'active', 'synthetic-demo-seed', 1, $4, $4)
-           ON CONFLICT (user_ref) DO UPDATE
-             SET display_name = EXCLUDED.display_name,
-                 email = EXCLUDED.email,
-                 updated_at = EXCLUDED.updated_at`,
-          [user.userRef, user.displayName, user.email, createdAt]
-        );
-        await client.query(
-          `INSERT INTO governance.external_identity_link (
-             identity_link_ref, user_ref, provider,
-             external_subject_hash, display_hint, linked_at
-           ) VALUES ($1, $2, 'local-development', $3, $4, $5)
-           ON CONFLICT (provider, external_subject_hash) DO NOTHING`,
-          [
-            `identity-link:local:${user.userRef}`,
-            user.userRef,
-            this.externalSubjectHash("local-development", user.subject),
-            maskSubjectHint(user.subject),
-            createdAt
-          ]
-        );
-      }
-
-      const memberships = [
-        {
-          ref: "membership:demo-school:teacher-001",
-          org: SCHOOL_A,
-          user: "user:teacher-001",
-          roles: ["ordinary_teacher"] as const,
-          courses: [COURSE_A]
-        },
-        {
-          ref: "membership:demo-school:admin-001",
-          org: SCHOOL_A,
-          user: "user:school-admin-001",
-          roles: ["school_admin", "ordinary_teacher"] as const,
-          courses: [COURSE_A]
-        },
-        {
-          ref: "membership:demo-school:multi-001",
-          org: SCHOOL_A,
-          user: "user:multi-school-001",
-          roles: ["ordinary_teacher"] as const,
-          courses: [COURSE_A]
-        },
-        {
-          ref: "membership:demo-school-b:multi-001",
-          org: SCHOOL_B,
-          user: "user:multi-school-001",
-          roles: ["ordinary_teacher"] as const,
-          courses: [COURSE_B]
-        },
-        {
-          ref: "membership:demo-school-b:teacher-001",
-          org: SCHOOL_B,
-          user: "user:teacher-b-001",
-          roles: ["ordinary_teacher"] as const,
-          courses: [COURSE_B]
-        }
-      ] as const;
-      for (const membership of memberships) {
-        await client.query(
-          `INSERT INTO governance.organization_membership (
-             membership_ref, organization_ref, user_ref, status,
-             created_by, activated_at, version, created_at, updated_at
-           ) VALUES ($1, $2, $3, 'active', 'system:synthetic-seed',
-             $4, 1, $4, $4)
-           ON CONFLICT (membership_ref) DO NOTHING`,
-          [membership.ref, membership.org, membership.user, createdAt]
-        );
-        for (const role of membership.roles) {
-          await client.query(
-            `INSERT INTO governance.membership_role_assignment (
-               membership_ref, role_key, assigned_by, assigned_at
-             ) VALUES ($1, $2, 'system:synthetic-seed', $3)
-             ON CONFLICT (membership_ref, role_key) DO NOTHING`,
-            [membership.ref, role, createdAt]
-          );
-        }
-        for (const courseRunRef of membership.courses) {
-          await client.query(
-            `INSERT INTO governance.membership_course_run_access (
-               membership_ref, course_run_ref, granted_by, granted_at
-             ) VALUES ($1, $2, 'system:synthetic-seed', $3)
-             ON CONFLICT (membership_ref, course_run_ref) DO NOTHING`,
-            [membership.ref, courseRunRef, createdAt]
-          );
-        }
-      }
-
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
 
   async providerAvailability(): Promise<AuthenticationProviderAvailability> {
     const availability = await this.provider.availability();
@@ -347,6 +172,67 @@ export class PostgresIdentityOrganizationService {
       throw new ServiceUnavailableError("Local identity provider is disabled.");
     }
     const external = this.localProvider.authenticate(input.profile);
+    return this.createSessionForExternalIdentity({
+      external,
+      authenticationMethod: "local-identity",
+      clientLabel: input.clientLabel,
+      ...(input.clientFingerprint
+        ? { clientFingerprint: input.clientFingerprint }
+        : {})
+    });
+  }
+
+  async requestLocalSmsCode(phone: string): Promise<LocalSmsChallenge> {
+    if (!this.localProvider || !this.settings.localProviderEnabled) {
+      throw new ServiceUnavailableError("Local identity provider is disabled.");
+    }
+    try {
+      const challenge = this.localProvider.requestSmsCode(phone);
+      await this.recordSecurityEvent({
+        eventType: "LocalSmsCodeIssued",
+        outcome: "success",
+        safeReason: "手机号验证码已发出。"
+      });
+      return challenge;
+    } catch {
+      await this.recordSecurityEvent({
+        eventType: "LocalAuthenticationDenied",
+        outcome: "denied",
+        safeReason: "手机号登录尝试被拒绝。"
+      });
+      throw new AuthenticationRequiredError("手机号或验证码不正确。");
+    }
+  }
+
+  async localCredentialLogin(input: {
+    request: LocalCredentialLoginRequest;
+    clientLabel: string;
+    clientFingerprint?: string;
+  }): Promise<SessionCreationResult> {
+    if (!this.localProvider || !this.settings.localProviderEnabled) {
+      throw new ServiceUnavailableError("Local identity provider is disabled.");
+    }
+    let external: ExternalIdentity;
+    try {
+      external =
+        input.request.method === "password"
+          ? this.localProvider.authenticatePassword(
+              input.request.phone,
+              input.request.password
+            )
+          : this.localProvider.authenticateSms(
+              input.request.phone,
+              input.request.challengeRef,
+              input.request.code
+            );
+    } catch {
+      await this.recordSecurityEvent({
+        eventType: "LocalAuthenticationDenied",
+        outcome: "denied",
+        safeReason: "手机号登录尝试被拒绝。"
+      });
+      throw new AuthenticationRequiredError("手机号或登录凭据不正确。");
+    }
     return this.createSessionForExternalIdentity({
       external,
       authenticationMethod: "local-identity",
@@ -589,9 +475,46 @@ export class PostgresIdentityOrganizationService {
   }
 
   async resolveDemoBypassIdentity(): Promise<ResolvedProductIdentity> {
+    if (!this.localProvider) {
+      throw new AuthorizationDeniedError(
+        "Demo identity bypass requires the explicit local identity provider."
+      );
+    }
+    const external = this.localProvider.authenticate("teacher");
+    const linked = await this.pool.query<{
+      user_ref: string;
+      organization_ref: string;
+    }>(
+      `SELECT account.user_ref, membership.organization_ref
+         FROM governance.external_identity_link AS link
+         JOIN governance.user_account AS account
+           ON account.user_ref = link.user_ref
+          AND account.status = 'active'
+         JOIN governance.organization_membership AS membership
+           ON membership.user_ref = account.user_ref
+          AND membership.status = 'active'
+         JOIN governance.organization AS organization
+           ON organization.organization_ref = membership.organization_ref
+          AND organization.status = 'active'
+        WHERE link.provider = $1
+          AND link.external_subject_hash = $2
+          AND link.unlinked_at IS NULL
+        ORDER BY membership.created_at, membership.membership_ref
+        LIMIT 2`,
+      [
+        external.provider,
+        this.externalSubjectHash(external.provider, external.subject)
+      ]
+    );
+    if (linked.rows.length !== 1) {
+      throw new AuthorizationDeniedError(
+        "Demo identity bypass requires exactly one active local teacher workspace."
+      );
+    }
+    const selected = linked.rows[0]!;
     const fixture = await this.resolveFixtureIdentity({
-      tenantRef: SCHOOL_A,
-      actorRef: "user:teacher-001"
+      tenantRef: selected.organization_ref,
+      actorRef: selected.user_ref
     });
     const status = AuthenticationSessionStatusSchema.parse({
       ...fixture.status,

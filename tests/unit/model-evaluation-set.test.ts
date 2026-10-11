@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  assembleLessonPreparationModelRequest
-} from "../../apps/api/src/modules/capability-integration/application/lesson-preparation-prompt-bundle.js";
-import {
-  validateModelOutput
-} from "../../apps/api/src/modules/capability-integration/application/model-output-validation.js";
+  lessonPreparationSkillV1
+} from "../../apps/api/src/agent/skills/index.js";
 import {
   MockModelProvider
 } from "../../apps/api/src/modules/capability-integration/infrastructure/mock-model-provider.js";
@@ -69,13 +66,32 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
       const result = await provider.invoke(request);
       expect(result.status, evaluationCase.id).toBe("succeeded");
       if (result.status !== "succeeded") continue;
-      expect(
-        validateModelOutput({
-          outputText: result.outputText,
-          request
-        }),
-        evaluationCase.id
-      ).toMatchObject({ valid: true });
+      const validation = lessonPreparationSkillV1.validateOutput({
+        outputText: result.outputText,
+        request
+      });
+      expect(validation, evaluationCase.id).toMatchObject({ valid: true });
+      const evaluation = lessonPreparationSkillV1.evaluateOutput({
+        validation,
+        operation: {
+          latencyMs: result.latencyMs,
+          usage: {
+            inputTokens: result.inputTokens ?? 1,
+            outputTokens: result.outputTokens ?? 1,
+            totalTokens:
+              (result.inputTokens ?? 1) + (result.outputTokens ?? 1)
+          },
+          attemptCount: 1,
+          estimatedCostUsd: 0
+        }
+      });
+      expect(evaluation, evaluationCase.id).toMatchObject({
+        passedBlockingChecks: true,
+        contract: { status: "passed" },
+        policy: { status: "passed" },
+        quality: { status: "passed" },
+        operation: { status: "recorded" }
+      });
       expect(request.messages[0]?.content).toContain(
         "不得虚构 Evidence"
       );
@@ -108,7 +124,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
     };
 
     expect(
-      validateModelOutput({
+      lessonPreparationSkillV1.validateOutput({
         outputText: `说明：${result.outputText}`,
         request
       })
@@ -117,7 +133,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
     const missing = structuredClone(valid);
     delete missing.suggestions[0]?.title;
     expect(
-      validateModelOutput({
+      lessonPreparationSkillV1.validateOutput({
         outputText: JSON.stringify(missing),
         request
       })
@@ -128,7 +144,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
       "evidence:not-authorized"
     ];
     expect(
-      validateModelOutput({
+      lessonPreparationSkillV1.validateOutput({
         outputText: JSON.stringify(wrongEvidence),
         request
       })
@@ -138,7 +154,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
     wrongLesson.suggestions[0]!.lessonRef =
       "lesson:not-authorized";
     expect(
-      validateModelOutput({
+      lessonPreparationSkillV1.validateOutput({
         outputText: JSON.stringify(wrongLesson),
         request
       })
@@ -149,7 +165,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
       "objective:not-authorized"
     ];
     expect(
-      validateModelOutput({
+      lessonPreparationSkillV1.validateOutput({
         outputText: JSON.stringify(wrongObjective),
         request
       })
@@ -158,7 +174,7 @@ describe("Gate 2.6A fixed synthetic evaluation set", () => {
 });
 
 function evaluationRequest(id: string, requestText: string) {
-  return assembleLessonPreparationModelRequest({
+  return lessonPreparationSkillV1.assembleRequest({
     invocationRef: `model-execution:${id}`,
     taskRunRef: `task-run:${id}`,
     agentRunRef: `agent-run:${id}`,

@@ -1,14 +1,28 @@
 # Changelog
 
-本文件面向开发者和产品负责人，按仓库的 verified stages 摘要主要变化。完整 Commit、PR、Migration、状态所有者和时间顺序见 [VERSION_HISTORY](docs/project/VERSION_HISTORY.md)。
+本文件面向开发者和产品负责人，按仓库的 verified stages 摘要主要变化。完整 Commit、PR、Migration、状态所有者和时间顺序见 [版本历史](docs/version-history.md)。
 
 ## Current
 
 当前最新 Verified Gate：**Gate 2.10A**（`gate-2-10a-verified`）。
 
-> 普通教师端本地功能型 MVP，已具备正式身份和学校组织基线，尚未达到云端学校试点生产条件。
+> 普通教师工作台的可运行产品基线，已具备正式身份和学校组织边界；正式云基础设施和学校试点运维尚未完成。
 
-本轮只整理版本历史、能力、架构、仓库和部署差距；未修改产品状态语义。下一阶段候选是 Gate 2.10B 云部署与试点运维，仍需先完成并审查 [部署就绪差距](docs/project/DEPLOYMENT_READINESS_GAPS.md)。
+Gate 2.10A 之后的仓库治理提交不改变产品状态语义。下一产品阶段候选是 Gate 2.10B 云部署与试点运维，仍需先完成并审查 [部署就绪差距](docs/operations/deployment-readiness-gaps.md)。
+
+## Unreleased — repository cleanup and reorganization
+
+- **Login**：修复 React StrictMode 下身份启动 Promise 被首轮 effect 清理后永久复用、导致页面停在“正在检查身份供应商”的问题；本机教师登录改为手机号密码或一次性验证码，项目所有者账号进入林老师工作空间。
+- **Security**：演示手机号与密码仅以 SHA-256 / `scrypt` 摘要进入服务端配置；登录失败返回统一安全提示，验证码限时、限次且一次性使用；production 仍禁止 local identity。
+- **UI**：登录页改为双栏教师产品入口，移除面向教师无意义的 HttpOnly Cookie、Token、tenant 和角色技术说明。
+- **UI**：侧边栏以教师身份为首要入口，改用男教师头像和简洁圆润图标；课程按单元折叠，课时详情优先显示准备度、成果预览和重点难点。
+- **Product truth**：删除旧 `teacher-portal-data.ts` 以及未路由课程/作业/考试/通用 Agent 演示组件；Agent 一级页改为读取服务器中的真实备课任务，未实现考试明确禁用。
+- **Docs**：根 README 成为唯一入口；当前能力、架构、版本、Roadmap、开发、验证和运维各有单一职责；Gate/UI/研究资料归档但未删除。
+- **Agent DX**：增加 `AGENTS.md`、局部 README、稳定测试/验证命令和 Claude Code 仓库经验记录。
+- **Cleanup**：删除已证明零引用的八个旧 Page、两个旧组件、旧 demo read model 和失效脚本，共 1,743 行；现行路由和业务语义不变。
+- **Sample data**：匿名样例从 test-only fixture 分离为 `packages/sample-data` workspace package；产品不再依赖 test-only package。
+- **Repository safety**：增加 Markdown link 和 Git sync verifier；Playwright 不再覆写已跟踪历史 UI 图片。
+- **Database**：未新增、修改、合并或重排 Migration；最新产品基线仍为 43 个 Migration。
 
 ## Gate 2.10A — Identity & organization foundation
 

@@ -6,11 +6,37 @@ import {
   PedagogicalStrategySchema,
   StructuredReflectionOutputSchema,
   StructuredTeachingSuggestionOutputSchema,
+  TeachingPlanSchema,
   type PedagogicalStrategy,
   type ModelRequest,
   type ModelRequestV2,
   type ModelResponse
 } from "@edu-agent/contracts";
+
+export function teachingPlanForMockStrategy(
+  strategy: PedagogicalStrategy
+) {
+  const moves = [...strategy.suggestedMoves];
+  const followUp = [...strategy.followUpEvidence];
+  return TeachingPlanSchema.parse({
+    objective: `教师审阅后，学生能够围绕“${strategy.title}”完成解释与独立检查。`,
+    lessonFocus: strategy.rationale,
+    openingActivity: moves[0] ?? `用“${strategy.title}”导入本课。`,
+    teacherQuestions: [
+      `这项活动中的关键证据是什么？`,
+      `你如何用自己的语言解释“${strategy.title}”？`
+    ],
+    studentActivity:
+      moves.slice(1).join("；") || "学生完成比较、解释和独立检查。",
+    supportStrategy:
+      "按教师确认的证据提供分层提示，不直接释放答案。",
+    independentCheck:
+      followUp[0] ?? "收集一项独立表现，确认学生能否迁移解释。",
+    followUp:
+      followUp.join("；") || "由教师记录仍未知的问题并决定后续教学。",
+    evidenceRefs: [...strategy.evidenceRefs]
+  });
+}
 
 import type {
   CapabilityDescriptor,

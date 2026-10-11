@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Avatar } from "antd";
 import type {
   OrganizationRole,
   WorkspaceMembershipView
 } from "@edu-agent/contracts";
 
 import type { AppRoute } from "../../route";
-import type { PortalRoute } from "../../teacher-portal-data";
+import { cleanDisplayText, roleLabel } from "../../presentation";
 import { WorkspaceIcon, type WorkspaceIconName } from "../WorkspaceIcon";
+import { TeacherAvatar } from "./TeacherAvatar";
 
 type NavigationItem = {
   route: PortalRoute;
@@ -16,13 +16,22 @@ type NavigationItem = {
   icon: WorkspaceIconName;
 };
 
+type PortalRoute =
+  | "/overview"
+  | "/schedule"
+  | "/teaching"
+  | "/students"
+  | "/files"
+  | "/agent"
+  | "/settings";
+
 const navigation: NavigationItem[] = [
-  { route: "/overview", label: "概览", icon: "workspace" },
+  { route: "/overview", label: "首页", icon: "workspace" },
   { route: "/schedule", label: "日程", icon: "schedule" },
-  { route: "/teaching", label: "教学", icon: "course" },
-  { route: "/students", label: "学生", icon: "students" },
-  { route: "/files", label: "文件", icon: "files" },
-  { route: "/agent", label: "Agent", icon: "agent" }
+  { route: "/teaching", label: "课程", icon: "course" },
+  { route: "/students", label: "学情", icon: "students" },
+  { route: "/files", label: "资料", icon: "files" },
+  { route: "/agent", label: "助手", icon: "agent" }
 ];
 
 const profileItems: Array<{
@@ -31,15 +40,9 @@ const profileItems: Array<{
   icon: WorkspaceIconName;
 }> = [
   { label: "个人信息", section: "profile", icon: "user" },
-  { label: "账号和身份", section: "identity", icon: "lock" },
-  { label: "角色与工作空间", section: "workspace", icon: "workspace" },
-  { label: "外观和字体", section: "appearance", icon: "eye" },
-  { label: "通知设置", section: "notifications", icon: "bell" },
-  { label: "上下文和记忆", section: "memory", icon: "memory" },
-  { label: "个人方法和 Skill", section: "skills", icon: "lesson" },
-  { label: "自动化授权", section: "automation", icon: "automation" },
+  { label: "账号和学校", section: "identity", icon: "organization" },
+  { label: "助手偏好", section: "personalization", icon: "agent" },
   { label: "隐私与数据", section: "privacy", icon: "lock" },
-  { label: "系统信息", section: "system", icon: "settings" }
 ];
 
 function activeRoute(route: AppRoute): PortalRoute | null {
@@ -47,7 +50,8 @@ function activeRoute(route: AppRoute): PortalRoute | null {
   if (route === "/courses" || route === "/assignments" || route === "/goals" || route === "/teaching-plan") return "/teaching";
   if (route === "/evidence") return "/students";
   if (route === "/copilot") return "/agent";
-  if (route === "/runs" || route === "/style-guide") return "/settings";
+  if (route === "/settings") return "/settings";
+  if (route === "/runs") return "/settings";
   return navigation.some((item) => item.route === route) ? (route as PortalRoute) : null;
 }
 export function TeacherSidebar(props: {
@@ -64,6 +68,8 @@ export function TeacherSidebar(props: {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   const current = activeRoute(props.route);
+  const teacherName = cleanDisplayText(props.teacherName);
+  const schoolName = cleanDisplayText(props.schoolName);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -85,42 +91,7 @@ export function TeacherSidebar(props: {
 
   return (
     <aside className="teacher-sidebar" aria-label="普通教师端主导航">
-      <div className="teacher-sidebar__brand" aria-label="Edu Agent">
-        <span className="brand-mark">EA</span>
-        <span>
-          <strong>Edu Agent</strong>
-          <small>教师工作空间</small>
-        </span>
-      </div>
-
-      <nav className="teacher-sidebar__nav">
-        {navigation.map((item) => (
-          <button
-            type="button"
-            key={item.route}
-            className={current === item.route ? "is-active" : ""}
-            aria-current={current === item.route ? "page" : undefined}
-            onClick={() => props.onNavigate(item.route)}
-          >
-            <WorkspaceIcon name={item.icon} />
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </nav>
-
-      <div className="teacher-sidebar__footer" ref={profileRef}>
-        {profileOpen ? (
-          <TeacherProfileMenu
-            onSelect={openSettings}
-            teacherName={props.teacherName}
-            schoolName={props.schoolName}
-            roles={props.roles}
-            memberships={props.memberships}
-            currentMembershipRef={props.currentMembershipRef}
-            onSwitchWorkspace={props.onSwitchWorkspace}
-            onExit={() => void props.onLogout()}
-          />
-        ) : null}
+      <div className="teacher-sidebar__identity teacher-sidebar__identity--top" ref={profileRef}>
         <button
           data-testid="teacher-profile-trigger"
           type="button"
@@ -129,23 +100,46 @@ export function TeacherSidebar(props: {
           aria-haspopup="menu"
           onClick={() => setProfileOpen((value) => !value)}
         >
-          <Avatar size={40} className="teacher-avatar">{props.teacherName.trim().slice(0, 1) || "师"}</Avatar>
-          <span>
-            <strong>{props.teacherName}</strong>
-            <small>{props.schoolName}</small>
-          </span>
-          <WorkspaceIcon name="more" />
+          <TeacherAvatar displayName={teacherName} size={44} />
         </button>
-        <button
-          type="button"
-          className="teacher-settings-shortcut"
-          onClick={() => openSettings()}
-          aria-label="打开设置"
-        >
-          <WorkspaceIcon name="settings" />
-          <span>设置</span>
-        </button>
+        {profileOpen ? (
+          <TeacherProfileMenu
+            onSelect={openSettings}
+            teacherName={teacherName}
+            schoolName={schoolName}
+            roles={props.roles}
+            memberships={props.memberships}
+            currentMembershipRef={props.currentMembershipRef}
+            onSwitchWorkspace={props.onSwitchWorkspace}
+            onExit={() => void props.onLogout()}
+          />
+        ) : null}
       </div>
+
+      <nav className="teacher-sidebar__nav">
+        {navigation.map((item) => (
+          <button
+            type="button"
+            key={item.route}
+            aria-label={item.label}
+            title={item.label}
+            data-label={item.label}
+            className={current === item.route ? "is-active" : ""}
+            aria-current={current === item.route ? "page" : undefined}
+            onClick={() => props.onNavigate(item.route)}
+          >
+            <span className="teacher-nav-icon">
+              <WorkspaceIcon
+                name={item.icon}
+                variant="filled"
+                className={`workspace-icon workspace-icon--${item.icon}`}
+              />
+            </span>
+            <span className="teacher-nav-label">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
     </aside>
   );
 }
@@ -163,10 +157,10 @@ export function TeacherProfileMenu(props: {
   return (
     <div className="teacher-profile-menu" role="menu" aria-label="教师设置菜单">
       <header>
-        <Avatar size={38} className="teacher-avatar">{props.teacherName.trim().slice(0, 1) || "师"}</Avatar>
+        <TeacherAvatar displayName={props.teacherName} size={38} />
         <span>
           <strong>{props.teacherName}</strong>
-          <small>{props.schoolName} · {props.roles.join(" / ")}</small>
+          <small>{props.schoolName} · {props.roles.map(roleLabel).join(" / ")}</small>
         </span>
       </header>
       {props.memberships.length > 1 ? (
@@ -181,7 +175,7 @@ export function TeacherProfileMenu(props: {
                 disabled={membership.membershipRef === props.currentMembershipRef}
                 onClick={() => void props.onSwitchWorkspace(membership.membershipRef)}
               >
-                {membership.organizationName}
+                {cleanDisplayText(membership.organizationName)}
                 {membership.membershipRef === props.currentMembershipRef ? "（当前）" : ""}
               </button>
             ))}
@@ -195,7 +189,11 @@ export function TeacherProfileMenu(props: {
             key={item.section}
             onClick={() => props.onSelect(item.section)}
           >
-            <WorkspaceIcon name={item.icon} />
+            <WorkspaceIcon
+              name={item.icon}
+              variant="profile"
+              className={`workspace-icon workspace-icon--profile-${item.icon}`}
+            />
             <span>{item.label}</span>
           </button>
         ))}

@@ -7,19 +7,21 @@ const root = resolve(import.meta.dirname, "../..");
 const source = (path: string) =>
   readFileSync(resolve(root, path), "utf8");
 
-describe("local demo startup contract", () => {
-  it("keeps pnpm fixed and routes dev through the reproducible demo", () => {
+describe("local application startup contract", () => {
+  it("keeps pnpm fixed and separates the application from optional sample data", () => {
     const packageJson = JSON.parse(source("package.json"));
     expect(packageJson.packageManager).toBe("pnpm@11.9.0");
-    expect(packageJson.scripts.dev).toBe("pnpm demo:dev");
-    expect(packageJson.scripts["demo:doctor"]).toBeTruthy();
-    expect(packageJson.scripts["demo:reset"]).toBeTruthy();
-    expect(packageJson.scripts["demo:down"]).toBeTruthy();
+    expect(packageJson.scripts.dev).toBe("pnpm app:dev");
+    expect(packageJson.scripts["app:doctor"]).toBeTruthy();
+    expect(packageJson.scripts["app:reset"]).toBeTruthy();
+    expect(packageJson.scripts["app:down"]).toBeTruthy();
+    expect(packageJson.scripts["sample:seed"]).toBeTruthy();
+    expect(packageJson.scripts["sample:dev"]).toContain("--sample-data");
   });
 
   it("waits for health, formal local identity, and bootstrap before presenting the web URL", () => {
-    const runner = source("scripts/demo/run-demo.mjs");
-    expect(runner.indexOf("prepareDemo()")).toBeLessThan(
+    const runner = source("scripts/local/run-app.mjs");
+    expect(runner.indexOf("prepareLocalEnvironment({ seedSampleData })")).toBeLessThan(
       runner.indexOf('startPackage("@edu-agent/api"')
     );
     expect(runner.indexOf("apiRoutes.health")).toBeLessThan(
@@ -46,7 +48,7 @@ describe("local demo startup contract", () => {
       "payload?.fallbackToMock === false"
     );
     expect(runner).toContain(
-      "教师验收入口：http://localhost:5173/"
+      "教师工作台：http://localhost:5173/"
     );
     expect(runner).not.toMatch(/["'`]\/localhost/);
     expect(runner).toContain("stopProcessTree");

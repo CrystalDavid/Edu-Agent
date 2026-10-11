@@ -275,7 +275,7 @@ export function TeachingPlanPage(props: {
       setPreparationTask(result.task);
       await props.refreshWorkspace();
       setSuccess(
-        "备课 Task 已由教师显式标记为完成；current approved TeachingPlan 保持不变。"
+        "备课任务已由教师显式标记为完成；当前已批准教案保持不变。"
       );
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
@@ -319,8 +319,8 @@ export function TeachingPlanPage(props: {
       setExportedFiles(listed.items);
       setSuccess(
         result.deduplicated
-          ? "该 approved Revision 已有相同正式 DOCX，已复用。"
-          : "已创建正式教案 DOCX，并关联 Lesson、Task 与 TeachingPlan。"
+          ? "当前已批准版本已有相同教案文件，已直接复用。"
+          : "已创建正式教案文件，并关联课时、备课任务与教学计划。"
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -369,7 +369,7 @@ export function TeachingPlanPage(props: {
         type="info"
         showIcon
         title="审核与批准是两个独立动作"
-        description="接受建议只形成 in_review；只有下方单独批准操作才会创建新的 approved Revision。本 Gate 不实现 published。"
+        description="接受建议后只会进入待审核；只有教师单独批准，才会形成新的已批准版本。"
       />
 
       {error ? (
@@ -385,18 +385,15 @@ export function TeachingPlanPage(props: {
           variant="borderless"
           data-testid="teaching-plan-preparation-task"
         >
-          <Text className="section-kicker">
-            备课 Task · v{preparationTask.version}
-          </Text>
+          <Text className="section-kicker">备课任务 · 第 {preparationTask.version} 版</Text>
           <Title level={3}>{preparationTask.lessonTitle}</Title>
           <Paragraph>
-            Work 状态：
+            当前状态：
             <strong>
               {lessonPreparationStatusLabel(preparationTask.status)}
             </strong>
-            <Text type="secondary">（{preparationTask.status}）</Text>
-            {" · "}approved_plan_ref：
-            {preparationTask.approvedPlanRef ?? "无"}
+            {" · "}已批准教学计划：
+            {preparationTask.approvedPlanRef ? "已关联" : "尚无"}
           </Paragraph>
           <Space wrap>
             <Button
@@ -407,7 +404,7 @@ export function TeachingPlanPage(props: {
                 )
               }
             >
-              返回备课 Task
+              返回备课任务
             </Button>
             <Button
               onClick={() =>
@@ -417,7 +414,7 @@ export function TeachingPlanPage(props: {
                 )
               }
             >
-              查看 Run
+              查看运行记录
             </Button>
             <Button
               onClick={() =>
@@ -449,10 +446,10 @@ export function TeachingPlanPage(props: {
           variant="borderless"
           data-testid="teaching-plan-file-exports"
         >
-          <Text className="section-kicker">TEACHING ARTIFACT</Text>
+          <Text className="section-kicker">教学成果</Text>
           <Title level={3}>已批准教案文件</Title>
           <Paragraph>
-            导出只绑定当前明确的 approved Revision；历史版本保持不可变。
+            导出只绑定当前明确的已批准版本；历史版本保持不变。
           </Paragraph>
           <Space wrap>
             <Button
@@ -494,8 +491,7 @@ export function TeachingPlanPage(props: {
           <div>
             <Text strong>当前正式教学计划</Text>
             <Paragraph>
-              第 {planState.currentApproved.revisionNumber} 版 ·
-              approved
+              第 {planState.currentApproved.revisionNumber} 版 · 已批准
             </Paragraph>
             <Button
               onClick={() =>
@@ -510,8 +506,7 @@ export function TeachingPlanPage(props: {
             <div>
               <Text strong>当前待审核版本</Text>
               <Paragraph>
-                第 {planState.currentInReview.revisionNumber} 版 ·
-                in_review（尚未成为当前正式计划）
+                第 {planState.currentInReview.revisionNumber} 版 · 待审核（尚未成为当前正式计划）
               </Paragraph>
               <Space wrap>
                 <Button
@@ -556,7 +551,7 @@ export function TeachingPlanPage(props: {
             </Title>
             <Paragraph>
               {viewingActiveInReview
-                ? "此版本尚未成为当前正式计划；只有单独批准后才会创建新的 approved Revision。"
+                ? "此版本尚未成为当前正式计划；只有单独批准后才会形成新的已批准版本。"
                 : "历史版本保持不变；返回当前已批准版本不会修改任何数据。"}
             </Paragraph>
           </div>
@@ -602,8 +597,7 @@ export function TeachingPlanPage(props: {
       <Card className="workspace-card" variant="borderless">
         <Title level={3}>草稿与版本历史</Title>
         <Paragraph>
-          草稿不会作为当前计划返回；历史包含 draft、in_review 与
-          approved，按 Revision 编号倒序排列。
+          草稿不会作为当前计划返回；历史包含草稿、待审核、已取代和已批准版本，按版本编号倒序排列。
         </Paragraph>
         <Space orientation="vertical" size="small">
           <Text>
@@ -611,7 +605,7 @@ export function TeachingPlanPage(props: {
           </Text>
           {lessonPlanState ? (
             <Text>
-              superseded in-review：
+              已取代的待审核版本：
               {lessonPlanState.superseded.length} 个（保留历史，不删除）
             </Text>
           ) : null}

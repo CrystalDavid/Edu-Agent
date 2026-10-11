@@ -6,6 +6,9 @@
       "@edu-agent/contracts": [
         "./packages/contracts/src/index.ts"
       ],
+      "@edu-agent/sample-data": [
+        "./packages/sample-data/src/index.ts"
+      ],
       "@edu-agent/test-fixtures": [
         "./packages/test-fixtures/src/index.ts"
       ]

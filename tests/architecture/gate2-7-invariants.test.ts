@@ -74,7 +74,9 @@ describe("Gate 2.7 architecture invariants", () => {
     expect(student).toContain("loadLearnerEvidence");
     expect(student).not.toContain("teacher-portal-data");
     expect(student).not.toContain("sessionStorage");
-    expect(overview).toContain("loadAssignmentOverview");
+    expect(overview).toContain("你好，");
+    expect(overview).not.toContain("loadTeacherWorkbenchOverview");
+    expect(overview).not.toContain("loadLessonPreparationSummary");
   });
 
   it("keeps route strings and Zod DTOs in contracts", () => {

@@ -5,9 +5,18 @@ import {
   type ModelBudgetDecision
 } from "@edu-agent/contracts";
 
-import type {
-  ModelBudgetConfig
-} from "../infrastructure/model-provider-config.js";
+export interface ModelBudgetConfig {
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  maxSingleCost: number;
+  dailyBudget: number;
+  teacherDailyBudget: number;
+  maxConcurrency: number;
+  maxQueueWaitMs: number;
+  inputPricePerMillion: number;
+  outputPricePerMillion: number;
+  allowedModelIds: readonly string[];
+}
 
 export interface ModelBudgetUsageSnapshot {
   dailyCost: number;

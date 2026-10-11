@@ -92,6 +92,43 @@ export const AuthenticationProviderAvailabilitySchema = z.object({
   safeReason: z.string().min(1).nullable()
 });
 
+export const LocalPhoneNumberSchema = z
+  .string()
+  .trim()
+  .regex(/^1[3-9]\d{9}$/, "请输入有效的 11 位手机号");
+
+export const LocalPasswordLoginRequestSchema = z.object({
+  method: z.literal("password"),
+  phone: LocalPhoneNumberSchema,
+  password: z.string().min(8).max(128),
+  returnTo: z.string().startsWith("/").default("/overview")
+});
+
+export const LocalSmsLoginRequestSchema = z.object({
+  method: z.literal("sms"),
+  phone: LocalPhoneNumberSchema,
+  challengeRef: z.string().min(1),
+  code: z.string().regex(/^\d{6}$/),
+  returnTo: z.string().startsWith("/").default("/overview")
+});
+
+export const LocalCredentialLoginRequestSchema = z.discriminatedUnion(
+  "method",
+  [LocalPasswordLoginRequestSchema, LocalSmsLoginRequestSchema]
+);
+
+export const RequestLocalSmsCodeSchema = z.object({
+  phone: LocalPhoneNumberSchema
+});
+
+export const LocalSmsChallengeSchema = z.object({
+  challengeRef: z.string().min(1),
+  phoneMasked: z.string().min(1),
+  expiresAt: z.string().datetime(),
+  retryAfterSeconds: z.number().int().positive(),
+  demoCode: z.string().regex(/^\d{6}$/)
+});
+
 export const LocalLoginRequestSchema = z.object({
   profile: z.enum([
     "teacher",
@@ -242,6 +279,8 @@ export type WorkspaceMembershipView = z.infer<typeof WorkspaceMembershipViewSche
 export type AuthenticationSessionStatus = z.infer<typeof AuthenticationSessionStatusSchema>;
 export type AuthenticationProviderAvailability = z.infer<typeof AuthenticationProviderAvailabilitySchema>;
 export type LocalLoginRequest = z.infer<typeof LocalLoginRequestSchema>;
+export type LocalCredentialLoginRequest = z.infer<typeof LocalCredentialLoginRequestSchema>;
+export type LocalSmsChallenge = z.infer<typeof LocalSmsChallengeSchema>;
 export type SwitchWorkspaceRequest = z.infer<typeof SwitchWorkspaceRequestSchema>;
 export type RefreshSessionRequest = z.infer<typeof RefreshSessionRequestSchema>;
 export type ActiveSessionView = z.infer<typeof ActiveSessionViewSchema>;

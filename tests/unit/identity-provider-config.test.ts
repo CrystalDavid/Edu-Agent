@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { LocalIdentityProvider } from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
+import {
+  createLocalDemoTeacherCredential,
+  LocalIdentityProvider
+} from "../../apps/api/src/modules/identity-governance-audit/infrastructure/local-identity-provider.js";
 import { readIdentitySettings } from "../../apps/api/src/platform/auth/config.js";
 
 describe("Gate 2.10A identity configuration", () => {
@@ -40,17 +43,73 @@ describe("Gate 2.10A identity configuration", () => {
   });
 
   it("keeps the local identity adapter explicit and synthetic", async () => {
-    const disabled = new LocalIdentityProvider(false);
+    const credential = createLocalDemoTeacherCredential(
+      "13900000001",
+      "SyntheticDemo123!"
+    );
+    const disabled = new LocalIdentityProvider(false, credential);
     expect(await disabled.availability()).toMatchObject({
       mode: "local",
       available: false
     });
     expect(() => disabled.authenticate("teacher")).toThrow(/disabled/);
 
-    const enabled = new LocalIdentityProvider(true);
+    const enabled = new LocalIdentityProvider(true, credential);
     expect(enabled.authenticate("teacher")).toMatchObject({
       provider: "local-development",
       subject: "teacher-a"
     });
+  });
+
+  it("authenticates the local teacher by password or a one-time demo code", () => {
+    const credential = createLocalDemoTeacherCredential(
+      "13900000001",
+      "SyntheticDemo123!"
+    );
+    const provider = new LocalIdentityProvider(true, credential);
+
+    expect(
+      provider.authenticatePassword("13900000001", "SyntheticDemo123!")
+    ).toMatchObject({ subject: "teacher-a" });
+    expect(() =>
+      provider.authenticatePassword("13900000001", "wrong-password")
+    ).toThrow(/Invalid local credentials/);
+
+    const challenge = provider.requestSmsCode("13900000001");
+    expect(challenge).toMatchObject({
+      phoneMasked: "139****0001",
+      retryAfterSeconds: 60
+    });
+    expect(
+      provider.authenticateSms(
+        "13900000001",
+        challenge.challengeRef,
+        challenge.demoCode
+      )
+    ).toMatchObject({ subject: "teacher-a" });
+    expect(() =>
+      provider.authenticateSms(
+        "13900000001",
+        challenge.challengeRef,
+        challenge.demoCode
+      )
+    ).toThrow(/Invalid local credentials/);
+  });
+
+  it("validates optional local credential digests without accepting plaintext", () => {
+    expect(() =>
+      readIdentitySettings({
+        APP_ENV: "local",
+        IDENTITY_PROVIDER_MODE: "local",
+        LOCAL_DEMO_TEACHER_PHONE_SHA256: "not-a-hash"
+      })
+    ).toThrow(/LOCAL_DEMO_TEACHER_PHONE_SHA256/);
+
+    const settings = readIdentitySettings({
+      APP_ENV: "local",
+      IDENTITY_PROVIDER_MODE: "local"
+    });
+    expect(settings.localDemoTeacherCredential.phoneSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(settings.localDemoTeacherCredential.credentialScrypt).toMatch(/^[a-f0-9]{128}$/);
   });
 });

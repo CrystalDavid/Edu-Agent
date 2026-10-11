@@ -14,7 +14,7 @@ import {
 import {
   ProviderCapabilityProbe,
   type ProviderCapabilityProbeResult
-} from "../../apps/api/src/modules/capability-integration/application/provider-capability-probe.js";
+} from "../../apps/api/src/modules/capability-integration/infrastructure/provider-capability-probe.js";
 import {
   readModelProviderSettings
 } from "../../apps/api/src/modules/capability-integration/infrastructure/model-provider-config.js";

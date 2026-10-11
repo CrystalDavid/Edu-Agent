@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { teacherStatusLabel, teacherStatusTone } from "../../presentation";
 import { WorkspaceIcon, type WorkspaceIconName } from "../WorkspaceIcon";
 
 export function PageHeader(props: {
@@ -21,6 +22,78 @@ export function PageHeader(props: {
     </header>
   );
 }
+
+export function PageLayout(props: {
+  children: ReactNode;
+  secondary?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`portal-page-layout${props.className ? ` ${props.className}` : ""}`}>
+      <main className="portal-page-main-content">{props.children}</main>
+      {props.secondary ? (
+        <aside className="portal-secondary-panel">{props.secondary}</aside>
+      ) : null}
+    </div>
+  );
+}
+
+export function ContentSection(props: {
+  title?: string;
+  description?: string;
+  eyebrow?: string;
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <section
+      className={`content-section${props.className ? ` ${props.className}` : ""}`}
+      data-testid={props.testId}
+    >
+      {props.title || props.description || props.eyebrow || props.action ? (
+        <header className="content-section__header">
+          <div>
+            {props.eyebrow ? <span>{props.eyebrow}</span> : null}
+            {props.title ? <h2>{props.title}</h2> : null}
+            {props.description ? <p>{props.description}</p> : null}
+          </div>
+          {props.action ? <div>{props.action}</div> : null}
+        </header>
+      ) : null}
+      <div className="content-section__body">{props.children}</div>
+    </section>
+  );
+}
+
+export function DecisionPanel(props: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  meta?: ReactNode;
+  action?: ReactNode;
+  children?: ReactNode;
+  className?: string;
+  testId?: string;
+}) {
+  return (
+    <section
+      className={`decision-panel${props.className ? ` ${props.className}` : ""}`}
+      data-testid={props.testId}
+    >
+      <div className="decision-panel__copy">
+        {props.eyebrow ? <span>{props.eyebrow}</span> : null}
+        <h2>{props.title}</h2>
+        {props.description ? <p>{props.description}</p> : null}
+        {props.meta ? <div className="decision-panel__meta">{props.meta}</div> : null}
+        {props.children}
+      </div>
+      {props.action ? <div className="decision-panel__action">{props.action}</div> : null}
+    </section>
+  );
+}
+
 export function ModuleCard(props: {
   title?: string;
   description?: string;
@@ -95,13 +168,41 @@ export function MetricCard(props: {
 
 export function StatusPill(props: {
   children: ReactNode;
-  tone?: "neutral" | "blue" | "warning" | "success";
+  tone?: "neutral" | "blue" | "warning" | "success" | "danger";
 }) {
+  const normalizedText = typeof props.children === "string"
+    ? normalizeVisibleStatus(props.children)
+    : props.children;
+  const normalizedTone = props.tone ?? (
+    typeof props.children === "string"
+      ? statusToneClass(props.children)
+      : "neutral"
+  );
   return (
-    <span className={`status-pill status-pill--${props.tone ?? "neutral"}`}>
-      {props.children}
+    <span className={`status-pill status-pill--${normalizedTone}`}>
+      {normalizedText}
     </span>
   );
+}
+
+function normalizeVisibleStatus(value: string): string {
+  if (!looksLikeStatus(value)) return value;
+  if (["未完成", "进行中", "已完成"].includes(value)) return value;
+  const normalized = value.trim().toLowerCase().replaceAll(" ", "_");
+  return teacherStatusLabel(normalized);
+}
+
+function statusToneClass(value: string): "neutral" | "danger" | "warning" | "success" {
+  if (!looksLikeStatus(value)) return "neutral";
+  const normalized = value.trim().toLowerCase().replaceAll(" ", "_");
+  const tone = teacherStatusTone(normalized);
+  if (tone === "complete") return "success";
+  if (tone === "incomplete") return "danger";
+  return "warning";
+}
+
+function looksLikeStatus(value: string): boolean {
+  return /(未完成|进行中|已完成|待|草稿|准备|审核|采用|确认|生成|发布|开始|取消|失败|超时|重试|available|active|approved|completed|confirmed|draft|failed|missing|pending|planned|published|ready|running|succeeded|waiting)/iu.test(value);
 }
 
 export function ChartCard(props: {

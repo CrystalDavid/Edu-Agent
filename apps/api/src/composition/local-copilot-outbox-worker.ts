@@ -3,6 +3,12 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 
 import {
+  mapSuggestionDispositionToMemoryOutcome,
+  type MemoryApplicationRecorder,
+  type SuggestionDispositionForMemoryOutcome
+} from "../modules/personalization-memory-analytics/application/memory-application-recorder.js";
+
+import {
   PostgresOutboxWorker,
   type ClaimedOutboxEvent,
   type OutboxBusinessEffect,
@@ -39,7 +45,7 @@ const gate24Events = {
     "LessonReflectionTaskCreated",
     "LessonReflectionFollowUpCreated"
   ],
-  runtime: ["AgentRunCompleted"],
+  runtime: ["AgentRunCompleted", "AgentRunCheckpointed"],
   capability: [
     "MockModelExecutionCompleted",
     "ModelInvocationQueued"
@@ -96,7 +102,8 @@ export class LocalCopilotOutboxWorker {
     processModelInvocation?: (
       modelExecutionRef: string
     ) => Promise<void>,
-    refreshTeacherWorkbench?: () => Promise<number>
+    refreshTeacherWorkbench?: () => Promise<number>,
+    memoryApplicationRecorder?: MemoryApplicationRecorder
   ) {
     this.workers = Object.entries(gate24Events).map(
       ([owner, eventNames]) => ({
@@ -134,6 +141,15 @@ export class LocalCopilotOutboxWorker {
                 projectionCount
               }
             };
+          }
+          if (
+            event.eventName === "SuggestionDisposed" &&
+            memoryApplicationRecorder
+          ) {
+            const outcome = memoryOutcomeFromEvent(event);
+            if (outcome) {
+              await memoryApplicationRecorder.recordOutcome(outcome);
+            }
           }
           if (refreshTeacherWorkbench) {
             const projectionCount = await refreshTeacherWorkbench();
@@ -227,3 +243,58 @@ async function handleEvent(
 }
 
 export const localCopilotOutboxEventNames = gate24Events;
+
+function memoryOutcomeFromEvent(
+  event: ClaimedOutboxEvent
+): Parameters<MemoryApplicationRecorder["recordOutcome"]>[0] | null {
+  const agentRunRef = event.payload["agentRunRef"];
+  if (typeof agentRunRef !== "string" || !agentRunRef) {
+    // Events committed before MemoryContextPack@1 did not carry a Run link.
+    return null;
+  }
+  const tenantRef = requiredPayloadString(event, "tenantRef");
+  const teacherRef = requiredPayloadString(event, "teacherRef");
+  const disposition = requiredPayloadString(
+    event,
+    "disposition"
+  ) as SuggestionDispositionForMemoryOutcome;
+  if (
+    ![
+      "accepted",
+      "accepted_with_changes",
+      "rejected",
+      "deferred"
+    ].includes(disposition)
+  ) {
+    throw new Error("SuggestionDisposed disposition is invalid.");
+  }
+  const resultingRevision = event.payload["resultingRevisionRef"];
+  if (
+    resultingRevision !== null &&
+    resultingRevision !== undefined &&
+    typeof resultingRevision !== "string"
+  ) {
+    throw new Error("SuggestionDisposed resultingRevisionRef is invalid.");
+  }
+  return {
+    owner: { tenantRef, teacherRef },
+    sourceEventRef: event.outboxRef,
+    agentRunRef,
+    outcomeStatus: mapSuggestionDispositionToMemoryOutcome(disposition),
+    resultingRevisionRef:
+      typeof resultingRevision === "string" ? resultingRevision : null,
+    policyVersion: "memory-application-outcome@1",
+    idempotencyKey: `memory-application-outcome:${event.outboxRef}`
+  };
+}
+
+function requiredPayloadString(
+  event: ClaimedOutboxEvent,
+  key: string
+): string {
+  const value = event.payload[key];
+  if (typeof value !== "string" || !value) {
+    throw new Error(`SuggestionDisposed ${key} is missing.`);
+  }
+  return value;
+}

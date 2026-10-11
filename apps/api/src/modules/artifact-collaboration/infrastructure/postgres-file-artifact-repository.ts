@@ -50,6 +50,15 @@ export interface StoredTeachingPlanFileExport {
   templateVersion: string;
 }
 
+export interface StoredMaterialDraftProvenance {
+  versionRef: string;
+  kind: string;
+  teachingPlanRevisionRef: string;
+  skillRef: string;
+  agentRunRef: string;
+  contextManifestHash: string;
+}
+
 interface NewFileVersionInput {
   versionRef: string;
   originalFileName: string;
@@ -163,7 +172,10 @@ export class PostgresFileArtifactRepository {
       source: FileSource;
       version: NewFileVersionInput;
       bindings: readonly FileBindingTarget[];
-      eventName: "FileAssetCreated" | "TeachingPlanDocxExported";
+      eventName:
+        | "FileAssetCreated"
+        | "TeachingPlanDocxExported"
+        | "TeachingMaterialDraftGenerated";
       eventPayload: Record<string, unknown>;
       writeContext: WriteContext;
     }
@@ -257,7 +269,10 @@ export class PostgresFileArtifactRepository {
       expectedAssetVersion: number;
       version: NewFileVersionInput;
       additionalBindings?: readonly FileBindingTarget[];
-      eventName: "FileVersionCreated" | "TeachingPlanDocxExported";
+      eventName:
+        | "FileVersionCreated"
+        | "TeachingPlanDocxExported"
+        | "TeachingMaterialDraftGenerated";
       eventPayload: Record<string, unknown>;
       writeContext: WriteContext;
     }
@@ -602,6 +617,46 @@ export class PostgresFileArtifactRepository {
           objectKey: row.object_key
         }
       : undefined;
+  }
+
+  async listMaterialDraftProvenance(
+    executor: SqlExecutor,
+    versionRefs: readonly string[]
+  ): Promise<readonly StoredMaterialDraftProvenance[]> {
+    if (versionRefs.length === 0) return [];
+    const result = await executor.query<{
+      version_ref: string;
+      kind: string;
+      teaching_plan_revision_ref: string;
+      skill_ref: string;
+      agent_run_ref: string;
+      context_manifest_hash: string;
+    }>(
+      `SELECT payload ->> 'versionRef' AS version_ref,
+              payload ->> 'kind' AS kind,
+              payload ->> 'teachingPlanRevisionRef' AS teaching_plan_revision_ref,
+              payload ->> 'skillRef' AS skill_ref,
+              payload ->> 'agentRunRef' AS agent_run_ref,
+              payload ->> 'contextManifestHash' AS context_manifest_hash
+         FROM artifact.outbox_record
+        WHERE event_name = 'TeachingMaterialDraftGenerated'
+          AND payload ->> 'versionRef' = ANY($1::text[])
+        ORDER BY created_at DESC`,
+      [versionRefs]
+    );
+    const seen = new Set<string>();
+    return result.rows.filter((row) => {
+      if (!row.version_ref || seen.has(row.version_ref)) return false;
+      seen.add(row.version_ref);
+      return true;
+    }).map((row) => ({
+      versionRef: row.version_ref,
+      kind: row.kind,
+      teachingPlanRevisionRef: row.teaching_plan_revision_ref,
+      skillRef: row.skill_ref,
+      agentRunRef: row.agent_run_ref,
+      contextManifestHash: row.context_manifest_hash
+    }));
   }
 
   async listReferencedObjectKeys(

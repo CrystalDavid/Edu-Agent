@@ -34,7 +34,6 @@ import {
   type SubmissionSummary,
   type TeacherGradeDecisionView
 } from "@edu-agent/contracts";
-import { gate2DemoRefs } from "@edu-agent/test-fixtures";
 import type { Pool } from "pg";
 
 import { PostgresGate25EducationRepository } from "../modules/education-domain/infrastructure/postgres-gate2-5-education-repository.js";
@@ -1388,11 +1387,17 @@ export class PostgresAssignmentLearningService {
             { taskRef: existing.taskRef, status: existing.status }
           );
         }
-        const goal = await this.gate2Work.getDemoCaseAndGoal(
+        const activeGoals = await this.gate2Work.listActiveCasesAndGoals(
           client,
-          input.tenantRef,
-          gate2DemoRefs.goalRef
+          input.tenantRef
         );
+        if (activeGoals.length > 1) {
+          throw new DomainConflictError(
+            "ADJUSTMENT_GOAL_SELECTION_REQUIRED",
+            "当前工作空间存在多个活动教学改进 Goal，不能隐式选择。"
+          );
+        }
+        const goal = activeGoals[0];
         if (!goal) throw new NotFoundError("备课 Goal 不存在。");
         const taskRef = `task:${randomUUID()}`;
         const workingSet = {

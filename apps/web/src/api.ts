@@ -7,12 +7,22 @@ import {
   CreateDataGovernanceRequestSchema,
   CreateMemberRequestSchema,
   DataGovernanceRequestListSchema,
+  LocalCredentialLoginRequestSchema,
   LocalLoginRequestSchema,
+  LocalSmsChallengeSchema,
+  RequestLocalSmsCodeSchema,
   RefreshSessionRequestSchema,
   RevokeSessionRequestSchema,
   SchoolDetailSchema,
   SecurityEventListSchema,
   SwitchWorkspaceRequestSchema,
+  CreateMemoryCandidateRequestSchema,
+  MemoryCandidateMutationResultSchema,
+  ReviewMemoryCandidateRequestSchema,
+  TeacherPersonalizationStateSchema,
+  TeacherPreferenceMutationResultSchema,
+  UpdateTeacherPreferenceRequestSchema,
+  RevokeTeacherPreferenceRequestSchema,
   UpdateMemberCourseAccessRequestSchema,
   UpdateMemberRolesRequestSchema,
   UpdateMemberStatusRequestSchema,
@@ -48,6 +58,11 @@ import {
   CreateAssignmentRequestSchema,
   CreateModelInvocationRequestSchema,
   CreateModelInvocationResultSchema,
+  CreateTeacherConversationRequestSchema,
+  CreateTeacherConversationResultSchema,
+  AppendTeacherConversationTurnRequestSchema,
+  AppendTeacherConversationTurnResultSchema,
+  ConversationThreadViewSchema,
   CreateReflectionDraftRequestSchema,
   CreateReflectionFollowUpRequestSchema,
   CurriculumUnitListSchema,
@@ -71,6 +86,20 @@ import {
   LessonDeliveryDetailSchema,
   LessonDeliveryMutationResultSchema,
   LessonImplementationSummarySchema,
+  LessonJourneyProjectionSchema,
+  LessonBriefStateSchema,
+  GenerateLessonBriefRequestSchema,
+  GenerateLessonBriefResultSchema,
+  DecideLessonBriefRequestSchema,
+  DecideLessonBriefResultSchema,
+  MaterialBundleProjectionSchema,
+  GenerateMaterialBundleRequestSchema,
+  GenerateMaterialBundleResultSchema,
+  GenerateClassroomFeedbackRequestSchema,
+  GenerateClassroomFeedbackResultSchema,
+  LatestClassroomFeedbackResultSchema,
+  AdoptMaterialBundleItemRequestSchema,
+  AdoptMaterialBundleItemResultSchema,
   LessonPreparationSummarySchema,
   LessonPreparationTaskActionRequestSchema,
   LessonPreparationTaskDetailSchema,
@@ -90,6 +119,14 @@ import {
   ReflectionGenerationResultSchema,
   ReflectionFollowUpResultSchema,
   ReflectionMutationResultSchema,
+  NextLessonActionCandidateSchema,
+  NextLessonActionListSchema,
+  GenerateNextLessonActionsRequestSchema,
+  GenerateNextLessonActionsResultSchema,
+  UpdateNextLessonActionRequestSchema,
+  AcceptNextLessonActionRequestSchema,
+  RejectNextLessonActionRequestSchema,
+  NextLessonActionMutationResultSchema,
   RetryModelInvocationRequestSchema,
   ReopenGradeRequestSchema,
   SaveGradeDraftRequestSchema,
@@ -134,8 +171,15 @@ import {
   type AuthenticationSessionStatus,
   type CreateDataGovernanceRequest,
   type CreateMemberRequest,
+  type LocalCredentialLoginRequest,
   type LocalLoginRequest,
+  type LocalSmsChallenge,
   type SwitchWorkspaceRequest,
+  type CreateMemoryCandidateRequest,
+  type ReviewMemoryCandidateRequest,
+  type TeacherPersonalizationState,
+  type UpdateTeacherPreferenceRequest,
+  type RevokeTeacherPreferenceRequest,
   type UpdateMemberCourseAccessRequest,
   type UpdateMemberRolesRequest,
   type UpdateMemberStatusRequest,
@@ -160,8 +204,17 @@ import {
   type CreateAssignmentRequest,
   type CreateModelInvocationRequest,
   type CreateModelInvocationResult,
+  type CreateTeacherConversationRequest,
+  type CreateTeacherConversationResult,
+  type AppendTeacherConversationTurnRequest,
+  type AppendTeacherConversationTurnResult,
+  type ConversationThreadView,
   type CreateReflectionDraftRequest,
   type CreateReflectionFollowUpRequest,
+  type GenerateNextLessonActionsRequest,
+  type UpdateNextLessonActionRequest,
+  type AcceptNextLessonActionRequest,
+  type RejectNextLessonActionRequest,
   type CreateTeacherCopilotTaskRequest,
   type CreateTeacherCopilotTaskResult,
   type CreateTeacherTodoRequest,
@@ -178,6 +231,12 @@ import {
   type SaveGradeDraftRequest,
   type ScheduleTodoRequest,
   type LessonPreparationSummary,
+  type GenerateLessonBriefRequest,
+  type DecideLessonBriefRequest,
+  type GenerateMaterialBundleRequest,
+  type GenerateClassroomFeedbackRequest,
+  type AdoptMaterialBundleItemRequest,
+  type MaterialKind,
   type LessonPreparationTaskActionRequest,
   type LessonPreparationTaskDetail,
   type LessonTeachingPlanState,
@@ -299,7 +358,7 @@ async function request<T>(
     throw new ApiError(
       0,
       "API_UNREACHABLE",
-      "无法连接本地 API；请确认演示服务已启动。",
+      "暂时无法连接应用服务，请确认服务已启动后重试。",
       service,
       requestUrl
     );
@@ -312,7 +371,11 @@ async function request<T>(
       message?: string;
       details?: Record<string, unknown>;
     };
-    if (response.status === 401) {
+    const authenticationAttempt =
+      path === apiRoutes.authentication.localLogin ||
+      path === apiRoutes.authentication.localCredentialLogin ||
+      path === apiRoutes.authentication.localSmsCode;
+    if (response.status === 401 && !authenticationAttempt) {
       activeCsrfToken = null;
       window.dispatchEvent(new CustomEvent("edu-agent:session-expired"));
     }
@@ -400,8 +463,34 @@ export async function loadAuthenticationSession() {
 export async function loginWithLocalIdentity(input: LocalLoginRequest) {
   LocalLoginRequestSchema.parse(input);
   const status = await request(
-    "本地身份登录",
+    "账号登录",
     apiRoutes.authentication.localLogin,
+    AuthenticationSessionStatusSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  rememberSession(status);
+  return status;
+}
+
+export async function requestLocalSmsCode(
+  phone: string
+): Promise<LocalSmsChallenge> {
+  const input = RequestLocalSmsCodeSchema.parse({ phone });
+  return request(
+    "获取登录验证码",
+    apiRoutes.authentication.localSmsCode,
+    LocalSmsChallengeSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export async function loginWithLocalCredentials(
+  input: LocalCredentialLoginRequest
+) {
+  LocalCredentialLoginRequestSchema.parse(input);
+  const status = await request(
+    "手机号登录",
+    apiRoutes.authentication.localCredentialLogin,
     AuthenticationSessionStatusSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
@@ -460,6 +549,66 @@ export async function logoutAuthenticationSession(): Promise<void> {
       requestUrl
     );
   }
+}
+
+export function loadTeacherPersonalization(): Promise<TeacherPersonalizationState> {
+  return request(
+    "教师偏好",
+    apiRoutes.teacher.personalizationState,
+    TeacherPersonalizationStateSchema
+  );
+}
+
+export function createMemoryCandidate(input: CreateMemoryCandidateRequest) {
+  CreateMemoryCandidateRequestSchema.parse(input);
+  return request(
+    "记录偏好候选",
+    apiRoutes.teacher.memoryCandidates,
+    MemoryCandidateMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function reviewMemoryCandidate(
+  candidateRef: string,
+  action: "confirm" | "reject",
+  input: ReviewMemoryCandidateRequest
+) {
+  ReviewMemoryCandidateRequestSchema.parse(input);
+  return request(
+    action === "confirm" ? "确认偏好" : "忽略偏好候选",
+    action === "confirm"
+      ? apiRoutes.teacher.memoryCandidateConfirm(candidateRef)
+      : apiRoutes.teacher.memoryCandidateReject(candidateRef),
+    MemoryCandidateMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function updateTeacherPreference(
+  preferenceRef: string,
+  input: UpdateTeacherPreferenceRequest
+) {
+  UpdateTeacherPreferenceRequestSchema.parse(input);
+  return request(
+    "修改教师偏好",
+    apiRoutes.teacher.teacherPreference(preferenceRef),
+    TeacherPreferenceMutationResultSchema,
+    { method: "PUT", body: JSON.stringify(input) }
+  );
+}
+
+export function revokeTeacherPreference(
+  preferenceRef: string,
+  input: RevokeTeacherPreferenceRequest
+) {
+  RevokeTeacherPreferenceRequestSchema.parse(input);
+  return request(
+    "撤销教师偏好",
+    apiRoutes.teacher.teacherPreferenceRevoke(preferenceRef),
+    TeacherPreferenceMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
 }
 
 export function loadActiveSessions() {
@@ -635,6 +784,84 @@ export function loadLessons(unitRef: string) {
   );
 }
 
+export function loadLessonJourney(lessonRef: string) {
+  return request(
+    "课时教学旅程",
+    apiRoutes.teacher.lessonJourney(lessonRef),
+    LessonJourneyProjectionSchema
+  );
+}
+
+export function loadLessonBrief(lessonRef: string) {
+  return request(
+    "课时教学洞察",
+    apiRoutes.teacher.lessonBrief(lessonRef),
+    LessonBriefStateSchema
+  );
+}
+
+export function generateLessonBrief(
+  lessonRef: string,
+  input: GenerateLessonBriefRequest
+) {
+  GenerateLessonBriefRequestSchema.parse(input);
+  return request(
+    "生成课时教学洞察",
+    apiRoutes.teacher.generateLessonBrief(lessonRef),
+    GenerateLessonBriefResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function decideLessonBrief(
+  lessonRef: string,
+  agentRunRef: string,
+  input: DecideLessonBriefRequest
+) {
+  DecideLessonBriefRequestSchema.parse(input);
+  return request(
+    "处理课时教学洞察",
+    apiRoutes.teacher.decideLessonBrief(lessonRef, agentRunRef),
+    DecideLessonBriefResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadLessonMaterialBundle(lessonRef: string) {
+  return request(
+    "课时教学材料包",
+    apiRoutes.teacher.lessonMaterialBundle(lessonRef),
+    MaterialBundleProjectionSchema
+  );
+}
+
+export function generateLessonMaterialBundle(
+  lessonRef: string,
+  input: GenerateMaterialBundleRequest
+) {
+  GenerateMaterialBundleRequestSchema.parse(input);
+  return request(
+    "生成课时教学材料",
+    apiRoutes.teacher.generateLessonMaterialBundle(lessonRef),
+    GenerateMaterialBundleResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function adoptLessonMaterial(
+  lessonRef: string,
+  kind: MaterialKind,
+  input: AdoptMaterialBundleItemRequest
+) {
+  AdoptMaterialBundleItemRequestSchema.parse(input);
+  return request(
+    "采用课时教学材料",
+    apiRoutes.teacher.adoptLessonMaterial(lessonRef, kind),
+    AdoptMaterialBundleItemResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
 export function loadLessonPreparationSummary(): Promise<LessonPreparationSummary> {
   return request(
     "备课概览",
@@ -784,6 +1011,47 @@ export function createModelInvocation(
     "创建模型调用",
     apiRoutes.teacher.modelInvocations,
     CreateModelInvocationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function createTeacherConversation(
+  input: CreateTeacherConversationRequest
+): Promise<CreateTeacherConversationResult> {
+  CreateTeacherConversationRequestSchema.parse(input);
+  return request(
+    "创建备课连续会话",
+    apiRoutes.teacher.conversations,
+    CreateTeacherConversationResultSchema,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export function loadTeacherConversation(
+  conversationRef: string
+): Promise<ConversationThreadView> {
+  return request(
+    "恢复备课连续会话",
+    apiRoutes.teacher.conversation(conversationRef),
+    ConversationThreadViewSchema
+  );
+}
+
+export function appendTeacherConversationTurn(
+  conversationRef: string,
+  input: AppendTeacherConversationTurnRequest
+): Promise<AppendTeacherConversationTurnResult> {
+  AppendTeacherConversationTurnRequestSchema.parse(input);
+  return request(
+    "追加备课会话要求",
+    apiRoutes.teacher.conversationTurns(conversationRef),
+    AppendTeacherConversationTurnResultSchema,
     {
       method: "POST",
       body: JSON.stringify(input)
@@ -1139,7 +1407,7 @@ export function importSyntheticSubmissions(
 ) {
   SyntheticSubmissionImportRequestSchema.parse(input);
   return request(
-    "载入合成提交",
+    "载入匿名提交",
     apiRoutes.teacher.assignmentSyntheticSubmissions(assignmentRef),
     SyntheticSubmissionImportResultSchema,
     { method: "POST", body: JSON.stringify(input) }
@@ -1480,6 +1748,26 @@ export function loadLessonImplementationSummary(lessonRef: string) {
   );
 }
 
+export function loadLatestClassroomFeedback(lessonRef: string) {
+  return request(
+    "最近课堂快速反馈",
+    apiRoutes.teacher.lessonLatestClassroomFeedback(lessonRef),
+    LatestClassroomFeedbackResultSchema
+  );
+}
+
+export function generateClassroomFeedback(
+  input: GenerateClassroomFeedbackRequest
+) {
+  GenerateClassroomFeedbackRequestSchema.parse(input);
+  return request(
+    "生成课堂记录草稿",
+    apiRoutes.teacher.lessonDeliveryQuickFeedback,
+    GenerateClassroomFeedbackResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
 export function createLessonDelivery(input: CreateLessonDeliveryRequest) {
   CreateLessonDeliveryRequestSchema.parse(input);
   return request(
@@ -1676,6 +1964,74 @@ export function createReflectionFollowUp(
     "创建反思后续行动",
     apiRoutes.teacher.reflectionFollowUps(reflectionRef),
     ReflectionFollowUpResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadNextLessonActions(reflectionRef: string) {
+  return request(
+    "下一课优化建议",
+    apiRoutes.teacher.reflectionNextLessonActions(reflectionRef),
+    NextLessonActionListSchema
+  );
+}
+
+export function generateNextLessonActions(
+  reflectionRef: string,
+  input: GenerateNextLessonActionsRequest
+) {
+  GenerateNextLessonActionsRequestSchema.parse(input);
+  return request(
+    "生成下一课优化建议",
+    apiRoutes.teacher.reflectionNextLessonActionsGenerate(reflectionRef),
+    GenerateNextLessonActionsResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function loadNextLessonAction(candidateRef: string) {
+  return request(
+    "下一课优化建议详情",
+    apiRoutes.teacher.nextLessonAction(candidateRef),
+    NextLessonActionCandidateSchema
+  );
+}
+
+export function updateNextLessonAction(
+  candidateRef: string,
+  input: UpdateNextLessonActionRequest
+) {
+  UpdateNextLessonActionRequestSchema.parse(input);
+  return request(
+    "修改下一课优化建议",
+    apiRoutes.teacher.nextLessonAction(candidateRef),
+    NextLessonActionMutationResultSchema,
+    { method: "PATCH", body: JSON.stringify(input) }
+  );
+}
+
+export function acceptNextLessonAction(
+  candidateRef: string,
+  input: AcceptNextLessonActionRequest
+) {
+  AcceptNextLessonActionRequestSchema.parse(input);
+  return request(
+    "接受下一课优化建议",
+    apiRoutes.teacher.nextLessonActionAccept(candidateRef),
+    NextLessonActionMutationResultSchema,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function rejectNextLessonAction(
+  candidateRef: string,
+  input: RejectNextLessonActionRequest
+) {
+  RejectNextLessonActionRequestSchema.parse(input);
+  return request(
+    "拒绝下一课优化建议",
+    apiRoutes.teacher.nextLessonActionReject(candidateRef),
+    NextLessonActionMutationResultSchema,
     { method: "POST", body: JSON.stringify(input) }
   );
 }

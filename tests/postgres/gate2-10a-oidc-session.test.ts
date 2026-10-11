@@ -13,6 +13,7 @@ import type {
   OidcAuthorizationRequest
 } from "../../apps/api/src/modules/identity-governance-audit/domain/identity-provider.js";
 import { readIdentitySettings } from "../../apps/api/src/platform/auth/config.js";
+import { seedSampleData } from "../../scripts/sample/seed-sample-data.js";
 import {
   poolFor,
   postgresEnvironment,
@@ -108,7 +109,10 @@ beforeEach(async () => {
   fakeOidc.subject = externalSubject;
   fakeOidc.lastCurrentUrl = undefined;
   await resetGate1BData(adminPool);
-  await localProduct.services.seed.seed({ includeGate25: true, includeGate27: true });
+  await seedSampleData(postgresEnvironment, {
+    includeGate25: true,
+    includeGate27: true
+  });
   const adminSession = await localProduct.services.identity.localLogin({
     profile: "admin",
     clientLabel: "OIDC test bootstrap"

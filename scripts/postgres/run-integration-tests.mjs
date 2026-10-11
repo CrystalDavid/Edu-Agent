@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { isDeepStrictEqual } from "node:util";
 
-import { runPnpm } from "../demo/process-utils.mjs";
+import { runPnpm } from "../local/process-utils.mjs";
 import {
   createE2eDatabaseEnvironment,
   createE2eRunId,
@@ -60,7 +60,7 @@ try {
       "vitest",
       "run",
       "--config",
-      "vitest.postgres.config.ts",
+      "tests/config/vitest-postgres.config.ts",
       ...process.argv.slice(2)
     ],
     environment

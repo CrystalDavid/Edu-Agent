@@ -67,7 +67,7 @@ export class LocalSyntheticModelDebugSink {
   constructor(
     private readonly enabled: boolean,
     private readonly appEnvironment: string,
-    directory = resolve(".demo", "model-debug"),
+    directory = resolve(".local-data", "model-debug"),
     private readonly retentionMilliseconds = 60 * 60 * 1000
   ) {
     this.directory = directory;

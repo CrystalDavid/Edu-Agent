@@ -4,8 +4,7 @@ import { Collapse, Empty, Tag } from "antd";
 import {
   claimStateLabel,
   cleanDisplayText,
-  formatDisplayDate,
-  shortReference
+  formatDisplayDate
 } from "../presentation";
 
 export function EvidencePanel(props: {
@@ -79,7 +78,7 @@ export function EvidencePanel(props: {
                       <dl className="detail-list">
                         <div>
                           <dt>数据来源</dt>
-                          <dd>{shortReference(observation.sourceRef)}</dd>
+                          <dd>课堂任务记录</dd>
                         </div>
                         <div>
                           <dt>辅助情况</dt>
@@ -142,9 +141,9 @@ export function EvidencePanel(props: {
                     children: (
                       <ul className="compact-list">
                         {claim.supportingObservationRefs.map(
-                          (reference) => (
+                          (reference, index) => (
                             <li key={reference}>
-                              {shortReference(reference)}
+                              课堂观察 {index + 1}
                             </li>
                           )
                         )}

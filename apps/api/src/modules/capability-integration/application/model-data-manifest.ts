@@ -64,12 +64,8 @@ export function createModelDataManifest(input: {
   syntheticData: boolean;
   createdAt: string;
 }): ModelDataManifest {
-  const allowedSyntheticTenants = new Set([
-    "tenant:demo-school",
-    "tenant:demo-school-b"
-  ]);
   if (
-    !allowedSyntheticTenants.has(input.tenantRef) ||
+    !input.tenantRef.trim() ||
     !input.actorRef.startsWith("user:") ||
     ![
       "teacher-copilot.lesson-preparation",
@@ -78,7 +74,7 @@ export function createModelDataManifest(input: {
     !input.syntheticData
   ) {
     throw new Error(
-      "MODEL_DATA_POLICY_BLOCKED: model calls only permit authenticated synthetic demo-school scopes."
+      "MODEL_DATA_POLICY_BLOCKED: model calls only permit authenticated, explicitly authorized synthetic scopes."
     );
   }
   if (

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   ApproveTeachingPlanResultSchema,
   AuthorizedContextPlanSchema,
+  ClassroomFeedbackRunViewSchema,
   CreateTeacherCopilotTaskResultSchema,
   SuggestionDispositionResultSchema,
   TeachingPlanSchema,
@@ -20,12 +21,15 @@ import {
   type TeachingPlanDiff,
   type TeachingPlanDiffChange
 } from "@edu-agent/contracts";
-import {
-  gate2DemoRefs,
-  strategyTeachingPlans
-} from "@edu-agent/test-fixtures";
 import type { Pool } from "pg";
 
+import type {
+  ClassroomFeedbackRunStore
+} from "../modules/agent-runtime-context/application/classroom-feedback-service.js";
+import type {
+  TeacherCopilotApplicationFacade
+} from "../modules/agent-runtime-context/application/teacher-copilot-facade.js";
+import { ClassroomReflectionSkillOutputSchema } from "../agent/skills/classroom-reflection/output-schema.js";
 import {
   PostgresGate2RuntimeRepository
 } from "../modules/agent-runtime-context/infrastructure/postgres-gate2-runtime-repository.js";
@@ -39,7 +43,8 @@ import {
   PostgresGate2CapabilityRepository
 } from "../modules/capability-integration/infrastructure/postgres-gate2-capability-repository.js";
 import {
-  MockModelProvider
+  MockModelProvider,
+  teachingPlanForMockStrategy
 } from "../modules/capability-integration/infrastructure/mock-model-provider.js";
 import {
   PostgresGate25EducationRepository
@@ -147,7 +152,9 @@ function stableDecisionRef(rootKey: string): string {
   return `authorization-decision:${hash(rootKey).slice(0, 32)}`;
 }
 
-export class PostgresGate2TeacherCopilotService {
+export class PostgresGate2TeacherCopilotService
+  implements TeacherCopilotApplicationFacade
+{
   constructor(
     private readonly pool: Pool,
     private readonly governance =
@@ -167,7 +174,8 @@ export class PostgresGate2TeacherCopilotService {
     private readonly education = new PostgresEducationRepository(),
     private readonly gate25Education =
       new PostgresGate25EducationRepository(),
-    private readonly model = new MockModelProvider()
+    private readonly model = new MockModelProvider(),
+    private readonly clock: () => Date = () => new Date()
   ) {}
 
   async createTask(input: {
@@ -351,7 +359,7 @@ export class PostgresGate2TeacherCopilotService {
           "当前租户下没有可用的合成 CourseRun。"
         );
       }
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         input.request.goalRef
@@ -489,12 +497,7 @@ export class PostgresGate2TeacherCopilotService {
         });
       const diffsByStrategy: Record<string, TeachingPlanDiff> = {};
       for (const strategy of modelResult.strategies) {
-        const plan = strategyTeachingPlans[strategy.strategyId];
-        if (!plan) {
-          throw new Error(
-            `Mock strategy has no TeachingPlan: ${strategy.strategyId}`
-          );
-        }
+        const plan = teachingPlanForMockStrategy(strategy);
         diffsByStrategy[strategy.strategyId] = buildDiff(
           baseline.content,
           plan,
@@ -509,11 +512,7 @@ export class PostgresGate2TeacherCopilotService {
       if (!defaultStrategy) {
         throw new Error("MockModelProvider returned no strategy.");
       }
-      const draftPlan =
-        strategyTeachingPlans[defaultStrategy.strategyId];
-      if (!draftPlan) {
-        throw new Error("Default strategy TeachingPlan is missing.");
-      }
+      const draftPlan = teachingPlanForMockStrategy(defaultStrategy);
 
       const decision: AuthorizationDecision = {
         decisionRef,
@@ -1135,13 +1134,21 @@ export class PostgresGate2TeacherCopilotService {
           taskResult.taskRef,
           input.actorRef
         );
-      const goal = await this.gate2Work.getDemoCaseAndGoal(
+      const goal = await this.gate2Work.getCaseAndGoal(
         client,
         input.tenantRef,
         taskResult.goalRef
       );
       if (!goal) {
         throw new NotFoundError("当前租户无权访问该建议。");
+      }
+      const runtimeRun =
+        await this.gate2Runtime.getRunExplanation(
+          client,
+          taskResult.taskRunRef
+        );
+      if (!runtimeRun) {
+        throw new NotFoundError("建议关联的 AgentRun 不存在。");
       }
       const proposal = await this.artifacts.getProposal(
         client,
@@ -1282,10 +1289,8 @@ export class PostgresGate2TeacherCopilotService {
         input.request.disposition === "accepted_with_changes"
       ) {
         const strategyPlan =
-          proposal.strategyPlans[
-            selectedStrategy.strategyId
-          ] ??
-          strategyTeachingPlans[selectedStrategy.strategyId];
+          proposal.strategyPlans[selectedStrategy.strategyId] ??
+          teachingPlanForMockStrategy(selectedStrategy);
         if (!strategyPlan) {
           throw new Error("Selected strategy TeachingPlan is missing.");
         }
@@ -1343,12 +1348,16 @@ export class PostgresGate2TeacherCopilotService {
           }
         )
       );
+      const dispositionOutboxRef = `outbox:${randomUUID()}`;
       receipts.push(
         await this.gate2Work.insertOutbox(client, {
-          outboxRef: `outbox:${randomUUID()}`,
+          outboxRef: dispositionOutboxRef,
           eventName: "SuggestionDisposed",
           aggregateRef: dispositionRef,
           payload: {
+            agentRunRef: runtimeRun.agentRunRef,
+            tenantRef: input.tenantRef,
+            teacherRef: input.actorRef,
             proposalRevisionRef: input.proposalRevisionRef,
             disposition: input.request.disposition,
             implementationObserved: false,
@@ -1444,6 +1453,7 @@ export class PostgresGate2TeacherCopilotService {
   async approveTeachingPlan(input: {
     tenantRef: string;
     actorRef: string;
+    allowedCourseRunRefs: readonly string[];
     inReviewRevisionRef: string;
     request: ApproveTeachingPlanRequest;
   }): Promise<ApproveTeachingPlanResult> {
@@ -1505,26 +1515,12 @@ export class PostgresGate2TeacherCopilotService {
         });
       }
 
-      const educationContext =
-        await this.education.getTeacherCopilotContext(client, {
-          tenantRef: input.tenantRef,
-          courseRunRef: gate2DemoRefs.courseRunRef
-        });
-      if (!educationContext) {
-        throw new NotFoundError(
-          "The tenant TeachingPlan context is not available."
-        );
-      }
       const inReview =
         await this.artifacts.getTeachingPlanRevision(
           client,
           input.inReviewRevisionRef
         );
-      if (
-        !inReview ||
-        inReview.artifactRef !==
-          educationContext.teachingPlanArtifactRef
-      ) {
+      if (!inReview) {
         throw new NotFoundError(
           "The in-review TeachingPlan revision was not found."
         );
@@ -1544,6 +1540,42 @@ export class PostgresGate2TeacherCopilotService {
           client,
           inReview.revisionRef
         );
+      if (revisionScope) {
+        const lesson = await this.gate25Education.getLessonContext(
+          client,
+          input.tenantRef,
+          revisionScope.lessonRef
+        );
+        if (
+          !lesson ||
+          !input.allowedCourseRunRefs.includes(
+            lesson.lesson.courseRunRef
+          )
+        ) {
+          throw new NotFoundError(
+            "The in-review TeachingPlan revision was not found."
+          );
+        }
+      } else {
+        const contexts = await Promise.all(
+          input.allowedCourseRunRefs.map((courseRunRef) =>
+            this.education.getTeacherCopilotContext(client, {
+              tenantRef: input.tenantRef,
+              courseRunRef
+            })
+          )
+        );
+        if (
+          !contexts.some(
+            (context) =>
+              context?.teachingPlanArtifactRef === inReview.artifactRef
+          )
+        ) {
+          throw new NotFoundError(
+            "The in-review TeachingPlan revision was not found."
+          );
+        }
+      }
       let preparationTask:
         | StoredLessonPreparationTask
         | undefined;
@@ -1807,16 +1839,286 @@ export class PostgresGate2TeacherCopilotService {
     }
   }
 
+  async saveClassroomFeedback(
+    input: Parameters<ClassroomFeedbackRunStore["saveClassroomFeedback"]>[0]
+  ) {
+    const now = this.clock().toISOString();
+    const rootKey = [
+      input.context.tenantRef,
+      input.context.actorRef,
+      input.request.purpose,
+      input.request.idempotencyKey
+    ].join("|");
+    const decisionRef = `authorization-decision:${hash(rootKey).slice(0, 32)}`;
+    const writeContext: WriteContext = {
+      actorRef: input.context.actorRef,
+      purpose: input.request.purpose,
+      rootIdempotencyKey: input.request.idempotencyKey,
+      authorizationDecisionRef: decisionRef,
+      createdAt: now
+    };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const reservation = await this.governance.reserveIdempotency(client, {
+        idempotencyRef: `idempotency:${hash(rootKey).slice(0, 32)}`,
+        rootKey,
+        requestFingerprint: input.requestFingerprint,
+        metadata: createWriteMetadata(
+          writeContext,
+          "governance",
+          "classroom-feedback-idempotency"
+        )
+      });
+      if (reservation.kind === "replay") {
+        await client.query("COMMIT");
+        return parseStoredClassroomFeedbackResult(reservation.result, true);
+      }
+      const authorization: AuthorizationDecision = {
+        decisionRef,
+        actorRef: input.context.actorRef,
+        tenantRef: input.context.tenantRef,
+        purpose: input.request.purpose,
+        action: input.request.purpose,
+        resourceRef: input.context.lessonRef,
+        requestedFieldMask: [
+          ...input.runtimeContext.manifest.requestedFieldMask
+        ],
+        effect: "allow",
+        reasonCodes: [
+          "authenticated-teacher",
+          "current-approved-teaching-plan",
+          "authorized-context-only",
+          "delivery-draft-only",
+          "teacher-confirmation-required"
+        ],
+        policyVersion: "policy:classroom-reflection-context@1",
+        decidedAt: now
+      };
+      const receipts: FormalWriteReceipt[] = [
+        reservation.receipt!,
+        await this.governance.saveDecision(client, {
+          decision: authorization,
+          metadata: createWriteMetadata(
+            writeContext,
+            "governance",
+            "classroom-feedback-authorization"
+          )
+        })
+      ];
+      receipts.push(
+        await this.work.insertQueryRun(client, {
+          queryRunRef: input.queryRunRef,
+          queryName: "classroom-feedback",
+          status: "completed",
+          resourceRef: input.context.lessonRef,
+          requestedFieldMask:
+            input.runtimeContext.manifest.requestedFieldMask,
+          metadata: createWriteMetadata(
+            writeContext,
+            "work",
+            "classroom-feedback-query-run"
+          )
+        })
+      );
+      const view = ClassroomFeedbackRunViewSchema.parse({
+        agentRunRef: input.agentRunRef,
+        contextManifestRef: input.contextManifestRef,
+        contextManifestHash: input.runtimeContext.manifest.contentHash,
+        skillRef: input.skill.ref,
+        lessonRef: input.context.lessonRef,
+        teachingPlanRevisionRef:
+          input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+        deliverySummary: input.output.deliverySummary,
+        observationCandidates: input.output.observationCandidates,
+        reflectionInput: input.output.reflectionInput,
+        knownGaps: input.output.knownGaps,
+        createdAt: now
+      });
+      const runtimeOutput = {
+        kind: "classroom_delivery_draft",
+        tenantRef: input.context.tenantRef,
+        runtimeStatus: "waiting_for_human",
+        skill: input.skill,
+        evaluation: input.evaluation,
+        ...view,
+        deliveryDraft: input.output.deliveryDraft,
+        schemaVersion: input.output.schemaVersion
+      };
+      receipts.push(
+        ...(await this.runtime.insertAgentRunBundle(client, {
+          agentRun: {
+            agentRunRef: input.agentRunRef,
+            runKind: "QueryRun",
+            boundRunRef: input.queryRunRef,
+            status: "completed",
+            modelProvider: "none",
+            modelProfile: "deterministic-classroom-reflection@1",
+            toolName: "none",
+            output: runtimeOutput,
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "classroom-feedback-agent-run"
+            )
+          },
+          manifest: {
+            manifestRef: `run-manifest:${randomUUID()}`,
+            agentRunRef: input.agentRunRef,
+            contextManifestRef: input.contextManifestRef,
+            promptVersionRef:
+              `${input.skill.promptBundleRef}@${input.skill.promptBundleVersion}`,
+            policyVersionRef: "classroom-reflection-context@1",
+            capabilityRefs: [input.skill.ref],
+            contextRefs: input.runtimeContext.manifest.resourceRefs,
+            contentHash: hash({
+              skill: input.skill,
+              contextManifestHash: input.runtimeContext.manifest.contentHash,
+              output: input.output
+            }),
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "classroom-feedback-run-manifest"
+            )
+          },
+          outbox: {
+            outboxRef: `outbox:${randomUUID()}`,
+            eventName: "ClassroomDeliveryDraftGenerated",
+            aggregateRef: input.agentRunRef,
+            payload: {
+              lessonRef: input.context.lessonRef,
+              teachingPlanRevisionRef:
+                input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+              skillRef: input.skill.ref,
+              contextManifestHash: input.runtimeContext.manifest.contentHash,
+              candidateOnly: true,
+              teacherConfirmationRequired: true
+            },
+            metadata: createWriteMetadata(
+              writeContext,
+              "runtime",
+              "classroom-feedback-outbox"
+            )
+          }
+        }))
+      );
+      receipts.push(
+        await this.gate2Runtime.insertContextManifest(client, {
+          contextManifestRef: input.contextManifestRef,
+          agentRunRef: input.agentRunRef,
+          resourceRefs: input.runtimeContext.manifest.resourceRefs,
+          evidenceRefs: input.runtimeContext.manifest.evidenceRefs,
+          unknowns: [
+            ...input.runtimeContext.manifest.missingInformation,
+            ...input.runtimeContext.manifest.excludedInformation
+          ],
+          requestedFieldMask:
+            input.runtimeContext.manifest.requestedFieldMask,
+          taskRef: input.queryRunRef,
+          requestSummary: {
+            requestText:
+              input.request.note ??
+              `课堂快速反馈：${input.request.overall}/${input.request.pace}/${input.request.studentResponse}`,
+            actorRef: input.context.actorRef,
+            purpose: input.request.purpose,
+            courseRunRef: input.runtimeContext.input.lesson.courseRunRef,
+            learningObjectiveRefs: [
+              ...input.runtimeContext.input.lesson.learningObjectiveRefs
+            ],
+            selectedEvidenceRefs: [
+              ...input.runtimeContext.manifest.evidenceRefs
+            ],
+            curriculumUnitRef: input.runtimeContext.input.lesson.unitRef,
+            lessonRef: input.context.lessonRef,
+            baselineTeachingPlanRef:
+              input.runtimeContext.input.approvedTeachingPlan.revisionRef,
+            createdAt: now,
+            requestVersion: 1
+          },
+          metadata: createWriteMetadata(
+            writeContext,
+            "runtime",
+            "classroom-feedback-context-manifest"
+          )
+        })
+      );
+      const result = { view, output: input.output };
+      await this.governance.completeIdempotency(client, {
+        rootKey,
+        result,
+        completedAt: now
+      });
+      await this.governance.saveAudits(client, receipts);
+      await client.query("COMMIT");
+      return { replayed: false, ...result };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async findLatestClassroomFeedback(
+    context: Parameters<
+      ClassroomFeedbackRunStore["findLatestClassroomFeedback"]
+    >[0]
+  ) {
+    const result = await this.pool.query<{
+      output: unknown;
+      created_at: string;
+    }>(
+      `SELECT output, created_at::text
+         FROM runtime.agent_run
+        WHERE actor_ref = $1
+          AND purpose = 'lesson-delivery.quick-feedback.generate'
+          AND output->>'kind' = 'classroom_delivery_draft'
+          AND output->>'tenantRef' = $2
+          AND output->>'lessonRef' = $3
+        ORDER BY created_at DESC, agent_run_ref DESC
+        LIMIT 1`,
+      [context.actorRef, context.tenantRef, context.lessonRef]
+    );
+    const row = result.rows[0];
+    if (!row || typeof row.output !== "object" || row.output === null) {
+      return null;
+    }
+    const output = row.output as Record<string, unknown>;
+    return ClassroomFeedbackRunViewSchema.parse({
+      ...output,
+      createdAt: new Date(row.created_at).toISOString()
+    });
+  }
+
   private assertDemoActor(
     tenantRef: string,
     actorRef: string
   ): void {
     if (!tenantRef.trim() || !actorRef.trim()) {
       throw new AuthorizationDeniedError(
-        "本地演示身份没有访问该租户或学习者数据的权限。"
+        "当前身份没有访问该学校或学生数据的权限。"
       );
     }
   }
+}
+
+function parseStoredClassroomFeedbackResult(
+  value: unknown,
+  replayed: boolean
+) {
+  if (!isRecord(value)) {
+    throw new Error("Stored classroom feedback result is invalid.");
+  }
+  return {
+    replayed,
+    view: ClassroomFeedbackRunViewSchema.parse(value["view"]),
+    output: ClassroomReflectionSkillOutputSchema.parse(value["output"])
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export const gate2TeacherCopilotPurposes = {
@@ -1828,9 +2130,5 @@ export const gate2TeacherCopilotPurposes = {
 export function planForStrategy(
   strategy: PedagogicalStrategy
 ): TeachingPlan {
-  const plan = strategyTeachingPlans[strategy.strategyId];
-  if (!plan) {
-    throw new Error(`Unknown strategy: ${strategy.strategyId}`);
-  }
-  return plan;
+  return teachingPlanForMockStrategy(strategy);
 }

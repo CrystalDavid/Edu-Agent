@@ -219,6 +219,8 @@ export const ModelExecutionViewSchema = z.object({
   ]).default("teaching_proposal"),
   resultRef: z.string().min(1).nullable().default(null),
   proposalRevisionRef: z.string().min(1).nullable(),
+  conversationRef: z.string().min(1).nullable().default(null),
+  turnRef: z.string().min(1).nullable().default(null),
   retryOfModelExecutionRef: z.string().min(1).nullable(),
   queuedAt: z.string().datetime(),
   startedAt: z.string().datetime().nullable(),

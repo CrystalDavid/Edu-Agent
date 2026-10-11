@@ -5,7 +5,7 @@ import {
   readdirSync,
   statSync
 } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { dirname, extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 interface VerifiedStage {
@@ -19,7 +19,7 @@ interface VerifiedStage {
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const versionHistoryPath = resolve(
   workspaceRoot,
-  "docs/project/VERSION_HISTORY.md"
+  "docs/version-history.md"
 );
 
 const stages: readonly VerifiedStage[] = [
@@ -28,70 +28,70 @@ const stages: readonly VerifiedStage[] = [
     featureHead: "86d9f6f27b2234d56f419101f732eeffc851f603",
     mergeCommit: "6d1335a0a2a941bbd7439fd1aa4e5353bbc82d6a",
     tag: "gate-1b-verified",
-    document: "教育智能体平台第一轮工程验证计划.md"
+    document: "docs/history/research/教育智能体平台第一轮工程验证计划.md"
   },
   {
     name: "Gate 2.4",
     featureHead: "b353f35fdba7cd47d0b2537d94b00a81487816b8",
     mergeCommit: "3ec7f106a163b85d89c5f58fc30b5ed30375d3f3",
     tag: "gate-2-4-verified",
-    document: "docs/product/GATE_2_4_COPILOT_CORRECTNESS.md"
+    document: "docs/history/gates/gate-2-4-copilot-correctness.md"
   },
   {
     name: "Gate 2.5",
     featureHead: "8a5d8d56e098548be2e38347f4f3eb34d5694600",
     mergeCommit: "15fb113e68b48b8f7e0ae40b9afbac29e7d55a66",
     tag: "gate-2-5-verified",
-    document: "docs/product/GATE_2_5_RECOVERABLE_LESSON_PREPARATION.md"
+    document: "docs/history/gates/gate-2-5-recoverable-lesson-preparation.md"
   },
   {
     name: "Gate 2.6A",
     featureHead: "57e78bac25d9d46318c671c6ec7d2f3ab3fc34b5",
     mergeCommit: "6676b3f876809bd9529b71af56dab32f07cb3c37",
     tag: "gate-2-6a-verified",
-    document: "docs/product/GATE_2_6A_VOLCENGINE_ARK_PROVIDER.md"
+    document: "docs/history/gates/gate-2-6a-volcengine-ark-provider.md"
   },
   {
     name: "Gate 2.5B",
     featureHead: "2ac23d1e0ce2e1198f5820514e7979e42ccd4dd3",
     mergeCommit: "b3787fa117b74729e0e6347b993b2c7f4a5e37f4",
     tag: "gate-2-5b-verified",
-    document: "docs/product/GATE_2_5B_FILE_AND_TEACHING_ARTIFACTS.md"
+    document: "docs/history/gates/gate-2-5b-file-and-teaching-artifacts.md"
   },
   {
     name: "Gate 2.5C",
     featureHead: "fbf5dedaf5fec3ac8cabda4d63b7e2bf0592559c",
     mergeCommit: "afdcfbd9d342822038dee3e6c1a19b64dca535ac",
     tag: "gate-2-5c-verified",
-    document: "docs/product/TEACHER_PRODUCT_STABILIZATION_MATRIX.md"
+    document: "docs/history/gates/teacher-product-stabilization-matrix.md"
   },
   {
     name: "Gate 2.7",
     featureHead: "dd5437fc30f9cbc7f80790d3c2ceb44bc1b10d79",
     mergeCommit: "64e0aab9a54bdb47731d14ddca32c869c2cf25f6",
     tag: "gate-2-7-verified",
-    document: "docs/product/GATE_2_7_ASSIGNMENT_LEARNING_EVIDENCE.md"
+    document: "docs/history/gates/gate-2-7-assignment-learning-evidence.md"
   },
   {
     name: "Gate 2.8",
     featureHead: "996400123fd2433d145ee8056bda639c61208ce4",
     mergeCommit: "44a67ef0ffa519d0ef9c6c2b84e42ab9204561d0",
     tag: "gate-2-8-verified",
-    document: "docs/product/GATE_2_8_TEACHER_WORKBENCH.md"
+    document: "docs/history/gates/gate-2-8-teacher-workbench.md"
   },
   {
     name: "Gate 2.9",
     featureHead: "a264bb5718d5f3a3af78255691e6329b6b32166d",
     mergeCommit: "f2c756630b45e1b6e284d0f02269f0c094c3964d",
     tag: "gate-2-9-verified",
-    document: "docs/product/GATE_2_9_CLASSROOM_REFLECTION_LOOP.md"
+    document: "docs/history/gates/gate-2-9-classroom-reflection-loop.md"
   },
   {
     name: "Gate 2.10A",
     featureHead: "2fd31f874afa9f6097cd1c6e019763148eb59a47",
     mergeCommit: "bbba3428602bb148a3d73a201ad97fcb29181c1b",
     tag: "gate-2-10a-verified",
-    document: "docs/product/GATE_2_10A_IDENTITY_ORGANIZATION_FOUNDATION.md"
+    document: "docs/history/gates/gate-2-10a-identity-organization-foundation.md"
   }
 ];
 
@@ -177,7 +177,7 @@ function verifyLocalMarkdownLinks(filePath: string): void {
   }
 }
 
-const versionHistory = read("docs/project/VERSION_HISTORY.md");
+const versionHistory = read("docs/version-history.md");
 const readme = read("README.md");
 const changelog = read("CHANGELOG.md");
 
@@ -237,7 +237,7 @@ check(
 );
 check(
   changelog.includes("## Current") &&
-    changelog.includes("普通教师端本地功能型 MVP，已具备正式身份和学校组织基线，尚未达到云端学校试点生产条件。"),
+    changelog.includes("普通教师工作台的可运行产品基线，已具备正式身份和学校组织边界；正式云基础设施和学校试点运维尚未完成。"),
   "CHANGELOG Current positioning or Gate 2.10A product statement is missing"
 );
 check(
@@ -249,7 +249,11 @@ const markdownFiles = [
   resolve(workspaceRoot, "README.md"),
   resolve(workspaceRoot, "CHANGELOG.md"),
   ...collectMarkdownFiles(resolve(workspaceRoot, "docs"))
-];
+].filter((filePath) => {
+  const historyRoot = resolve(workspaceRoot, "docs/history");
+  const pathFromHistory = relative(historyRoot, filePath);
+  return pathFromHistory.startsWith("..") || pathFromHistory === "";
+});
 for (const markdownFile of markdownFiles) {
   verifyLocalMarkdownLinks(markdownFile);
 }

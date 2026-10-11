@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const target = resolve("infra/docker/.env.local");
+const target = resolve("infra/local/postgres/.env.local");
 
 if (existsSync(target)) {
   process.stdout.write("Local PostgreSQL environment already exists.\n");
