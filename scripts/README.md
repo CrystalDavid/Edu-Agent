@@ -1,12 +1,22 @@
-# Repository Scripts
+# 开发脚本
 
-脚本由根 `package.json` 提供稳定命令入口。开发者和 Agent 应优先调用 `corepack pnpm <script>`，不要根据文件名猜测参数或生命周期。
+所有命令从仓库根目录通过 `corepack pnpm <script>` 运行；完整定义见 [package.json](../package.json)。
 
-- `local/`：本机应用启动、诊断、准备和受保护重置；
-- `testing/`：隔离 E2E、Playwright 和 ObjectStore 生命周期；
-- `quality/`：Bundle 与质量分析；
-- `postgres/`：开发数据库、Migration 和真实 PostgreSQL 测试编排；
-- `security/`：Secret 扫描；
-- 根脚本：静态断言、版本历史、Markdown 链接和仓库同步验证。
+| 目录 | 用途 | 常用命令 |
+| --- | --- | --- |
+| [local](local/) | 启动、准备与诊断 | `app:doctor`、`app:prepare`、`app:dev` |
+| [postgres](postgres/) | 数据库与迁移 | `db:up`、`db:migrate`、`db:down` |
+| [sample](sample/) | 载入示例数据 | `sample:seed`、`sample:dev` |
+| [testing](testing/) | 隔离测试环境 | `test:playwright`、`test:ark-fake` |
+| [quality](quality/) | 构建体积分析 | `analyze:bundle` |
+| [security](security/) | 凭据检查 | `test:secrets` |
 
-`db:clean`、`app:reset` 等破坏性入口必须保持显式授权和 fail-closed。普通测试不得重置长期开发 Volume，任何脚本都不得删除 `.local-data/object-store`。
+文档和仓库检查：
+
+```bash
+corepack pnpm verify:markdown-links
+corepack pnpm verify:repo-sync
+corepack pnpm verify:version-history
+```
+
+开发数据重置命令 `db:clean`、`app:reset` 的参数与数据影响见 [PostgreSQL 说明](../infra/local/postgres/README.md) 和 [运行指南](../docs/operations/local-environment.md)。

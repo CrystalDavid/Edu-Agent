@@ -1,9 +1,11 @@
-# Shared Packages
+# 共享包
 
-| Package | 允许内容 | 禁止内容 |
-|---|---|---|
-| `@edu-agent/contracts` | Web/API 共享 route、DTO、enum、Zod Schema | Repository、UI、数据库 SDK |
-| `@edu-agent/sample-data` | 显式 Seed 和测试可复用的匿名稳定 refs/data | 产品运行时、测试断言、Fake behavior、生产数据 |
-| `@edu-agent/test-fixtures` | Gate 1A/1B 等测试专用构造器 | 产品运行时依赖、正式应用入口 |
+| Package | 用途 | 使用方 |
+| --- | --- | --- |
+| [@edu-agent/contracts](contracts/) | 路由、DTO、枚举和 Zod Schema | Web、API 与测试 |
+| [@edu-agent/sample-data](sample-data/README.md) | 匿名学校、课程、课时与稳定引用 | 示例 Seed 与测试 |
+| [@edu-agent/test-fixtures](test-fixtures/) | 测试场景构造器 | 自动化测试 |
 
-依赖方向：`apps/*` 只依赖正式 contracts 和产品 SDK；`scripts/sample` 与 tests 可以依赖 sample-data；tests 可以依赖 test-fixtures。sample-data 不依赖 test-fixtures，产品应用不得依赖两种 fixture package。
+在仓库根目录执行 `corepack pnpm install --frozen-lockfile` 安装 workspace 依赖，执行 `corepack pnpm build` 构建各包。
+
+应用共享协议集中在 `contracts`；样例载入由 `scripts/sample` 组织，测试场景由测试代码创建。详细依赖关系见 [架构](../docs/architecture/README.md)。

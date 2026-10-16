@@ -1,11 +1,15 @@
 # Edu-Agent Web
 
-`apps/web` 是 React/Vite 普通教师门户。
+React、Vite 和 Ant Design 构建的教师门户，包含课时工作台、备课对话、作业、日程、文件和教师偏好设置。
 
-- 入口和当前路由渲染：`src/main.tsx`、`src/App.tsx`、`src/route.ts`；
-- 页面：`src/pages/`，当前路由使用 `Teacher*Page` 或 Workspace 页面；
-- API client：`src/api.ts`，共享 URL 在 `src/api-url.ts`；
-- 当前仍使用的显式 Demo/READ_ONLY 数据：`src/teacher-portal-data.ts`；
-- 正式 Contract：`@edu-agent/contracts`。
+从仓库根目录运行 `corepack pnpm app:dev`，打开 [http://localhost:5173](http://localhost:5173)。首次体验可使用 `corepack pnpm sample:dev` 载入示例课程。
 
-Web 不直接连接数据库、模型、ObjectStore 或身份供应商，也不能通过本地 state 宣称正式业务写入成功。修改路由/Page/API client 后运行 typecheck、默认 tests、production build 和相关 Playwright。
+| 入口 | 作用 |
+| --- | --- |
+| [src/main.tsx](src/main.tsx)、[src/App.tsx](src/App.tsx) | 应用入口与页面装配 |
+| [src/route.ts](src/route.ts) | History 路由 |
+| [src/pages](src/pages/) | 教师页面与 Workspace |
+| [src/api.ts](src/api.ts)、[src/api-url.ts](src/api-url.ts) | 类型化 API client 与地址配置 |
+| [contracts](../../packages/contracts/) | 前后端共享协议 |
+
+业务数据通过 API 读写，组件管理页面交互状态。样式和组件规格见 [UI 设计](../../docs/ui/README.md)，开发与验证命令见 [开发指南](../../docs/engineering/README.md)。

@@ -1,16 +1,25 @@
-# Edu-Agent Tests
+# 测试
 
-测试按证明范围分层：
+从仓库根目录运行：
 
-- `unit/`、`gate2/`：纯逻辑与 Contract；
-- `architecture/`：模块、Schema、Ingress、安全与产品不变量；
-- `e2e/`：无浏览器 HTTP walking skeleton；
-- `integration/`：PGlite Migration；
-- `node/`：Gate 1A Test Container 的原生 Node smoke；
-- `postgres/`：隔离真实 PostgreSQL、角色、Repository、HTTP 和 Worker；
-- `playwright/`：隔离浏览器业务回归；
-- `config/`：专用 Playwright/Vitest 配置和外部测试产物路径；
-- `live/`：显式 opt-in 的真实 Provider；
-- `fixtures/`、`support/`：测试数据、Fake Ark 和 loader，不属于产品运行时。
+```bash
+corepack pnpm test
+```
 
-默认 `pnpm test` 排除 `postgres/` 和 `live/`；Playwright 也需单独运行。报告、结果和截图写入 `C:\Code\test\edu-agent\playwright`、`EDU_AGENT_TEST_OUTPUT_ROOT` 指定目录或系统临时目录，不在仓库根目录生成。完整矩阵见 [验证指南](../docs/engineering/validation.md)。
+默认运行单元、协议、架构、HTTP 和 PGlite 测试。数据库、浏览器和真实模型测试分别提供独立入口：
+
+| 范围 | 目录 | 命令 |
+| --- | --- | --- |
+| 单元与协议 | `unit/`、`gate2/` | `test:unit` |
+| 模块与状态所有权 | `architecture/` | `test:architecture` |
+| HTTP 流程 | `e2e/` | `test:e2e` |
+| 数据库迁移 | `integration/` | `test:migrations` |
+| Node smoke | `node/` | `test:node-smoke` |
+| PostgreSQL 集成 | `postgres/` | `test:postgres` |
+| 浏览器业务流程 | `playwright/` | `test:playwright` |
+| Fake Ark 模型流程 | `playwright/`、`support/` | `test:ark-fake` |
+| 已配置的真实模型 | `live/` | `test:model:live` |
+
+PostgreSQL 和浏览器测试使用独立的临时数据库与文件目录。Playwright 输出位置可通过 `EDU_AGENT_TEST_OUTPUT_ROOT` 指定；默认路径和测试组合见 [验证指南](../docs/engineering/validation.md)。
+
+专用配置位于 [config](config/)，场景数据与辅助代码位于 [fixtures](fixtures/) 和 [support](support/)。

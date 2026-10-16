@@ -1,11 +1,20 @@
 # Edu-Agent API
 
-`apps/api` 是服务端应用：Express 入口、Composition Root、Worker、七模块、PostgreSQL Adapter 和 Migration registry。
+Express 服务端，负责教师门户的 HTTP API、模型任务、教学数据与文件管理。与 Web 一起从仓库根目录启动：
 
-- HTTP 入口：`src/app.ts`；进程入口：`src/index.ts`；
-- 服务组装：`src/composition/`；
-- 状态所有权：`src/modules/<module>/`；
-- 平台 Adapter：`src/platform/`；
-- 唯一 Migration registry：`src/database/migrations.ts`；执行器：`src/platform/postgres/bootstrap.ts`。
+```bash
+corepack pnpm app:dev
+```
 
-禁止跨 Schema 直接写、由 Runtime 改写领域状态、修改历史 Migration，或让 production 回退 Local/Mock/Demo。先阅读根 [Agent 指南](../../AGENTS.md) 和 [当前架构](../../docs/architecture/README.md)。
+API 默认监听 `http://localhost:3001`。
+
+| 入口 | 作用 |
+| --- | --- |
+| [src/index.ts](src/index.ts) | 进程启动 |
+| [src/app.ts](src/app.ts) | HTTP 路由与中间件 |
+| [src/composition](src/composition/) | 服务组装与 Worker |
+| [src/modules](src/modules/) | 七个业务与能力模块 |
+| [src/platform](src/platform/) | 数据库、身份等 Adapter |
+| [src/database/migrations.ts](src/database/migrations.ts) | 数据库迁移 registry |
+
+模块通过 Application Service、Port 和 Outbox 协作，数据库状态由所属模块维护。数据流与扩展方法见 [架构](../../docs/architecture/README.md) 和 [开发指南](../../docs/engineering/README.md)。

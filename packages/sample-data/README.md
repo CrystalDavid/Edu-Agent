@@ -1,7 +1,15 @@
-# Sample data
+# 示例数据
 
-此 workspace 包只提供匿名、可重复写入的示例学校、课程、课时和教学证据。它不包含测试断言、Fake Provider 或产品业务服务。
+提供匿名示例学校、课程、课时和教学证据，用于本地体验和测试。数据使用稳定引用，支持重复载入。
 
-示例数据通过 `corepack pnpm sample:seed` 显式载入。正式部署不得自动执行该命令；生产身份和学校数据由部署环境独立配置。`apps/api` 和 `apps/web` 不得导入本 package；Seed 组合只存在于 `scripts/sample`，写入后所有读取与写入均走正式 API 和 PostgreSQL。
+从仓库根目录运行：
 
-数据在存储层继续保留 `synthetic` 标记，以阻止它被误当作真实学校或学生数据发送给外部服务。教师界面不会显示这些工程标记。
+```bash
+corepack pnpm app:prepare
+corepack pnpm sample:seed
+corepack pnpm app:dev
+```
+
+也可以用 `corepack pnpm sample:dev` 一次完成准备、载入与启动。
+
+Seed 入口位于 [scripts/sample](../../scripts/sample/)。写入 PostgreSQL 后，页面通过正式 API 读取和编辑这些内容；存储中的 `synthetic` 标记用于标识示例来源。测试构造器位于独立的 [test-fixtures](../test-fixtures/) 包。
